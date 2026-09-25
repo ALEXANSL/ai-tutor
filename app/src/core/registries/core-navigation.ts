@@ -15,6 +15,7 @@ export function registerCoreNavigation(): void {
     { key: "child", label: n.child, icon: "🧒", href: "/parent/child", order: 40 },
     { key: "directives", label: n.directives, icon: "🗒️", href: "/parent/directives", order: 50 },
     { key: "budget", label: n.budget, icon: "💳", href: "/parent/budget", order: 60 },
+    { key: "subjects", label: n.subjects, icon: "🎓", href: "/parent/subjects", order: 65 },
     { key: "books", label: n.books, icon: "📚", href: "/parent/books", order: 70 },
     { key: "settings", label: n.settings, icon: "⚙️", href: "/parent/settings", order: 80 },
   ];
