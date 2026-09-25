@@ -2,7 +2,7 @@
 
 | Поле | Значення |
 |---|---|
-| Версія | 0.3 (рішення Алекса щодо витрат прийнято 2026-09-25 — розд. 5; **стартовий сценарій MVP — «Економ»**; перевірка «безкоштовної української озвучки ElevenLabs» — розд. 2.2.1) |
+| Версія | 0.3 (рішення Алекса щодо витрат прийнято 2026-09-25 — розд. 5; **стартовий сценарій MVP — «Економ»**; перевірка «безкоштовної української озвучки ElevenLabs» — розд. 2.2.1; **0.4 — образ репетитора (голоси, аватар, анімація): розд. 0, 1.5 Д, 1.10, 3.9, 4.1, 6**) |
 | Дата | 2026-09-25 |
 | Автор | `architect` |
 | Дата перевірки цін | **2026-09-25** (джерела — розд. 6) |
@@ -30,6 +30,7 @@
 | **Усього на місяць (ШІ + інфраструктура)** | Економ ≈ **$111** · Базовий ≈ **$163** · Комфорт ≈ **$216** |
 | **Бібліотека уроків за навчальний рік** | ≈ **0,5–1,5 ГБ** сховища (вміщується в Supabase Pro без доплат); генерація вже врахована у вартості нових уроків |
 | **Термінові сповіщення** (e-mail + Telegram) | **$0** (NFR-COST-9) |
+| **Образ репетитора** (ім'я, вибір голосу, аватар-картинка, анімація) — рішення 2026-09-25 | **≈ $0/міс**; зміна голосу — переозвучення старих уроків лише під час повторів: **≈ $0–9 за місяць після зміни** в «Економі» (розд. 3.9). Живий голос дорожче не стає. «Говорящий» аватар (Фаза 2) — ≈ $6–210/міс залежно від класу рішення, окреме рішення |
 
 **Висновок:** MVP стартує в сценарії **«Економ»** — ліміт ШІ $100 (без підписок) комфортно покриває **1 голосовий урок на навчальний день + «ШІ-друг» 10 хв/день** (≈ $64). Два голосові уроки щодня (Базовий, ≈ $116) — режим бюджету ≈ з 19-го навчального дня; перехід на «Базовий»/«Комфорт» і підняття ліміту — лише після тестування (≥ 2 тижні щоденного моніторингу) і окремого рішення Алекса **[$]**.
 
@@ -55,7 +56,8 @@
 | **До S4** (безпека) | 1.11 Resend · 1.12 Telegram-бот |
 | **До S5** (тривоги) | 1.13 alerts.in.ua |
 | **До S9–S10** (фото) | 1.9 Gemini API (з білінгом) |
-| **До S12** (озвучка) | 1.10 ElevenLabs **[$]** |
+| **До S12** (озвучка) | 1.10 ElevenLabs **[$]** · затвердити каталог голосів (1.10, крок 4) |
+| **До зрізу «Мій репетитор»** (аватар, US-1.8; номер зрізу визначить `product-manager`) | 1.5 Д — увімкнути Cloud Vision API (безкоштовно в наших обсягах) |
 | **До S17** (архів) | 1.6 крок «обмежити доступ повністю» · кнопка «Підключити архів» у кабінеті |
 | **Перед щоденним використанням донькою** (після MVP-α) | Supabase Pro **[$]** (1.4, крок 6) |
 
@@ -100,6 +102,10 @@
 
 **Г. Білінг для Gemini [$]** (до S9) — див. 1.9.
 
+**Д. Резервна перевірка аватарів — Cloud Vision API** (до зрізу з аватаром репетитора, US-1.8; потрібен прив'язаний білінг з 1.9)
+11. **APIs & Services → Library** → знайдіть **Cloud Vision API** → **Enable**. Нових ключів не потрібно: застосунок використовує той самий сервісний акаунт (`GOOGLE_SERVICE_ACCOUNT_JSON`).
+12. Вартість: перші **1 000 перевірок на місяць — безкоштовно** (у нас очікується кілька на місяць); далі $1,50 за 1 000. Окремий бюджет не потрібен — діє бюджет Google $30 зі сповіщеннями (1.9). Основна перевірка — безкоштовний фільтр OpenAI (ключ з 1.8), Vision — лише резерв.
+
 ### 1.6. Папка Google Drive з підручниками (R-8) [!]
 1. Відкрийте папку в **drive.google.com** → **Поділитися (Share)**.
 2. У полі «Додати людей» вставте **e-mail сервісного акаунта** (1.5, крок 8) → роль **Читач (Viewer)** → зніміть галочку «Сповістити» → **Надіслати**.
@@ -134,8 +140,14 @@
 1. **elevenlabs.io** → **Sign up**.
 2. **[$] Subscription → Creator ($22/міс; перший місяць за даними ElevenLabs — $11)** — **погоджено 2026-09-25**, оформити до S12: 275 хв живого голосу + кредити на озвучку. Підписка — фіксована інфраструктура, **поза лімітом ШІ $100**; у ліміт іде лише докупівля понад пакет. Увімкніть **usage-based billing** (докупівля хвилин по $0,08/хв), якщо є поле ліміту — поставте **$60**. *Якщо на Creator докупівля недоступна — повідомте, розглянемо Pro $99 (1 238 хв).*
 3. **Developers → API Keys → Create** → `ai-tutor-prod` з обмеженими правами (Agents, Text to Speech, читання/видалення розмов) **[секрет]** → `ELEVENLABS_API_KEY`. Агента й налаштування створить розробник через API.
-4. **Голос (на S12):** розробник запропонує 3–4 жіночі українські голоси з бібліотеки ElevenLabs; ви слухаєте й обираєте один (NFR-VOICE-1).
+4. **Голоси (на S12) — затвердження каталогу для доньки** (рішення 2026-09-25: донька обирає голос сама):
+   1. Розробник відбере з бібліотеки голосів ElevenLabs **6–8 українських голосів — 3–4 жіночі й 3–4 чоловічі** — і покаже сторінку зі зразками: однакова українська фраза + коротка англійська/німецька.
+   2. Ви слухаєте (краще на планшеті доньки, звичайною гучністю) і позначаєте голоси, які **дозволяєте** — щонайменше 2 жіночі й 2 чоловічі. Звертайте увагу: природність, дружній тон, чіткість.
+   3. Один жіночий позначаєте **«за замовчуванням»** — з ним донька почне.
+   4. Розробник покаже, скільки часу кожен голос гарантовано лишається доступним («notice period»); голоси без гарантії — лише якщо дуже сподобались (їх автор може прибрати будь-коли — тоді застосунок попередить і запропонує інший).
+   5. Це безкоштовно (зразки — ≈ $0,2 з кредитів підписки). Пізніше список можна змінити в кабінеті: «Налаштування → Образ репетитора → Голоси».
 5. **Privacy** агента: мінімальний термін зберігання розмов (розробник налаштує й покаже).
+6. **Дозвіл на зміну голосу в агенті** (розробник налаштує на S13): в агенті ElevenLabs вмикається лише можливість підставляти голос, ім'я й словник вимови на кожну розмову — від вас нічого не потрібно, лише знати, що це зроблено навмисно.
 
 ### 1.11. Resend (e-mail для термінових сповіщень) — безкоштовно
 1. **resend.com → Sign up** — **обов'язково тією адресою, на яку мають приходити термінові листи** (безкоштовний відправник Resend доставляє лише на адресу власника акаунта).
@@ -180,7 +192,8 @@
 | `OPENAI_API_KEY` | 1.8 | Алекс | **так** |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | 1.9 | Алекс | **так** |
 | `ELEVENLABS_API_KEY` | 1.10 | Алекс | **так** |
-| `ELEVENLABS_AGENT_ID`, `ELEVENLABS_VOICE_ID` | створює розробник | розробник показує → Алекс вносить | ні |
+| `ELEVENLABS_AGENT_ID` | створює розробник | розробник показує → Алекс вносить | ні |
+| *(голоси — не змінна середовища)* | каталог голосів зберігається в базі (`tutor_voices`), затверджується в кабінеті (1.10, крок 4) | — | — |
 | `ELEVENLABS_WEBHOOK_SECRET` | налаштування вебхука ElevenLabs | Алекс (за підказкою розробника) | **так** |
 | `RESEND_API_KEY` | 1.11 | Алекс | **так** |
 | `ALERT_EMAIL_TO` | ваша адреса для термінових листів | Алекс | **так** |
@@ -388,6 +401,35 @@ Supabase Free (1 ГБ файлів) **не вміщує** бібліотеку +
 | Розробка й тестування (виклики на preview з dev-ключами) | ≈ $10–30/міс під час активної розробки; S13 (голос) — тестовий ліміт $10 |
 | Домен (опційно) | ≈ $10–15/рік |
 
+### 3.9. Образ репетитора: голос, аватар, анімація (рішення PO 2026-09-25; `docs/02` розд. 7.6, ADR-006, ADR-019)
+
+| Що | Розрахунок | Вартість |
+|---|---|---|
+| Вибір імені (перевірка власного імені модератором) | ≈ $0,0005 за перевірку, поза бюджетом | ≈ $0 |
+| Зразки голосів для вибору (6–8 голосів × ≈ 200 символів + фраза EN/DE) | разово, з кредитів Creator | ≈ **$0,2 разово** |
+| Живий голос іншим голосом | ціна хвилини ElevenLabs не залежить від голосу | **$0 додатково** |
+| **Переозвучення після зміни голосу — «Економ»** | переозвучуються лише кроки уроків, які реально відкриваються повторно: ≤ 11 повторів × ≈ 8 000 символів ≈ 88 000 символів × $0,10 / 1 000; частину покриває залишок кредитів Creator (≈ 33 000 символів після нових уроків) | **≈ $0–9 у перший місяць після зміни**, далі менше (≈ $0–3) |
+| Те саме — «Базовий» / «Комфорт» | 22 повтори × 8 000 / 22 × 12 000 символів | до ≈ $18 / ≈ $26 у перший місяць після зміни |
+| Переозвучити всю бібліотеку одразу (кнопка тата, не за замовчуванням) **[$]** | ≈ 8 000 символів × кількість уроків (рік «Економу» ≈ 110 уроків) | ≈ $0,80 за урок; до ≈ **$88** за річну бібліотеку |
+| Режим «старі уроки — старим голосом» (`keep_old`) | переозвучення не виконується | **$0** |
+| Аватар-картинка: сховище | ≤ 5 файлів × ≤ 150 КБ | **$0** (у межах Supabase Pro) |
+| Аватар: перевірка вмісту | OpenAI `omni-moderation` — безкоштовно; резерв Google Cloud Vision SafeSearch — 1 000/міс безкоштовно, далі $1,50 / 1 000; перевірка обличчя — на планшеті | **$0** |
+| Анімація аватара (CSS/Canvas на планшеті) | без зовнішніх сервісів | **$0** |
+| **Разом для MVP** | | **≈ $0/міс** + переозвучення лише після зміни голосу |
+
+*Припущення:* ціна переозвучення — як у звичайної озвучки Multilingual ($0,10 / 1 000 символів; на Flash — удвічі менше); ціна докупівлі кредитів понад пакет Creator звіряється на S12 (AR-R5). Часті перемикання голосу не множать витрати без меж: кожен урок озвучується кожним голосом **лише раз**, старі файли зберігаються (повернення до попереднього голосу — $0).
+
+**Фаза 2 — «говорящий» аватар з рухом губ (дорожня карта; постачальника не обрано; ціни — з оглядів і сторінок постачальників через пошук, 2026-09-25):**
+
+| Клас рішення | Порядок вартості | На «Економ» (≈ 564 хв живого голосу/міс) |
+|---|---|---|
+| A. Персонаж, що анімується на планшеті (відкриті бібліотеки 2D/3D з рухом губ) | $0 за хвилину; разово — підготовка персонажа й розробка | $0/міс |
+| B. Хмарний рендер обличчя з однієї картинки, наш голос (bring-your-own) | ≈ $0,01–0,18/хв (лише рендер) | ≈ $6–100/міс |
+| C. Керовані «розмовні аватари» повного стеку | ≈ $0,11–0,37/хв; «lite»-режими зі своїм голосом ≈ $0,10/хв | ≈ $60–210/міс |
+| D. Попередньо згенероване відео лише для пояснень бібліотеки | не перевірено (оцінити у Фазі 2) | — |
+
+Рішення про Фазу 2 — окреме, з підтвердженням Алекса **[$]**; у класах B–C картинка з аватара потрапляла б до стороннього постачальника — це теж окреме рішення щодо приватності.
+
 ---
 
 ## 4. Механізми контролю витрат (AR-11)
@@ -405,6 +447,7 @@ Supabase Free (1 ГБ файлів) **не вміщує** бібліотеку +
 | Ліміт голосу «ШІ-друга» | **10 хв/день за замовчуванням** (рішення 2026-09-25; тато змінює в налаштуваннях), далі текст до 00:00 | US-7.2 КП-2 |
 | Автозакриття тиші | 60 с тиші → живий голос закривається | US-7.2 КП-3 |
 | Бібліотека уроків | Повтори без генерації; частка повторів — у кабінеті | E-19, NFR-COST-11 |
+| Переозвучення після зміни голосу | Лише кроки, які реально показуються; кожен урок × голос — один раз; у режимі бюджету — вимкнено; тато може обрати «старі уроки — старим голосом» ($0); «переозвучити все» — лише з розрахунком і підтвердженням | PM-19, US-1.7 |
 | Захист від зациклення | Ліміт частоти запитів до дорогих маршрутів на користувача (технічний, не навчальний) | — |
 
 ### 4.2. У провайдерів (запобіжники на випадок помилки в коді)
@@ -460,6 +503,9 @@ Supabase Free (1 ГБ файлів) **не вміщує** бібліотеку +
 - Google: [Gemini Developer API pricing](https://ai.google.dev/gemini-api/docs/pricing), [Gemini 3.8 Live and 3.5 Transcribe](https://blog.google/innovation-and-ai/technology/developers-tools/build-real-time-voice-applications-gemini-audio/), [Gemini 3.1 Flash-Lite](https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-1-flash-lite/), [Billing / paid tier data use](https://ai.google.dev/gemini-api/docs/billing), [Live API capabilities](https://ai.google.dev/gemini-api/docs/live-api/capabilities); Gemini 3.1 Pro (агрегатори, звірити): [BenchLM](https://benchlm.ai/google/api-pricing), [MetaCTO](https://www.metacto.com/blogs/the-true-cost-of-google-gemini-a-guide-to-api-pricing-and-integration)
 - ElevenLabs: [ElevenAgents Pricing](https://elevenlabs.io/pricing/agents), [API Pricing](https://elevenlabs.io/pricing/api), [Lowered API & Agents pricing, PAYG](https://elevenlabs.io/blog/weve-lowered-api-agents-pricing-and-introduced-pay-as-you-go), [How much does ElevenAgents cost?](https://help.elevenlabs.io/hc/en-us/articles/29298065878929-How-much-does-ElevenAgents-cost), [Client tools](https://elevenlabs.io/docs/eleven-agents/customization/tools/client-tools), [Overrides](https://elevenlabs.io/docs/agents-platform/customization/personalization/overrides), [Models (LLM) for Agents](https://elevenlabs.io/docs/eleven-agents/customization/llm), [Zero Retention Mode (per-agent)](https://elevenlabs.io/docs/eleven-agents/customization/privacy/zrm), [Retention](https://elevenlabs.io/docs/eleven-agents/customization/privacy/retention)
 - ElevenLabs — перевірка «безкоштовної української озвучки» (2026-09-25): [Free Ukrainian Text to Speech](https://elevenlabs.io/text-to-speech/ukrainian), [Pricing (Free — 10 000 кредитів)](https://elevenlabs.io/pricing), [ElevenAgents Pricing (Free — 15 хв)](https://elevenlabs.io/pricing/agents), [Do you offer discounted or free plans?](https://help.elevenlabs.io/hc/en-us/articles/13315218812177-Do-you-offer-discounted-or-free-plans), [Can I publish the content I generate? (атрибуція, некомерційно на Free)](https://elevenlabs.io/docs/help-center/legal/can-i-publish-the-content-i-generate-on-the-platform), [Terms of Service](https://elevenlabs.io/terms-of-use), [Ukrainian Public Services partnership](https://elevenlabs.io/blog/ukrainian-public-services), [Мінцифри: партнерство з ElevenLabs](https://thedigital.gov.ua/news/technologies/ukrainski-derzhavni-servisi-govoritimut-zavdyaki-shi-pochinaemo-partnerstvo-z-elevenlabs)
+- ElevenLabs — голоси й образ репетитора (перевірено пошуком 2026-09-25): [Voice Library (docs)](https://elevenlabs.io/docs/eleven-creative/voices/voice-library), [Adult Female voices](https://elevenlabs.io/voice-library/adult-female-voices), [Adult Male voices](https://elevenlabs.io/voice-library/adult-male-voices), [Ukrainian TTS & voices](https://elevenlabs.io/text-to-speech/ukrainian), огляд українських голосів бібліотеки (сторонній, для орієнтиру) — [json2video: ElevenLabs voices in Ukrainian](https://json2video.com/ai-voices/elevenlabs/languages/ukrainian/), [What is a notice period?](https://elevenlabs.io/docs/help-center/product/voices/voice-library/what-is-a-notice-period), [Voice slots per tier (голоси з бібліотеки не займають слотів)](https://help.elevenlabs.io/hc/en-us/articles/24351056337937-How-many-voice-slots-do-I-get-per-tier-and-how-can-I-increase-it), [Agents overrides (зокрема TTS/voice)](https://elevenlabs.io/docs/eleven-agents/customization/personalization/overrides), [React SDK (гучність вводу/виводу)](https://elevenlabs.io/docs/eleven-agents/libraries/react), [TTS with timestamps](https://elevenlabs.io/docs/api-reference/text-to-speech/convert-with-timestamps)
+- Модерація зображень аватара (2026-09-25): [OpenAI Moderation guide (зображення, безкоштовно)](https://developers.openai.com/api/docs/guides/moderation), [omni-moderation model](https://developers.openai.com/api/docs/models/omni-moderation-latest), [Cloud Vision pricing (SafeSearch, 1 000/міс безкоштовно)](https://cloud.google.com/vision/pricing), [MediaPipe Face Detector for Web](https://ai.google.dev/edge/mediapipe/solutions/vision/face_detector/web_js)
+- Говорящий аватар, Фаза 2 (огляди цін, пошук 2026-09-25; звірити з постачальниками перед рішенням): [Real-Time Talking Avatar Providers — prices, September 2026 (Akapulu)](https://blog.akapulu.com/p/real-time-avatar-api-pricing-index/), [How much does a realtime AI avatar API cost in 2026?](https://realtimeavatar.ai/blog/realtime-ai-avatar-api-pricing), [HeyGen API pricing / LiveAvatar](https://realtimeavatar.ai/blog/heygen-api-pricing-explained), [Anam pricing](https://anam.ai/pricing), [Spatius — cost per minute](https://www.spatius.ai/blog/compare-pricing-leading-ai-avatar-services-2026/), [TalkingHead (відкрита JS-бібліотека, губи за таймінгами TTS)](https://github.com/met4citizen/talkinghead)
 - Supabase: [Pricing & Fees](https://supabase.com/pricing), [Edge Functions limits](https://supabase.com/docs/guides/functions/limits), [Cron](https://supabase.com/docs/guides/cron), [pg_net](https://supabase.com/docs/guides/database/extensions/pg_net), [pgvector](https://supabase.com/docs/guides/database/extensions/pgvector)
 - Vercel: [Functions duration](https://vercel.com/docs/functions/configuring-functions/duration), [Cron usage & pricing](https://vercel.com/docs/cron-jobs/usage-and-pricing), [AI Gateway fallbacks](https://vercel.com/docs/ai-gateway/models-and-providers/model-fallbacks)
 - Resend: [Account quotas and limits](https://resend.com/docs/knowledge-base/account-quotas-and-limits), [New Free Tier](https://resend.com/blog/new-free-tier)
