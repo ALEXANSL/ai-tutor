@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --project unit",
     "test:db": "bash scripts/with-test-db.sh vitest run --project db",
-    "check:bundle": "node scripts/check-client-bundle.mjs",
+    "check:bundle": "node scripts/check-client-bundle.mjs --build",
     "icons": "node scripts/generate-icons.mjs"
   },
   "dependencies": {

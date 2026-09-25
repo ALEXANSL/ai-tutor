@@ -1,0 +1,193 @@
+@import "tailwindcss";
+
+/* Theme switch: data-theme on <html> (manual) or system preference (auto). */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* ---- Design tokens (docs/04-design-system.md §1) ------------------------ */
+:root {
+  /* Child UI — light */
+  --bg: #faf6ef;
+  --surface: #ffffff;
+  --surface-alt: #f1ece0;
+  --text: #2b2a28;
+  --text-muted: #6b6862;
+  --primary: #ff7a50;
+  --primary-press: #e85f37;
+  --secondary: #2ec4b6;
+  --accent-voice: #7c6cf0;
+  --warn: #e8a33d;
+  --danger: #e5484d;
+  --border: #e7e0d2;
+  --focus-ring: #1d6fe0;
+  /* Parent cabinet — light */
+  --p-bg: #f5f6f8;
+  --p-surface: #ffffff;
+  --p-text: #1d1f24;
+  --p-text-muted: #6b7280;
+  --p-primary: #2f6fed;
+  --p-success: #1fa97e;
+  --p-warn: #d98a1e;
+  --p-danger: #d6403f;
+  --p-border: #e2e4e9;
+  color-scheme: light;
+}
+
+
+:root[data-theme="dark"] {
+  --bg: #15141c;
+  --surface: #1f1e28;
+  --surface-alt: #2a2833;
+  --text: #f3f1ec;
+  --text-muted: #a9a6a0;
+  --primary: #ff9470;
+  --primary-press: #e87b54;
+  --secondary: #3ddbc9;
+  --accent-voice: #9a8cff;
+  --warn: #f0b95a;
+  --danger: #ff6b6e;
+  --border: #37353f;
+  --focus-ring: #5b9cff;
+  --p-bg: #111318;
+  --p-surface: #1a1d24;
+  --p-text: #edeef2;
+  --p-text-muted: #9ca3af;
+  --p-border: #2a2e38;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15141c;
+    --surface: #1f1e28;
+    --surface-alt: #2a2833;
+    --text: #f3f1ec;
+    --text-muted: #a9a6a0;
+    --primary: #ff9470;
+    --primary-press: #e87b54;
+    --secondary: #3ddbc9;
+    --accent-voice: #9a8cff;
+    --warn: #f0b95a;
+    --danger: #ff6b6e;
+    --border: #37353f;
+    --focus-ring: #5b9cff;
+    --p-bg: #111318;
+    --p-surface: #1a1d24;
+    --p-text: #edeef2;
+    --p-text-muted: #9ca3af;
+    --p-border: #2a2e38;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-alt: var(--surface-alt);
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+  --color-primary: var(--primary);
+  --color-primary-press: var(--primary-press);
+  --color-secondary: var(--secondary);
+  --color-voice: var(--accent-voice);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-line: var(--border);
+  --color-focus: var(--focus-ring);
+  --color-p-bg: var(--p-bg);
+  --color-p-surface: var(--p-surface);
+  --color-p-text: var(--p-text);
+  --color-p-muted: var(--p-text-muted);
+  --color-p-primary: var(--p-primary);
+  --color-p-success: var(--p-success);
+  --color-p-warn: var(--p-warn);
+  --color-p-danger: var(--p-danger);
+  --color-p-line: var(--p-border);
+  --font-child: var(--font-nunito), -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-parent: var(--font-inter), -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-child);
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* ---- Tutor "flame" avatar with voice states (docs/04 §5, §5.1) ----------- */
+.tutor-avatar {
+  position: relative;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tutor-avatar__core {
+  width: 100%;
+  height: 100%;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: radial-gradient(circle at 35% 30%, var(--accent-voice), var(--primary));
+  box-shadow: 0 0 40px color-mix(in srgb, var(--accent-voice) 45%, transparent);
+  transition: transform 0.25s ease-out, opacity 0.2s;
+}
+.tutor-avatar__ring {
+  position: absolute;
+  inset: -8px;
+  border-radius: 9999px;
+  border: 3px solid transparent;
+  border-top-color: var(--accent-voice);
+  opacity: 0;
+}
+.tutor-avatar[data-state="listening"] .tutor-avatar__core {
+  animation: tutor-breathe 1s ease-in-out infinite;
+}
+.tutor-avatar[data-state="thinking"] .tutor-avatar__ring {
+  opacity: 1;
+  animation: tutor-spin 0.9s linear infinite;
+}
+.tutor-avatar[data-state="speaking"] .tutor-avatar__core {
+  animation: tutor-sway 0.5s ease-in-out infinite alternate;
+}
+.tutor-avatar[data-state="paused"] .tutor-avatar__core {
+  opacity: 0.5;
+}
+@keyframes tutor-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+@keyframes tutor-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes tutor-sway {
+  to {
+    transform: translateY(-3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
