@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CurrentTopicPicker } from "@/components/parent/subjects/CurrentTopicPicker";
 import { ForecastPlanPanel } from "@/components/parent/subjects/ForecastPlanPanel";
+import { StartLessonButton } from "@/components/parent/subjects/StartLessonButton";
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
 import { getSubjectDetail, getSubjectForecastPlan } from "@/server/subjects/queries";
@@ -50,6 +51,13 @@ export default async function SubjectDetailPage({ params }: { params: Promise<{ 
       )}
 
       {plan && <ForecastPlanPanel plan={plan} />}
+
+      {subject.currentTopicId && (
+        <Panel title={t.detail.lessonTitle}>
+          <p className="mb-3 text-[13px] text-p-muted">{t.detail.lessonHint}</p>
+          <StartLessonButton subjectId={subject.id} topicId={subject.currentTopicId} />
+        </Panel>
+      )}
     </>
   );
 }
