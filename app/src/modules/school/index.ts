@@ -17,7 +17,14 @@ export function registerSchoolModule(): void {
   }
   stepTypes.register({ key: "interactive", module: SCHOOL_MODULE, interactive: true });
 
-  sourceTypes.register({ key: "textbook", module: SCHOOL_MODULE, titleUk: "Підручник", structureStrategy: "textbook" });
-  sourceTypes.register({ key: "literary_work", module: SCHOOL_MODULE, titleUk: "Художній твір", structureStrategy: "literary_work" });
-  sourceTypes.register({ key: "test_fragment", module: SCHOOL_MODULE, titleUk: "Тестовий фрагмент", structureStrategy: "fragments" });
+  // Source types (US-2.6 KP-1, D-41): any book, not only textbooks.
+  const types = [
+    { key: "textbook", titleUk: "Підручник", structureStrategy: "textbook", autoDetect: true, icon: "📘" },
+    { key: "literary_work", titleUk: "Художній твір", structureStrategy: "chapters", autoDetect: true, icon: "📙" },
+    { key: "popular_science", titleUk: "Науково-популярна", structureStrategy: "contents", autoDetect: true, icon: "🔭" },
+    { key: "reference", titleUk: "Довідник", structureStrategy: "contents", autoDetect: true, icon: "📗" },
+    { key: "other", titleUk: "Інше", structureStrategy: "contents", autoDetect: true, icon: "📄" },
+    { key: "test_fragment", titleUk: "Тестовий фрагмент", structureStrategy: "contents", autoDetect: false, icon: "🧪" },
+  ] as const;
+  for (const t of types) sourceTypes.register({ ...t, module: SCHOOL_MODULE });
 }

@@ -9,6 +9,12 @@ import { createServiceClient } from "../supabase/clients";
 const FAMILY_COLUMN: Record<string, string> = {
   families: "id",
   subjects: "owner_family_id",
+  materials: "owner_family_id",
+  material_sections: "owner_family_id",
+  topics: "owner_family_id",
+  topic_dependencies: "owner_family_id",
+  material_topic_links: "owner_family_id",
+  chunks: "owner_family_id",
 };
 
 export function familyColumn(table: string): string {
@@ -19,6 +25,8 @@ export function forFamily(familyId: string, client: SupabaseClient = createServi
   if (!familyId) throw new Error("forFamily: familyId is required");
   return {
     familyId,
+    /** Raw client for RPCs; RPCs must receive `familyId` explicitly. */
+    client,
     select(table: string, columns = "*") {
       return client.from(table).select(columns).eq(familyColumn(table), familyId);
     },
@@ -31,6 +39,13 @@ export function forFamily(familyId: string, client: SupabaseClient = createServi
     },
     update(table: string, values: Record<string, unknown>) {
       return client.from(table).update(values).eq(familyColumn(table), familyId);
+    },
+    upsert(table: string, rows: Record<string, unknown> | Record<string, unknown>[], onConflict?: string) {
+      const list = (Array.isArray(rows) ? rows : [rows]).map((r) => ({ ...r, [familyColumn(table)]: familyId }));
+      return client.from(table).upsert(list, onConflict ? { onConflict } : undefined);
+    },
+    delete(table: string) {
+      return client.from(table).delete().eq(familyColumn(table), familyId);
     },
   };
 }

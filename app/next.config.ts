@@ -24,6 +24,8 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // Native argon2 binding must stay a server-side external module.
   serverExternalPackages: ["@node-rs/argon2"],
+  // Prompt files are read at runtime on the server (Alex edits them as text).
+  outputFileTracingIncludes: { "/**": ["./prompts/**/*"] },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

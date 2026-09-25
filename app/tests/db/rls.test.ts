@@ -285,7 +285,8 @@ describe("RLS: family isolation (ADR-018 K-2)", () => {
     );
     for (const r of rows) {
       expect(r.relrowsecurity, `${r.relname} must have RLS`).toBe(true);
-      if (r.relname !== "families") expect(r.has_family, `${r.relname} must carry family_id`).toBe(true);
+      // Reference tables without family data (docs/02 8: "крім довідників model_prices").
+      if (!["families", "model_prices"].includes(r.relname)) expect(r.has_family, `${r.relname} must carry family_id`).toBe(true);
     }
   });
 });

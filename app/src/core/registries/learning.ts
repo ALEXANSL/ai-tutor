@@ -18,12 +18,24 @@ export interface StepTypeDefinition {
   interactive: boolean;
 }
 
+/**
+ * Structure strategies of the universal ingest pipeline (docs/02 9.1):
+ *  - `textbook`: sections -> topics -> pages (+ topic dependencies);
+ *  - `chapters`: chapters only, no topic graph (literary works);
+ *  - `contents`: table of contents + fragments for search and quotes.
+ */
+export type StructureStrategyKey = "textbook" | "chapters" | "contents";
+
 export interface SourceTypeDefinition {
   key: string;
   module: string;
   titleUk: string;
-  /** Name of the StructureStrategy used by the ingest pipeline (S1). */
-  structureStrategy: "textbook" | "literary_work" | "fragments";
+  /** StructureStrategy used by the ingest pipeline (S1). */
+  structureStrategy: StructureStrategyKey;
+  /** Offered to the model for automatic type detection (US-2.6 KP-1). */
+  autoDetect: boolean;
+  /** Icon in "Мої книги". */
+  icon: string;
 }
 
 export const sessionModes = createRegistry<SessionModeDefinition>("sessionModes");

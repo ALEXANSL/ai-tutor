@@ -47,7 +47,15 @@ describe("school module registrations (ADR-017)", () => {
   it("registers the MVP mode, step types and source types", () => {
     expect(sessionModes.get("lesson")?.module).toBe("school");
     expect(stepTypes.get("interactive")?.interactive).toBe(true);
-    expect(sourceTypes.list().map((s) => s.key)).toEqual(["textbook", "literary_work", "test_fragment"]);
+    expect(sourceTypes.list().map((s) => s.key)).toEqual([
+      "textbook",
+      "literary_work",
+      "popular_science",
+      "reference",
+      "other",
+      "test_fragment",
+    ]);
+    expect(sourceTypes.get("literary_work")?.structureStrategy).toBe("chapters");
   });
 });
 

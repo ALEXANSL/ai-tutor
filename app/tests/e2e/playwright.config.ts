@@ -41,6 +41,8 @@ export default defineConfig({
       // Deliberately absent: NEXT_PUBLIC_SUPABASE_URL, ANON_KEY, SUPABASE_SERVICE_ROLE_KEY,
       // ALLOWLIST_*, PIN_PEPPER — this suite covers the "not configured" / logged-out surface.
       NODE_ENV: "production",
+      // S1: lets the suite check that the job tick rejects callers without the secret.
+      CRON_SECRET: "e2e-cron-secret-placeholder",
     },
   },
   projects: [
