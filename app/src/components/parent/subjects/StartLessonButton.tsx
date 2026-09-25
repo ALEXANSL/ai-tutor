@@ -20,9 +20,16 @@ export function StartLessonButton({ subjectId, topicId }: { subjectId: string; t
     setError(null);
     startTransition(async () => {
       try {
-        const { sessionId } = await startLessonAction(subjectId, topicId);
-        router.push(`/lesson/${sessionId}`);
+        const result = await startLessonAction(subjectId, topicId);
+        if (result.status === "error") {
+          setError(result.message);
+          return;
+        }
+        router.push(`/lesson/${result.sessionId}`);
       } catch {
+        // Only an unexpected transport-level failure reaches here now —
+        // BUG-011: known failure reasons are already turned into a specific
+        // `result.message` above instead of a thrown error.
         setError(uk.common.error);
       }
     });

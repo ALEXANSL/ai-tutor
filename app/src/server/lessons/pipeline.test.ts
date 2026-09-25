@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { AiNotConfiguredError } from "@/server/ai/types";
 import type { LessonBlockGenerated, LessonPlan, ReviewOutput } from "./schema";
 
 /**
@@ -12,7 +13,7 @@ import type { LessonBlockGenerated, LessonPlan, ReviewOutput } from "./schema";
 const callStructured = vi.fn();
 vi.mock("@/server/ai/router", () => ({ callStructured: (...args: unknown[]) => callStructured(...args) }));
 
-const { runPedagogicalPipeline } = await import("./pipeline");
+const { runPedagogicalPipeline, ReviewerUnavailableError } = await import("./pipeline");
 
 function plan(over: Partial<LessonPlan> = {}): LessonPlan {
   return {
@@ -148,5 +149,16 @@ describe("runPedagogicalPipeline (ADR-022)", () => {
     expect(textbookIdx).toBeGreaterThanOrEqual(0);
     expect(bookIdx).toBeGreaterThanOrEqual(0);
     expect(textbookIdx).toBeLessThan(bookIdx);
+  });
+
+  it("BUG-011: an unconfigured reviewer (e.g. OPENAI_API_KEY missing) throws a translated ReviewerUnavailableError, not a raw AiNotConfiguredError", async () => {
+    mockRoleQueue({ lesson_planning: [plan()], lesson_generation: [block()] });
+    callStructured.mockImplementation(async (role: string) => {
+      if (role === "lesson_planning") return { result: plan(), model: { provider: "anthropic", model: "claude-opus-5-5" }, costUsd: 0.01 };
+      if (role === "lesson_generation") return { result: block(), model: { provider: "anthropic", model: "claude-opus-5-5" }, costUsd: 0.01 };
+      throw new AiNotConfiguredError("OPENAI_API_KEY is not set");
+    });
+    await expect(runPedagogicalPipeline(baseInput)).rejects.toThrow(ReviewerUnavailableError);
+    await expect(runPedagogicalPipeline(baseInput)).rejects.toThrow("рецензент недоступний: не налаштовано OPENAI_API_KEY");
   });
 });

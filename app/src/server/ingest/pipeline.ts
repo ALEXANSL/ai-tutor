@@ -288,6 +288,18 @@ export async function confirmBookOcr(familyId: string, materialId: string, confi
   await enqueueStep(familyId, JOB.extract, materialId);
 }
 
+/**
+ * QA regression: re-indexing the same unchanged file must not run OCR (or
+ * any extraction) a second time — `runExtract` skips straight to
+ * `ingest.embed` when the downloaded bytes hash to the same
+ * `materials.content_hash` as last time AND chunks from that indexing are
+ * still there (a wiped/never-finished index still needs a real re-extract,
+ * even with a matching hash).
+ */
+export function skipReextraction(hash: string, previousContentHash: string | null, existingChunkCount: number): boolean {
+  return hash === previousContentHash && existingChunkCount > 0;
+}
+
 async function runExtract(job: JobRow): Promise<void> {
   const familyId = job.family_id;
   const materialId = String(job.payload.materialId);
@@ -303,7 +315,7 @@ async function runExtract(job: JobRow): Promise<void> {
 
   if (hash === m.content_hash) {
     const { count } = await scope.count("chunks").eq("material_id", materialId);
-    if ((count ?? 0) > 0) {
+    if (skipReextraction(hash, m.content_hash, count ?? 0)) {
       await patchMaterial(scope, materialId, { progress: { step: "embed" } });
       await enqueueStep(familyId, JOB.embed, materialId);
       return;

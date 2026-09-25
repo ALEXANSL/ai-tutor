@@ -54,7 +54,13 @@ function makeScope(tables: Record<string, FakeRow[] | FakeRow>, updates: { table
       updates.push({ table, values });
       return builder(table, "single");
     },
-    client: { from: () => ({ insert: () => Promise.resolve({ data: null, error: null }) }) },
+    client: {
+      from: () => ({
+        insert: () => ({
+          select: () => ({ single: () => Promise.resolve({ data: { id: "s1" }, error: null }) }),
+        }),
+      }),
+    },
   };
 }
 
@@ -64,17 +70,26 @@ vi.mock("@/server/db/family-scope", () => ({ forFamily: () => makeScope(scopeSta
 const nextSessionBlock = vi.fn();
 const loadLibraryItem = vi.fn();
 const getOrGenerateLessonBlocks = vi.fn();
+const getOrCreateFallbackBlock = vi.fn();
+const notifyParent = vi.fn().mockResolvedValue(undefined);
 vi.mock("./generate", () => ({
   nextSessionBlock: (...a: unknown[]) => nextSessionBlock(...a),
   loadLibraryItem: (...a: unknown[]) => loadLibraryItem(...a),
   getOrGenerateLessonBlocks: (...a: unknown[]) => getOrGenerateLessonBlocks(...a),
+  getOrCreateFallbackBlock: (...a: unknown[]) => getOrCreateFallbackBlock(...a),
 }));
+vi.mock("@/server/notifications", () => ({ notifyParent: (...a: unknown[]) => notifyParent(...a) }));
 
 const { continueAfterBlock, resumeLessonSession, startLessonSession } = await import("./orchestrator");
 
 function resetScope() {
   scopeState.tables = {};
   scopeState.updates = [];
+  nextSessionBlock.mockClear();
+  loadLibraryItem.mockClear();
+  getOrGenerateLessonBlocks.mockClear();
+  getOrCreateFallbackBlock.mockClear();
+  notifyParent.mockClear();
 }
 
 describe("continueAfterBlock (BUG-009: no block repeats within one session)", () => {
@@ -118,7 +133,7 @@ describe("continueAfterBlock (BUG-009: no block repeats within one session)", ()
 
 describe("startLessonSession — BUG-011: US-6.11 requires a 'safe simplified template' fallback " +
   "when every generated block ends up needs_review, but none exists yet", () => {
-  it("currently throws a generic error instead of falling back to a safe template (documents the gap)", async () => {
+  it("starts the lesson with the safe fallback block (not a thrown error) when the reviewer is unavailable", async () => {
     resetScope();
     scopeState.tables = {
       subjects: { id: "subj1", name_uk: "Математика", config: {} },
@@ -127,16 +142,47 @@ describe("startLessonSession — BUG-011: US-6.11 requires a 'safe simplified te
     // Every pipeline attempt ended in `needs_review` (e.g. `lesson_review`
     // hitting `AiNotConfiguredError` because `OPENAI_API_KEY` is unset, the
     // exact scenario `docs/STATUS.md` warns is likely at first demo) — no
-    // "active" block was ever produced for this topic.
-    getOrGenerateLessonBlocks.mockResolvedValue([]);
+    // "active" block was ever produced for this topic, so
+    // `getOrGenerateLessonBlocks` reports the empty result + a reason.
+    getOrGenerateLessonBlocks.mockResolvedValue({
+      candidates: [],
+      failureReasonUk: "рецензент недоступний: не налаштовано OPENAI_API_KEY",
+    });
+    getOrCreateFallbackBlock.mockResolvedValue({ id: "fallback1", title: "Резервний блок: Дроби", estimatedMinutes: 5 });
 
-    // TODO(BUG-011): once `developer` implements the safe simplified
-    // template fallback required by US-6.11, replace this assertion with
-    // one that expects a `sessionId` + a fallback candidate instead of a
-    // thrown error.
-    await expect(startLessonSession("fam1", "child1", "subj1", "top1", 30)).rejects.toThrow(
-      "could not prepare any lesson block for this topic",
+    const result = await startLessonSession("fam1", "child1", "subj1", "top1", 30);
+
+    expect(result.sessionId).toBe("s1");
+    expect(result.usedFallback).toBe(true);
+    expect(result.candidates).toEqual([{ libraryItemId: "fallback1", title: "Резервний блок: Дроби", estimatedMinutes: 5 }]);
+    expect(getOrCreateFallbackBlock).toHaveBeenCalledWith("fam1", "subj1", "top1", "Дроби", 6);
+    // The parent gets a notification naming the actual reason, not a generic error.
+    expect(notifyParent).toHaveBeenCalledWith(
+      "fam1",
+      expect.objectContaining({
+        type: "lesson_started_with_fallback",
+        payload: expect.objectContaining({ reason: "рецензент недоступний: не налаштовано OPENAI_API_KEY" }),
+      }),
     );
+  });
+
+  it("starts normally (no fallback, no notification) when generation produced real candidates", async () => {
+    resetScope();
+    scopeState.tables = {
+      subjects: { id: "subj1", name_uk: "Математика", config: {} },
+      topics: { id: "top1", title: "Дроби", grade: 6 },
+    };
+    getOrGenerateLessonBlocks.mockResolvedValue({
+      candidates: [{ id: "a", title: "Блок A", estimatedMinutes: 7 }],
+      failureReasonUk: null,
+    });
+
+    const result = await startLessonSession("fam1", "child1", "subj1", "top1", 30);
+
+    expect(result.usedFallback).toBe(false);
+    expect(result.candidates).toEqual([{ libraryItemId: "a", title: "Блок A", estimatedMinutes: 7 }]);
+    expect(getOrCreateFallbackBlock).not.toHaveBeenCalled();
+    expect(notifyParent).not.toHaveBeenCalled();
   });
 
   it("ends the lesson after the current block when time is already up, without even asking for a next block", async () => {

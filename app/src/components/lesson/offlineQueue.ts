@@ -91,3 +91,32 @@ export async function resendQueued(
   }
   return { sent, failedAt: null };
 }
+
+/**
+ * BUG-012: `LessonRunner.submit()`'s "queue before the network call, dequeue
+ * only after a confirmed success" order — factored out so the *order* is
+ * unit-testable without a real browser (a hung request plus a closed tab
+ * mid-flight, the scenario BUG-012 describes, still cannot be simulated
+ * deterministically in a test, but the enqueue/send/dequeue order that
+ * closes that window can be). `deps` defaults to the real IndexedDB queue
+ * and is overridden only in tests.
+ */
+export async function submitAnswerOffline(
+  entry: QueuedAnswer,
+  send: (entry: QueuedAnswer) => Promise<void>,
+  deps: { enqueue: typeof enqueueAnswer; dequeue: typeof dequeueAnswer } = { enqueue: enqueueAnswer, dequeue: dequeueAnswer },
+): Promise<{ ok: boolean }> {
+  // Written to the queue BEFORE the network call starts: if the request
+  // hangs and the tab is closed/unloaded while it is in flight, the answer
+  // is already safe on the device — not only after `send` rejects.
+  await deps.enqueue(entry);
+  try {
+    await send(entry);
+    // Removed only once the server has confirmed the answer was saved.
+    await deps.dequeue(entry.idempotencyKey);
+    return { ok: true };
+  } catch {
+    // Stays queued — `flushQueue` (mount / "online") resends it later.
+    return { ok: false };
+  }
+}

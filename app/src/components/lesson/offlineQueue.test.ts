@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { resendQueued, type QueuedAnswer } from "./offlineQueue";
+import { resendQueued, submitAnswerOffline, type QueuedAnswer } from "./offlineQueue";
 
 /**
  * BUG-007: an answer given during a network drop is queued on the device
@@ -59,5 +59,66 @@ describe("resendQueued (offline answer buffer)", () => {
     expect(sent).toEqual([a]);
     expect(failedAt).toBe(1);
     expect(send).toHaveBeenCalledTimes(2); // never reaches `c` while `b` is still failing
+  });
+});
+
+/**
+ * BUG-012: `LessonRunner.submit()` must queue the answer BEFORE the network
+ * call (not only in a `catch` after it), and only dequeue it after a
+ * confirmed success — so a request that hangs and a tab closed mid-flight
+ * never loses the answer, unlike the original ("network → catch → queue")
+ * order.
+ */
+describe("submitAnswerOffline (BUG-012: enqueue before the network call, dequeue only after success)", () => {
+  it("enqueues before calling `send`, and dequeues only after `send` resolves", async () => {
+    const order: string[] = [];
+    const enqueue = vi.fn(async () => {
+      order.push("enqueue");
+    });
+    const dequeue = vi.fn(async () => {
+      order.push("dequeue");
+    });
+    const send = vi.fn(async () => {
+      order.push("send");
+    });
+    const entry = answer();
+
+    const result = await submitAnswerOffline(entry, send, { enqueue, dequeue });
+
+    expect(order).toEqual(["enqueue", "send", "dequeue"]);
+    expect(enqueue).toHaveBeenCalledWith(entry);
+    expect(dequeue).toHaveBeenCalledWith(entry.idempotencyKey);
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("keeps the entry queued (never dequeues) when the network call fails — even if it fails after being in flight for a while", async () => {
+    const enqueue = vi.fn().mockResolvedValue(undefined);
+    const dequeue = vi.fn().mockResolvedValue(undefined);
+    const send = vi.fn().mockRejectedValue(new Error("network"));
+    const entry = answer();
+
+    const result = await submitAnswerOffline(entry, send, { enqueue, dequeue });
+
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(dequeue).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: false });
+  });
+
+  it("has already enqueued the answer even if `send` never settles (simulates a hung request the tab could close during)", async () => {
+    const enqueue = vi.fn().mockResolvedValue(undefined);
+    const dequeue = vi.fn().mockResolvedValue(undefined);
+    let resolveSend: () => void = () => {};
+    const send = vi.fn(() => new Promise<void>((resolve) => (resolveSend = resolve)));
+    const entry = answer();
+
+    const pending = submitAnswerOffline(entry, send, { enqueue, dequeue });
+    await Promise.resolve(); // let the microtask queue advance past `await deps.enqueue(entry)`
+
+    expect(enqueue).toHaveBeenCalledWith(entry); // already safe on the device before `send` settles
+    expect(dequeue).not.toHaveBeenCalled();
+
+    resolveSend();
+    await pending;
+    expect(dequeue).toHaveBeenCalledWith(entry.idempotencyKey);
   });
 });

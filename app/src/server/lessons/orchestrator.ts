@@ -2,7 +2,8 @@ import "server-only";
 import { getLessonComponent } from "@/lesson-components";
 import { callStructured } from "@/server/ai/router";
 import { forFamily } from "@/server/db/family-scope";
-import { getOrGenerateLessonBlocks, loadLibraryItem, nextSessionBlock, type LibraryItemView, type LibraryStepView } from "./generate";
+import { notifyParent } from "@/server/notifications";
+import { getOrCreateFallbackBlock, getOrGenerateLessonBlocks, loadLibraryItem, nextSessionBlock, type LibraryItemView, type LibraryStepView } from "./generate";
 import {
   decideBranch,
   idleAutoPauseDue,
@@ -67,14 +68,23 @@ export interface StartCandidate {
   estimatedMinutes: number | null;
 }
 
-/** US-9.1 КП-2, US-16.6 КП-1: offer 2–3 blocks to start from. */
+/**
+ * US-9.1 КП-2, US-16.6 КП-1: offer 2–3 blocks to start from.
+ *
+ * BUG-011: if generation could not produce a single approved block (reviewer
+ * unavailable, e.g. no `OPENAI_API_KEY`, or every attempt ended
+ * `needs_review`), the lesson still **starts** — with the safe, deterministic
+ * "простий шаблон" (`getOrCreateFallbackBlock`, US-6.11) as its only
+ * candidate — instead of throwing and never creating a session at all. The
+ * parent gets a notification naming the actual reason.
+ */
 export async function startLessonSession(
   familyId: string,
   childProfileId: string,
   subjectId: string,
   topicId: string,
   plannedMinutes: 30 | 45,
-): Promise<{ sessionId: string; candidates: StartCandidate[] }> {
+): Promise<{ sessionId: string; candidates: StartCandidate[]; usedFallback: boolean }> {
   const scope = forFamily(familyId);
   const [{ data: subject }, { data: topic }] = await Promise.all([
     scope.select("subjects", "id, name_uk, config").eq("id", subjectId).maybeSingle<SubjectRow>(),
@@ -82,8 +92,19 @@ export async function startLessonSession(
   ]);
   if (!subject || !topic) throw new Error("subject or topic not found");
 
-  const candidates = await getOrGenerateLessonBlocks(familyId, subject.id, subject.name_uk, subject.config, topic.id, topic.title, topic.grade);
-  if (candidates.length === 0) throw new Error("could not prepare any lesson block for this topic");
+  const { candidates: generated, failureReasonUk } = await getOrGenerateLessonBlocks(
+    familyId,
+    subject.id,
+    subject.name_uk,
+    subject.config,
+    topic.id,
+    topic.title,
+    topic.grade,
+  );
+  const usedFallback = generated.length === 0;
+  const candidates = usedFallback
+    ? [await getOrCreateFallbackBlock(familyId, subject.id, topic.id, topic.title, topic.grade)]
+    : generated;
 
   const { data: session, error } = await scope.client
     .from("lesson_sessions")
@@ -101,7 +122,20 @@ export async function startLessonSession(
     .single<{ id: string }>();
   if (error || !session) throw new Error(`starting a lesson session failed: ${error?.message}`);
 
-  return { sessionId: session.id, candidates: candidates.map((c) => ({ libraryItemId: c.id, title: c.title, estimatedMinutes: c.estimatedMinutes })) };
+  if (usedFallback) {
+    const reason = failureReasonUk ?? "жоден згенерований блок теми не пройшов рецензію";
+    await notifyParent(familyId, {
+      type: "lesson_started_with_fallback",
+      severity: "normal",
+      payload: { topicId, topicTitle: topic.title, sessionId: session.id, reason },
+    }).catch((e: Error) => console.error(`lesson_started_with_fallback notification failed: ${e.message}`));
+  }
+
+  return {
+    sessionId: session.id,
+    candidates: candidates.map((c) => ({ libraryItemId: c.id, title: c.title, estimatedMinutes: c.estimatedMinutes })),
+    usedFallback,
+  };
 }
 
 async function activateBlock(familyId: string, session: SessionRow, libraryItemId: string): Promise<LibraryItemView> {

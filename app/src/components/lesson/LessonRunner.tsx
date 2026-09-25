@@ -13,7 +13,7 @@ import {
   submitBlockFeedbackAction,
   submitStepAnswerAction,
 } from "@/app/actions/lesson";
-import { dequeueAnswer, enqueueAnswer, listQueuedAnswers, resendQueued, type QueuedAnswer } from "./offlineQueue";
+import { dequeueAnswer, listQueuedAnswers, resendQueued, submitAnswerOffline, type QueuedAnswer } from "./offlineQueue";
 
 type AnswerResultView = Awaited<ReturnType<typeof submitStepAnswerAction>>;
 type NextView = AnswerResultView["next"];
@@ -170,19 +170,24 @@ export function LessonRunner({
     setQueuedAnswer({ channel, answer });
     const idempotencyKey = crypto.randomUUID();
     const latencyMs = Date.now() - stepStartedAt;
-    try {
-      const result = await submitStepAnswerAction(sessionId, step.stepId, idempotencyKey, { channel, answer, latencyMs });
+    // BUG-012: `submitAnswerOffline` writes the answer to the offline queue
+    // BEFORE the network call, not only in a `catch` after it — a request
+    // that hangs (degrading mobile connection) rather than rejecting
+    // immediately, followed by the tab closing mid-flight, would otherwise
+    // lose the answer the same way BUG-007 did. It is removed from the
+    // queue only once `submitStepAnswerAction` has confirmed success; on any
+    // failure it stays queued and `flushQueue` (mount / "online") resends it
+    // automatically, without her retyping or repicking anything.
+    await submitAnswerOffline({ idempotencyKey, sessionId, stepId: step.stepId, channel, answer, latencyMs, queuedAt: Date.now() }, async (entry) => {
+      const result = await submitStepAnswerAction(entry.sessionId, entry.stepId, entry.idempotencyKey, {
+        channel: entry.channel,
+        answer: entry.answer,
+        latencyMs: entry.latencyMs,
+      });
       setQueuedAnswer(null);
       applyAnswerResult(result);
-    } catch {
-      // BUG-007: the answer she just gave is never lost — buffered on the
-      // device (safe by `idempotencyKey`, unique on `step_attempts`) and
-      // resent automatically once the connection returns (`flushQueue`
-      // above), without her retyping or repicking anything.
-      await enqueueAnswer({ idempotencyKey, sessionId, stepId: step.stepId, channel, answer, latencyMs, queuedAt: Date.now() });
-    } finally {
-      setBusy(false);
-    }
+    });
+    setBusy(false);
   }
 
   async function acknowledgeSlide() {

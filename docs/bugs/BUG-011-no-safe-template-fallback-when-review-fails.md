@@ -5,7 +5,7 @@
 | Серйозність | **Major** |
 | Зріз | S3 (педагогічний конвеєр, D-55/ADR-022) |
 | Пов'язані критерії | US-6.11 (Must): «блок, що не пройшов рецензію (і доопрацювання), дитині не показується — **заміняється безпечним спрощеним шаблоном**»; `docs/05-backlog.md` («інакше — безпечний спрощений шаблон») |
-| Статус | **Open** |
+| Статус | **Fixed** (2026-09-30, друга хвиля QA) |
 
 ## Кроки відтворення (код-рев'ю + новий регресійний тест)
 
@@ -83,3 +83,29 @@
 - `app/src/server/lessons/orchestrator.test.ts` → `describe("startLessonSession — BUG-011 …")`
   (новий, цей прогін) — фіксує поточну (помилкову) поведінку; коментар `TODO(BUG-011)`
   показує, як тест має змінитися після фіксу.
+
+## Виправлення (2026-09-30)
+- `app/src/server/lessons/pipeline.ts`: `AiNotConfiguredError` з `lesson_review` (наприклад,
+  `OPENAI_API_KEY` не задано) тепер загорнута в новий `ReviewerUnavailableError` з перекладеною
+  причиною («рецензент недоступний: не налаштовано OPENAI_API_KEY»).
+- `app/src/server/lessons/generate.ts`: `getOrGenerateLessonBlocks` більше не дає необробленому
+  винятку вийти назовні — ловить `ReviewerUnavailableError`, повертає `{ candidates: [],
+  failureReasonUk }` замість порожнього масиву без причини. Новий `getOrCreateFallbackBlock` —
+  детермінований, без ШІ, блок (дослівний уривок підручника + питання «так/ні» на його основі),
+  зберігається як `library_items.status = 'fallback'` (окремий статус, не бере участі в звичайній
+  вибірці активних кандидатів, без методичного паспорта, перевикористовується, а не генерується
+  щоразу заново).
+- `app/src/server/lessons/orchestrator.ts`: `startLessonSession` при порожніх кандидатах створює/
+  перевикористовує резервний блок і **стартує сесію з ним**, замість кидати виняток; шле тату подію
+  `lesson_started_with_fallback` з точною причиною.
+- `app/src/app/actions/lesson.ts`/`StartLessonButton.tsx`: замість кидання винятку клієнту —
+  `startLessonAction` повертає `{status: "error", message}` з конкретним поясненням (немає
+  проіндексованого підручника / загальна помилка), кабінет тата більше не показує лише «Щось пішло
+  не так» для цих випадків.
+- Нова міграція `supabase/migrations/20260930110000_bug011_fallback_status.sql`: додає
+  `library_items.status = 'fallback'` до перевірки, дозволяє дитині бачити `fallback` через RLS
+  (`needs_review` лишається прихованим).
+- `app/src/i18n/uk.ts`, `LibraryCardsList.tsx`, `app/parent/notifications/page.tsx`: тексти для
+  нового статусу «Резервний блок (без ШІ)» і нового типу сповіщення.
+- Тести: `orchestrator.test.ts` (BUG-011 — фолбек стартує урок + подія тату; звичайний шлях без
+  фолбека), `pipeline.test.ts` (`ReviewerUnavailableError`).

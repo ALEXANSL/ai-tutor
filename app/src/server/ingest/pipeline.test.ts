@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { AiNotConfiguredError, ProviderError } from "../ai/types";
 import { DriveError } from "../drive/google";
 import { EpubError } from "./extract-epub";
-import { errorCodeOf, IngestError, isRetryableIngestError } from "./pipeline";
+import { errorCodeOf, IngestError, isRetryableIngestError, skipReextraction } from "./pipeline";
 
 /**
  * Error classification of the ingest pipeline (QA: "поведінка без ключів",
@@ -60,5 +60,29 @@ describe("isRetryableIngestError — avoids retrying things a retry can't fix", 
     expect(isRetryableIngestError(new DriveError("403", 403, "forbidden"))).toBe(false);
     expect(isRetryableIngestError(new DriveError("404", 404, "not_found"))).toBe(false);
     expect(isRetryableIngestError(new DriveError("413", 413, "too_large"))).toBe(false);
+  });
+});
+
+/**
+ * QA regression: re-indexing the same unchanged file must not run OCR (or
+ * any other extraction step) a second time. This is `runExtract`'s guard —
+ * exercised directly here since a full run requires Drive/AI/job-runner
+ * mocking that a pure decision function does not.
+ */
+describe("skipReextraction — re-indexing the same file never re-runs OCR/extraction", () => {
+  it("skips straight to embed (no OCR requeue) when the hash is unchanged and the chunks are still there", () => {
+    expect(skipReextraction("same-hash", "same-hash", 12)).toBe(true);
+  });
+
+  it("re-extracts (so OCR can run) when the file actually changed", () => {
+    expect(skipReextraction("new-hash", "old-hash", 12)).toBe(false);
+  });
+
+  it("re-extracts when the hash matches but the chunks were wiped (index never actually completed)", () => {
+    expect(skipReextraction("same-hash", "same-hash", 0)).toBe(false);
+  });
+
+  it("re-extracts on the very first index (no previous hash yet)", () => {
+    expect(skipReextraction("first-hash", null, 0)).toBe(false);
   });
 });

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { LessonComponentDefinition } from "@/lesson-components/registry";
 import { callStructured } from "@/server/ai/router";
+import { AiNotConfiguredError } from "@/server/ai/types";
 import { fillTemplate, splitPrompt } from "@/server/ingest/structure";
 import { pedagogyCatalogForPrompt, REVIEW_CRITERION_LABELS_UK } from "./pedagogy";
 import { buildLessonBlockSchema, planSchema, reviewSchema, type GeneratedStep, type LessonBlockGenerated, type LessonPlan, type ReviewOutput } from "./schema";
@@ -168,6 +169,29 @@ async function reviewDraft(
   return { review: res.result, call: { role: "lesson_review", provider: res.model.provider, model: res.model.model, costUsd: res.costUsd } };
 }
 
+/**
+ * BUG-011: the `lesson_review` role has no fallback provider by design
+ * (ADR-022 §Модель — the reviewer must stay a different provider than
+ * generation), so an unconfigured reviewer (e.g. `OPENAI_API_KEY` unset)
+ * surfaces here as `AiNotConfiguredError` with nowhere left to retry.
+ * Wrapped in this dedicated, human-readable error so callers (`generate.ts`)
+ * can tell "reviewer unavailable" apart from "reviewer ran but never
+ * approved" and fall back to the safe simplified template either way,
+ * with an accurate reason shown to the parent instead of a generic error.
+ */
+export class ReviewerUnavailableError extends Error {
+  constructor(reason: string) {
+    super(`рецензент недоступний: ${translateUnavailableReasonUk(reason)}`);
+    this.name = "ReviewerUnavailableError";
+  }
+}
+
+/** "OPENAI_API_KEY is not set" -> "не налаштовано OPENAI_API_KEY" (falls back to the raw reason otherwise). */
+function translateUnavailableReasonUk(reason: string): string {
+  const m = /^([A-Z0-9_]+) is not set$/.exec(reason);
+  return m ? `не налаштовано ${m[1]}` : reason;
+}
+
 /** US-6.11 КП-1: any 0 on `safety` overrides the model's own verdict to `rejected`, defensively. */
 function enforcedVerdict(review: ReviewOutput): ReviewOutput {
   if (review.scores.safety === 0 && review.verdict !== "rejected") return { ...review, verdict: "rejected" };
@@ -202,7 +226,16 @@ export async function runPedagogicalPipeline(input: PipelineInput): Promise<Pipe
     block = draft.block;
     generationModel = draft.call.model;
 
-    const reviewed = await reviewDraft(input, plan, block);
+    let reviewed: { review: ReviewOutput; call: PipelineCallLog };
+    try {
+      reviewed = await reviewDraft(input, plan, block);
+    } catch (e) {
+      // BUG-011: no fallback provider exists for `lesson_review` — surface a
+      // clear, translated reason instead of leaving `AiNotConfiguredError`
+      // (or any other reviewer failure) uncaught mid-pipeline.
+      if (e instanceof AiNotConfiguredError) throw new ReviewerUnavailableError(e.message);
+      throw e;
+    }
     calls.push(reviewed.call);
     const verdict = enforcedVerdict(reviewed.review);
     reviews.push({ iteration, provider: reviewed.call.provider, model: reviewed.call.model, verdict: verdict.verdict, scores: verdict.scores, notes: verdict.notes, summaryUk: verdict.summaryUk });

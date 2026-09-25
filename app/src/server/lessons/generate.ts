@@ -3,7 +3,7 @@ import { allowedForSubject } from "@/lesson-components";
 import { forFamily, type FamilyScope } from "@/server/db/family-scope";
 import { notifyParent } from "@/server/notifications";
 import { validateComponentRef } from "./component-validator";
-import { LESSON_GENERATION_PROMPT_VERSION, runPedagogicalPipeline, type PipelineFragment } from "./pipeline";
+import { LESSON_GENERATION_PROMPT_VERSION, ReviewerUnavailableError, runPedagogicalPipeline, type PipelineFragment } from "./pipeline";
 import type { GeneratedStep } from "./schema";
 
 /** How many saved, *active* blocks of a topic we try to keep on hand (US-16.6: offer 2–3). */
@@ -90,6 +90,22 @@ async function loadCandidates(scope: FamilyScope, topicId: string, limit: number
   return data ?? [];
 }
 
+/** Shared by `generateOneBlock` and the BUG-011 safe fallback template. */
+async function loadTopicFragments(scope: FamilyScope, familyId: string, topicId: string, limit: number): Promise<PipelineFragment[]> {
+  const { data: chunkRows } = await scope.client
+    .from("chunks")
+    .select("material_id, page, text, materials(title, name, kind)")
+    .eq("owner_family_id", familyId)
+    .eq("topic_id", topicId)
+    .order("ordinal")
+    .limit(limit)
+    .returns<ChunkRow[]>();
+  return (chunkRows ?? []).map((c) => {
+    const m = materialOf(c.materials);
+    return { materialId: c.material_id, materialTitle: m.title, materialKind: m.kind, page: c.page, text: c.text };
+  });
+}
+
 /**
  * Runs the full pedagogical pipeline (ADR-022: plan → generate → review →
  * revise) for one new block and saves it — `active` (with its "methodical
@@ -106,23 +122,12 @@ async function generateOneBlock(
   topicTitle: string,
   grade: number | null,
 ): Promise<string> {
-  const { data: chunkRows } = await scope.client
-    .from("chunks")
-    .select("material_id, page, text, materials(title, name, kind)")
-    .eq("owner_family_id", familyId)
-    .eq("topic_id", topicId)
-    .order("ordinal")
-    .limit(FRAGMENTS_PER_BLOCK)
-    .returns<ChunkRow[]>();
-  if (!chunkRows || chunkRows.length === 0) {
+  const fragments = await loadTopicFragments(scope, familyId, topicId, FRAGMENTS_PER_BLOCK);
+  if (fragments.length === 0) {
     throw new Error(`no indexed textbook fragments for topic ${topicId} — index the textbook before starting a lesson`);
   }
 
   const allowedComponents = allowedForSubject((subjectConfig.allowed_components as string[] | undefined) ?? []);
-  const fragments: PipelineFragment[] = chunkRows.map((c) => {
-    const m = materialOf(c.materials);
-    return { materialId: c.material_id, materialTitle: m.title, materialKind: m.kind, page: c.page, text: c.text };
-  });
   const { data: recentRows } = await scope
     .select("library_items", "title")
     .eq("topic_id", topicId)
@@ -203,10 +208,31 @@ function dedupeSourceRefs(refs: { materialId: string; materialTitle: string; pag
   return [...seen.values()];
 }
 
+export interface LessonBlockCandidates {
+  candidates: { id: string; title: string; estimatedMinutes: number | null }[];
+  /**
+   * BUG-011: set only when `candidates` came back empty after a genuine
+   * attempt to generate — the human-readable reason (Ukrainian) to show the
+   * parent instead of a generic "Щось пішло не так", e.g. "рецензент
+   * недоступний: не налаштовано OPENAI_API_KEY" or "блок не пройшов
+   * рецензію (навіть після доопрацювань)".
+   */
+  failureReasonUk: string | null;
+}
+
 /**
  * Returns 1–3 candidate blocks for a topic (US-16.6 КП-1, US-9.1 КП-2),
  * generating new ones only when the library does not already have enough
  * (US-19.1, US-19.2 КП-2: reuse first, no duplicate generation calls).
+ *
+ * BUG-011: never lets an unconfigured reviewer (`ReviewerUnavailableError`,
+ * e.g. `OPENAI_API_KEY` unset) or a block that never got approved abort the
+ * caller with an uncaught exception — both end the loop with an empty
+ * `candidates` array and a `failureReasonUk` instead, so `startLessonSession`
+ * can fall back to the safe simplified template (`getOrCreateFallbackBlock`).
+ * Any other error (e.g. no indexed textbook fragments) still propagates —
+ * that is a different, legitimate blocking condition the fallback template
+ * cannot paper over either.
  */
 export async function getOrGenerateLessonBlocks(
   familyId: string,
@@ -216,16 +242,116 @@ export async function getOrGenerateLessonBlocks(
   topicId: string,
   topicTitle: string,
   grade: number | null,
-): Promise<{ id: string; title: string; estimatedMinutes: number | null }[]> {
+): Promise<LessonBlockCandidates> {
   const scope = forFamily(familyId);
   let candidates = await loadCandidates(scope, topicId, CANDIDATE_TARGET);
+  let failureReasonUk: string | null = null;
   while (candidates.length < MIN_CANDIDATES_BEFORE_GENERATING) {
     const before = candidates.length;
-    await generateOneBlock(scope, familyId, subjectId, subjectName, subjectConfig, topicId, topicTitle, grade);
+    try {
+      await generateOneBlock(scope, familyId, subjectId, subjectName, subjectConfig, topicId, topicTitle, grade);
+    } catch (e) {
+      if (e instanceof ReviewerUnavailableError) {
+        failureReasonUk = e.message;
+        break;
+      }
+      throw e;
+    }
     candidates = await loadCandidates(scope, topicId, CANDIDATE_TARGET);
-    if (candidates.length <= before) break; // generation failed silently-safe stop
+    if (candidates.length <= before) {
+      failureReasonUk ??= "жоден згенерований блок теми не пройшов рецензію (навіть після доопрацювань)";
+      break; // generation failed silently-safe stop
+    }
   }
-  return candidates.map((c) => ({ id: c.id, title: c.title, estimatedMinutes: c.estimated_minutes }));
+  return {
+    candidates: candidates.map((c) => ({ id: c.id, title: c.title, estimatedMinutes: c.estimated_minutes })),
+    failureReasonUk: candidates.length === 0 ? failureReasonUk : null,
+  };
+}
+
+/**
+ * BUG-011 / US-6.11: the "safe simplified template" used only when
+ * `getOrGenerateLessonBlocks` could not produce a single approved block —
+ * one textbook excerpt (verbatim, no free generation) plus one grounded
+ * yes/no comprehension check built deterministically from it, so no
+ * un-reviewed AI content ever reaches the child. Saved as its own
+ * `status = 'fallback'` library item: never counted as an `active`
+ * candidate by `loadCandidates` (so it is never silently reused as a normal
+ * block), has no methodical passport (US-6.10 — `pedagogy` stays `{}`), and
+ * is reused across repeated calls for the same topic instead of inserting a
+ * new row every time the reviewer keeps failing.
+ */
+export async function getOrCreateFallbackBlock(
+  familyId: string,
+  subjectId: string,
+  topicId: string,
+  topicTitle: string,
+  grade: number | null,
+): Promise<{ id: string; title: string; estimatedMinutes: number | null }> {
+  const scope = forFamily(familyId);
+  const { data: existing } = await scope
+    .select("library_items", "id, title, estimated_minutes")
+    .eq("topic_id", topicId)
+    .eq("kind", "block")
+    .eq("status", "fallback")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle<{ id: string; title: string; estimated_minutes: number | null }>();
+  if (existing) return { id: existing.id, title: existing.title, estimatedMinutes: existing.estimated_minutes };
+
+  const [fragment] = await loadTopicFragments(scope, familyId, topicId, 1);
+  if (!fragment) {
+    throw new Error(`no indexed textbook fragments for topic ${topicId} — index the textbook before starting a lesson`);
+  }
+
+  const excerpt = fragment.text.length > 700 ? `${fragment.text.slice(0, 700)}…` : fragment.text;
+  const title = `Резервний блок: ${topicTitle}`;
+  const sourceRefs = [{ materialId: fragment.materialId, materialTitle: fragment.materialTitle, page: fragment.page }];
+  const steps = [
+    { sort_order: 0, type: "slide", content: { textUk: excerpt, exampleUk: null }, visual: {}, source_refs: sourceRefs },
+    {
+      sort_order: 1,
+      type: "choice",
+      content: {
+        questionUk: `Ми щойно прочитали уривок з підручника. Він стосується теми «${topicTitle}»?`,
+        options: [
+          { id: "yes", textUk: "Так" },
+          { id: "no", textUk: "Ні" },
+        ],
+        correctOptionId: "yes",
+        explanationUk: `Так — це уривок підручника саме про «${topicTitle}»${fragment.page != null ? ` (стор. ${fragment.page})` : ""}.`,
+      },
+      visual: {},
+      source_refs: sourceRefs,
+    },
+  ];
+
+  const { data: item, error } = await scope.client
+    .from("library_items")
+    .insert({
+      owner_family_id: familyId,
+      subject_id: subjectId,
+      topic_id: topicId,
+      kind: "block",
+      title,
+      status: "fallback",
+      model: null,
+      prompt_version: null,
+      grade,
+      estimated_minutes: 5,
+      source_refs: sourceRefs,
+      pedagogy: {},
+      child_feedback: { interesting: 0, normal: 0, boring: 0 },
+    })
+    .select("id")
+    .single<{ id: string }>();
+  if (error || !item) throw new Error(`saving the safe fallback block failed: ${error?.message}`);
+
+  const stepRows = steps.map((s) => ({ owner_family_id: familyId, item_id: item.id, ...s }));
+  const { error: stepsErr } = await scope.client.from("library_steps").insert(stepRows);
+  if (stepsErr) throw new Error(`saving the safe fallback block's steps failed: ${stepsErr.message}`);
+
+  return { id: item.id, title, estimatedMinutes: 5 };
 }
 
 /**

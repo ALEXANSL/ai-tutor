@@ -285,6 +285,10 @@ export const uk = {
           }`,
         provider_fallback: (p: { role?: string; from?: string; to?: string }) =>
           `Провайдер ШІ не відповів (${p.from ?? "?"}) — використано резервну модель ${p.to ?? "?"}`,
+        lesson_block_needs_review: (p: { topicTitle?: string; title?: string }) =>
+          `Тема «${p.topicTitle ?? ""}»: блок «${p.title ?? ""}» не пройшов рецензію — дитині не показано`,
+        lesson_started_with_fallback: (p: { topicTitle?: string; reason?: string }) =>
+          `Урок з теми «${p.topicTitle ?? ""}» запущено зі спрощеним резервним блоком: ${p.reason ?? "блок не пройшов рецензію"}`,
         unknown: "Подія",
       },
       nicknameHint: "Змініть, якщо схоже на справжнє ім'я.",
@@ -338,6 +342,7 @@ export const uk = {
         noTextbook: "Немає готового підручника цього предмета — спершу додайте й проіндексуйте його в «Мої книги».",
         topicNotFound: "Оберіть тему зі списку тем цього підручника.",
         pickTopicFirst: "Спершу оберіть тему зі списку.",
+        startLessonFailed: "Не вдалося підготувати урок. Спробуйте ще раз за кілька хвилин або перевірте налаштування ШІ.",
       },
       library: {
         title: "Бібліотека блоків теми",
@@ -347,6 +352,7 @@ export const uk = {
           needs_review: "Потребує уваги — рецензію не пройдено",
           superseded: "Замінено новішою версією",
           draft: "Чернетка",
+          fallback: "Резервний блок (без ШІ)",
         },
         reviewStatus: {
           first_pass: "Пройшов з першого разу",

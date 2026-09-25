@@ -16,6 +16,7 @@ import {
   resumeLessonSession,
   startLessonSession,
   submitStepAnswer,
+  type StartCandidate,
 } from "@/server/lessons/orchestrator";
 import type { FormState } from "./state";
 
@@ -33,14 +34,34 @@ async function onlyChild(familyId: string): Promise<ChildProfileRow> {
   return data;
 }
 
-export async function startLessonAction(subjectId: string, topicId: string) {
+/**
+ * BUG-011: `startLessonSession` itself no longer throws for "no block passed
+ * review" (it falls back to the safe template) — but it can still fail for
+ * reasons that fallback can't paper over (no indexed textbook, a real DB
+ * error). Those are caught here and turned into a specific, human-readable
+ * message instead of letting `StartLessonButton` show the generic
+ * `uk.common.error` ("Щось пішло не так").
+ */
+export async function startLessonAction(
+  subjectId: string,
+  topicId: string,
+): Promise<{ status: "ok"; sessionId: string; candidates: StartCandidate[] } | { status: "error"; message: string }> {
   const { familyId } = await requireParentAccess();
   UUID.parse(subjectId);
   UUID.parse(topicId);
-  const child = await onlyChild(familyId);
-  const minutes = child.lesson_minutes;
-  const { sessionId, candidates } = await startLessonSession(familyId, child.id, subjectId, topicId, minutes);
-  return { sessionId, candidates };
+  try {
+    const child = await onlyChild(familyId);
+    const minutes = child.lesson_minutes;
+    const { sessionId, candidates } = await startLessonSession(familyId, child.id, subjectId, topicId, minutes);
+    return { status: "ok", sessionId, candidates };
+  } catch (e) {
+    const err = e as Error;
+    console.error(`startLessonAction failed: ${err.message}`);
+    const message = err.message.includes("no indexed textbook fragments")
+      ? uk.parent.subjects.errors.noTextbook
+      : uk.parent.subjects.errors.startLessonFailed;
+    return { status: "error", message };
+  }
 }
 
 export async function chooseStartBlockAction(sessionId: string, libraryItemId: string) {

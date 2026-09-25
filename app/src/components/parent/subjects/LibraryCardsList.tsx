@@ -38,6 +38,13 @@ export function LibraryCardsList({ cards }: { cards: LibraryCard[] }) {
 function StatusBadge({ status }: { status: string }) {
   const t = uk.parent.subjects.library;
   const label = t.status[status as keyof typeof t.status] ?? status;
-  const color = status === "needs_review" ? "bg-p-danger/15 text-p-danger" : status === "active" ? "bg-p-success/15 text-p-success" : "bg-p-muted/15 text-p-muted";
+  const color =
+    status === "needs_review"
+      ? "bg-p-danger/15 text-p-danger"
+      : status === "active"
+        ? "bg-p-success/15 text-p-success"
+        : status === "fallback"
+          ? "bg-warn/20 text-p-text"
+          : "bg-p-muted/15 text-p-muted";
   return <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${color}`}>{label}</span>;
 }
