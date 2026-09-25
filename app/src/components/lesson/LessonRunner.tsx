@@ -5,7 +5,18 @@ import { useRouter } from "next/navigation";
 import { DragSortStep } from "@/lesson-components/drag_sort/DragSortStep";
 import type { DragSortProps } from "@/lesson-components/drag_sort";
 import type { uk } from "@/i18n/uk";
-import { acknowledgeSlideAction, askTopicChatAction, pauseLessonAction, submitStepAnswerAction } from "@/app/actions/lesson";
+import {
+  acknowledgeSlideAction,
+  askTopicChatAction,
+  continueAfterBlockAction,
+  pauseLessonAction,
+  submitBlockFeedbackAction,
+  submitStepAnswerAction,
+} from "@/app/actions/lesson";
+import { dequeueAnswer, enqueueAnswer, listQueuedAnswers, resendQueued, type QueuedAnswer } from "./offlineQueue";
+
+type AnswerResultView = Awaited<ReturnType<typeof submitStepAnswerAction>>;
+type NextView = AnswerResultView["next"];
 
 type Labels = typeof uk.child.lesson;
 
@@ -51,6 +62,10 @@ export function LessonRunner({
   const [offline, setOffline] = useState(false);
   const [busy, setBusy] = useState(false);
   const [openAnswer, setOpenAnswer] = useState("");
+  // BUG-007: the child's own selection stays visible while an answer is
+  // queued offline, so she sees "what she did" rather than a blank step.
+  const [queuedAnswer, setQueuedAnswer] = useState<{ channel: string; answer: unknown } | null>(null);
+  const [blockComplete, setBlockComplete] = useState<{ libraryItemId: string; visibleOutcomeUk: string | null } | null>(null);
   const lastInteractionRef = useRef<number>(0);
   useEffect(() => {
     lastInteractionRef.current = Date.now();
@@ -82,45 +97,89 @@ export function LessonRunner({
 
   // Offline banner (US-6.5): pause is recorded, but the screen stays put —
   // "Немає зв'язку, усе збережено" — until the connection returns.
+  // BUG-007: flush the offline queue on mount and whenever the browser
+  // reports "online" — never only on an explicit retry tap, so a resumed
+  // connection resends automatically, with no action from the child.
+  const flushQueue = useCallback(async () => {
+    const all = await listQueuedAnswers();
+    const mine = all.filter((q) => q.sessionId === sessionId);
+    if (mine.length === 0) return;
+    await resendQueued(mine, async (entry: QueuedAnswer) => {
+      const result = await submitStepAnswerAction(entry.sessionId, entry.stepId, entry.idempotencyKey, {
+        channel: entry.channel,
+        answer: entry.answer,
+        latencyMs: entry.latencyMs,
+      });
+      await dequeueAnswer(entry.idempotencyKey);
+      if (entry.stepId === step.stepId) {
+        setQueuedAnswer(null);
+        applyAnswerResult(result);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, step.stepId]);
+
+  useEffect(() => {
+    flushQueue();
+    window.addEventListener("online", flushQueue);
+    return () => window.removeEventListener("online", flushQueue);
+  }, [flushQueue]);
+
   useEffect(() => {
     const onOffline = () => {
       setOffline(true);
       pauseLessonAction(sessionId, "network").catch(() => {});
     };
-    const onOnline = () => setOffline(false);
+    const onOnline = () => {
+      setOffline(false);
+      flushQueue();
+    };
     window.addEventListener("offline", onOffline);
     window.addEventListener("online", onOnline);
     return () => {
       window.removeEventListener("offline", onOffline);
       window.removeEventListener("online", onOnline);
     };
-  }, [sessionId]);
+  }, [sessionId, flushQueue]);
 
-  function goToNext(next: { kind: string; step?: StepView | null }) {
+  function goToNext(next: NextView) {
     if (next.kind === "advance" && next.step) {
       setStep(next.step);
       setStepStartedAt(Date.now());
       setFeedback(null);
       setFormatOffer(false);
       setOpenAnswer("");
+      setQueuedAnswer(null);
+    } else if (next.kind === "block_complete") {
+      setBlockComplete({ libraryItemId: next.libraryItemId, visibleOutcomeUk: next.visibleOutcomeUk });
     } else if (next.kind === "lesson_complete") {
       router.refresh();
     }
     // "retry_step": stays on the same step, feedback already shown.
   }
 
+  function applyAnswerResult(result: AnswerResultView) {
+    setFeedback({ correct: result.verdict === "correct", text: result.verdict === "correct" ? t.correct : `${t.almost}${result.explanation ? ` — ${result.explanation}` : ""}` });
+    if (result.formatChangeSuggested) setFormatOffer(true);
+    if (result.next.kind !== "retry_step") goToNext(result.next);
+  }
+
   async function submit(channel: "choice" | "text" | "voice" | "photo", answer: unknown) {
     touch();
     setBusy(true);
+    setQueuedAnswer({ channel, answer });
+    const idempotencyKey = crypto.randomUUID();
+    const latencyMs = Date.now() - stepStartedAt;
     try {
-      const idempotencyKey = crypto.randomUUID();
-      const latencyMs = Date.now() - stepStartedAt;
       const result = await submitStepAnswerAction(sessionId, step.stepId, idempotencyKey, { channel, answer, latencyMs });
-      setFeedback({ correct: result.verdict === "correct", text: result.verdict === "correct" ? t.correct : `${t.almost}${result.explanation ? ` — ${result.explanation}` : ""}` });
-      if (result.formatChangeSuggested) setFormatOffer(true);
-      if (result.next.kind !== "retry_step") goToNext(result.next);
+      setQueuedAnswer(null);
+      applyAnswerResult(result);
     } catch {
-      router.refresh();
+      // BUG-007: the answer she just gave is never lost — buffered on the
+      // device (safe by `idempotencyKey`, unique on `step_attempts`) and
+      // resent automatically once the connection returns (`flushQueue`
+      // above), without her retyping or repicking anything.
+      await enqueueAnswer({ idempotencyKey, sessionId, stepId: step.stepId, channel, answer, latencyMs, queuedAt: Date.now() });
     } finally {
       setBusy(false);
     }
@@ -139,8 +198,33 @@ export function LessonRunner({
     }
   }
 
+  if (blockComplete) {
+    return (
+      <BlockCompleteScreen
+        libraryItemId={blockComplete.libraryItemId}
+        visibleOutcomeUk={blockComplete.visibleOutcomeUk}
+        labels={t}
+        onContinue={() => {
+          setBusy(true);
+          continueAfterBlockAction(sessionId)
+            .then((next) => {
+              setBlockComplete(null);
+              goToNext(next);
+            })
+            .catch(() => router.refresh())
+            .finally(() => setBusy(false));
+        }}
+      />
+    );
+  }
+
   return (
     <div onPointerDown={touch} onKeyDown={touch} className="px-6 pt-4">
+      {queuedAnswer && (
+        <div className="mb-3 rounded-2xl bg-warn/20 px-4 py-2.5 text-sm font-bold" role="status">
+          {t.queuedOffline}
+        </div>
+      )}
       {offline && (
         <div className="mb-3 rounded-2xl bg-warn/20 px-4 py-2.5 text-sm font-bold" role="status">
           {t.offlineBanner}
@@ -330,6 +414,60 @@ function TopicChat({ sessionId, subjectId, topicId, labels: t }: { sessionId: st
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * US-6.13: shown between blocks — the concrete "тепер ти вмієш…" result
+ * (КП-1/2), plus an optional one-tap feedback (КП-3) that never affects
+ * points. "Далі" is the only way forward — never an auto-advance.
+ */
+function BlockCompleteScreen({
+  libraryItemId,
+  visibleOutcomeUk,
+  labels: t,
+  onContinue,
+}: {
+  libraryItemId: string;
+  visibleOutcomeUk: string | null;
+  labels: Labels;
+  onContinue: () => void;
+}) {
+  const [feedbackSent, setFeedbackSent] = useState<"interesting" | "normal" | "boring" | null>(null);
+
+  function sendFeedback(kind: "interesting" | "normal" | "boring") {
+    setFeedbackSent(kind);
+    if (libraryItemId) submitBlockFeedbackAction(libraryItemId, kind).catch(() => {});
+  }
+
+  return (
+    <div className="px-6 pt-4">
+      <div className="rounded-[22px] border border-line bg-surface p-4.5">
+        <h2 className="mb-2 text-xl font-extrabold">{t.blockDoneTitle}</h2>
+        {visibleOutcomeUk && <p className="mb-4 text-lg font-bold text-secondary">{visibleOutcomeUk}</p>}
+
+        <p className="mb-2 text-sm font-bold text-muted">{t.feedbackPrompt}</p>
+        {feedbackSent ? (
+          <p className="mb-4 text-sm font-semibold">{t.feedbackThanks}</p>
+        ) : (
+          <div className="mb-4 flex flex-wrap gap-2">
+            <button type="button" onClick={() => sendFeedback("interesting")} className="rounded-xl border-2 border-line bg-bg px-3 py-2 text-sm font-bold">
+              {t.feedbackInteresting}
+            </button>
+            <button type="button" onClick={() => sendFeedback("normal")} className="rounded-xl border-2 border-line bg-bg px-3 py-2 text-sm font-bold">
+              {t.feedbackNormal}
+            </button>
+            <button type="button" onClick={() => sendFeedback("boring")} className="rounded-xl border-2 border-line bg-bg px-3 py-2 text-sm font-bold">
+              {t.feedbackBoring}
+            </button>
+          </div>
+        )}
+
+        <button type="button" onClick={onContinue} className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-primary px-5 text-base font-bold text-white">
+          {t.blockContinue}
+        </button>
+      </div>
     </div>
   );
 }
