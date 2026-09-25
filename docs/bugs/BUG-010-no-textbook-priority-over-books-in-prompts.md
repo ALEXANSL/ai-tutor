@@ -5,7 +5,7 @@
 | Серйозність | **Minor** |
 | Зріз | S3 |
 | Пов'язані критерії | US-2.6 КП-3 («підручник лишається основним джерелом змісту програми й термінології; при розбіжності агент спирається на підручник і не подає зміст книги як шкільну норму»); NFR-LANG-3 |
-| Статус | **Open** |
+| Статус | **Fixed** (фрагменти тепер позначені джерелом за `materials.kind`: `[ПІДРУЧНИК, стор. N]` проти `[КНИГА «Назва», стор. N]`, підручник завжди першим у списку — `app/src/server/lessons/pipeline.ts` (`fragmentsForPrompt`, використовує `lesson_generation`/`lesson_planning`/`lesson_review`) і `app/src/server/lessons/chat.ts` (`tutor_chat`); усі відповідні промпти (`lesson_generation.md`, `lesson_planning.md`, `lesson_review.md`, `tutor_chat.md`) отримали явне речення «за розбіжності — підручник головний»; перевірено тестом `pipeline.test.ts` — «labels textbook fragments ahead of book fragments…») |
 
 ## Кроки відтворення (код-рев'ю)
 1. `generateOneBlock` (`generate.ts`, рядок 111–118) і `askTopicChat` (`chat.ts`, рядок

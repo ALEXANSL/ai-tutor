@@ -16,6 +16,9 @@ const FAMILY_COLUMN: Record<string, string> = {
   material_topic_links: "owner_family_id",
   chunks: "owner_family_id",
   material_ocr_pages: "owner_family_id",
+  library_items: "owner_family_id",
+  library_steps: "owner_family_id",
+  library_item_reviews: "owner_family_id",
 };
 
 export function familyColumn(table: string): string {

@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import type { LessonComponentDefinition } from "@/lesson-components/registry";
+import { PEDAGOGY_TECHNIQUE_KEYS, REVIEW_CRITERIA } from "./pedagogy";
 
 /**
  * Structured-output schema for the `lesson_generation` role (ADR-020 §3):
@@ -52,8 +53,51 @@ export type GeneratedStep = SlideStepOut | ChoiceStepOut | OpenStepOut | Interac
 export interface LessonBlockGenerated {
   titleUk: string;
   estimatedMinutes: number;
+  /** US-6.12: the opening line the first `slide` step must actually be. */
+  hookUk: string;
+  /** US-6.13: "тепер ти вмієш…" — shown at the block's end, not a step. */
+  visibleOutcomeUk: string;
+  /** Keys from `PEDAGOGY_TECHNIQUES` actually applied (US-6.9 КП-2, ≥ 2). */
+  techniquesUsed: string[];
   steps: GeneratedStep[];
 }
+
+/** `lesson_planning` role output (ADR-022 step 1) — the methodical plan a block is built from. */
+export interface LessonPlan {
+  goalUk: string;
+  hookUk: string;
+  visibleOutcomeUk: string;
+  techniques: { key: string; whyUk: string }[];
+  misconceptionsUk: string[];
+  toneNotesUk: string;
+  comprehensionChecksUk: string[];
+}
+
+export const planSchema: z.ZodType<LessonPlan> = z.object({
+  goalUk: z.string().min(1).max(200),
+  hookUk: z.string().min(1).max(400),
+  visibleOutcomeUk: z.string().min(1).max(200),
+  techniques: z
+    .array(z.object({ key: z.enum(PEDAGOGY_TECHNIQUE_KEYS), whyUk: z.string().min(1).max(250) }))
+    .min(2)
+    .max(5),
+  misconceptionsUk: z.array(z.string().min(1).max(250)).min(1).max(5),
+  toneNotesUk: z.string().min(1).max(400),
+  comprehensionChecksUk: z.array(z.string().min(1).max(250)).min(1).max(4),
+});
+
+/** `lesson_review` role output (ADR-022 step 3): 0–2 per rubric criterion. */
+const reviewScoresShape = Object.fromEntries(REVIEW_CRITERIA.map((c) => [c, z.number().int().min(0).max(2)])) as Record<
+  (typeof REVIEW_CRITERIA)[number],
+  z.ZodNumber
+>;
+export const reviewSchema = z.object({
+  verdict: z.enum(["approved", "revise", "rejected"]),
+  scores: z.object(reviewScoresShape),
+  notes: z.array(z.string().min(1).max(300)).max(6),
+  summaryUk: z.string().min(1).max(400),
+});
+export type ReviewOutput = z.infer<typeof reviewSchema>;
 
 const sourceRefSchema = z.object({
   materialId: z.string().uuid(),
@@ -105,6 +149,9 @@ export function buildLessonBlockSchema(allowedComponents: LessonComponentDefinit
   return z.object({
     titleUk: z.string().min(1).max(150),
     estimatedMinutes: z.number().int().min(5).max(10),
+    hookUk: z.string().min(1).max(400),
+    visibleOutcomeUk: z.string().min(1).max(200),
+    techniquesUsed: z.array(z.enum(PEDAGOGY_TECHNIQUE_KEYS)).min(2).max(5),
     // NFR-SAFE-8 / US-19.1 КП-2: the model is never told the nickname; if it
     // reaches for one anyway, the validator below catches the placeholder.
     steps: z.array(stepSchema).min(3).max(10),

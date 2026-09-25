@@ -1,25 +1,15 @@
 import "server-only";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { allowedForSubject } from "@/lesson-components";
-import { callStructured } from "@/server/ai/router";
 import { forFamily, type FamilyScope } from "@/server/db/family-scope";
-import { fillTemplate, splitPrompt } from "@/server/ingest/structure";
+import { notifyParent } from "@/server/notifications";
 import { validateComponentRef } from "./component-validator";
-import { buildLessonBlockSchema, type GeneratedStep } from "./schema";
+import { LESSON_GENERATION_PROMPT_VERSION, runPedagogicalPipeline, type PipelineFragment } from "./pipeline";
+import type { GeneratedStep } from "./schema";
 
-export const LESSON_PROMPT_VERSION = "lesson_generation.v1";
-
-/** How many saved blocks of a topic we try to keep on hand (US-16.6: offer 2–3). */
+/** How many saved, *active* blocks of a topic we try to keep on hand (US-16.6: offer 2–3). */
 const CANDIDATE_TARGET = 3;
 const MIN_CANDIDATES_BEFORE_GENERATING = 2;
 const FRAGMENTS_PER_BLOCK = 12;
-
-let promptCache: { system: string; user: string } | null = null;
-function lessonPrompt(): { system: string; user: string } {
-  promptCache ??= splitPrompt(readFileSync(join(process.cwd(), "prompts", "lesson_generation.md"), "utf8"));
-  return promptCache;
-}
 
 export interface LibraryStepView {
   id: string;
@@ -33,6 +23,8 @@ export interface LibraryItemView {
   id: string;
   title: string;
   estimatedMinutes: number | null;
+  /** US-6.13: shown at the block's summary, not a step of its own. */
+  visibleOutcomeUk: string | null;
   steps: LibraryStepView[];
 }
 
@@ -40,12 +32,12 @@ interface ChunkRow {
   material_id: string;
   page: number | null;
   text: string;
-  materials: { title: string | null; name: string } | { title: string | null; name: string }[] | null;
+  materials: { title: string | null; name: string; kind: string } | { title: string | null; name: string; kind: string }[] | null;
 }
 
-function materialTitleOf(row: ChunkRow["materials"]): string {
+function materialOf(row: ChunkRow["materials"]): { title: string; kind: string } {
   const m = Array.isArray(row) ? row[0] : row;
-  return m?.title ?? m?.name ?? "Підручник";
+  return { title: m?.title ?? m?.name ?? "Підручник", kind: m?.kind ?? "other" };
 }
 
 /** Normalizes one validated generated step into `library_steps` columns. */
@@ -98,6 +90,12 @@ async function loadCandidates(scope: FamilyScope, topicId: string, limit: number
   return data ?? [];
 }
 
+/**
+ * Runs the full pedagogical pipeline (ADR-022: plan → generate → review →
+ * revise) for one new block and saves it — `active` (with its "methodical
+ * passport", US-6.10) if a review approved it, `needs_review` (hidden from
+ * the child, US-6.11 КП-3) if it never passed after `MAX_REVISIONS`.
+ */
 async function generateOneBlock(
   scope: FamilyScope,
   familyId: string,
@@ -110,7 +108,7 @@ async function generateOneBlock(
 ): Promise<string> {
   const { data: chunkRows } = await scope.client
     .from("chunks")
-    .select("material_id, page, text, materials(title, name)")
+    .select("material_id, page, text, materials(title, name, kind)")
     .eq("owner_family_id", familyId)
     .eq("topic_id", topicId)
     .order("ordinal")
@@ -121,21 +119,31 @@ async function generateOneBlock(
   }
 
   const allowedComponents = allowedForSubject((subjectConfig.allowed_components as string[] | undefined) ?? []);
-  const schema = buildLessonBlockSchema(allowedComponents);
-  const { system, user } = lessonPrompt();
-  const fragments = chunkRows
-    .map((c) => `[materialId=${c.material_id}, стор. ${c.page ?? "—"}, "${materialTitleOf(c.materials)}"]\n${c.text}`)
-    .join("\n\n");
-  const prompt = fillTemplate(user, {
-    subject_name: subjectName,
-    grade: grade != null ? String(grade) : "—",
-    topic_title: topicTitle,
-    allowed_components: allowedComponents.length ? allowedComponents.map((d) => `- ${d.key}: ${d.promptDoc}`).join("\n") : "(немає — не використовуй жодного інтерактивного компонента)",
-    fragments,
+  const fragments: PipelineFragment[] = chunkRows.map((c) => {
+    const m = materialOf(c.materials);
+    return { materialId: c.material_id, materialTitle: m.title, materialKind: m.kind, page: c.page, text: c.text };
   });
+  const { data: recentRows } = await scope
+    .select("library_items", "title")
+    .eq("topic_id", topicId)
+    .eq("kind", "block")
+    .order("created_at", { ascending: false })
+    .limit(5)
+    .returns<{ title: string }[]>();
+  const recentTitles = (recentRows ?? []).map((r) => r.title);
 
-  const res = await callStructured("lesson_generation", { system, prompt, schema }, { familyId, ref: { table: "topics", id: topicId } });
-  const block = res.result;
+  const pipeline = await runPedagogicalPipeline({ familyId, topicId, subjectName, grade, topicTitle, fragments, allowedComponents, recentTitles });
+  const block = pipeline.block;
+
+  const pedagogy = {
+    goalUk: pipeline.plan.goalUk,
+    hookUk: block.hookUk,
+    visibleOutcomeUk: block.visibleOutcomeUk,
+    techniques: pipeline.plan.techniques.filter((t) => block.techniquesUsed.includes(t.key)),
+    misconceptionsUk: pipeline.plan.misconceptionsUk,
+    comprehensionChecksUk: pipeline.plan.comprehensionChecksUk,
+    reviewStatus: pipeline.reviewStatus,
+  };
 
   const { data: item, error } = await scope.client
     .from("library_items")
@@ -145,12 +153,14 @@ async function generateOneBlock(
       topic_id: topicId,
       kind: "block",
       title: block.titleUk,
-      status: "active",
-      model: res.model.model,
-      prompt_version: LESSON_PROMPT_VERSION,
+      status: pipeline.status,
+      model: pipeline.generationModel,
+      prompt_version: LESSON_GENERATION_PROMPT_VERSION,
       grade,
       estimated_minutes: block.estimatedMinutes,
       source_refs: dedupeSourceRefs(block.steps.flatMap((s) => s.sourceRefs)),
+      pedagogy,
+      child_feedback: { interesting: 0, normal: 0, boring: 0 },
     })
     .select("id")
     .single<{ id: string }>();
@@ -159,6 +169,30 @@ async function generateOneBlock(
   const stepRows = block.steps.map((s, i) => ({ owner_family_id: familyId, item_id: item.id, ...toStepRow(s, i) }));
   const { error: stepsErr } = await scope.client.from("library_steps").insert(stepRows);
   if (stepsErr) throw new Error(`saving generated lesson steps failed: ${stepsErr.message}`);
+
+  if (pipeline.reviews.length > 0) {
+    const reviewRows = pipeline.reviews.map((r) => ({
+      owner_family_id: familyId,
+      library_item_id: item.id,
+      iteration: r.iteration,
+      reviewer_role: "lesson_review",
+      provider: r.provider,
+      model: r.model,
+      verdict: r.verdict,
+      scores: r.scores,
+      notes: [r.summaryUk, ...r.notes].join("\n"),
+    }));
+    const { error: revErr } = await scope.client.from("library_item_reviews").insert(reviewRows);
+    if (revErr) console.error(`saving lesson block reviews failed: ${revErr.message}`);
+  }
+
+  if (pipeline.status === "needs_review") {
+    await notifyParent(familyId, {
+      type: "lesson_block_needs_review",
+      severity: "normal",
+      payload: { topicId, topicTitle, libraryItemId: item.id, title: block.titleUk },
+    }).catch((e: Error) => console.error(`needs_review notification failed: ${e.message}`));
+  }
 
   return item.id;
 }
@@ -194,6 +228,40 @@ export async function getOrGenerateLessonBlocks(
   return candidates.map((c) => ({ id: c.id, title: c.title, estimatedMinutes: c.estimated_minutes }));
 }
 
+/**
+ * BUG-009: picks the next block for a session that was **not already used
+ * anywhere in that session** (the caller passes the session's full history,
+ * not just the block that just finished). If every saved active block of
+ * the topic is already used in this session, generates exactly one more
+ * (session-scoped exception to the usual `CANDIDATE_TARGET` cap — ADR-014
+ * still reuses across *different* sessions as before) instead of silently
+ * repeating one; returns `null` only if that generation also fails to
+ * produce a fresh, unused block (the caller ends the lesson early rather
+ * than repeat a block without saying so).
+ */
+export async function nextSessionBlock(
+  familyId: string,
+  subjectId: string,
+  subjectName: string,
+  subjectConfig: Record<string, unknown>,
+  topicId: string,
+  topicTitle: string,
+  grade: number | null,
+  usedLibraryItemIds: string[],
+): Promise<{ id: string; title: string; estimatedMinutes: number | null } | null> {
+  const scope = forFamily(familyId);
+  const used = new Set(usedLibraryItemIds);
+  let candidates = await loadCandidates(scope, topicId, CANDIDATE_TARGET);
+  let fresh = candidates.find((c) => !used.has(c.id));
+  if (fresh) return { id: fresh.id, title: fresh.title, estimatedMinutes: fresh.estimated_minutes };
+
+  const before = candidates.length;
+  await generateOneBlock(scope, familyId, subjectId, subjectName, subjectConfig, topicId, topicTitle, grade);
+  candidates = await loadCandidates(scope, topicId, Math.max(CANDIDATE_TARGET, before + 1));
+  fresh = candidates.find((c) => !used.has(c.id));
+  return fresh ? { id: fresh.id, title: fresh.title, estimatedMinutes: fresh.estimated_minutes } : null;
+}
+
 export async function loadLibraryItemTitles(familyId: string, ids: string[]): Promise<{ id: string; title: string; estimatedMinutes: number | null }[]> {
   if (ids.length === 0) return [];
   const { data } = await forFamily(familyId)
@@ -204,13 +272,32 @@ export async function loadLibraryItemTitles(familyId: string, ids: string[]): Pr
   return ids.map((id) => byId.get(id)).filter((r): r is NonNullable<typeof r> => !!r).map((r) => ({ id: r.id, title: r.title, estimatedMinutes: r.estimated_minutes }));
 }
 
+const FEEDBACK_KINDS = ["interesting", "normal", "boring"] as const;
+export type ChildFeedbackKind = (typeof FEEDBACK_KINDS)[number];
+
+/**
+ * US-6.13 КП-3 / US-6.10 КП-3: the child's one-tap "цікаво/нормально/нудно"
+ * at a block's end, aggregated per library item (M-13) — never affects
+ * points, visible to the parent next to the block in the library.
+ */
+export async function recordChildFeedback(familyId: string, libraryItemId: string, feedback: ChildFeedbackKind): Promise<void> {
+  const scope = forFamily(familyId);
+  const { data } = await scope
+    .select("library_items", "child_feedback")
+    .eq("id", libraryItemId)
+    .maybeSingle<{ child_feedback: Partial<Record<ChildFeedbackKind, number>> | null }>();
+  const current = data?.child_feedback ?? {};
+  const next = Object.fromEntries(FEEDBACK_KINDS.map((k) => [k, (current[k] ?? 0) + (k === feedback ? 1 : 0)]));
+  await scope.update("library_items", { child_feedback: next }).eq("id", libraryItemId);
+}
+
 /** Loads one library item with its ordered steps for a session block (US-19.2). */
 export async function loadLibraryItem(familyId: string, itemId: string): Promise<LibraryItemView | null> {
   const scope = forFamily(familyId);
   const { data: item } = await scope
-    .select("library_items", "id, title, estimated_minutes")
+    .select("library_items", "id, title, estimated_minutes, pedagogy")
     .eq("id", itemId)
-    .maybeSingle<{ id: string; title: string; estimated_minutes: number | null }>();
+    .maybeSingle<{ id: string; title: string; estimated_minutes: number | null; pedagogy: { visibleOutcomeUk?: string } | null }>();
   if (!item) return null;
   const { data: steps } = await scope
     .select("library_steps", "id, sort_order, type, content, visual, source_refs")
@@ -221,6 +308,7 @@ export async function loadLibraryItem(familyId: string, itemId: string): Promise
     id: item.id,
     title: item.title,
     estimatedMinutes: item.estimated_minutes,
+    visibleOutcomeUk: item.pedagogy?.visibleOutcomeUk ?? null,
     steps: (steps ?? []).map((s) => ({ id: s.id, sortOrder: s.sort_order, type: s.type, content: s.content, visual: s.visual, sourceRefs: s.source_refs })),
   };
 }

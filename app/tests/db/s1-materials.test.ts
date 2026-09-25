@@ -98,12 +98,15 @@ describe("model routes (docs/02 7.3, ADR-005)", () => {
     );
     // S3 (20260928100000) extends the same trigger with lesson_generation,
     // tutor_chat and answer_evaluation (ADR-005); S1b (20260929100000) adds
-    // ocr_page (D-54) — still seeded together.
+    // ocr_page (D-54); S3b (20260930100000, ADR-022) adds lesson_planning and
+    // lesson_review (independent provider, D-55) — still seeded together.
     expect(rows).toEqual([
       { role: "answer_evaluation", primary_provider: "anthropic", primary_model: "claude-sonnet-5", policy: null },
       { role: "embeddings", primary_provider: "openai", primary_model: "text-embedding-3-large", policy: "primary" },
       { role: "indexing_structure", primary_provider: "anthropic", primary_model: "claude-opus-5-5", policy: "defer" },
       { role: "lesson_generation", primary_provider: "anthropic", primary_model: "claude-opus-5-5", policy: null },
+      { role: "lesson_planning", primary_provider: "anthropic", primary_model: "claude-opus-5-5", policy: null },
+      { role: "lesson_review", primary_provider: "openai", primary_model: "gpt-5.6-sol", policy: null },
       { role: "ocr_page", primary_provider: "anthropic", primary_model: "claude-sonnet-5", policy: "defer" },
       { role: "tutor_chat", primary_provider: "anthropic", primary_model: "claude-sonnet-5", policy: null },
     ]);

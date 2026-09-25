@@ -20,6 +20,12 @@ function tutorChatPrompt(): { system: string; user: string } {
 
 const answerSchema = z.object({ answerUk: z.string().min(1).max(1200) });
 
+interface ChatChunkRow {
+  page: number | null;
+  text: string;
+  materials: { title: string | null; name: string; kind: string } | { title: string | null; name: string; kind: string }[] | null;
+}
+
 export interface ChatMessageView {
   id: string;
   author: "child" | "ai" | "system" | "parent";
@@ -72,12 +78,12 @@ export async function askTopicChat(
 
   const { data: chunkRows } = await scope.client
     .from("chunks")
-    .select("page, text, materials(title, name)")
+    .select("page, text, materials(title, name, kind)")
     .eq("owner_family_id", familyId)
     .eq("topic_id", topicId)
     .order("ordinal")
     .limit(12)
-    .returns<{ page: number | null; text: string; materials: { title: string | null; name: string } | { title: string | null; name: string }[] | null }[]>();
+    .returns<ChatChunkRow[]>();
   const { data: history } = await scope
     .select("messages", "author, content")
     .eq("chat_id", chatId)
@@ -89,8 +95,18 @@ export async function askTopicChat(
   await scope.client.from("messages").insert({ family_id: familyId, chat_id: chatId, session_id: sessionId ?? null, author: "child", type: "text", content: cleanQuestion });
 
   const { system, user } = tutorChatPrompt();
+  const kindOf = (row: ChatChunkRow) => (Array.isArray(row.materials) ? row.materials[0]?.kind : row.materials?.kind);
+  const sorted = [...(chunkRows ?? [])].sort((a, b) => (kindOf(a) === "textbook" ? -1 : 0) - (kindOf(b) === "textbook" ? -1 : 0));
   const prompt = fillTemplate(user, {
-    fragments: (chunkRows ?? []).map((c) => `[стор. ${c.page ?? "—"}]\n${c.text}`).join("\n\n") || "(немає проіндексованих фрагментів цієї теми)",
+    // BUG-010: the textbook is labeled and listed first — the prompt below tells the model it outranks a book.
+    fragments:
+      sorted
+        .map((c) => {
+          const m = Array.isArray(c.materials) ? c.materials[0] : c.materials;
+          const label = m?.kind === "textbook" ? `ПІДРУЧНИК, стор. ${c.page ?? "—"}` : `КНИГА «${m?.title ?? m?.name ?? "?"}», стор. ${c.page ?? "—"}`;
+          return `[${label}]\n${c.text}`;
+        })
+        .join("\n\n") || "(немає проіндексованих фрагментів цієї теми)",
     history: (history ?? []).reverse().map((m) => `${m.author}: ${m.content}`).join("\n") || "(немає)",
     question: cleanQuestion,
   });
