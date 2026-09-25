@@ -32,7 +32,8 @@
   .progress-bar{height:8px; background:var(--surface-alt); border-radius:99px; overflow:hidden;}
   .progress-bar > div{height:100%; width:45%; background:var(--secondary); border-radius:99px; transition:width .3s;}
   .voice-state{display:flex; align-items:center; gap:8px; background:var(--surface-alt); border-radius:999px; padding:6px 12px 6px 6px; flex:none;}
-  .voice-orb{width:28px; height:28px; border-radius:50%; background:radial-gradient(circle at 35% 30%, var(--accent), var(--primary)); flex:none;}
+  .voice-orb{width:28px; height:28px; border-radius:50%; background:radial-gradient(circle at 35% 30%, var(--accent), var(--primary)); flex:none; overflow:hidden; display:flex; align-items:center; justify-content:center; font-size:14px; color:white;}
+  .voice-orb img{width:100%; height:100%; object-fit:cover;}
   .voice-orb.listening{animation:breathe 1s ease-in-out infinite;}
   .voice-orb.thinking{animation:spin 0.9s linear infinite;}
   .voice-orb.speaking{animation:pulse .4s ease-in-out infinite alternate;}
@@ -40,7 +41,15 @@
   @keyframes breathe{0%,100%{transform:scale(1);}50%{transform:scale(1.18);}}
   @keyframes spin{from{transform:rotate(0);}to{transform:rotate(360deg);}}
   @keyframes pulse{from{box-shadow:0 0 0 rgba(0,0,0,0);}to{box-shadow:0 0 14px color-mix(in srgb, var(--accent) 60%, transparent);}}
+  @keyframes sway{from{transform:translateY(0);}to{transform:translateY(-3px);}}
   .voice-state span{font-size:12px; font-weight:700; color:var(--text-muted);}
+  .ai-badge-mini{font-size:10px; font-weight:800; color:var(--accent); background:color-mix(in srgb, var(--accent) 14%, transparent); padding:2px 7px; border-radius:99px; flex:none;}
+  .avatar-switch{display:flex; gap:6px; align-items:center;}
+  .avatar-switch button{border:1px solid var(--border); background:var(--surface); color:var(--text-muted); font-family:'Inter',sans-serif; font-weight:700; font-size:11px; padding:6px 10px; border-radius:999px; cursor:pointer;}
+  .avatar-switch button.active{background:var(--accent); color:white; border-color:var(--accent);}
+  @media (prefers-reduced-motion: reduce){
+    .voice-orb, .orb-lg{ animation:none !important; }
+  }
 
   main{padding:20px; max-width:760px; margin:0 auto 140px;}
   .stepper-demo{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;}
@@ -90,10 +99,13 @@
   }
 
   .voice-dialog{background:var(--surface); border-radius:24px; padding:24px; box-shadow:0 6px 20px rgba(0,0,0,.06);}
+  .voice-dialog .orb-wrap{display:flex; flex-direction:column; align-items:center; gap:8px; margin-bottom:6px;}
   .voice-dialog .orb-lg{
-    width:88px; height:88px; border-radius:50%; margin:0 auto 10px; background:radial-gradient(circle at 35% 30%, var(--accent), var(--primary));
+    width:88px; height:88px; border-radius:50%; background:radial-gradient(circle at 35% 30%, var(--accent), var(--primary));
     animation:breathe 1.4s ease-in-out infinite; box-shadow:0 0 30px color-mix(in srgb, var(--accent) 40%, transparent);
+    overflow:hidden; display:flex; align-items:center; justify-content:center; font-size:36px; color:white;
   }
+  .voice-dialog .orb-lg img{width:100%; height:100%; object-fit:cover;}
   .voice-status-text{text-align:center; font-weight:800; margin-bottom:18px;}
   .transcript{background:var(--surface-alt); border-radius:16px; padding:16px; max-height:260px; overflow:auto; display:flex; flex-direction:column; gap:10px;}
   .transcript-header{display:flex; align-items:center; gap:8px; font-size:12px; font-weight:800; color:var(--accent); text-transform:uppercase; letter-spacing:.02em; margin-bottom:4px;}
@@ -154,10 +166,19 @@
       <div class="progress-bar"><div style="width:45%"></div></div>
     </div>
     <div class="voice-state">
-      <div class="voice-orb listening" id="orbSmall"></div>
+      <div class="voice-orb listening" id="orbSmall">✦</div>
       <span id="voiceLabel">Слухаю…</span>
+      <span class="ai-badge-mini">✦ Я — ШІ</span>
     </div>
   </header>
+
+  <div style="display:flex; justify-content:flex-end; padding:8px 20px 0;">
+    <div class="avatar-switch">
+      <span style="font-size:11px; color:var(--text-muted); font-family:'Inter',sans-serif; font-weight:700;">Демо аватара:</span>
+      <button class="active" id="avatarBtnGlow" onclick="setAvatarMode('glow')">✦ Вогник</button>
+      <button id="avatarBtnPersona" onclick="setAvatarMode('persona')">🦉 Персонаж</button>
+    </div>
+  </div>
 
   <main>
     <div class="stepper-demo">
@@ -182,8 +203,8 @@
         <p>Щоб скоротити дріб, треба поділити чисельник і знаменник на одне й те саме число. Наприклад, 6/8 ділимо на 2 — виходить 3/4.</p>
         <div class="source-ref">📘 Джерело: підручник «Математика, 6 клас», с. 54</div>
         <div class="audio-controls">
-          <button onclick="alert('Пауза озвучки')">⏸ Пауза</button>
-          <button onclick="alert('Повтор озвучки')">↺ Повторити</button>
+          <button onclick="showToast('Пауза озвучки')">⏸ Пауза</button>
+          <button onclick="showToast('Повтор озвучки')">↺ Повторити</button>
           <button class="subs-on" onclick="this.classList.toggle('subs-on')">CC Субтитри</button>
         </div>
       </div>
@@ -211,7 +232,10 @@
     <!-- VOICE DIALOG -->
     <section id="s-voice" style="display:none;">
       <div class="voice-dialog">
-        <div class="orb-lg" id="orbLarge"></div>
+        <div class="orb-wrap">
+          <div class="orb-lg" id="orbLarge">✦</div>
+          <span class="ai-badge-mini">✦ Я — ШІ, не людина</span>
+        </div>
         <div class="voice-status-text" id="voiceStatusText">Говорить Ліра</div>
         <div class="transcript">
           <div class="transcript-header">🎧 Транскрипт голосової сесії · 00:42</div>
@@ -220,7 +244,7 @@
           <div class="t-msg ai">Саме так! Це і називається скороченням дробу.<span class="wave">〜〜〜 Ліра · 09:15</span></div>
         </div>
         <div class="audio-controls" style="justify-content:center;">
-          <button onclick="alert('Мікрофон вимкнено, перехід у текст')">✋ Перебити</button>
+          <button onclick="showToast('Мікрофон вимкнено, перехід у текст')">✋ Перебити</button>
         </div>
       </div>
     </section>
@@ -267,8 +291,20 @@
   function pickChoice(el, correct){
     document.querySelectorAll('.choice').forEach(c=>c.classList.remove('correct'));
     if(correct){ el.classList.add('correct'); document.getElementById('feedback').style.display='flex'; }
-    else { document.getElementById('feedback').style.display='none'; alert('Майже! Спробуймо ще раз по-іншому.'); }
+    else { document.getElementById('feedback').style.display='none'; showToast('Майже! Спробуймо ще раз по-іншому.'); }
   }
+
+  // --- Avatar mode: "вогник" (default glow) vs "персонаж" (demo) ---
+  let avatarMode='glow';
+  const avatarContent={glow:'✦', persona:'🦉'};
+  function setAvatarMode(mode){
+    avatarMode=mode;
+    document.getElementById('avatarBtnGlow').classList.toggle('active', mode==='glow');
+    document.getElementById('avatarBtnPersona').classList.toggle('active', mode==='persona');
+    document.getElementById('orbSmall').textContent = avatarContent[mode];
+    document.getElementById('orbLarge').textContent = avatarContent[mode];
+  }
+
   let voiceStates=['listening','thinking','speaking'];
   let vi=0;
   function cycleVoice(){
@@ -278,7 +314,9 @@
     const statusText=document.getElementById('voiceStatusText');
     const labels={listening:'Слухаю…', thinking:'Думаю…', speaking:'Говорить Ліра'};
     orbSmall.className='voice-orb '+voiceStates[vi];
-    orbLarge.className='orb-lg';
+    orbLarge.className='orb-lg '+voiceStates[vi];
+    orbSmall.textContent = avatarContent[avatarMode];
+    orbLarge.textContent = avatarContent[avatarMode];
     label.textContent=labels[voiceStates[vi]];
     statusText.textContent=labels[voiceStates[vi]];
     vi=(vi+1)%voiceStates.length;
@@ -286,19 +324,22 @@
   setInterval(()=>{ if(document.getElementById('s-voice').style.display!=='none'){ cycleVoice(); } }, 2200);
 
   function triggerAlarm(){
-    showToast();
+    showToast('Збережено · продовжимо з цього кроку');
   }
   function showAirAlarm(){ document.getElementById('airBanner').classList.add('active'); }
   function pauseFromAlarm(){
     document.getElementById('airBanner').classList.remove('active');
     document.getElementById('orbSmall').className='voice-orb muted';
+    document.getElementById('orbSmall').textContent = avatarContent[avatarMode];
     document.getElementById('voiceLabel').textContent='Мікрофон вимкнено';
-    showToast();
+    showToast('Збережено · продовжимо з цього кроку');
   }
-  function showToast(){
+  function showToast(msg){
     const t=document.getElementById('toastSaved');
+    t.textContent = msg || 'Збережено · продовжимо з цього кроку';
     t.classList.add('show');
-    setTimeout(()=>t.classList.remove('show'), 2200);
+    clearTimeout(window.__toastTimer);
+    window.__toastTimer=setTimeout(()=>t.classList.remove('show'), 2400);
   }
 </script>
 </body>

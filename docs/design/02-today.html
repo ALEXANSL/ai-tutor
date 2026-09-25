@@ -106,6 +106,8 @@
     font-size:12px; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.08);
   }
   .demo-toggle{position:fixed; bottom:16px; left:16px; z-index:40; font-family:'Inter',sans-serif; font-size:11px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:8px 10px; color:var(--text-muted); cursor:pointer;}
+  .toast{position:fixed; left:50%; bottom:96px; transform:translateX(-50%) translateY(140%); background:var(--text); color:var(--bg); padding:12px 20px; border-radius:14px; font-size:14px; font-weight:700; z-index:300; transition:transform .2s; max-width:88vw; text-align:center; box-shadow:0 8px 24px rgba(0,0,0,.2);}
+  .toast.show{transform:translateX(-50%) translateY(0);}
 </style>
 </head>
 <body data-theme="light">
@@ -132,37 +134,38 @@
     <a href="04-library-chats-friend.html#chats">💬 Чати</a>
     <a href="04-library-chats-friend.html#friend">🧑‍🤝‍🧑 ШІ-друг</a>
     <a href="05-progress-rewards.html">🏆 Прогрес</a>
+    <a href="01-entry-onboarding.html#my-tutor">🧑‍🏫 Мій репетитор</a>
   </div>
 
   <main>
     <div>
       <div class="continue-card" id="continueCard">
         <div class="txt"><b>Продовжити з того місця</b><span>Математика · Дроби — крок 3 з 6 (перервано через тривогу)</span></div>
-        <button onclick="alert('Відкриється 03-lesson.html з кроку 3')">Продовжити ▶</button>
+        <button onclick="showToast('Відкриється 03-lesson.html з кроку 3')">Продовжити ▶</button>
       </div>
 
       <section class="plan">
         <h2><span class="group-badge badge-urgent">Терміново</span> Задане вчителькою</h2>
-        <div class="block-card" onclick="alert('Старт блоку')">
+        <div class="block-card" onclick="showToast('Старт блоку')">
           <div class="block-icon">✏️</div>
           <div class="block-info"><b>Математика — Дроби, впр. 24–26</b><span>з «Єдиної школи», термін — завтра</span></div>
           <div class="block-meta">~8 хв</div>
         </div>
 
         <h2><span class="group-badge badge-important">Важливо</span> Прогалини</h2>
-        <div class="block-card" onclick="alert('Старт блоку')">
+        <div class="block-card" onclick="showToast('Старт блоку')">
           <div class="block-icon">➗</div>
           <div class="block-info"><b>Математика — Спільний знаменник</b><span>передумова для поточної теми</span></div>
           <div class="block-meta">~7 хв</div>
         </div>
-        <div class="block-card" onclick="alert('Старт блоку')">
+        <div class="block-card" onclick="showToast('Старт блоку')">
           <div class="block-icon">📖</div>
           <div class="block-info"><b>Українська мова — Ненаголошені голосні</b><span>2 типові помилки минулого разу</span></div>
           <div class="block-meta">~6 хв</div>
         </div>
 
         <h2><span class="group-badge badge-review">Повторення</span> За графіком</h2>
-        <div class="block-card" onclick="alert('Старт блоку')">
+        <div class="block-card" onclick="showToast('Старт блоку')">
           <div class="block-icon">🔁</div>
           <div class="block-info"><b>Історія — Київська Русь</b><span>повторення через 7 днів</span></div>
           <div class="block-meta">~5 хв</div>
@@ -181,9 +184,9 @@
         <div class="subject-tile active-subject"><span class="ic">🇬🇧</span><b>Англійська</b><div class="ring" style="--p:33%"></div></div>
         <div class="subject-tile active-subject"><span class="ic">🇩🇪</span><b>Німецька</b><div class="ring" style="--p:10%"></div></div>
         <div class="subject-tile active-subject"><span class="ic">🌍</span><b>Географія</b><div class="ring" style="--p:15%"></div></div>
-        <div class="subject-tile stub" onclick="alert('Скоро тут будуть творчі завдання з відео-інструкціями')"><span class="ic">🎨</span><b>Мистецтво</b><span style="font-size:11px;color:var(--text-muted);">скоро</span></div>
-        <div class="subject-tile stub" onclick="alert('Скоро тут будуть творчі завдання з відео-інструкціями')"><span class="ic">🛠️</span><b>Технології</b><span style="font-size:11px;color:var(--text-muted);">скоро</span></div>
-        <div class="subject-tile stub" onclick="alert('Місце під майбутні модулі: підготовка до іспитів, додаткове навчання (напр. програмування) — з\'являються тут без перебудови екрана')"><span class="ic">🧩</span><b>Ще модулі</b><span style="font-size:11px;color:var(--text-muted);">скоро</span></div>
+        <div class="subject-tile stub" onclick="showToast('Скоро тут будуть творчі завдання з відео-інструкціями')"><span class="ic">🎨</span><b>Мистецтво</b><span style="font-size:11px;color:var(--text-muted);">скоро</span></div>
+        <div class="subject-tile stub" onclick="showToast('Скоро тут будуть творчі завдання з відео-інструкціями')"><span class="ic">🛠️</span><b>Технології</b><span style="font-size:11px;color:var(--text-muted);">скоро</span></div>
+        <div class="subject-tile stub" onclick="showToast('Місце під майбутні модулі: підготовка до іспитів, додаткове навчання — зʼявляються тут без перебудови екрана')"><span class="ic">🧩</span><b>Ще модулі</b><span style="font-size:11px;color:var(--text-muted);">скоро</span></div>
       </div>
       <p style="font-size:11px;color:var(--text-muted);margin-top:12px;">Нові предмети й модулі (напр. підготовка до іспитів) з'являються тут самі — без перебудови екрана.</p>
     </aside>
@@ -194,13 +197,22 @@
       <button class="active">30 хв</button>
       <button>45 хв</button>
     </div>
-    <button class="btn-start" onclick="alert('Відкриється вибір з 2–3 блоків → 03-lesson.html')">▶ Почати урок</button>
+    <button class="btn-start" onclick="showToast('Відкриється вибір з 2–3 блоків → 03-lesson.html')">▶ Почати урок</button>
   </div>
 
-  <button class="parent-mode-btn" onclick="alert('PIN-модалка — див. 01-entry-onboarding.html')">🔒 Режим тата</button>
+  <button class="parent-mode-btn" onclick="showToast('PIN-модалка — див. 01-entry-onboarding.html')">🔒 Режим тата</button>
   <button class="demo-toggle" onclick="toggleOffline()">demo: перемкнути «немає зв'язку»</button>
+  <div class="toast" id="toast"></div>
 
 <script>
+  let toastTimer=null;
+  function showToast(msg){
+    const t=document.getElementById('toast');
+    t.textContent=msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer=setTimeout(()=>t.classList.remove('show'), 2400);
+  }
   function setTheme(t){
     document.body.setAttribute('data-theme', t);
     document.getElementById('btn-light').classList.toggle('active', t==='light');

@@ -76,6 +76,8 @@
   .input-row input{flex:1; border:2px solid var(--border); border-radius:14px; padding:14px; font-family:'Nunito',sans-serif; font-size:15px; background:var(--bg); color:var(--text);}
   .input-row button{border:none; background:var(--primary); color:white; border-radius:14px; padding:0 20px; font-weight:800; font-family:inherit; cursor:pointer;}
   .input-row .mic{background:var(--accent);}
+  .toast{position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(140%); background:var(--text); color:var(--bg); padding:12px 20px; border-radius:14px; font-size:14px; font-weight:700; z-index:300; transition:transform .2s; max-width:88vw; text-align:center; box-shadow:0 8px 24px rgba(0,0,0,.2);}
+  .toast.show{transform:translateX(-50%) translateY(0);}
 </style>
 </head>
 <body data-theme="light">
@@ -105,7 +107,7 @@
         <div class="lesson-ic">🍕</div>
         <div><b>Скорочення дробів</b><span>Пройдено 22 вер · 4 кроки, з озвучкою</span></div>
         <span class="status-pill status-done">Пройдено</span>
-        <button class="replay-btn" onclick="alert('Проходження без нової генерації — 0 витрат')">Пройти знову</button>
+        <button class="replay-btn" onclick="showToast('Проходження без нової генерації — 0 витрат')">Пройти знову</button>
       </div>
       <div class="lesson-item">
         <div class="lesson-ic">➗</div>
@@ -191,6 +193,16 @@
   }
   if(location.hash === '#chats') showTab('chats', document.querySelectorAll('nav.tabs button')[1]);
   if(location.hash === '#friend') showTab('friend', document.querySelectorAll('nav.tabs button')[2]);
+
+  let toastTimer=null;
+  function showToast(msg){
+    const t=document.getElementById('toast');
+    t.textContent=msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer=setTimeout(()=>t.classList.remove('show'), 2400);
+  }
 </script>
+<div class="toast" id="toast"></div>
 </body>
 </html>

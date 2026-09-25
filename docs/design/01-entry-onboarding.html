@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>ШІ-Репетитор — Вхід і онбординг</title>
+<title>ШІ-Репетитор — Вхід, онбординг, Мій репетитор</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -42,19 +42,57 @@
     display:flex; align-items:center; gap:8px; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.08);
   }
   .card{
-    background:var(--surface); border-radius:28px; padding:40px 36px; width:100%; max-width:480px;
+    background:var(--surface); border-radius:28px; padding:40px 36px; width:100%; max-width:520px;
     box-shadow:0 10px 40px rgba(0,0,0,.08); text-align:center; position:relative;
   }
-  .glow{
-    width:96px; height:96px; margin:0 auto 20px; border-radius:50%;
-    background:radial-gradient(circle at 35% 30%, var(--accent), var(--primary));
-    display:flex; align-items:center; justify-content:center; font-size:34px;
-    box-shadow:0 0 40px color-mix(in srgb, var(--accent) 45%, transparent);
-    animation:breathe 3s ease-in-out infinite;
+  .card.wide{max-width:600px;}
+
+  /* ---- Avatar component (glow / character / uploaded photo), 4 states ---- */
+  .avatar-wrap{display:flex; flex-direction:column; align-items:center; gap:8px; margin:0 auto 16px;}
+  .avatar-ring{
+    position:relative; width:104px; height:104px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
   }
-  @keyframes breathe{0%,100%{transform:scale(1);}50%{transform:scale(1.06);}}
+  .avatar-ring .ring-deco{
+    position:absolute; inset:-8px; border-radius:50%; border:3px solid transparent;
+    border-top-color:var(--accent); opacity:0;
+  }
+  .avatar-core{
+    width:96px; height:96px; border-radius:50%; overflow:hidden;
+    background:radial-gradient(circle at 35% 30%, var(--accent), var(--primary));
+    display:flex; align-items:center; justify-content:center; font-size:38px; color:white;
+    box-shadow:0 0 40px color-mix(in srgb, var(--accent) 45%, transparent);
+    transition:transform .25s ease-out, opacity .2s;
+  }
+  .avatar-core img{width:100%; height:100%; object-fit:cover;}
+  /* states */
+  .avatar-ring[data-state="listening"] .avatar-core{ animation:breathe 1s ease-in-out infinite; }
+  .avatar-ring[data-state="thinking"] .ring-deco{ opacity:1; animation:spin .9s linear infinite; }
+  .avatar-ring[data-state="speaking"] .avatar-core{ animation:sway .5s ease-in-out infinite alternate; box-shadow:0 0 50px color-mix(in srgb, var(--accent) 65%, transparent); }
+  .avatar-ring[data-state="paused"] .avatar-core{ opacity:.5; }
+  @keyframes breathe{0%,100%{transform:scale(1);}50%{transform:scale(1.08);}}
+  @keyframes spin{from{transform:rotate(0);}to{transform:rotate(360deg);}}
+  @keyframes sway{from{transform:translateY(0);}to{transform:translateY(-3px);}}
+  @media (prefers-reduced-motion: reduce){
+    .avatar-ring .avatar-core, .avatar-ring .ring-deco{ animation:none !important; }
+    .avatar-ring[data-state="paused"] .avatar-core{ opacity:.5; }
+  }
+  .ai-badge{
+    display:inline-flex; align-items:center; gap:6px; background:var(--surface-alt); color:var(--text-muted);
+    font-family:'Inter',sans-serif; font-weight:700; font-size:12px; padding:6px 12px; border-radius:999px;
+  }
+  .ai-badge b{color:var(--accent);}
+  .state-label{font-family:'Inter',sans-serif; font-size:12px; font-weight:700; color:var(--text-muted); min-height:16px;}
+  .state-demo-row{display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin:8px 0 20px;}
+  .state-demo-row button{
+    border:1px solid var(--border); background:var(--surface-alt); color:var(--text); font-family:'Inter',sans-serif;
+    font-weight:700; font-size:12px; padding:7px 12px; border-radius:999px; cursor:pointer;
+  }
+  .state-demo-row button.active{background:var(--accent); color:white; border-color:var(--accent);}
+
+  @keyframes breathe-glow{0%,100%{transform:scale(1);}50%{transform:scale(1.06);}}
   h1{font-size:26px; font-weight:800; margin:0 0 8px;}
-  p.sub{color:var(--text-muted); font-size:16px; margin:0 0 28px; line-height:1.5;}
+  p.sub{color:var(--text-muted); font-size:16px; margin:0 0 24px; line-height:1.5;}
   .btn{
     display:inline-flex; align-items:center; justify-content:center; gap:10px;
     width:100%; padding:18px 20px; border-radius:18px; border:none; cursor:pointer;
@@ -77,7 +115,9 @@
   input[type=text]:focus{border-color:var(--focus); box-shadow:0 0 0 3px color-mix(in srgb, var(--focus) 25%, transparent);}
   .hint{font-size:13px; color:var(--text-muted); text-align:left; margin-bottom:20px;}
   .error{font-size:13px; color:var(--danger); text-align:left; margin:-2px 0 16px; display:none;}
-  .name-options{display:flex; flex-direction:column; gap:12px; margin-bottom:24px;}
+  .ok-msg{font-size:13px; color:var(--secondary); text-align:left; margin:-2px 0 16px; display:none; font-weight:700;}
+
+  .name-options{display:flex; flex-direction:column; gap:12px; margin-bottom:16px; text-align:left;}
   .name-option{
     display:flex; align-items:center; gap:14px; padding:16px 18px; border-radius:18px;
     border:2px solid var(--border); background:var(--surface-alt); cursor:pointer; text-align:left;
@@ -86,9 +126,46 @@
   .name-option .mini-glow{
     width:44px; height:44px; border-radius:50%; flex:none;
     background:radial-gradient(circle at 35% 30%, var(--accent), var(--primary));
+    display:flex; align-items:center; justify-content:center; overflow:hidden; font-size:20px; color:white;
   }
+  .name-option .mini-glow img{width:100%;height:100%;object-fit:cover;}
   .name-option .name-text b{display:block; font-size:17px;}
   .name-option .name-text span{font-size:13px; color:var(--text-muted);}
+  .name-option.custom input{margin:0; padding:10px 12px; font-size:15px; border-radius:12px;}
+
+  .voice-groups{display:flex; flex-direction:column; gap:18px; margin-bottom:16px; text-align:left;}
+  .voice-group b.grp-title{display:block; font-size:13px; text-transform:uppercase; letter-spacing:.03em; color:var(--text-muted); margin-bottom:8px;}
+  .voice-option{
+    display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:16px;
+    border:2px solid var(--border); background:var(--surface-alt); margin-bottom:10px; cursor:pointer;
+  }
+  .voice-option.selected{border-color:var(--primary); background:color-mix(in srgb, var(--primary) 12%, var(--surface-alt));}
+  .voice-option .vt{flex:1;}
+  .voice-option .vt b{display:block; font-size:15px;}
+  .voice-option .vt span{font-size:12px; color:var(--text-muted);}
+  .listen-btn{
+    border:1px solid var(--border); background:var(--surface); color:var(--text); font-family:'Inter',sans-serif;
+    font-weight:700; font-size:12px; padding:8px 12px; border-radius:999px; cursor:pointer; flex:none; min-width:96px;
+  }
+  .listen-btn.playing{background:var(--accent); color:white; border-color:var(--accent);}
+
+  .avatar-choices{display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:16px;}
+  .avatar-choice{
+    display:flex; flex-direction:column; align-items:center; gap:6px; padding:10px 6px; border-radius:16px;
+    border:2px solid var(--border); background:var(--surface-alt); cursor:pointer;
+  }
+  .avatar-choice.selected{border-color:var(--primary); background:color-mix(in srgb, var(--primary) 12%, var(--surface-alt));}
+  .avatar-choice .ic{
+    width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-size:22px; background:radial-gradient(circle at 35% 30%, var(--accent), var(--primary)); color:white; overflow:hidden;
+  }
+  .avatar-choice .ic img{width:100%;height:100%;object-fit:cover;}
+  .avatar-choice span{font-size:11px; font-weight:700; color:var(--text-muted); text-align:center;}
+  .upload-tile{grid-column:span 4; display:flex; align-items:center; gap:10px; padding:12px 14px; border-radius:16px; border:2px dashed var(--border); background:var(--surface-alt); cursor:pointer; text-align:left;}
+  .upload-tile b{display:block; font-size:14px;}
+  .upload-tile span{font-size:12px; color:var(--text-muted);}
+  .upload-hint{font-size:12px; color:var(--text-muted); background:var(--bg); border-radius:12px; padding:10px 12px; text-align:left; margin-bottom:16px;}
+
   .safety-box{
     background:var(--surface-alt); border-radius:18px; padding:18px 20px; text-align:left; margin-bottom:24px;
     font-size:15px; line-height:1.5;
@@ -97,6 +174,13 @@
   .screen{display:none;}
   .screen.active{display:block; animation:fadein .2s ease-out;}
   @keyframes fadein{from{opacity:0; transform:translateY(6px);}to{opacity:1; transform:translateY(0);}}
+
+  /* Мій репетитор hub */
+  .hub-row{display:flex; align-items:center; gap:14px; padding:14px 16px; border:1px solid var(--border); border-radius:16px; background:var(--surface-alt); margin-bottom:12px; text-align:left;}
+  .hub-row .txt{flex:1;}
+  .hub-row .txt b{display:block; font-size:15px;}
+  .hub-row .txt span{font-size:12px; color:var(--text-muted);}
+  .hub-row button{border:none; background:var(--primary); color:white; font-family:'Nunito',sans-serif; font-weight:700; font-size:13px; padding:10px 14px; border-radius:12px; cursor:pointer; min-height:40px;}
 
   /* PIN modal */
   .overlay{
@@ -124,6 +208,14 @@
     position:fixed; inset:0; background:var(--bg); z-index:80; display:none; flex-direction:column; align-items:center; justify-content:center; gap:20px; text-align:center; padding:24px;
   }
   .mini-cabinet.active{display:flex;}
+
+  /* Toast (replaces alert()) */
+  .toast{
+    position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(140%); background:var(--text); color:var(--bg);
+    padding:12px 20px; border-radius:14px; font-size:14px; font-weight:700; z-index:300; transition:transform .2s;
+    max-width:88vw; text-align:center; box-shadow:0 8px 24px rgba(0,0,0,.2);
+  }
+  .toast.show{transform:translateX(-50%) translateY(0);}
 </style>
 </head>
 <body data-theme="light">
@@ -138,7 +230,9 @@
   <!-- SCREEN 1: Google sign-in -->
   <div class="screen active" id="screen-login">
     <div class="card">
-      <div class="glow">✦</div>
+      <div class="avatar-wrap">
+        <div class="avatar-ring" data-state="listening"><div class="ring-deco"></div><div class="avatar-core">✦</div></div>
+      </div>
       <h1>ШІ-Репетитор</h1>
       <p class="sub">Увійди своїм Google-акаунтом, щоб почати навчання.</p>
       <button class="btn google-btn" onclick="go('screen-nickname')">
@@ -151,7 +245,7 @@
   <!-- SCREEN 2: nickname -->
   <div class="screen" id="screen-nickname">
     <div class="card">
-      <div class="step-dots"><div class="dot active"></div><div class="dot"></div><div class="dot"></div></div>
+      <div class="step-dots"><div class="dot active"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
       <h1>Як тебе називати?</h1>
       <p class="sub">Придумай прізвисько — не справжнє ім'я. Так до тебе звертатиметься репетитор.</p>
       <input type="text" id="nickInput" placeholder="Наприклад, Зірочка" maxlength="20" oninput="validateNick()">
@@ -164,23 +258,113 @@
   <!-- SCREEN 3: tutor name -->
   <div class="screen" id="screen-tutorname">
     <div class="card">
-      <div class="step-dots"><div class="dot active"></div><div class="dot active"></div><div class="dot"></div></div>
+      <div class="step-dots"><div class="dot active"></div><div class="dot active"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
       <h1>Обери ім'я репетитора</h1>
       <p class="sub">Так вона буде звертатись до тебе і представлятись.</p>
-      <div class="name-options">
-        <label class="name-option selected" onclick="selectName(this)">
-          <div class="mini-glow"></div>
+      <div class="name-options" id="nameOptions">
+        <label class="name-option selected" data-name="Ліра" onclick="selectName(this)">
+          <div class="mini-glow">✦</div>
           <div class="name-text"><b>Ліра</b><span>тепла й терпляча</span></div>
         </label>
-        <label class="name-option" onclick="selectName(this)">
-          <div class="mini-glow"></div>
+        <label class="name-option" data-name="Веснянка" onclick="selectName(this)">
+          <div class="mini-glow">✦</div>
           <div class="name-text"><b>Веснянка</b><span>енергійна й весела</span></div>
         </label>
-        <label class="name-option" onclick="selectName(this)">
-          <div class="mini-glow"></div>
+        <label class="name-option" data-name="Зоряна" onclick="selectName(this)">
+          <div class="mini-glow">✦</div>
           <div class="name-text"><b>Зоряна</b><span>спокійна й уважна</span></div>
         </label>
+        <label class="name-option custom" id="customNameOpt" onclick="selectCustomName()">
+          <div class="mini-glow">✏️</div>
+          <div class="name-text" style="flex:1;">
+            <b>Своє ім'я</b>
+            <input type="text" id="customNameInput" placeholder="Напиши ім'я…" maxlength="20" oninput="validateCustomName()" onclick="event.stopPropagation(); selectCustomName();">
+          </div>
+        </label>
       </div>
+      <div class="error" id="customNameError">Спробуй інше ім'я — від 2 до 20 символів, без «@» і довгих номерів.</div>
+      <button class="btn btn-primary" onclick="go('screen-voice')">Далі</button>
+    </div>
+  </div>
+
+  <!-- SCREEN 3b: voice -->
+  <div class="screen" id="screen-voice">
+    <div class="card wide">
+      <div class="step-dots"><div class="dot active"></div><div class="dot active"></div><div class="dot active"></div><div class="dot"></div><div class="dot"></div></div>
+      <h1>Обери голос</h1>
+      <p class="sub">Послухай кілька варіантів і обери той, що подобається.</p>
+      <div class="voice-groups">
+        <div class="voice-group">
+          <b class="grp-title">Жіночий голос</b>
+          <label class="voice-option selected" data-voice="Тепла" onclick="selectVoice(this)">
+            <div class="vt"><b>Тепла</b><span>м'який, спокійний темп</span></div>
+            <button type="button" class="listen-btn" onclick="event.stopPropagation(); demoListen(this)">▶ Послухати</button>
+          </label>
+          <label class="voice-option" data-voice="Дзвінка" onclick="selectVoice(this)">
+            <div class="vt"><b>Дзвінка</b><span>енергійна, жвава</span></div>
+            <button type="button" class="listen-btn" onclick="event.stopPropagation(); demoListen(this)">▶ Послухати</button>
+          </label>
+          <label class="voice-option" data-voice="Спокійна" onclick="selectVoice(this)">
+            <div class="vt"><b>Спокійна</b><span>рівна, впевнена</span></div>
+            <button type="button" class="listen-btn" onclick="event.stopPropagation(); demoListen(this)">▶ Послухати</button>
+          </label>
+        </div>
+        <div class="voice-group">
+          <b class="grp-title">Чоловічий голос</b>
+          <label class="voice-option" data-voice="Дружній" onclick="selectVoice(this)">
+            <div class="vt"><b>Дружній</b><span>теплий, неспішний</span></div>
+            <button type="button" class="listen-btn" onclick="event.stopPropagation(); demoListen(this)">▶ Послухати</button>
+          </label>
+          <label class="voice-option" data-voice="Бадьорий" onclick="selectVoice(this)">
+            <div class="vt"><b>Бадьорий</b><span>жвавий, чіткий</span></div>
+            <button type="button" class="listen-btn" onclick="event.stopPropagation(); demoListen(this)">▶ Послухати</button>
+          </label>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="go('screen-avatar')">Далі</button>
+    </div>
+  </div>
+
+  <!-- SCREEN 3c: avatar -->
+  <div class="screen" id="screen-avatar">
+    <div class="card wide">
+      <div class="step-dots"><div class="dot active"></div><div class="dot active"></div><div class="dot active"></div><div class="dot active"></div><div class="dot"></div></div>
+      <h1>Обери, як репетитор виглядатиме</h1>
+      <p class="sub">Можна лишити «вогник», обрати персонажа або завантажити свою картинку.</p>
+
+      <div class="avatar-wrap">
+        <div class="avatar-ring" id="avatarPreviewRing" data-state="listening"><div class="ring-deco"></div><div class="avatar-core" id="avatarPreviewCore">✦</div></div>
+        <span class="ai-badge">✦ <b>Я — ШІ</b>, не людина</span>
+        <div class="state-label" id="avatarStateLabel">Слухаю…</div>
+      </div>
+      <div class="state-demo-row" id="avatarStateDemo">
+        <button class="active" data-st="listening" onclick="setAvatarPreviewState('listening', this)">Слухаю</button>
+        <button data-st="thinking" onclick="setAvatarPreviewState('thinking', this)">Думаю</button>
+        <button data-st="speaking" onclick="setAvatarPreviewState('speaking', this)">Говорю</button>
+        <button data-st="paused" onclick="setAvatarPreviewState('paused', this)">Пауза</button>
+      </div>
+
+      <div class="avatar-choices" id="avatarChoices">
+        <label class="avatar-choice selected" data-avatar="glow" data-emoji="✦" onclick="selectAvatar(this)">
+          <div class="ic">✦</div><span>Вогник</span>
+        </label>
+        <label class="avatar-choice" data-avatar="owl" data-emoji="🦉" onclick="selectAvatar(this)">
+          <div class="ic">🦉</div><span>Сова</span>
+        </label>
+        <label class="avatar-choice" data-avatar="fox" data-emoji="🦊" onclick="selectAvatar(this)">
+          <div class="ic">🦊</div><span>Лисеня</span>
+        </label>
+        <label class="avatar-choice" data-avatar="dragon" data-emoji="🐉" onclick="selectAvatar(this)">
+          <div class="ic">🐉</div><span>Дракончик</span>
+        </label>
+        <label class="upload-tile" onclick="document.getElementById('avatarFileInput').click();">
+          <div class="ic" style="width:38px;height:38px;font-size:18px;">🖼️</div>
+          <div><b>Завантажити свою картинку</b><span>Малюнок або персонаж — краще не фото реальної людини</span></div>
+        </label>
+        <input type="file" id="avatarFileInput" accept="image/*" style="display:none;" onchange="onAvatarUpload(event)">
+      </div>
+      <div class="upload-hint">💡 Обери малюнок чи вигаданого персонажа. Уникай фото реальних людей — це знімок ШІ-помічниці, а не людини.</div>
+
       <button class="btn btn-primary" onclick="go('screen-safety')">Далі</button>
     </div>
   </div>
@@ -188,8 +372,11 @@
   <!-- SCREEN 4: "I'm AI" -->
   <div class="screen" id="screen-safety">
     <div class="card">
-      <div class="step-dots"><div class="dot active"></div><div class="dot active"></div><div class="dot active"></div></div>
-      <div class="glow">✦</div>
+      <div class="step-dots"><div class="dot active"></div><div class="dot active"></div><div class="dot active"></div><div class="dot active"></div><div class="dot active"></div></div>
+      <div class="avatar-wrap">
+        <div class="avatar-ring" id="safetyAvatarRing" data-state="speaking"><div class="ring-deco"></div><div class="avatar-core" id="safetyAvatarCore">✦</div></div>
+        <span class="ai-badge">✦ <b>Я — ШІ</b>, не людина</span>
+      </div>
       <h1 id="tutorGreeting">Привіт, Зірочка! Я — Ліра</h1>
       <div class="safety-box">
         Я — <b>ШІ-помічниця, не людина</b>. Я допоможу тобі вчитися.<br><br>
@@ -202,10 +389,48 @@
   <!-- SCREEN 5: done -->
   <div class="screen" id="screen-done">
     <div class="card">
-      <div class="glow">🎉</div>
+      <div class="avatar-wrap">
+        <div class="avatar-ring" data-state="listening"><div class="ring-deco"></div><div class="avatar-core">🎉</div></div>
+      </div>
       <h1>Готово!</h1>
       <p class="sub">Далі — екран «Сьогодні» з планом занять (див. макет <code>02-today.html</code>).</p>
+      <button class="btn btn-ghost" onclick="go('screen-my-tutor')">🧑‍🏫 Переглянути «Мій репетитор»</button>
       <button class="btn btn-ghost" onclick="restart()">↺ Почати заново (демо)</button>
+    </div>
+  </div>
+
+  <!-- SCREEN 6: "Мій репетитор" hub — доступний з дитячого інтерфейсу (02-today.html → «Мій репетитор») -->
+  <div class="screen" id="screen-my-tutor">
+    <div class="card wide">
+      <h1>Мій репетитор</h1>
+      <p class="sub">Тут можна змінити, як виглядає й звучить твій репетитор.</p>
+
+      <div class="avatar-wrap">
+        <div class="avatar-ring" id="hubAvatarRing" data-state="listening"><div class="ring-deco"></div><div class="avatar-core" id="hubAvatarCore">✦</div></div>
+        <span class="ai-badge">✦ <b>Я — ШІ</b>, не людина</span>
+        <div class="state-label" id="hubStateLabel">Слухаю…</div>
+      </div>
+      <div class="state-demo-row">
+        <button class="active" data-st="listening" onclick="setHubPreviewState('listening', this)">Слухаю</button>
+        <button data-st="thinking" onclick="setHubPreviewState('thinking', this)">Думаю</button>
+        <button data-st="speaking" onclick="setHubPreviewState('speaking', this)">Говорю</button>
+        <button data-st="paused" onclick="setHubPreviewState('paused', this)">Пауза</button>
+      </div>
+
+      <div class="hub-row">
+        <div class="txt"><b id="hubNameVal">Ім'я: Ліра</b><span>Так репетитор представляється й звертається до тебе</span></div>
+        <button onclick="editFromHub('screen-tutorname')">Змінити</button>
+      </div>
+      <div class="hub-row">
+        <div class="txt"><b id="hubVoiceVal">Голос: Тепла</b><span>Можна прослухати варіанти перед вибором</span></div>
+        <button onclick="editFromHub('screen-voice')">Змінити</button>
+      </div>
+      <div class="hub-row">
+        <div class="txt"><b id="hubAvatarVal">Аватар: Вогник</b><span>Персонаж, вогник або своя картинка</span></div>
+        <button onclick="editFromHub('screen-avatar')">Змінити</button>
+      </div>
+
+      <button class="btn btn-ghost" onclick="go('screen-done')">← Назад до «Сьогодні» (демо)</button>
     </div>
   </div>
 
@@ -225,11 +450,13 @@
   </div>
 
   <div class="mini-cabinet" id="miniCabinet">
-    <div class="glow" style="background:radial-gradient(circle at 35% 30%,#2F6FED,#1d4ed8);">🔒</div>
+    <div class="avatar-ring" data-state="listening" style="width:96px;height:96px;"><div class="avatar-core" style="background:radial-gradient(circle at 35% 30%,#2F6FED,#1d4ed8);">🔒</div></div>
     <h1>Кабінет тата (заглушка)</h1>
-    <p class="sub">Повний кабінет — макети 10–16. Урок доньки триває без змін і продовжиться з того самого кроку.</p>
+    <p class="sub">Повний кабінет — макети 10–17. Урок доньки триває без змін і продовжиться з того самого кроку.</p>
     <button class="btn btn-primary" style="max-width:280px;" onclick="closeCabinet()">Вийти в режим дитини</button>
   </div>
+
+  <div class="toast" id="toast"></div>
 
 <script>
   function setTheme(t){
@@ -237,22 +464,125 @@
     document.getElementById('btn-light').classList.toggle('active', t==='light');
     document.getElementById('btn-dark').classList.toggle('active', t==='dark');
   }
+  let toastTimer=null;
+  function showToast(msg){
+    const t=document.getElementById('toast');
+    t.textContent=msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer=setTimeout(()=>t.classList.remove('show'), 2400);
+  }
+
+  let editMode=false;
   function go(id){
     document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
     document.getElementById(id).classList.add('active');
+    if(id==='screen-my-tutor'){ refreshHub(); }
   }
-  function restart(){ go('screen-login'); document.getElementById('nickInput').value=''; }
+  function editFromHub(screenId){ editMode=true; go(screenId); }
+  function restart(){ editMode=false; go('screen-login'); document.getElementById('nickInput').value=''; }
+
   function validateNick(){
     const v = document.getElementById('nickInput').value;
     const bad = /@/.test(v) || /\d{5,}/.test(v);
     document.getElementById('nickError').style.display = bad ? 'block' : 'none';
   }
+
+  // --- Tutor name (presets + custom) ---
+  let tutorName='Ліра';
   function selectName(el){
     document.querySelectorAll('.name-option').forEach(o=>o.classList.remove('selected'));
     el.classList.add('selected');
-    const name = el.querySelector('b').textContent;
-    document.getElementById('tutorGreeting').textContent = 'Привіт, ' + (document.getElementById('nickInput').value || 'Зірочка') + '! Я — ' + name;
+    tutorName = el.dataset.name;
+    document.getElementById('customNameError').style.display='none';
+    afterNameChosen();
   }
+  function selectCustomName(){
+    document.querySelectorAll('.name-option').forEach(o=>o.classList.remove('selected'));
+    document.getElementById('customNameOpt').classList.add('selected');
+    validateCustomName();
+  }
+  function validateCustomName(){
+    const v = document.getElementById('customNameInput').value.trim();
+    const bad = v.length>0 && (v.length<2 || v.length>20 || /@/.test(v) || /\d{5,}/.test(v));
+    document.getElementById('customNameError').style.display = bad ? 'block' : 'none';
+    if(v.length>=2 && !bad){ tutorName = v; afterNameChosen(); }
+  }
+  function afterNameChosen(){
+    document.getElementById('tutorGreeting').textContent = 'Привіт, ' + (document.getElementById('nickInput').value || 'Зірочка') + '! Я — ' + tutorName;
+    if(editMode){
+      showToast('Ім’я оновлено: ' + tutorName);
+    }
+  }
+
+  // --- Voice ---
+  let tutorVoice='Тепла';
+  function selectVoice(el){
+    document.querySelectorAll('.voice-option').forEach(o=>o.classList.remove('selected'));
+    el.classList.add('selected');
+    tutorVoice = el.dataset.voice;
+    if(editMode){ showToast('Голос оновлено: ' + tutorVoice); }
+  }
+  function demoListen(btn){
+    document.querySelectorAll('.listen-btn').forEach(b=>{ if(b!==btn){ b.classList.remove('playing'); b.textContent='▶ Послухати'; } });
+    btn.classList.add('playing');
+    btn.textContent='▶ грає…';
+    setTimeout(()=>{ btn.classList.remove('playing'); btn.textContent='▶ Послухати'; }, 1800);
+  }
+
+  // --- Avatar ---
+  let tutorAvatar={type:'glow', label:'Вогник', emoji:'✦', img:null};
+  function renderAvatarInto(coreEl, ring){
+    coreEl.innerHTML='';
+    if(tutorAvatar.type==='photo' && tutorAvatar.img){
+      const img=document.createElement('img'); img.src=tutorAvatar.img; coreEl.appendChild(img);
+    } else {
+      coreEl.textContent = tutorAvatar.emoji;
+    }
+  }
+  function selectAvatar(el){
+    document.querySelectorAll('.avatar-choice').forEach(o=>o.classList.remove('selected'));
+    el.classList.add('selected');
+    tutorAvatar = {type:el.dataset.avatar, label:el.querySelector('span').textContent, emoji:el.dataset.emoji, img:null};
+    renderAvatarInto(document.getElementById('avatarPreviewCore'));
+    if(editMode){ showToast('Аватар оновлено: ' + tutorAvatar.label); }
+  }
+  function onAvatarUpload(ev){
+    const file = ev.target.files[0];
+    if(!file) return;
+    document.querySelectorAll('.avatar-choice').forEach(o=>o.classList.remove('selected'));
+    const url = URL.createObjectURL(file);
+    tutorAvatar = {type:'photo', label:'Своя картинка', emoji:'', img:url};
+    renderAvatarInto(document.getElementById('avatarPreviewCore'));
+    showToast('Картинку завантажено (демо, локально)');
+    if(editMode){ showToast('Аватар оновлено: своя картинка'); }
+  }
+  function setAvatarPreviewState(st, btn){
+    document.getElementById('avatarPreviewRing').dataset.state = st;
+    document.querySelectorAll('#avatarStateDemo button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    const labels={listening:'Слухаю…', thinking:'Думаю…', speaking:'Говорить '+tutorName, paused:'Мікрофон вимкнено'};
+    document.getElementById('avatarStateLabel').textContent = labels[st];
+  }
+  function setHubPreviewState(st, btn){
+    document.getElementById('hubAvatarRing').dataset.state = st;
+    btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    const labels={listening:'Слухаю…', thinking:'Думаю…', speaking:'Говорить '+tutorName, paused:'Мікрофон вимкнено'};
+    document.getElementById('hubStateLabel').textContent = labels[st];
+  }
+
+  function refreshHub(){
+    document.getElementById('hubNameVal').textContent = 'Ім’я: ' + tutorName;
+    document.getElementById('hubVoiceVal').textContent = 'Голос: ' + tutorVoice;
+    document.getElementById('hubAvatarVal').textContent = 'Аватар: ' + tutorAvatar.label;
+    renderAvatarInto(document.getElementById('hubAvatarCore'));
+    renderAvatarInto(document.getElementById('safetyAvatarCore'));
+  }
+
+  // open directly on "Мій репетитор" when linked from child interface, e.g. 01-entry-onboarding.html#my-tutor
+  if(location.hash === '#my-tutor'){ go('screen-my-tutor'); }
+
   let pin = '';
   function openPin(){
     pin='';

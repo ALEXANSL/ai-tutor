@@ -66,6 +66,8 @@
   .burst span{font-size:64px; animation:pop .6s ease-out forwards;}
   @keyframes pop{0%{transform:scale(.4); opacity:0;}40%{transform:scale(1.15); opacity:1;}100%{transform:scale(1) translateY(-40px); opacity:0;}}
   .demo-btn{margin-top:10px; font-size:12px; color:var(--text-muted); background:none; border:1px dashed var(--border); border-radius:10px; padding:8px 12px; cursor:pointer;}
+  .toast{position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(140%); background:var(--text); color:var(--bg); padding:12px 20px; border-radius:14px; font-size:14px; font-weight:700; z-index:300; transition:transform .2s; max-width:88vw; text-align:center; box-shadow:0 8px 24px rgba(0,0,0,.2);}
+  .toast.show{transform:translateX(-50%) translateY(0);}
 </style>
 </head>
 <body data-theme="light">
@@ -95,7 +97,7 @@
         <div class="reward-item">
           <span class="ic">🎮</span>
           <div style="flex:1;"><b>400 Robux</b><span>240 / 400</span><div class="bar"><div style="width:60%"></div></div></div>
-          <button class="ask-btn" onclick="alert('Запит надіслано тату')">Попросити</button>
+          <button class="ask-btn" onclick="showToast('Запит надіслано тату')">Попросити</button>
         </div>
         <div class="reward-item">
           <span class="ic">🍿</span>
@@ -121,6 +123,7 @@
   </div>
 
   <div class="burst" id="burst"><span>⭐ +12</span></div>
+  <div class="toast" id="toast"></div>
 
 <script>
   function setTheme(t){
@@ -132,6 +135,14 @@
     const b=document.getElementById('burst');
     b.classList.add('show');
     setTimeout(()=>b.classList.remove('show'), 650);
+  }
+  let toastTimer=null;
+  function showToast(msg){
+    const t=document.getElementById('toast');
+    t.textContent=msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer=setTimeout(()=>t.classList.remove('show'), 2400);
   }
 </script>
 </body>
