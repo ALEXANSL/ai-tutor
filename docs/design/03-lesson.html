@@ -152,6 +152,69 @@
   .resume-card{background:var(--surface); border:2px dashed var(--secondary); border-radius:20px; padding:20px; margin-bottom:16px; display:flex; align-items:center; gap:14px;}
   .resume-card b{display:block; font-size:15px;}
   .resume-card span{font-size:13px; color:var(--text-muted);}
+
+  /* --- Interactive lesson components (ADR-020) --- */
+  .hint-box{margin-top:14px; padding:12px 14px; border-radius:12px; background:color-mix(in srgb, var(--warn) 20%, var(--surface)); border:1px solid var(--warn); font-size:14px;}
+  .ds-hint-note{font-size:13px; color:var(--text-muted); margin-top:12px;}
+  .points-pop{position:fixed; font-family:'Nunito',sans-serif; font-weight:900; font-size:20px; color:var(--secondary); pointer-events:none; z-index:250; animation:pointsUp .75s ease-out forwards;}
+  @keyframes pointsUp{0%{opacity:0; transform:translateY(0) scale(.8);}20%{opacity:1;}100%{opacity:0; transform:translateY(-36px) scale(1.1);}}
+  @media (prefers-reduced-motion: reduce){ .points-pop{animation:none; opacity:1;} }
+
+  /* number_line */
+  .nl-wrap{padding:30px 10px 50px; position:relative;}
+  .nl-track{position:relative; height:8px; background:var(--surface-alt); border-radius:99px; margin:0 14px; touch-action:none; cursor:pointer;}
+  .nl-track:focus-visible{outline:3px solid var(--focus); outline-offset:8px;}
+  .nl-tick{position:absolute; top:-4px; width:2px; height:16px; background:var(--border); transform:translateX(-50%);}
+  .nl-tick span{position:absolute; top:22px; left:50%; transform:translateX(-50%); font-size:13px; font-weight:700; color:var(--text-muted); white-space:nowrap;}
+  .nl-marker{position:absolute; top:50%; width:48px; height:48px; margin-left:-24px; margin-top:-24px; border-radius:50%; background:var(--accent); color:white; display:flex; align-items:center; justify-content:center; font-size:20px; box-shadow:0 4px 14px rgba(0,0,0,.25); cursor:grab; transition:left .15s ease-out, background .15s;}
+  .nl-marker:active{cursor:grabbing;}
+  .nl-marker.correct{background:var(--secondary);}
+  .nl-marker.retry{background:var(--warn);}
+  @media (prefers-reduced-motion: reduce){ .nl-marker{transition:none;} }
+
+  /* drag_sort */
+  .ds-tabs{display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;}
+  .ds-tabs button{border:1px solid var(--border); background:var(--surface); color:var(--text-muted); font-family:'Nunito',sans-serif; font-weight:700; font-size:14px; padding:11px 16px; border-radius:12px; cursor:pointer; min-height:48px;}
+  .ds-tabs button.active{background:var(--accent); color:white; border-color:var(--accent);}
+  .ds-slots{display:flex; flex-direction:column; gap:10px; margin-bottom:18px;}
+  .ds-slot{min-height:56px; border:2px dashed var(--border); border-radius:14px; display:flex; align-items:center; gap:10px; padding:8px 14px; background:var(--surface-alt); cursor:pointer;}
+  .ds-slot.filled{border-style:solid;}
+  .ds-slot.correct{border-color:var(--secondary); background:color-mix(in srgb, var(--secondary) 16%, var(--surface));}
+  .ds-slot.correct::after{content:" ✓"; color:var(--secondary); font-weight:900; margin-left:auto;}
+  .ds-slot.wrong{border-color:var(--danger); background:color-mix(in srgb, var(--danger) 10%, var(--surface));}
+  .ds-slot.wrong::after{content:" ↺ спробуй ще"; color:var(--danger); font-weight:800; font-size:12px; margin-left:auto;}
+  .ds-slot-num{flex:none; min-width:28px; height:28px; padding:0 6px; border-radius:14px; background:var(--border); color:var(--text); font-weight:800; font-size:13px; display:flex; align-items:center; justify-content:center;}
+  .ds-slot-content{font-weight:700; font-size:15px;}
+  .ds-pool{display:flex; flex-wrap:wrap; gap:10px;}
+  .ds-card{min-height:48px; min-width:48px; padding:12px 16px; border-radius:14px; background:var(--surface); border:2px solid var(--border); font-weight:700; font-size:15px; cursor:grab; touch-action:none; user-select:none;}
+  .ds-card:active{cursor:grabbing;}
+  .ds-card.selected{border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);}
+  .ds-card.placed{opacity:.35; pointer-events:none;}
+  .ds-card.dragging{position:fixed; z-index:220; box-shadow:0 10px 24px rgba(0,0,0,.25); opacity:.95; pointer-events:none;}
+  .ds-actions{display:flex; gap:12px; margin-top:16px; flex-wrap:wrap;}
+  .ds-actions button{border:none; border-radius:14px; padding:12px 20px; font-family:'Nunito',sans-serif; font-weight:800; font-size:15px; cursor:pointer; min-height:48px;}
+  .ds-check{background:var(--primary); color:white;}
+  .ds-reset{background:var(--surface-alt); color:var(--text);}
+
+  /* step_reveal */
+  .sr-frame{min-height:150px; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:12px; padding:24px 20px; border-radius:16px; background:var(--surface-alt);}
+  .sr-fraction{font-size:40px; font-weight:900;}
+  .sr-frac-num{display:flex; flex-direction:column; align-items:center; line-height:1.15;}
+  .sr-frac-num small{display:block; width:44px; border-top:3px solid var(--text); margin:3px 0;}
+  .sr-frac-num.sr-highlight{color:var(--primary);}
+  .sr-frac-num.sr-highlight small{border-color:var(--primary);}
+  .sr-caption{font-size:15px; color:var(--text-muted); text-align:center; max-width:440px;}
+  .sr-frame.fade{animation:srFade .3s ease-out;}
+  @keyframes srFade{from{opacity:0; transform:translateY(6px);}to{opacity:1; transform:translateY(0);}}
+  @media (prefers-reduced-motion: reduce){ .sr-frame.fade{animation:none;} }
+  .sr-controls{display:flex; gap:10px; margin-top:18px; align-items:center; flex-wrap:wrap; justify-content:center;}
+  .sr-controls button{border:none; border-radius:14px; padding:12px 18px; font-family:'Nunito',sans-serif; font-weight:800; font-size:15px; cursor:pointer; min-height:48px; background:var(--surface-alt); color:var(--text);}
+  .sr-controls button:disabled{opacity:.4; cursor:default;}
+  .sr-controls #srNext{background:var(--primary); color:white;}
+  .sr-controls #srAuto.active{background:var(--accent); color:white;}
+  .sr-dots{display:flex; gap:6px;}
+  .sr-dot{width:9px; height:9px; border-radius:50%; background:var(--border); display:inline-block;}
+  .sr-dot.active{background:var(--accent); width:22px; border-radius:6px;}
 </style>
 </head>
 <body data-theme="light">
@@ -186,6 +249,9 @@
       <button onclick="showScreen('checkpoint', this)">2. Контрольна точка</button>
       <button onclick="showScreen('voice', this)">3. Голосовий діалог</button>
       <button onclick="showScreen('break', this)">4. Перерва</button>
+      <button onclick="showScreen('numberline', this)">5. Числова пряма</button>
+      <button onclick="showScreen('dragsort', this)">6. Перетягни й розстав</button>
+      <button onclick="showScreen('stepreveal', this)">7. Крок за кроком</button>
       <button onclick="showAirAlarm()">🚨 Демо: банер тривоги</button>
     </div>
 
@@ -261,6 +327,57 @@
         </div>
       </div>
     </section>
+
+    <!-- INTERACTIVE: number_line -->
+    <section id="s-numberline" style="display:none;">
+      <div class="checkpoint-card">
+        <h2>Постав крапку там, де на прямій стоїть дріб <strong>3/4</strong></h2>
+        <div class="nl-wrap">
+          <div class="nl-track" id="nlTrack" role="slider" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0" aria-label="Позначка на числовій прямій від 0 до 1, познач 3/4" tabindex="0">
+            <div class="nl-tick" style="left:0%"><span>0</span></div>
+            <div class="nl-tick" style="left:25%"><span>1/4</span></div>
+            <div class="nl-tick" style="left:50%"><span>1/2</span></div>
+            <div class="nl-tick" style="left:75%"><span>3/4</span></div>
+            <div class="nl-tick" style="left:100%"><span>1</span></div>
+            <div class="nl-marker" id="nlMarker" style="left:0%">●</div>
+          </div>
+        </div>
+        <div class="feedback" id="nlFeedback" style="display:none;"></div>
+        <div class="hint-box" id="nlHint" style="display:none;">💡 Підказка: розділи пряму на 4 рівні частини між 0 і 1 — 3/4 це третя поділка, майже біля кінця.</div>
+        <div class="ds-hint-note">Перетягни кружечок пальцем чи мишею, або торкнись потрібного місця на прямій — стрілки ⬅➡ і Enter теж працюють.</div>
+      </div>
+    </section>
+
+    <!-- INTERACTIVE: drag_sort -->
+    <section id="s-dragsort" style="display:none;">
+      <div class="checkpoint-card">
+        <h2>Перетягни й розстав по місцях</h2>
+        <div class="ds-tabs">
+          <button class="active" id="dsTabTimeline" onclick="dsSwitchMode('timeline')">🕰️ Хронологія (історія)</button>
+          <button id="dsTabPairs" onclick="dsSwitchMode('pairs')">🌍 Пари слів (англійська)</button>
+        </div>
+        <div id="dsBoard"></div>
+        <div class="ds-actions">
+          <button class="ds-check" onclick="dsCheck()">Перевірити</button>
+          <button class="ds-reset" onclick="dsReset()">Почати заново</button>
+        </div>
+        <div class="ds-hint-note">Перетягни картку в порожнє місце пальцем чи мишею — або спочатку торкнись картки, а потім місця, куди її поставити.</div>
+      </div>
+    </section>
+
+    <!-- INTERACTIVE: step_reveal -->
+    <section id="s-stepreveal" style="display:none;">
+      <div class="checkpoint-card">
+        <h2>Подивись, як дріб 8/12 скорочується крок за кроком</h2>
+        <div class="sr-frame" id="srFrame"></div>
+        <div class="sr-controls">
+          <button id="srBack" onclick="srStep(-1)">← Назад</button>
+          <span class="sr-dots" id="srDots"></span>
+          <button id="srNext" onclick="srStep(1)">Далі →</button>
+          <button id="srAuto" onclick="srToggleAuto()">▶ Авто-показ</button>
+        </div>
+      </div>
+    </section>
   </main>
 
   <button class="alarm-btn" onclick="triggerAlarm()">🚨 Тривога</button>
@@ -280,7 +397,7 @@
     document.getElementById('btn-light').classList.toggle('active', t==='light');
     document.getElementById('btn-dark').classList.toggle('active', t==='dark');
   }
-  const screens=['slide','checkpoint','voice','break'];
+  const screens=['slide','checkpoint','voice','break','numberline','dragsort','stepreveal'];
   function showScreen(name, btn){
     screens.forEach(s=>document.getElementById('s-'+s).style.display = (s===name?'block':'none'));
     document.querySelectorAll('.stepper-demo button').forEach(b=>b.classList.remove('active'));
@@ -341,6 +458,276 @@
     clearTimeout(window.__toastTimer);
     window.__toastTimer=setTimeout(()=>t.classList.remove('show'), 2400);
   }
+
+  // ==================== Interactive lesson components (ADR-020) ====================
+
+  function flashPoints(x, y, n){
+    const el=document.createElement('div');
+    el.className='points-pop';
+    el.textContent='+'+n;
+    el.style.left=x+'px';
+    el.style.top=y+'px';
+    document.body.appendChild(el);
+    setTimeout(()=>el.remove(), 800);
+  }
+
+  // ---- number_line: place a point on 0..1 to represent a fraction ----
+  const nlTrack=document.getElementById('nlTrack');
+  const nlMarker=document.getElementById('nlMarker');
+  const nlFeedback=document.getElementById('nlFeedback');
+  const nlHint=document.getElementById('nlHint');
+  const nlTarget=0.75; // 3/4
+  let nlValue=0, nlAttempts=0, nlSolved=false, nlDragging=false;
+
+  function nlSetFromClientX(clientX){
+    const rect=nlTrack.getBoundingClientRect();
+    let ratio=(clientX-rect.left)/rect.width;
+    ratio=Math.max(0, Math.min(1, ratio));
+    ratio=Math.round(ratio*8)/8; // snap to eighths for a fair, predictable touch target
+    nlValue=ratio;
+    nlMarker.style.left=(ratio*100)+'%';
+    nlMarker.classList.remove('correct','retry');
+    nlTrack.setAttribute('aria-valuenow', ratio.toFixed(2));
+  }
+  nlTrack.addEventListener('pointerdown', function(e){
+    if(nlSolved) return;
+    nlDragging=true;
+    nlSetFromClientX(e.clientX);
+  });
+  window.addEventListener('pointermove', function(e){
+    if(!nlDragging) return;
+    nlSetFromClientX(e.clientX);
+  });
+  window.addEventListener('pointerup', function(){
+    if(!nlDragging) return;
+    nlDragging=false;
+    nlCheck();
+  });
+  nlTrack.addEventListener('keydown', function(e){
+    if(nlSolved) return;
+    if(e.key==='ArrowRight'){ nlValue=Math.min(1, nlValue+0.125); nlMarker.style.left=(nlValue*100)+'%'; e.preventDefault(); }
+    if(e.key==='ArrowLeft'){ nlValue=Math.max(0, nlValue-0.125); nlMarker.style.left=(nlValue*100)+'%'; e.preventDefault(); }
+    if(e.key==='Enter' || e.key===' '){ nlCheck(); e.preventDefault(); }
+  });
+  function nlCheck(){
+    nlAttempts++;
+    const correct=Math.abs(nlValue-nlTarget)<0.001;
+    nlFeedback.style.display='flex';
+    if(correct){
+      nlSolved=true;
+      nlMarker.classList.add('correct');
+      nlFeedback.innerHTML='<span>✅</span><div><b>Правильно! Це 3/4.</b><br>Ти поставила крапку між 1/2 і 1, ближче до кінця.</div>';
+      const r=nlMarker.getBoundingClientRect();
+      flashPoints(r.left, r.top, 5);
+    } else {
+      nlMarker.classList.add('retry');
+      nlFeedback.innerHTML='<span>🤔</span><div><b>Майже! Спробуй ще раз.</b><br>Подумай, скільки чвертей укладається до твоєї крапки.</div>';
+      if(nlAttempts>=2){ nlHint.style.display='block'; }
+    }
+  }
+  function nlReset(){
+    nlValue=0; nlAttempts=0; nlSolved=false;
+    nlMarker.style.left='0%'; nlMarker.classList.remove('correct','retry');
+    nlFeedback.style.display='none'; nlHint.style.display='none';
+  }
+
+  // ---- drag_sort: timeline ordering + word/translation pairs ----
+  const dsData={
+    timeline:{
+      instruction:'Розстав події в правильному хронологічному порядку',
+      slots:[1,2,3,4],
+      items:[
+        {id:'a', label:'Заснування Києва', order:1},
+        {id:'b', label:'Об’єднання Новгорода і Києва (Олег, 882 р.)', order:2},
+        {id:'c', label:'Хрещення Русі (988 р.)', order:3},
+        {id:'d', label:'Розпад на удільні князівства (XII ст.)', order:4}
+      ]
+    },
+    pairs:{
+      instruction:'Перетягни переклад до кожного англійського слова',
+      slots:[{id:1,label:'cat'},{id:2,label:'dog'},{id:3,label:'sun'},{id:4,label:'book'}],
+      items:[
+        {id:'e', label:'кіт', order:1},
+        {id:'f', label:'собака', order:2},
+        {id:'g', label:'сонце', order:3},
+        {id:'h', label:'книга', order:4}
+      ]
+    }
+  };
+  let dsMode='timeline', dsPlacement={}, dsSelectedCard=null, dsShuffledItems=[];
+  let dsDragEl=null, dsDragItemId=null, dsDragOffset={x:0,y:0};
+
+  function dsSlotsFor(mode){
+    return mode==='timeline' ? dsData.timeline.slots.map(n=>({id:n, label:n})) : dsData.pairs.slots;
+  }
+  function dsItemsFor(mode){ return mode==='timeline' ? dsData.timeline.items : dsData.pairs.items; }
+  function dsShuffle(arr){
+    const a=[...arr];
+    for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+    return a;
+  }
+  function dsSwitchMode(mode){
+    dsMode=mode;
+    document.getElementById('dsTabTimeline').classList.toggle('active', mode==='timeline');
+    document.getElementById('dsTabPairs').classList.toggle('active', mode==='pairs');
+    dsReset();
+  }
+  function dsRender(){
+    dsPlacement={}; dsSelectedCard=null;
+    dsShuffledItems=dsShuffle(dsItemsFor(dsMode));
+    const slots=dsSlotsFor(dsMode);
+    const board=document.getElementById('dsBoard');
+    const slotsHtml=slots.map(s=>'<div class="ds-slot" data-slot="'+s.id+'" onclick="dsSlotTap('+s.id+')"><span class="ds-slot-num">'+(dsMode==='timeline'?s.id:s.label)+'</span><span class="ds-slot-content"></span></div>').join('');
+    const poolHtml=dsShuffledItems.map(it=>'<div class="ds-card" data-item="'+it.id+'" tabindex="0" onclick="dsCardTap(\''+it.id+'\')" onpointerdown="dsPointerDown(event,\''+it.id+'\')">'+it.label+'</div>').join('');
+    board.innerHTML='<p style="font-size:14px; color:var(--text-muted); margin:0 0 12px;">'+(dsMode==='timeline'?dsData.timeline.instruction:dsData.pairs.instruction)+'</p>'
+      + '<div class="ds-slots" id="dsSlots">'+slotsHtml+'</div>'
+      + '<div class="ds-pool" id="dsPool">'+poolHtml+'</div>';
+  }
+  function dsPointerDown(e, itemId){
+    const card=e.currentTarget;
+    if(card.classList.contains('placed')) return;
+    e.preventDefault();
+    dsDragItemId=itemId;
+    const rect=card.getBoundingClientRect();
+    dsDragOffset={x:e.clientX-rect.left, y:e.clientY-rect.top};
+    dsDragEl=card.cloneNode(true);
+    dsDragEl.classList.add('dragging');
+    dsDragEl.style.width=rect.width+'px';
+    dsDragEl.style.left=rect.left+'px';
+    dsDragEl.style.top=rect.top+'px';
+    document.body.appendChild(dsDragEl);
+    card.style.opacity='.3';
+    window.addEventListener('pointermove', dsPointerMove);
+    window.addEventListener('pointerup', dsPointerUpHandler);
+  }
+  function dsPointerMove(e){
+    if(!dsDragEl) return;
+    dsDragEl.style.left=(e.clientX-dsDragOffset.x)+'px';
+    dsDragEl.style.top=(e.clientY-dsDragOffset.y)+'px';
+  }
+  function dsPointerUpHandler(e){
+    if(!dsDragEl) return;
+    dsDragEl.style.display='none';
+    const target=document.elementFromPoint(e.clientX, e.clientY);
+    dsDragEl.remove();
+    dsDragEl=null;
+    const slotEl=target && target.closest ? target.closest('.ds-slot') : null;
+    const origCard=document.querySelector('.ds-card[data-item="'+dsDragItemId+'"]');
+    if(origCard) origCard.style.opacity='';
+    window.removeEventListener('pointermove', dsPointerMove);
+    window.removeEventListener('pointerup', dsPointerUpHandler);
+    if(slotEl){ dsPlaceItem(dsDragItemId, Number(slotEl.dataset.slot)); }
+    dsDragItemId=null;
+  }
+  function dsCardTap(itemId){
+    const card=document.querySelector('.ds-card[data-item="'+itemId+'"]');
+    if(!card || card.classList.contains('placed')) return;
+    document.querySelectorAll('.ds-card.selected').forEach(c=>c.classList.remove('selected'));
+    if(dsSelectedCard===itemId){ dsSelectedCard=null; return; }
+    dsSelectedCard=itemId;
+    card.classList.add('selected');
+  }
+  function dsSlotTap(slotId){
+    if(!dsSelectedCard) return;
+    dsPlaceItem(dsSelectedCard, slotId);
+    dsSelectedCard=null;
+  }
+  function dsPlaceItem(itemId, slotId){
+    Object.keys(dsPlacement).forEach(k=>{ if(dsPlacement[k]===itemId) delete dsPlacement[k]; });
+    dsPlacement[slotId]=itemId;
+    dsRenderPlacement();
+  }
+  function dsRenderPlacement(){
+    const items=dsItemsFor(dsMode);
+    document.querySelectorAll('.ds-slot').forEach(slotEl=>{
+      const slotId=Number(slotEl.dataset.slot);
+      const itemId=dsPlacement[slotId];
+      const contentEl=slotEl.querySelector('.ds-slot-content');
+      slotEl.classList.remove('correct','wrong');
+      if(itemId){
+        const item=items.find(i=>i.id===itemId);
+        contentEl.textContent=item?item.label:'';
+        slotEl.classList.add('filled');
+      } else {
+        contentEl.textContent='';
+        slotEl.classList.remove('filled');
+      }
+    });
+    document.querySelectorAll('.ds-card').forEach(c=>{
+      const placed=Object.values(dsPlacement).includes(c.dataset.item);
+      c.classList.toggle('placed', placed);
+      c.classList.remove('selected');
+    });
+  }
+  function dsCheck(){
+    const items=dsItemsFor(dsMode);
+    const slots=dsSlotsFor(dsMode);
+    let allCorrect=true, allFilled=true;
+    slots.forEach(s=>{
+      const itemId=dsPlacement[s.id];
+      const slotEl=document.querySelector('.ds-slot[data-slot="'+s.id+'"]');
+      if(!itemId){ allFilled=false; return; }
+      const item=items.find(i=>i.id===itemId);
+      const ok=item && item.order===s.id;
+      slotEl.classList.toggle('correct', ok);
+      slotEl.classList.toggle('wrong', !ok);
+      if(!ok) allCorrect=false;
+    });
+    if(!allFilled){ showToast('Заповни всі місця, потім перевір'); return; }
+    if(allCorrect){
+      showToast('Правильно! Молодець ✅');
+      const board=document.getElementById('dsBoard').getBoundingClientRect();
+      flashPoints(board.left+board.width/2, board.top, 10);
+    } else {
+      showToast('Майже! Подивись, де переплутано, і спробуй ще');
+    }
+  }
+  function dsReset(){ dsRender(); }
+
+  // ---- step_reveal: fraction reduction, frame by frame ----
+  const srFrames=[
+    {num:'8', den:'12', caption:'Починаємо з дробу 8/12.', hi:false},
+    {num:'4', den:'6', caption:'Ділимо чисельник і знаменник на 2: 8÷2=4, 12÷2=6.', hi:true},
+    {num:'2', den:'3', caption:'Ділимо ще раз на 2: 4÷2=2, 6÷2=3. Далі скорочувати нема на що — це відповідь!', hi:true}
+  ];
+  let srIndex=0, srAutoTimer=null, srAutoOn=false;
+  function srRender(){
+    const f=srFrames[srIndex];
+    const frameEl=document.getElementById('srFrame');
+    frameEl.classList.remove('fade'); void frameEl.offsetWidth; frameEl.classList.add('fade');
+    frameEl.innerHTML='<div class="sr-fraction"><div class="sr-frac-num'+(f.hi?' sr-highlight':'')+'"><span>'+f.num+'</span><small></small><span>'+f.den+'</span></div></div>'
+      + '<div class="sr-caption">'+f.caption+'</div>';
+    document.getElementById('srDots').innerHTML=srFrames.map((_,i)=>'<span class="sr-dot'+(i===srIndex?' active':'')+'"></span>').join('');
+    document.getElementById('srBack').disabled=(srIndex===0);
+    document.getElementById('srNext').textContent=(srIndex===srFrames.length-1) ? 'Готово ✓' : 'Далі →';
+    if(srIndex===srFrames.length-1){
+      const r=frameEl.getBoundingClientRect();
+      flashPoints(r.left+r.width/2, r.top, 3);
+    }
+  }
+  function srStep(dir){
+    if(dir>0 && srIndex===srFrames.length-1){ srIndex=0; srRender(); return; }
+    srIndex=Math.max(0, Math.min(srFrames.length-1, srIndex+dir));
+    srRender();
+  }
+  function srToggleAuto(){
+    srAutoOn=!srAutoOn;
+    const btn=document.getElementById('srAuto');
+    btn.classList.toggle('active', srAutoOn);
+    btn.textContent=srAutoOn?'⏸ Авто-показ':'▶ Авто-показ';
+    if(srAutoOn){
+      srAutoTimer=setInterval(function(){
+        if(srIndex<srFrames.length-1){ srIndex++; srRender(); }
+        else { clearInterval(srAutoTimer); srAutoOn=false; btn.classList.remove('active'); btn.textContent='▶ Авто-показ'; }
+      }, 2600);
+    } else {
+      clearInterval(srAutoTimer);
+    }
+  }
+
+  // init interactive demos (sections start hidden, but pre-render for instant display)
+  dsRender();
+  srRender();
 </script>
 </body>
 </html>
