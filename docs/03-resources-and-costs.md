@@ -2,7 +2,7 @@
 
 | Поле | Значення |
 |---|---|
-| Версія | 0.2 (рішення Алекса щодо витрат прийнято 2026-09-25 — розд. 5; решта — на затвердження, Фаза 1) |
+| Версія | 0.3 (рішення Алекса щодо витрат прийнято 2026-09-25 — розд. 5; **стартовий сценарій MVP — «Економ»**; перевірка «безкоштовної української озвучки ElevenLabs» — розд. 2.2.1) |
 | Дата | 2026-09-25 |
 | Автор | `architect` |
 | Дата перевірки цін | **2026-09-25** (джерела — розд. 6) |
@@ -19,6 +19,7 @@
 
 | Що | Скільки |
 |---|---|
+| **Стартовий сценарій MVP (рішення 2026-09-25)** | **«Економ»**: ≈ 1 урок 30 хв на навчальний день + «ШІ-друг» 10 хв голосу/день → ШІ ≈ **$64/міс** (у ліміті $100, запас ≈ $36) + інфраструктура $47 = ≈ **$111/міс**. «Базовий» і «Комфорт» — лише після тестування й окремого рішення |
 | **30-хв урок з живим голосом** | ≈ **$2,74** новий · ≈ **$1,38** повтор з бібліотеки · до **$4,54** якщо весь урок у живому голосі |
 | **45-хв урок з живим голосом** | ≈ **$4,07** новий · ≈ **$2,03** повтор · до **$6,77** якщо весь урок у живому голосі |
 | Уроків на місяць у **$100** (лише уроки) | 30-хв: ≈ **36** нових / **72** повторів / **48** змішано · 45-хв: ≈ **24 / 49 / 32** |
@@ -30,7 +31,9 @@
 | **Бібліотека уроків за навчальний рік** | ≈ **0,5–1,5 ГБ** сховища (вміщується в Supabase Pro без доплат); генерація вже врахована у вартості нових уроків |
 | **Термінові сповіщення** (e-mail + Telegram) | **$0** (NFR-COST-9) |
 
-**Висновок:** ліміт ШІ $100 (без підписок) комфортно покриває **1 голосовий урок на навчальний день + «ШІ-друг» 10 хв/день** (≈ $64). Два голосові уроки щодня (Базовий, ≈ $116) — режим бюджету ≈ з 19-го навчального дня; рішення про підняття ліміту — після 2 тижнів щоденного моніторингу.
+**Висновок:** MVP стартує в сценарії **«Економ»** — ліміт ШІ $100 (без підписок) комфортно покриває **1 голосовий урок на навчальний день + «ШІ-друг» 10 хв/день** (≈ $64). Два голосові уроки щодня (Базовий, ≈ $116) — режим бюджету ≈ з 19-го навчального дня; перехід на «Базовий»/«Комфорт» і підняття ліміту — лише після тестування (≥ 2 тижні щоденного моніторингу) і окремого рішення Алекса **[$]**.
+
+**«Українська озвучка в ElevenLabs безкоштовна?»** — перевірено 2026-09-25: **ні, не для нашого випадку** (розд. 2.2.1). Безкоштовно — лише тариф Free (≈ 10 хв озвучки + 15 хв живого голосу на місяць, будь-якою мовою, некомерційно, з атрибуцією); окремої акції для української не знайдено. Цифри кошторису не змінюються.
 
 ---
 
@@ -223,6 +226,21 @@
 | OpenAI gpt-realtime-2 (альтернатива) | $32 / $64 за 1 млн аудіотокенів (вхід/вихід) | ≈ $0,10–0,25/хв з урахуванням контексту — не обрано |
 | Gemini 3.8 Live (альтернатива) | ≈ $0,005/хв вхід, $0,018/хв вихід | найдешевше; підтримку української в нативному аудіо не підтверджено |
 
+#### 2.2.1. Перевірка: «text-to-speech українською в ElevenLabs безкоштовний» (2026-09-25)
+
+| Питання | Що знайдено (офіційні джерела ElevenLabs, через пошук) |
+|---|---|
+| Звідки твердження | Сторінка ElevenLabs **«Free Ukrainian Text to Speech & Ukrainian AI Voices»** (`elevenlabs.io/text-to-speech/ukrainian`). Такі ж сторінки «Free … Text to Speech» є для інших мов — це рекламні сторінки **безкоштовного тарифу**, а не окрема пропозиція для української |
+| Що саме безкоштовно | Тариф **Free**: **10 000 кредитів/міс** (≈ 10 хв аудіо; Multilingual v2 — 1 символ = 1 кредит), доступ до API і готових голосів; для **Agents** (живий голос) — **15 хв/міс** |
+| Акція? Для української? | **Не знайдено** акції, прив'язаної до української мови чи до користувачів з України. Партнерство ElevenLabs з Мінцифри (з 2025) — безкоштовний доступ **для Мінцифри** (Дія, гаряча лінія), не для приватних користувачів. Діє лише загальна знижка «2 місяці безкоштовно при річній оплаті» |
+| Через API? | Так, у межах тих самих 10 000 кредитів |
+| Обмеження Free | **Некомерційне** використання, **обов'язкова атрибуція** ElevenLabs при публікації; Умови ElevenLabs дозволяють використовувати контент користувача для покращення сервісів — **суперечить правилу «лише платні API без використання даних для навчання»** (CLAUDE.md, NFR-PRIV-1) |
+| Живий голос / «ШІ-друг» | Не стосується: живий голос тарифікується хвилинами Agents (Free — 15 хв/міс ≈ 1,5 дня «ШІ-друга») |
+
+**Висновок:** твердження **не підтверджено** в значенні «можна не платити за українську озвучку». Вартість озвучки ($0,10 / 1 000 символів або кредити Creator), живого голосу ($0,08/хв) і ліміт голосу «ШІ-друга» (10 хв/день ≈ $30/міс) **не змінюються**.
+**Де Free може знадобитися:** лише розробнику для перших технічних проб **на синтетичних текстах** (без голосу й даних доньки) до оформлення Creator. Спайк S13 із записами доньки — тільки на платному тарифі.
+**Обмеження перевірки:** прямий доступ до сторінок `elevenlabs.io` із середовища архітектора заблоковано проксі; висновки — за результатами пошуку по офіційних сторінках (розд. 6). Якщо Алекс бачив конкретну сторінку чи лист з іншими умовами — надішліть посилання, перевіримо саме його.
+
 ### 2.3. Інфраструктура й сервіси
 
 | Сервіс | Тариф | Ціна | Ліміти, важливі для нас |
@@ -303,7 +321,9 @@
 
 Моделі в усіх сценаріях однакові (якість — P-Q); різниця — в обсязі занять.
 
-| | **Економ** | **Базовий** | **Комфорт** |
+> **Стартовий сценарій MVP — «Економ»** (рішення Алекса 2026-09-25). «Базовий» і «Комфорт» — варіанти на потім: переходимо лише після тестування (≥ 2 тижні фактичних витрат) і окремого підтвердження **[$]**. Застосунок не обмежує кількість уроків (P-T) — «Економ» означає планування й очікуваний обсяг, а захист бюджету забезпечує ліміт $100 (розд. 4).
+
+| | **Економ — СТАРТ MVP** | Базовий (після тестування) | Комфорт (після тестування) |
 |---|---|---|---|
 | Уроки в навчальний день | 1 × 30 хв | 2 × 30 хв | 2 × 45 хв |
 | Живий голос уроків / день | 12 хв | 24 хв | 36 хв |
@@ -324,7 +344,7 @@
 > **Перші 2 тижні:** ліміт $100 + щоденна звірка; далі — рішення про ліміт за фактичними витратами.
 > **Комфорт:** докупівля хвилин ElevenLabs ($65) перевищує рекомендований запобіжник $60 (4.2) — при переході на цей сценарій ліміт докупівлі треба підняти до ≈ $80.
 > **Якщо донька займається й у вихідні** — додайте ≈ 35 % до витрат на уроки.
-> **Потенційна економія, не врахована в цифрах:** кредити підписки ElevenLabs Creator (121 000 символів) можуть покрити озвучку ≈ 15 нових 30-хв уроків/міс — до −$12/міс.
+> **Потенційна економія, не врахована в цифрах:** кредити підписки ElevenLabs Creator (121 000 символів) можуть покрити озвучку ≈ 15 нових 30-хв уроків/міс — до −$12/міс. **Для стартового «Економа»** це особливо відчутно: ≈ 11 нових уроків × ≈ 8 000 символів ≈ 88 000 символів/міс — **повністю вміщуються** в кредити Creator → ШІ у ліміті ≈ **$55** замість $64 (усього ≈ $102 замість $111). Рахуємо консервативно ($64), доки на S12 не підтвердиться, що кредити озвучки й хвилини Agents у Creator — окремі пакети й обидва входять у $22 (AR-R5).
 
 **Що дасть заміна моделей на дешевші (для прозорості, NFR-COST-10 — не рекомендується поза режимом бюджету):**
 
@@ -416,12 +436,14 @@ Supabase Free (1 ГБ файлів) **не вміщує** бібліотеку +
 | 6 | **Місце на Drive** | У Алекса **Google One**, місця достатньо; стиснення аудіо в архіві — лишається | 1.6 крок 7; ADR-003 |
 | 7 | **Інфраструктура і ліміт** | Supabase Pro $25 + ElevenLabs Creator $22 — **поза лімітом**; ліміт $100 — лише ШІ-витрати | 3.5, 4.1; ADR-012 |
 | 8 | **E-mail** | **Безкоштовний відправник Resend** на пошту Алекса; власний домен — можливо пізніше | 1.11; ADR-010 |
+| 9 | **Стартовий сценарій** | **«Економ»** (≈ 1 урок 30 хв/день + «ШІ-друг» 10 хв/день); «Базовий»/«Комфорт» — після тестування | 0, 3.5, 5.1 |
+| 10 | **Модульність і можлива комерціалізація** (стратегічні рішення) | Закладаються без додаткових витрат ($0/міс; ≈ 1,5–2 дні розробника в S0–S1) | `docs/02` розд. 14; ADR-017, ADR-018. При комерціалізації додадуться платні тарифи (Vercel Pro, власний домен тощо) — окреме рішення |
 
 ### 5.1. Підсумок місячних витрат після рішень (будні, 22 навчальні дні, «ШІ-друг» 10 хв/день)
 
-| | **Економ** (1 × 30 хв/день) | **Базовий** (2 × 30 хв/день) | **Комфорт** (2 × 45 хв/день) |
+| | **Економ — СТАРТ MVP** (1 × 30 хв/день) | **Базовий** (2 × 30 хв/день) | **Комфорт** (2 × 45 хв/день) |
 |---|---|---|---|
-| ШІ-витрати (у ліміті $100) | ≈ $64 | ≈ $116 → обмежено $100 режимом бюджету з ≈ 19-го навч. дня | ≈ $169 → обмежено $100 з ≈ 13-го навч. дня |
+| ШІ-витрати (у ліміті $100) | ≈ $64 (≈ $55, якщо кредити Creator покриють озвучку) | ≈ $116 → обмежено $100 режимом бюджету з ≈ 19-го навч. дня | ≈ $169 → обмежено $100 з ≈ 13-го навч. дня |
 | Інфраструктура (Supabase Pro $25 + ElevenLabs Creator $22) | $47 | $47 | $47 |
 | **Усього, якщо ліміт $100** | **≈ $111** | **≈ $147** (макс. $100 + $47) | **≈ $147** (макс.) |
 | Усього, якщо ліміт підняти до $200 | ≈ $111 | ≈ $163 | ≈ $216 |
@@ -437,6 +459,7 @@ Supabase Free (1 ГБ файлів) **не вміщує** бібліотеку +
 - OpenAI: [Pricing | OpenAI API](https://developers.openai.com/api/docs/pricing), [GPT-5.6](https://openai.com/index/gpt-5-6/), [Advancing the price-performance frontier with GPT-5.6](https://openai.com/index/advancing-the-price-performance-frontier-with-gpt-5-6/), [Price drop for 5.6 Terra and Luna](https://community.openai.com/t/announcing-a-major-price-drop-for-5-6-terra-and-luna-and-fast-mode-for-5-6-sol/1388484), [GPT-Realtime](https://developers.openai.com/api/docs/models/gpt-realtime), [omni-moderation](https://developers.openai.com/api/docs/models/omni-moderation-latest), [text-embedding-3-large](https://developers.openai.com/api/docs/models/text-embedding-3-large), [Data controls](https://developers.openai.com/api/docs/guides/your-data)
 - Google: [Gemini Developer API pricing](https://ai.google.dev/gemini-api/docs/pricing), [Gemini 3.8 Live and 3.5 Transcribe](https://blog.google/innovation-and-ai/technology/developers-tools/build-real-time-voice-applications-gemini-audio/), [Gemini 3.1 Flash-Lite](https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-3-1-flash-lite/), [Billing / paid tier data use](https://ai.google.dev/gemini-api/docs/billing), [Live API capabilities](https://ai.google.dev/gemini-api/docs/live-api/capabilities); Gemini 3.1 Pro (агрегатори, звірити): [BenchLM](https://benchlm.ai/google/api-pricing), [MetaCTO](https://www.metacto.com/blogs/the-true-cost-of-google-gemini-a-guide-to-api-pricing-and-integration)
 - ElevenLabs: [ElevenAgents Pricing](https://elevenlabs.io/pricing/agents), [API Pricing](https://elevenlabs.io/pricing/api), [Lowered API & Agents pricing, PAYG](https://elevenlabs.io/blog/weve-lowered-api-agents-pricing-and-introduced-pay-as-you-go), [How much does ElevenAgents cost?](https://help.elevenlabs.io/hc/en-us/articles/29298065878929-How-much-does-ElevenAgents-cost), [Client tools](https://elevenlabs.io/docs/eleven-agents/customization/tools/client-tools), [Overrides](https://elevenlabs.io/docs/agents-platform/customization/personalization/overrides), [Models (LLM) for Agents](https://elevenlabs.io/docs/eleven-agents/customization/llm), [Zero Retention Mode (per-agent)](https://elevenlabs.io/docs/eleven-agents/customization/privacy/zrm), [Retention](https://elevenlabs.io/docs/eleven-agents/customization/privacy/retention)
+- ElevenLabs — перевірка «безкоштовної української озвучки» (2026-09-25): [Free Ukrainian Text to Speech](https://elevenlabs.io/text-to-speech/ukrainian), [Pricing (Free — 10 000 кредитів)](https://elevenlabs.io/pricing), [ElevenAgents Pricing (Free — 15 хв)](https://elevenlabs.io/pricing/agents), [Do you offer discounted or free plans?](https://help.elevenlabs.io/hc/en-us/articles/13315218812177-Do-you-offer-discounted-or-free-plans), [Can I publish the content I generate? (атрибуція, некомерційно на Free)](https://elevenlabs.io/docs/help-center/legal/can-i-publish-the-content-i-generate-on-the-platform), [Terms of Service](https://elevenlabs.io/terms-of-use), [Ukrainian Public Services partnership](https://elevenlabs.io/blog/ukrainian-public-services), [Мінцифри: партнерство з ElevenLabs](https://thedigital.gov.ua/news/technologies/ukrainski-derzhavni-servisi-govoritimut-zavdyaki-shi-pochinaemo-partnerstvo-z-elevenlabs)
 - Supabase: [Pricing & Fees](https://supabase.com/pricing), [Edge Functions limits](https://supabase.com/docs/guides/functions/limits), [Cron](https://supabase.com/docs/guides/cron), [pg_net](https://supabase.com/docs/guides/database/extensions/pg_net), [pgvector](https://supabase.com/docs/guides/database/extensions/pgvector)
 - Vercel: [Functions duration](https://vercel.com/docs/functions/configuring-functions/duration), [Cron usage & pricing](https://vercel.com/docs/cron-jobs/usage-and-pricing), [AI Gateway fallbacks](https://vercel.com/docs/ai-gateway/models-and-providers/model-fallbacks)
 - Resend: [Account quotas and limits](https://resend.com/docs/knowledge-base/account-quotas-and-limits), [New Free Tier](https://resend.com/blog/new-free-tier)
