@@ -1,0 +1,351 @@
+import "server-only";
+import { getLessonComponent } from "@/lesson-components";
+import { callStructured } from "@/server/ai/router";
+import { forFamily } from "@/server/db/family-scope";
+import { getOrGenerateLessonBlocks, loadLibraryItem, type LibraryItemView, type LibraryStepView } from "./generate";
+import {
+  decideBranch,
+  idleAutoPauseDue,
+  idleHintDue,
+  lessonTimeIsUp,
+  looksLikeGuess,
+  pauseFor,
+  shouldSuggestFormatChange,
+  type Channel,
+  type PauseReason,
+  type Verdict,
+} from "./state-machine";
+import { z } from "zod";
+
+/**
+ * Lesson orchestrator (ADR-007): the only place that turns the pure rules in
+ * `state-machine.ts` into reads/writes of `lesson_sessions` and friends.
+ * Every mutation here is one round trip after one child action — "save
+ * after every step" (US-6.5, docs/02 5.2) falls out of that by construction.
+ */
+
+interface SubjectRow {
+  id: string;
+  name_uk: string;
+  config: Record<string, unknown>;
+}
+interface TopicRow {
+  id: string;
+  title: string;
+  grade: number | null;
+}
+interface SessionRow {
+  id: string;
+  family_id: string;
+  child_profile_id: string;
+  subject_id: string;
+  topic_id: string;
+  mode: string;
+  status: string;
+  pause_reason: string | null;
+  candidate_library_item_ids: string[];
+  current_block_order: number;
+  current_step_id: string | null;
+  active_seconds: number;
+  planned_minutes: number;
+  points_earned: number;
+  paused_at: string | null;
+}
+
+async function loadSession(familyId: string, sessionId: string): Promise<SessionRow | null> {
+  const { data } = await forFamily(familyId)
+    .select("lesson_sessions", "*")
+    .eq("id", sessionId)
+    .maybeSingle<SessionRow>();
+  return data;
+}
+
+export interface StartCandidate {
+  libraryItemId: string;
+  title: string;
+  estimatedMinutes: number | null;
+}
+
+/** US-9.1 КП-2, US-16.6 КП-1: offer 2–3 blocks to start from. */
+export async function startLessonSession(
+  familyId: string,
+  childProfileId: string,
+  subjectId: string,
+  topicId: string,
+  plannedMinutes: 30 | 45,
+): Promise<{ sessionId: string; candidates: StartCandidate[] }> {
+  const scope = forFamily(familyId);
+  const [{ data: subject }, { data: topic }] = await Promise.all([
+    scope.select("subjects", "id, name_uk, config").eq("id", subjectId).maybeSingle<SubjectRow>(),
+    scope.select("topics", "id, title, grade").eq("id", topicId).maybeSingle<TopicRow>(),
+  ]);
+  if (!subject || !topic) throw new Error("subject or topic not found");
+
+  const candidates = await getOrGenerateLessonBlocks(familyId, subject.id, subject.name_uk, subject.config, topic.id, topic.title, topic.grade);
+  if (candidates.length === 0) throw new Error("could not prepare any lesson block for this topic");
+
+  const { data: session, error } = await scope.client
+    .from("lesson_sessions")
+    .insert({
+      family_id: familyId,
+      child_profile_id: childProfileId,
+      subject_id: subjectId,
+      topic_id: topicId,
+      mode: "choosing",
+      status: "active",
+      planned_minutes: plannedMinutes,
+      candidate_library_item_ids: candidates.map((c) => c.id),
+    })
+    .select("id")
+    .single<{ id: string }>();
+  if (error || !session) throw new Error(`starting a lesson session failed: ${error?.message}`);
+
+  return { sessionId: session.id, candidates: candidates.map((c) => ({ libraryItemId: c.id, title: c.title, estimatedMinutes: c.estimatedMinutes })) };
+}
+
+async function activateBlock(familyId: string, session: SessionRow, libraryItemId: string): Promise<LibraryItemView> {
+  const scope = forFamily(familyId);
+  const item = await loadLibraryItem(familyId, libraryItemId);
+  if (!item || item.steps.length === 0) throw new Error("chosen block has no steps");
+  const nextOrder = session.current_block_order + (session.mode === "choosing" ? 1 : 1);
+  await scope.client.from("session_blocks").insert({
+    family_id: familyId,
+    session_id: session.id,
+    library_item_id: libraryItemId,
+    sort_order: nextOrder,
+    status: "active",
+  });
+  await scope.update("lesson_sessions", {
+    mode: "lesson",
+    status: "active",
+    current_block_order: nextOrder,
+    current_step_id: item.steps[0]!.id,
+  }).eq("id", session.id);
+  return item;
+}
+
+/** US-16.6 КП-1: the child picks one of the offered blocks; the lesson begins. */
+export async function chooseStartBlock(familyId: string, sessionId: string, libraryItemId: string): Promise<LessonStepView> {
+  const session = await loadSession(familyId, sessionId);
+  if (!session) throw new Error("session not found");
+  if (!session.candidate_library_item_ids.includes(libraryItemId)) throw new Error("not an offered block");
+  const item = await activateBlock(familyId, session, libraryItemId);
+  return stepView(item, item.steps[0]!, 1);
+}
+
+export interface LessonStepView {
+  stepId: string;
+  type: string;
+  content: Record<string, unknown>;
+  visual: Record<string, unknown>;
+  sourceRefs: LibraryStepView["sourceRefs"];
+  stepNumber: number;
+  totalSteps: number;
+}
+
+function stepView(item: LibraryItemView, step: LibraryStepView, stepNumber: number): LessonStepView {
+  return { stepId: step.id, type: step.type, content: step.content, visual: step.visual, sourceRefs: step.sourceRefs, stepNumber, totalSteps: item.steps.length };
+}
+
+/** Full render view of an active session's current step (for reload / "Продовжити"). */
+export async function getLessonView(
+  familyId: string,
+  sessionId: string,
+): Promise<{ session: SessionRow; step: LessonStepView | null }> {
+  const session = await loadSession(familyId, sessionId);
+  if (!session) throw new Error("session not found");
+  if (!session.current_step_id) return { session, step: null };
+  const { data: blockRow } = await forFamily(familyId)
+    .select("session_blocks", "library_item_id")
+    .eq("session_id", sessionId)
+    .eq("sort_order", session.current_block_order)
+    .maybeSingle<{ library_item_id: string }>();
+  if (!blockRow) return { session, step: null };
+  const item = await loadLibraryItem(familyId, blockRow.library_item_id);
+  if (!item) return { session, step: null };
+  const idx = item.steps.findIndex((s) => s.id === session.current_step_id);
+  if (idx < 0) return { session, step: null };
+  return { session, step: stepView(item, item.steps[idx]!, idx + 1) };
+}
+
+const evalVerdictSchema = z.object({ verdict: z.enum(["correct", "partial", "incorrect"]), explanationUk: z.string().min(1).max(300) });
+
+async function evaluateAnswer(
+  familyId: string,
+  sessionId: string,
+  step: LibraryStepView,
+  channel: Channel,
+  answer: unknown,
+): Promise<{ verdict: Verdict; explanation: string }> {
+  if (step.type === "choice") {
+    const chosen = (answer as { optionId?: string } | null)?.optionId;
+    const correct = chosen === (step.content.correctOptionId as string);
+    return { verdict: correct ? "correct" : "incorrect", explanation: String(step.content.explanationUk ?? "") };
+  }
+  if (step.type === "interactive") {
+    const def = getLessonComponent(step.visual.component as string);
+    if (!def) return { verdict: "incorrect", explanation: "" };
+    const result = def.evaluate(step.visual.props as never, answer as never);
+    return { verdict: result.correct ? "correct" : "incorrect", explanation: def.describe(step.visual.props as never, result) };
+  }
+  // "open": no exact answer on the device — ask the evaluation role (US-6.2 КП-1).
+  try {
+    const res = await callStructured(
+      "answer_evaluation",
+      {
+        system: "Оціни відповідь дитини на відкрите питання уроку (правильно/частково/неправильно), тепло й конкретно.",
+        prompt: `Питання: ${step.content.questionUk}\nЕталон: ${step.content.expectedAnswerUk}\nРубрика: ${step.content.rubricUk}\nВідповідь: ${String(answer ?? "")}`,
+        schema: evalVerdictSchema,
+      },
+      { familyId, sessionId },
+    );
+    return { verdict: res.result.verdict, explanation: res.result.explanationUk };
+  } catch {
+    // Never blocks the lesson (ADR-007): unresolved answers count as "partial" for review later.
+    return { verdict: "partial", explanation: "Записали твою відповідь — переглянемо разом із татом." };
+  }
+}
+
+export interface AnswerResult {
+  verdict: Verdict;
+  explanation: string;
+  formatChangeSuggested: boolean;
+  next: { kind: "retry_step" } | { kind: "advance"; step: LessonStepView | null } | { kind: "lesson_complete" };
+}
+
+/**
+ * One answer -> evaluate -> branch -> save (US-6.5: after every step).
+ * `idempotencyKey` makes a resend (after reconnecting, US-6.5 КП-2) a no-op.
+ */
+export async function submitStepAnswer(
+  familyId: string,
+  sessionId: string,
+  stepId: string,
+  idempotencyKey: string,
+  channel: Channel,
+  answer: unknown,
+  latencyMs: number | null,
+): Promise<AnswerResult> {
+  const scope = forFamily(familyId);
+  const session = await loadSession(familyId, sessionId);
+  if (!session || session.current_step_id !== stepId) throw new Error("stale step — reload the session");
+
+  const { data: existing } = await scope.select("step_attempts", "*").eq("idempotency_key", idempotencyKey).maybeSingle<{ verdict: Verdict }>();
+  const { data: stepRow } = await scope
+    .select("library_steps", "id, type, content, visual, source_refs")
+    .eq("id", stepId)
+    .maybeSingle<{ id: string; type: string; content: Record<string, unknown>; visual: Record<string, unknown>; source_refs: LibraryStepView["sourceRefs"] }>();
+  if (!stepRow) throw new Error("step not found");
+  const step: LibraryStepView = { id: stepRow.id, sortOrder: 0, type: stepRow.type, content: stepRow.content, visual: stepRow.visual, sourceRefs: stepRow.source_refs };
+
+  const { data: priorRows } = await scope
+    .select("step_attempts", "verdict, attempt_no, guess_flag")
+    .eq("session_id", sessionId)
+    .eq("step_id", stepId)
+    .order("attempt_no")
+    .returns<{ verdict: Verdict; attempt_no: number; guess_flag: boolean }[]>();
+  const priorAttempts = priorRows ?? [];
+  const attemptNo = existing ? (priorAttempts.at(-1)?.attempt_no ?? 1) : priorAttempts.length + 1;
+
+  const { verdict, explanation } = existing ? { verdict: existing.verdict, explanation: "" } : await evaluateAnswer(familyId, sessionId, step, channel, answer);
+
+  const questionLength = String(step.content.questionUk ?? step.content.textUk ?? "").length;
+  const guessFlag = looksLikeGuess(channel, attemptNo, latencyMs, questionLength);
+
+  if (!existing) {
+    const { error: insErr } = await scope.client.from("step_attempts").insert({
+      family_id: familyId,
+      session_id: sessionId,
+      step_id: stepId,
+      attempt_no: attemptNo,
+      answer,
+      channel,
+      verdict,
+      guess_flag: guessFlag,
+      latency_ms: latencyMs,
+      idempotency_key: idempotencyKey,
+    });
+    if (insErr && insErr.code !== "23505") throw new Error(`saving the answer failed: ${insErr.message}`);
+  }
+
+  const branch = decideBranch({ verdict, attemptNo }, priorAttempts.map((p) => ({ verdict: p.verdict, attemptNo: p.attempt_no })));
+
+  const { data: recentRows } = await scope
+    .select("step_attempts", "verdict, guess_flag, created_at")
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: false })
+    .limit(3)
+    .returns<{ verdict: Verdict; guess_flag: boolean }[]>();
+  const formatChangeSuggested = shouldSuggestFormatChange((recentRows ?? []).reverse().map((r) => ({ verdict: r.verdict, guessFlag: r.guess_flag })));
+
+  if (branch.kind === "alt_explanation") {
+    return { verdict, explanation, formatChangeSuggested, next: { kind: "retry_step" } };
+  }
+
+  // "advance" (skip helpers) or "mark_for_review_and_advance" both move on.
+  const next = await advanceAfterStep(familyId, session);
+  return { verdict, explanation, formatChangeSuggested, next };
+}
+
+async function advanceAfterStep(familyId: string, session: SessionRow): Promise<AnswerResult["next"]> {
+  const scope = forFamily(familyId);
+  const { data: blockRow } = await scope
+    .select("session_blocks", "library_item_id")
+    .eq("session_id", session.id)
+    .eq("sort_order", session.current_block_order)
+    .maybeSingle<{ library_item_id: string }>();
+  const item = blockRow ? await loadLibraryItem(familyId, blockRow.library_item_id) : null;
+  const idx = item?.steps.findIndex((s) => s.id === session.current_step_id) ?? -1;
+
+  if (item && idx >= 0 && idx + 1 < item.steps.length) {
+    const nextStep = item.steps[idx + 1]!;
+    await scope.update("lesson_sessions", { current_step_id: nextStep.id }).eq("id", session.id);
+    return { kind: "advance", step: stepView(item, nextStep, idx + 2) };
+  }
+
+  // Block finished (US-6.4): end after this block if time is up, else start the next one.
+  await scope.update("session_blocks", { status: "done" }).eq("session_id", session.id).eq("sort_order", session.current_block_order);
+  if (lessonTimeIsUp(session.active_seconds, session.planned_minutes)) {
+    await scope.update("lesson_sessions", { mode: "summary", status: "completed", completed_at: new Date().toISOString(), current_step_id: null }).eq("id", session.id);
+    return { kind: "lesson_complete" };
+  }
+
+  const { data: subject } = await scope.select("subjects", "id, name_uk, config").eq("id", session.subject_id).maybeSingle<SubjectRow>();
+  const { data: topic } = await scope.select("topics", "id, title, grade").eq("id", session.topic_id).maybeSingle<TopicRow>();
+  if (!subject || !topic) return { kind: "lesson_complete" };
+  const more = await getOrGenerateLessonBlocks(familyId, subject.id, subject.name_uk, subject.config, topic.id, topic.title, topic.grade);
+  const alreadyUsed = new Set([blockRow?.library_item_id].filter(Boolean));
+  const nextBlockId = more.find((m) => !alreadyUsed.has(m.id))?.id ?? more[0]?.id;
+  if (!nextBlockId) {
+    await scope.update("lesson_sessions", { mode: "summary", status: "completed", completed_at: new Date().toISOString(), current_step_id: null }).eq("id", session.id);
+    return { kind: "lesson_complete" };
+  }
+  const nextItem = await activateBlock(familyId, session, nextBlockId);
+  return { kind: "advance", step: stepView(nextItem, nextItem.steps[0]!, 1) };
+}
+
+/** A `slide` step is a passive explanation (US-6.1): "Далі" advances it without grading or an attempt row. */
+export async function acknowledgeSlide(familyId: string, sessionId: string, stepId: string): Promise<AnswerResult["next"]> {
+  const session = await loadSession(familyId, sessionId);
+  if (!session || session.current_step_id !== stepId) throw new Error("stale step — reload the session");
+  return advanceAfterStep(familyId, session);
+}
+
+/** US-6.6 (alarm), US-16.4 КП-2 (idle), offline (US-6.5) — always "paused", step kept (docs/02 5.3). */
+export async function pauseLessonSession(familyId: string, sessionId: string, reason: PauseReason): Promise<void> {
+  const scope = forFamily(familyId);
+  await scope
+    .update("lesson_sessions", { ...pauseFor(reason), paused_at: new Date().toISOString() })
+    .eq("id", sessionId)
+    .in("status", ["active"]);
+}
+
+/** US-6.5 КП-1: "Продовжити" reopens the exact step. */
+export async function resumeLessonSession(familyId: string, sessionId: string): Promise<LessonStepView | null> {
+  const scope = forFamily(familyId);
+  await scope.update("lesson_sessions", { status: "active", pause_reason: null, resumed_at: new Date().toISOString() }).eq("id", sessionId);
+  const { step } = await getLessonView(familyId, sessionId);
+  return step;
+}
+
+export { idleAutoPauseDue, idleHintDue };
