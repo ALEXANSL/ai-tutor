@@ -15,23 +15,43 @@ const REASON_TEXT: Record<string, string> = {
   parent_mode: "Заняття на паузі.",
 };
 
-/** US-6.5 КП-1: "Продовжити" reopens the exact step it paused on. */
+/**
+ * US-6.5 КП-1: "Продовжити" reopens the exact step it paused on. КП-3
+ * (BUG-008 fix): if the pause lasted 24h+, `resumeLessonAction` also returns
+ * a short reminder slide, shown once here before the step itself loads.
+ */
 export function LessonPausedScreen({ sessionId, reason }: { sessionId: string; reason: string | null }) {
   const t = uk.child.lesson;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [reminder, setReminder] = useState<string | null>(null);
 
   function resume() {
     setError(null);
     startTransition(async () => {
       try {
-        await resumeLessonAction(sessionId);
-        router.refresh();
+        const result = await resumeLessonAction(sessionId);
+        if (result.reminder) setReminder(result.reminder.textUk);
+        else router.refresh();
       } catch {
         setError(uk.common.error);
       }
     });
+  }
+
+  if (reminder) {
+    return (
+      <div className="flex min-h-[70vh] items-center justify-center px-4 py-8">
+        <ChildCard>
+          <p className="mb-2 text-sm font-bold text-muted">{t.reminderTitle}</p>
+          <p className="mb-6 whitespace-pre-line text-lg">{reminder}</p>
+          <button type="button" onClick={() => router.refresh()} className={primaryButton}>
+            {t.reminderContinue}
+          </button>
+        </ChildCard>
+      </div>
+    );
   }
 
   return (

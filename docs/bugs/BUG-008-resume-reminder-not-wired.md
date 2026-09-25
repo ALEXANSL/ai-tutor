@@ -5,7 +5,7 @@
 | Серйозність | **Major** |
 | Зріз | S3 |
 | Пов'язані критерії | US-6.5 КП-3 («*Given* пауза тривала понад 24 год, *When* дитина продовжує, *Then* перед кроком N пропонується коротке нагадування (1 слайд) попереднього матеріалу») |
-| Статус | **Open** |
+| Статус | **Fixed** (`resumeLessonSession` — `app/src/server/lessons/orchestrator.ts` — тепер порівнює `paused_at` через `needsResumeReminder` і, за потреби, повертає `{ step, reminder: { textUk } }`, побудований з опорного слайду активного блоку — без нового виклику ШІ; `resumeLessonAction`/`LessonPausedScreen.tsx` показують нагадування перед кроком N; юніт-тест чистої функції перейменовано, щоб не вводити в оману (`state-machine.test.ts`); наскрізна перевірка — `app/src/server/lessons/orchestrator.test.ts`) |
 
 ## Кроки відтворення (код-рев'ю)
 

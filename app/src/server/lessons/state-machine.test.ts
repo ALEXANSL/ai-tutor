@@ -97,7 +97,10 @@ describe("idle / lesson timing (US-16.4, US-6.7)", () => {
     expect(lessonTimeIsUp(1800, 30)).toBe(true);
   });
 
-  it("resuming after 24h+ needs a reminder slide (КП-3)", () => {
+  // BUG-008: this only tests the pure threshold helper — the actual wiring
+  // (`resumeLessonSession` calling it and returning a reminder to the UI) is
+  // covered by the orchestrator test (`orchestrator.test.ts`), not here.
+  it("pure helper only — 24h+ threshold (see orchestrator.test.ts for the actual КП-3 wiring)", () => {
     const paused = new Date("2026-01-01T10:00:00Z");
     expect(needsResumeReminder(paused, new Date("2026-01-02T09:59:00Z"))).toBe(false);
     expect(needsResumeReminder(paused, new Date("2026-01-02T10:00:01Z"))).toBe(true);

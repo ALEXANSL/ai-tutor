@@ -7,7 +7,16 @@ import { requireParentAccess } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
 import type { ChildProfileRow } from "@/server/db/types";
 import { askTopicChat } from "@/server/lessons/chat";
-import { acknowledgeSlide, chooseStartBlock, pauseLessonSession, resumeLessonSession, startLessonSession, submitStepAnswer } from "@/server/lessons/orchestrator";
+import { recordChildFeedback, type ChildFeedbackKind } from "@/server/lessons/generate";
+import {
+  acknowledgeSlide,
+  chooseStartBlock,
+  continueAfterBlock,
+  pauseLessonSession,
+  resumeLessonSession,
+  startLessonSession,
+  submitStepAnswer,
+} from "@/server/lessons/orchestrator";
 import type { FormState } from "./state";
 
 /**
@@ -86,9 +95,28 @@ export async function pauseLessonAction(sessionId: string, reason: "manual_alert
 export async function resumeLessonAction(sessionId: string) {
   const { familyId } = await requireParentAccess();
   UUID.parse(sessionId);
-  const step = await resumeLessonSession(familyId, sessionId);
+  const result = await resumeLessonSession(familyId, sessionId);
   revalidatePath(`/lesson/${sessionId}`);
-  return step;
+  return result;
+}
+
+/** US-6.13: continues past a block's "visible outcome" screen (BUG-009 fix lives in `continueAfterBlock`). */
+export async function continueAfterBlockAction(sessionId: string) {
+  const { familyId } = await requireParentAccess();
+  UUID.parse(sessionId);
+  const next = await continueAfterBlock(familyId, sessionId);
+  revalidatePath(`/lesson/${sessionId}`);
+  return next;
+}
+
+const feedbackSchema = z.enum(["interesting", "normal", "boring"]);
+
+/** US-6.13 КП-3 / US-6.10 КП-3: one tap, optional, never affects points. */
+export async function submitBlockFeedbackAction(libraryItemId: string, feedback: ChildFeedbackKind) {
+  const { familyId } = await requireParentAccess();
+  UUID.parse(libraryItemId);
+  await recordChildFeedback(familyId, libraryItemId, feedbackSchema.parse(feedback));
+  return { status: "ok" as const };
 }
 
 const chatSchema = z.string().trim().min(1).max(800);

@@ -2,13 +2,14 @@ import "server-only";
 import { getLessonComponent } from "@/lesson-components";
 import { callStructured } from "@/server/ai/router";
 import { forFamily } from "@/server/db/family-scope";
-import { getOrGenerateLessonBlocks, loadLibraryItem, type LibraryItemView, type LibraryStepView } from "./generate";
+import { getOrGenerateLessonBlocks, loadLibraryItem, nextSessionBlock, type LibraryItemView, type LibraryStepView } from "./generate";
 import {
   decideBranch,
   idleAutoPauseDue,
   idleHintDue,
   lessonTimeIsUp,
   looksLikeGuess,
+  needsResumeReminder,
   pauseFor,
   shouldSuggestFormatChange,
   type Channel,
@@ -210,7 +211,12 @@ export interface AnswerResult {
   verdict: Verdict;
   explanation: string;
   formatChangeSuggested: boolean;
-  next: { kind: "retry_step" } | { kind: "advance"; step: LessonStepView | null } | { kind: "lesson_complete" };
+  next:
+    | { kind: "retry_step" }
+    | { kind: "advance"; step: LessonStepView | null }
+    /** US-6.13: shown between blocks, before the next one (or the lesson) starts. */
+    | { kind: "block_complete"; libraryItemId: string; visibleOutcomeUk: string | null }
+    | { kind: "lesson_complete" };
 }
 
 /**
@@ -303,24 +309,52 @@ async function advanceAfterStep(familyId: string, session: SessionRow): Promise<
     return { kind: "advance", step: stepView(item, nextStep, idx + 2) };
   }
 
-  // Block finished (US-6.4): end after this block if time is up, else start the next one.
+  // Block finished (US-6.4): show the block's visible outcome (US-6.13)
+  // before moving on; `continueAfterBlock` decides next block vs. lesson end.
   await scope.update("session_blocks", { status: "done" }).eq("session_id", session.id).eq("sort_order", session.current_block_order);
+  return { kind: "block_complete", libraryItemId: blockRow?.library_item_id ?? "", visibleOutcomeUk: item?.visibleOutcomeUk ?? null };
+}
+
+/**
+ * After the child has seen the block's visible outcome / given feedback
+ * (US-6.13), actually moves the session on: ends it if time is up (US-6.7
+ * КП-2, never mid-block), otherwise picks the next block.
+ *
+ * BUG-009 fix: the block picked must not repeat ANY block already used in
+ * *this* session (`session_blocks`), not just the one that just finished —
+ * `nextSessionBlock` generates one more if the saved library is exhausted
+ * within this session, and this ends the lesson early (rather than silently
+ * repeat a block) if even that fails.
+ */
+export async function continueAfterBlock(familyId: string, sessionId: string): Promise<AnswerResult["next"]> {
+  const scope = forFamily(familyId);
+  const session = await loadSession(familyId, sessionId);
+  if (!session) throw new Error("session not found");
+
   if (lessonTimeIsUp(session.active_seconds, session.planned_minutes)) {
-    await scope.update("lesson_sessions", { mode: "summary", status: "completed", completed_at: new Date().toISOString(), current_step_id: null }).eq("id", session.id);
+    await scope.update("lesson_sessions", { mode: "summary", status: "completed", completed_at: new Date().toISOString(), current_step_id: null }).eq("id", sessionId);
     return { kind: "lesson_complete" };
   }
 
   const { data: subject } = await scope.select("subjects", "id, name_uk, config").eq("id", session.subject_id).maybeSingle<SubjectRow>();
   const { data: topic } = await scope.select("topics", "id, title, grade").eq("id", session.topic_id).maybeSingle<TopicRow>();
-  if (!subject || !topic) return { kind: "lesson_complete" };
-  const more = await getOrGenerateLessonBlocks(familyId, subject.id, subject.name_uk, subject.config, topic.id, topic.title, topic.grade);
-  const alreadyUsed = new Set([blockRow?.library_item_id].filter(Boolean));
-  const nextBlockId = more.find((m) => !alreadyUsed.has(m.id))?.id ?? more[0]?.id;
-  if (!nextBlockId) {
-    await scope.update("lesson_sessions", { mode: "summary", status: "completed", completed_at: new Date().toISOString(), current_step_id: null }).eq("id", session.id);
+  if (!subject || !topic) {
+    await scope.update("lesson_sessions", { mode: "summary", status: "completed", completed_at: new Date().toISOString(), current_step_id: null }).eq("id", sessionId);
     return { kind: "lesson_complete" };
   }
-  const nextItem = await activateBlock(familyId, session, nextBlockId);
+
+  const { data: usedRows } = await scope
+    .select("session_blocks", "library_item_id")
+    .eq("session_id", sessionId)
+    .returns<{ library_item_id: string }[]>();
+  const usedIds = (usedRows ?? []).map((r) => r.library_item_id);
+
+  const next = await nextSessionBlock(familyId, subject.id, subject.name_uk, subject.config, topic.id, topic.title, topic.grade, usedIds);
+  if (!next) {
+    await scope.update("lesson_sessions", { mode: "summary", status: "completed", completed_at: new Date().toISOString(), current_step_id: null }).eq("id", sessionId);
+    return { kind: "lesson_complete" };
+  }
+  const nextItem = await activateBlock(familyId, session, next.id);
   return { kind: "advance", step: stepView(nextItem, nextItem.steps[0]!, 1) };
 }
 
@@ -340,12 +374,37 @@ export async function pauseLessonSession(familyId: string, sessionId: string, re
     .in("status", ["active"]);
 }
 
-/** US-6.5 КП-1: "Продовжити" reopens the exact step. */
-export async function resumeLessonSession(familyId: string, sessionId: string): Promise<LessonStepView | null> {
+export interface ResumeResult {
+  step: LessonStepView | null;
+  /** US-6.5 КП-3: set when the pause lasted ≥ 24h — shown once, before the step. */
+  reminder: { textUk: string } | null;
+}
+
+/**
+ * US-6.5 КП-1: "Продовжити" reopens the exact step. КП-3 (BUG-008 fix): if
+ * the pause lasted 24h or more, also returns a short reminder — the active
+ * block's own opening slide, so this costs no new AI call.
+ */
+export async function resumeLessonSession(familyId: string, sessionId: string): Promise<ResumeResult> {
   const scope = forFamily(familyId);
-  await scope.update("lesson_sessions", { status: "active", pause_reason: null, resumed_at: new Date().toISOString() }).eq("id", sessionId);
+  const session = await loadSession(familyId, sessionId);
+  if (!session) throw new Error("session not found");
+  const resumedAt = new Date();
+  const wantsReminder = session.paused_at != null && needsResumeReminder(new Date(session.paused_at), resumedAt);
+
+  await scope.update("lesson_sessions", { status: "active", pause_reason: null, resumed_at: resumedAt.toISOString() }).eq("id", sessionId);
   const { step } = await getLessonView(familyId, sessionId);
-  return step;
+  if (!wantsReminder || !step) return { step, reminder: null };
+
+  const { data: blockRow } = await scope
+    .select("session_blocks", "library_item_id")
+    .eq("session_id", sessionId)
+    .eq("sort_order", session.current_block_order)
+    .maybeSingle<{ library_item_id: string }>();
+  const item = blockRow ? await loadLibraryItem(familyId, blockRow.library_item_id) : null;
+  const openingSlide = item?.steps.find((s) => s.type === "slide");
+  const textUk = openingSlide ? String(openingSlide.content.textUk ?? "") : "";
+  return { step, reminder: textUk ? { textUk } : null };
 }
 
 export { idleAutoPauseDue, idleHintDue };
