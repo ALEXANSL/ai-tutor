@@ -30,6 +30,24 @@ describe("PDF extraction (generated fixtures)", () => {
   it("rejects a file that is not a PDF", async () => {
     await expect(extractPdf(new TextEncoder().encode("not a pdf"))).rejects.toThrow();
   });
+
+  it("rejects a truncated / corrupted PDF (cut off mid-stream) instead of hanging", async () => {
+    const full = await makeTextPdf(["A page with some text about fractions that will not be read to the end."]);
+    const truncated = full.slice(0, Math.floor(full.length * 0.6));
+    await expect(extractPdf(truncated)).rejects.toThrow();
+  });
+
+  it("handles a page-less PDF as an empty extraction, not a crash (QA: empty file)", async () => {
+    // pdf.js reports a page-less document as one page with empty text (not zero
+    // pages) — asserted explicitly so a future unpdf/pdf.js upgrade that changes
+    // this is caught here rather than surfacing as a silent "ready, 0 topics".
+    const res = await extractPdf(await makeTextPdf([]));
+    expect(res.charCount).toBe(0);
+    expect(res.units.every((u) => meaningfulChars(u.text) === 0)).toBe(true);
+    // No meaningful text on any unit ⇒ chunkUnits drops everything ⇒ the
+    // pipeline raises IngestError("empty") instead of a silent "ready" book.
+    expect(chunkUnits(res.units)).toEqual([]);
+  });
 });
 
 describe("EPUB extraction (generated fixtures)", () => {
@@ -60,6 +78,20 @@ describe("EPUB extraction (generated fixtures)", () => {
 
   it("rejects broken archives", async () => {
     await expect(extractEpub(new Uint8Array([1, 2, 3]))).rejects.toThrow(/EPUB/);
+  });
+
+  it("handles an EPUB with an empty spine (no chapters) as an empty extraction (QA: empty book)", async () => {
+    const res = await extractEpub(makeEpub("Порожня книга", []));
+    expect(res.units).toEqual([]);
+    expect(res.charCount).toBe(0);
+    // The pipeline turns zero chunks into IngestError("empty") — never a silent "ready" book.
+    expect(chunkUnits(res.units)).toEqual([]);
+  });
+
+  it("handles an EPUB whose every chapter is empty/whitespace-only (QA: empty file)", async () => {
+    const res = await extractEpub(makeEpub("Тільки заголовки", [{ title: "Розділ 1", html: "<p>   </p>" }]));
+    expect(res.units).toEqual([]);
+    expect(chunkUnits(res.units)).toEqual([]);
   });
 
   it("decodes entities and strips markup", () => {
