@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { pollIndexingAction, reindexAction, setUseInLessonsAction } from "@/app/actions/books";
+import { confirmOcrAction, pollIndexingAction, reindexAction, setUseInLessonsAction } from "@/app/actions/books";
 import { uk } from "@/i18n/uk";
 import type { BookListItem, SubjectOption } from "@/server/books/queries";
 
@@ -28,6 +28,7 @@ function StatusBadge({ book }: { book: BookListItem }) {
         : "bg-p-warn";
   const icon = book.status === "ready" ? "✓" : book.status === "error" || book.status === "scan_no_text" ? "!" : "…";
   const step = book.progress.step ? t.progress[book.progress.step] : null;
+  const isOcrStep = book.progress.step === "ocr" && book.progress.total;
   const count =
     book.progress.step === "embed" && book.progress.total ? ` ${book.progress.done ?? 0}/${book.progress.total}` : "";
   return (
@@ -39,18 +40,39 @@ function StatusBadge({ book }: { book: BookListItem }) {
         {t.status[book.status] ?? book.status}
         {book.status === "ready" && book.pageCount ? ` · ${t.pages(book.pageCount, book.format === "epub")}` : ""}
       </span>
-      {IN_PROGRESS.has(book.status) && step && (
+      {IN_PROGRESS.has(book.status) && isOcrStep && (
+        <div className="text-p-muted">{t.ocrProgress(book.progress.done ?? 0, book.progress.total!)}</div>
+      )}
+      {IN_PROGRESS.has(book.status) && !isOcrStep && step && (
         <div className="text-p-muted">
           {step}
           {count}
         </div>
       )}
+      {book.status === "scan_awaiting_ocr" && <OcrConfirm book={book} />}
       {book.statusDetail && t.details[book.statusDetail] && <div className="mt-0.5 max-w-72 text-p-muted">{t.details[book.statusDetail]}</div>}
       {book.costUsd > 0 && (
         <div className="text-p-muted" title={t.costTitle}>
           {t.cost(book.costUsd.toFixed(book.costUsd < 0.1 ? 3 : 2))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** D-54: a large scan waits here for the parent's "Розпізнати" before any AI spend. */
+function OcrConfirm({ book }: { book: BookListItem }) {
+  const t = uk.parent.books.ocrConfirm;
+  return (
+    <div className="mt-1 max-w-72 rounded-lg bg-p-warn/10 p-2">
+      <div className="font-semibold text-p-text">{t.title(book.ocrPagesTotal ?? 0)}</div>
+      {book.ocrEstimatedCostUsd != null && <div className="text-p-muted">{t.estimate(book.ocrEstimatedCostUsd.toFixed(2))}</div>}
+      <form action={confirmOcrAction} className="mt-1">
+        <input type="hidden" name="materialId" value={book.id} />
+        <button type="submit" className="min-h-11 text-[12px] font-bold text-p-primary">
+          {t.button}
+        </button>
+      </form>
     </div>
   );
 }
