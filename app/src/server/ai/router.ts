@@ -2,7 +2,7 @@ import "server-only";
 import type { z } from "zod";
 import { estimateCostUsd, fallbackOf, selectModel } from "./policy";
 import { anthropicStructured, anthropicVisionStructured } from "./providers/anthropic";
-import { openaiEmbed } from "./providers/openai";
+import { openaiEmbed, openaiStructured } from "./providers/openai";
 import * as store from "./store";
 import {
   AiNotConfiguredError,
@@ -72,7 +72,7 @@ export const defaultRouterDeps: RouterDeps = {
   recordCall: store.recordCall,
   notifyFallback: store.notifyFallback,
   providers: {
-    structured: { anthropic: (req) => anthropicStructured(req) },
+    structured: { anthropic: (req) => anthropicStructured(req), openai: (req) => openaiStructured(req) },
     embed: { openai: (req) => openaiEmbed(req) },
     vision: { anthropic: (req) => anthropicVisionStructured(req) },
   },
