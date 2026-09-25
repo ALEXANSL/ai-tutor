@@ -1,4 +1,5 @@
 import { strFromU8, unzipSync } from "fflate";
+import { uk } from "@/i18n/uk";
 import { normalizeText, type Extraction, type ExtractedUnit } from "./text";
 
 /**
@@ -123,7 +124,7 @@ export async function extractEpub(bytes: Uint8Array): Promise<Extraction> {
     const text = htmlToText(html);
     if (!text) continue;
     const chapter = units.length + 1;
-    units.push({ page: chapter, locator: tocByFile.get(item.href) ?? firstHeading(html) ?? `Розділ ${chapter}`, text });
+    units.push({ page: chapter, locator: tocByFile.get(item.href) ?? firstHeading(html) ?? uk.parent.books.chapterFallback(chapter), text });
   }
   return {
     format: "epub",

@@ -3,6 +3,8 @@ import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
 import type { ChildProfileRow } from "@/server/db/types";
+import { FolderAccessBanner } from "@/components/parent/books/FolderAccessBanner";
+import { getFolderAccessStatus } from "@/server/drive/service";
 import { loadParentSettings } from "@/server/persona/service";
 import { PageTitle, Panel } from "./ui";
 
@@ -10,10 +12,11 @@ import { PageTitle, Panel } from "./ui";
 export default async function ParentDashboard() {
   const { familyId } = await requireParentAccess();
   const scope = forFamily(familyId);
-  const [{ count: unread }, { data: child }, settings] = await Promise.all([
+  const [{ count: unread }, { data: child }, settings, access] = await Promise.all([
     scope.count("notifications").is("read_at", null),
     scope.select("child_profile", "nickname, tutor_name").limit(1).maybeSingle<Pick<ChildProfileRow, "nickname" | "tutor_name">>(),
     loadParentSettings(scope),
+    getFolderAccessStatus(familyId),
   ]);
   const t = uk.parent.dashboard;
 
@@ -21,13 +24,15 @@ export default async function ParentDashboard() {
     <>
       <PageTitle
         action={
-          <Link href="/parent/books" className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-p-primary px-3.5 text-[13px] font-bold text-white">
+          <Link href="/parent/books/add" className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-p-primary px-3.5 text-[13px] font-bold text-white">
             {t.addBook}
           </Link>
         }
       >
         {t.title}
       </PageTitle>
+      {/* US-2.1 KP-2: the warning is shown in the cabinet, not only in "Мої книги". */}
+      <FolderAccessBanner status={access} />
 
       <div className="mb-5 grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3.5">
         <div className="rounded-2xl border border-p-line bg-p-surface px-4.5 py-4">

@@ -35,7 +35,18 @@ const SECRET_VARS = [
   "CRON_SECRET",
   "PIN_PEPPER",
 ];
-const SERVER_ONLY_MARKERS = ["@node-rs/argon2", "createServiceClient", "register_app_user", "deriveParentModeKey"];
+const SERVER_ONLY_MARKERS = [
+  "@node-rs/argon2",
+  "createServiceClient",
+  "register_app_user",
+  "deriveParentModeKey",
+  // S1: AI router, search, Drive access
+  "record_ai_call",
+  "search_chunks",
+  "buildServiceAccountAssertion",
+  "api.openai.com",
+  "drive.readonly",
+];
 
 const env = { ...process.env };
 if (process.argv.includes("--build")) {
