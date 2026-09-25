@@ -121,6 +121,13 @@ export const uk = {
       nicknameTitle: "Моє прізвисько",
       nicknameValue: (nickname: string) => `Прізвисько: ${nickname}`,
       back: "← Назад до «Сьогодні»",
+      signOut: {
+        link: "Вийти з акаунта",
+        confirmTitle: "Точно вийти з акаунта?",
+        confirmBody: "Знову увійти можна буде своїм Google-акаунтом.",
+        yes: "Так, вийти",
+        cancel: "Скасувати",
+      },
     },
     parentMode: {
       button: "🔒 Режим тата",
@@ -129,6 +136,12 @@ export const uk = {
       cancel: "Скасувати",
       submit: "Увійти",
       erase: "Стерти",
+      // BUG-004: shown right away (no digits needed) when the parent has not set a PIN yet.
+      notSet: {
+        title: "PIN ще не задано",
+        body: "Тато ще не задав PIN — він може зробити це у своєму кабінеті, увійшовши власним Google-акаунтом.",
+        ok: "Зрозуміло",
+      },
       errors: {
         format: "PIN — від 4 до 6 цифр.",
         wrong: "Неправильний PIN.",

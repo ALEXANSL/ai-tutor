@@ -27,13 +27,22 @@ export default async function ParentLayout({ children }: { children: React.React
   const tablet = access.via === "tablet";
 
   const footer = tablet ? (
-    <form action={exitParentModeAction} className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2">
       <div className="rounded-xl bg-p-primary p-3 text-center text-xs font-bold text-white">{t.tabletBadge}</div>
-      <button type="submit" className="min-h-11 rounded-xl border border-p-line text-sm font-bold">
-        {t.exitParentMode}
-      </button>
+      <form action={exitParentModeAction}>
+        <button type="submit" className="min-h-11 w-full rounded-xl border border-p-line text-sm font-bold">
+          {t.exitParentMode}
+        </button>
+      </form>
+      {/* BUG-004: a way to leave the Google account too, not only parent mode — so the
+          parent does not need a private/incognito window on a shared tablet. */}
+      <form action="/auth/signout" method="post">
+        <button type="submit" className="min-h-11 w-full rounded-xl border border-p-line text-sm font-bold text-p-danger">
+          {t.signOut}
+        </button>
+      </form>
       <p className="text-center text-[11px] text-p-muted">{t.autoExitHint(settings.parent_mode_idle_min)}</p>
-    </form>
+    </div>
   ) : (
     <form action="/auth/signout" method="post">
       <button type="submit" className="min-h-11 w-full rounded-xl border border-p-line text-sm font-bold">

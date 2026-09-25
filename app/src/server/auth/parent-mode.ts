@@ -2,7 +2,7 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { isValidPinFormat } from "@/lib/pin-format";
-import { getPinPepper } from "../env";
+import { getPinPepper, pinPepperIssue } from "../env";
 import { forFamily } from "../db/family-scope";
 import { loadParentSettings } from "../persona/service";
 import { notifyParent } from "../notifications";
@@ -49,7 +49,10 @@ async function setParentModeCookie(ctx: UserContext, idleMinutes: number, pepper
 export async function enterParentMode(ctx: UserContext, pin: string): Promise<EnterParentModeResult> {
   if (ctx.role !== "child") return { ok: false, error: "unavailable" };
   const pepper = getPinPepper();
-  if (!pepper) return { ok: false, error: "unavailable" };
+  if (!pepper) {
+    console.error(`enterParentMode unavailable: PIN_PEPPER ${pinPepperIssue()} — see app/README.md`);
+    return { ok: false, error: "unavailable" };
+  }
   if (!isValidPinFormat(pin)) return { ok: false, error: "format" };
 
   const scope = forFamily(ctx.familyId);
@@ -110,7 +113,10 @@ export async function setParentPin(
   repeat: string,
 ): Promise<{ ok: true } | { ok: false; error: SetPinError }> {
   const pepper = getPinPepper();
-  if (!pepper) return { ok: false, error: "unavailable" };
+  if (!pepper) {
+    console.error(`setParentPin unavailable: PIN_PEPPER ${pinPepperIssue()} — see app/README.md`);
+    return { ok: false, error: "unavailable" };
+  }
   if (!isValidPinFormat(pin)) return { ok: false, error: "format" };
   if (pin !== repeat) return { ok: false, error: "mismatch" };
   const pinHash = await hashPin(pin, pepper);

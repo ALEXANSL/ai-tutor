@@ -9,8 +9,11 @@ import { PIN_MAX_LENGTH, PIN_MIN_LENGTH } from "@/lib/pin-format";
 /**
  * "Режим тата" entry on the child's tablet (US-1.5 KP-1, KP-6): a quiet
  * button out of the way of the child's main actions; no PIN hints.
+ *
+ * BUG-004 (a): when the parent has not set a PIN yet, the button explains
+ * that right away — no need to guess digits and submit to find out.
  */
-export function ParentModeButton() {
+export function ParentModeButton({ pinSet }: { pinSet: boolean }) {
   const [open, setOpen] = useState(false);
   const t = uk.child.parentMode;
   return (
@@ -22,8 +25,25 @@ export function ParentModeButton() {
       >
         {t.button}
       </button>
-      {open && <PinDialog onClose={() => setOpen(false)} />}
+      {open && (pinSet ? <PinDialog onClose={() => setOpen(false)} /> : <NotSetDialog onClose={() => setOpen(false)} />)}
     </>
+  );
+}
+
+function NotSetDialog({ onClose }: { onClose: () => void }) {
+  const t = uk.child.parentMode.notSet;
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="pin-not-set-title">
+      <div className="w-full max-w-[340px] rounded-3xl bg-surface p-7 text-center">
+        <h2 id="pin-not-set-title" className="text-xl font-extrabold">
+          {t.title}
+        </h2>
+        <p className="mt-2 text-muted">{t.body}</p>
+        <button type="button" onClick={onClose} className="mt-5 min-h-12 w-full rounded-2xl bg-primary text-lg font-bold text-white">
+          {t.ok}
+        </button>
+      </div>
+    </div>
   );
 }
 

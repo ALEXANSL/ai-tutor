@@ -2,6 +2,7 @@ import Link from "next/link";
 import { saveTutorNameAction } from "@/app/actions/child";
 import { ChildCard, ghostButton } from "@/components/child/ChildCard";
 import { NicknameForm } from "@/components/child/NicknameForm";
+import { SignOutLink } from "@/components/child/SignOutLink";
 import { TutorNamePicker } from "@/components/child/TutorNamePicker";
 import { TutorAvatar } from "@/components/TutorAvatar";
 import { uk } from "@/i18n/uk";
@@ -85,6 +86,7 @@ export default async function MyTutorPage() {
         <Link href="/today" className={`${ghostButton} mt-3`}>
           {t.back}
         </Link>
+        <SignOutLink />
       </ChildCard>
     </main>
   );

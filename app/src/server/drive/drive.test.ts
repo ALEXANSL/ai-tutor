@@ -92,7 +92,7 @@ describe("drive listing", () => {
         reads += 1;
         return { done: false, value: { byteLength: chunkSize } };
       }),
-      cancel: vi.fn(async (_reason?: unknown) => {
+      cancel: vi.fn(async () => {
         cancelled = true;
       }),
     };
