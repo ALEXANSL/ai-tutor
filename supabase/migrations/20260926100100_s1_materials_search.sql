@@ -267,6 +267,32 @@ $$;
 revoke all on function public.set_chunk_embeddings(uuid, text, jsonb) from public, anon, authenticated;
 grant execute on function public.set_chunk_embeddings(uuid, text, jsonb) to service_role;
 
+-- Links every fragment of a material to the narrowest section / topic whose
+-- page range contains its page (after the structure step).
+create or replace function public.assign_chunk_structure(p_family_id uuid, p_material_id uuid)
+returns integer
+language sql
+security definer
+set search_path = ''
+as $$
+  with upd as (
+    update public.chunks c
+       set section_id = (
+             select s.id from public.material_sections s
+              where s.material_id = c.material_id and c.page between s.page_from and s.page_to
+              order by s.page_to - s.page_from, s.sort_order limit 1),
+           topic_id = (
+             select t.id from public.topics t
+              where t.material_id = c.material_id and c.page between t.page_from and t.page_to
+              order by t.page_to - t.page_from, t.sort_order limit 1)
+     where c.material_id = p_material_id and c.owner_family_id = p_family_id
+    returning c.id
+  )
+  select count(*)::integer from upd
+$$;
+revoke all on function public.assign_chunk_structure(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.assign_chunk_structure(uuid, uuid) to service_role;
+
 -- RLS: in S1 all of this is visible to the parent only (the child's "Мої книги"
 -- is US-2.7 KP-2, Should, S24). Writes: server only (service role).
 alter table public.materials enable row level security;

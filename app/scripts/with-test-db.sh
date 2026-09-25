@@ -47,10 +47,11 @@ if [[ "$(id -u)" == "0" ]]; then
   chown postgres "$WORK_DIR"
 fi
 
-run_pg "$PG_BIN/initdb" -D "$WORK_DIR/data" -U postgres -A trust --no-sync -E UTF8 >/dev/null
+run_pg "$PG_BIN/initdb" -D "$WORK_DIR/data" -U postgres -A trust --no-sync -E UTF8 --locale=C.UTF-8 >/dev/null
 run_pg "$PG_BIN/pg_ctl" -D "$WORK_DIR/data" -l "$WORK_DIR/pg.log" -w \
   -o "-k $WORK_DIR -p $PORT -c listen_addresses='' -c fsync=off" start >/dev/null
 
+export PGOPTIONS="-c client_min_messages=warning"
 PSQL=("$PG_BIN/psql" -h "$WORK_DIR" -p "$PORT" -U postgres -v ON_ERROR_STOP=1 -q)
 "${PSQL[@]}" -d postgres -c "create database ai_tutor_test"
 "${PSQL[@]}" -d ai_tutor_test -f "$SHIM"
