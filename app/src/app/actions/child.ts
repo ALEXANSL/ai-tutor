@@ -27,7 +27,11 @@ export async function saveTutorNameAction(_prev: FormState, formData: FormData):
   const firstTime = !profile.onboarding_completed_at;
   const result = await changeTutorName(
     ctx.familyId,
-    { choice: String(formData.get("choice") ?? ""), custom: String(formData.get("custom") ?? "") },
+    {
+      choice: String(formData.get("choice") ?? ""),
+      custom: String(formData.get("custom") ?? ""),
+      gender: String(formData.get("gender") ?? ""),
+    },
     "child",
     { profileId: profile.id, firstTime },
   );

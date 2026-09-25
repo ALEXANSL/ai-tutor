@@ -1,5 +1,6 @@
 import "server-only";
 import type { TutorGender } from "@/i18n/uk";
+import { resolveTutorGender } from "@/lib/persona/gender";
 import { forFamily } from "../db/family-scope";
 import type { ChildProfileRow, PersonaEditable, TutorNameOptions } from "../db/types";
 
@@ -20,12 +21,21 @@ export async function getChildPersonaSettings(
   };
 }
 
-/** Grammatical gender follows the chosen voice (PM-21); default voice is female (D-18). */
-export async function getTutorGender(familyId: string, profile: Pick<ChildProfileRow, "tutor_voice_id">): Promise<TutorGender> {
-  if (!profile.tutor_voice_id) return "f";
-  const { data } = await forFamily(familyId)
-    .select("tutor_voices", "gender")
-    .eq("id", profile.tutor_voice_id)
-    .maybeSingle<{ gender: TutorGender }>();
-  return data?.gender ?? "f";
+/**
+ * Grammatical gender: the chosen voice's gender (PM-21, S12) or, while no
+ * voice is chosen, the gender stored with the name choice (BUG-002).
+ */
+export async function getTutorGender(
+  familyId: string,
+  profile: Pick<ChildProfileRow, "tutor_voice_id" | "tutor_name_gender">,
+): Promise<TutorGender> {
+  let voiceGender: TutorGender | null = null;
+  if (profile.tutor_voice_id) {
+    const { data } = await forFamily(familyId)
+      .select("tutor_voices", "gender")
+      .eq("id", profile.tutor_voice_id)
+      .maybeSingle<{ gender: TutorGender }>();
+    voiceGender = data?.gender ?? null;
+  }
+  return resolveTutorGender({ voiceGender, nameGender: profile.tutor_name_gender });
 }

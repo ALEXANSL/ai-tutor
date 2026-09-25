@@ -117,6 +117,31 @@ describe("register_app_user (server-only bootstrap)", () => {
     ]);
   });
 
+  it("seeds 3 female + 3 male tutor name suggestions (BUG-001, US-1.7 KP-2)", async () => {
+    const settings = await db.query("select tutor_name_options from public.parent_settings where family_id = $1", [
+      ids.family,
+    ]);
+    const options = settings.rows[0].tutor_name_options;
+    expect(options).toEqual(defaults.tutorNameOptions);
+    expect(options.f).toHaveLength(3);
+    expect(options.m).toHaveLength(3);
+  });
+
+  it("stores the tutor name gender with the profile: female by default, f/m only (BUG-002)", async () => {
+    const profile = await db.query("select tutor_name_gender, tutor_voice_id from public.child_profile where id = $1", [
+      ids.childProfile,
+    ]);
+    expect(profile.rows[0]).toEqual({ tutor_name_gender: "f", tutor_voice_id: null });
+    await db.query("begin");
+    await db.query("update public.child_profile set tutor_name = 'Остап', tutor_name_gender = 'm' where id = $1", [
+      ids.childProfile,
+    ]);
+    expect(
+      await errorCode(db, "update public.child_profile set tutor_name_gender = 'x' where id = $1", [ids.childProfile]),
+    ).toBe("23514");
+    await db.query("rollback");
+  });
+
   it("is idempotent and joins the existing family", async () => {
     const again = await db.query("select * from public.register_app_user($1, 'child', $2)", [
       ids.childAuth,
@@ -174,8 +199,8 @@ describe("RLS: role separation (NFR-PRIV-4, US-1.2 KP-2)", () => {
     await asRole(db, { role: "authenticated", sub: ids.childAuth }, async () => {
       const users = await db.query("select role from public.app_users");
       expect(users.rows).toEqual([{ role: "child" }]);
-      const profiles = await db.query("select id from public.child_profile");
-      expect(profiles.rows).toEqual([{ id: ids.childProfile }]);
+      const profiles = await db.query("select id, tutor_name_gender from public.child_profile");
+      expect(profiles.rows).toEqual([{ id: ids.childProfile, tutor_name_gender: "f" }]);
     });
   });
 

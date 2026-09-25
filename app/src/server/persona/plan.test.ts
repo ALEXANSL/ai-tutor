@@ -29,10 +29,24 @@ describe("planNicknameChange (US-1.6 KP-3, PM-12)", () => {
 
 describe("planTutorNameChange (US-1.7 KP-11)", () => {
   it("notifies the parent that the persona changed", () => {
-    expect(planTutorNameChange("Ліра", "Зоряна", "child").notification).toEqual({
+    const plan = planTutorNameChange({ name: "Ліра", gender: "f" }, { name: "Остап", gender: "m" }, "child");
+    expect(plan.update).toBe(true);
+    expect(plan.change).toEqual({ field: "name", old_value: "Ліра", new_value: "Остап", changed_by: "child" });
+    expect(plan.notification).toEqual({
       type: "persona_changed",
       severity: "normal",
-      payload: { field: "name", value: "Зоряна", previous: "Ліра" },
+      payload: { field: "name", value: "Остап", previous: "Ліра" },
+    });
+  });
+
+  it("updates the profile without a persona event when only the gender of an own name changes (BUG-002)", () => {
+    expect(planTutorNameChange({ name: "Максим", gender: "f" }, { name: "Максим", gender: "m" }, "child")).toEqual({
+      update: true,
+    });
+  });
+  it("is a no-op when neither name nor gender changed", () => {
+    expect(planTutorNameChange({ name: "Ліра", gender: "f" }, { name: "Ліра", gender: "f" }, "child")).toEqual({
+      update: false,
     });
   });
 });
@@ -43,7 +57,18 @@ describe("resolveTutorNameChoice (US-1.7 KP-2, KP-3)", () => {
       ok: true,
       name: "Ліра",
       source: "suggested",
+      gender: "f",
     });
+  });
+  it("takes the grammatical gender of a suggested male name from its group (BUG-001, BUG-002)", () => {
+    for (const { name } of options.m) {
+      expect(resolveTutorNameChoice({ choice: `suggested:${name}`, custom: "", gender: "f" }, options, ctx)).toEqual({
+        ok: true,
+        name,
+        source: "suggested",
+        gender: "m",
+      });
+    }
   });
   it("rejects a forged 'suggested' value that is not on the list", () => {
     expect(resolveTutorNameChoice({ choice: "suggested:Мама", custom: "" }, options, ctx)).toEqual({
@@ -56,7 +81,16 @@ describe("resolveTutorNameChoice (US-1.7 KP-2, KP-3)", () => {
       ok: true,
       name: "Мар’яна",
       source: "custom",
+      gender: "f",
     });
+  });
+  it("uses the child's explicit gender for an own name, female by default (BUG-002)", () => {
+    const choose = (gender?: string) =>
+      resolveTutorNameChoice({ choice: "custom", custom: "Максим", gender }, options, ctx);
+    expect(choose("m")).toEqual({ ok: true, name: "Максим", source: "custom", gender: "m" });
+    expect(choose("f")).toMatchObject({ gender: "f" });
+    expect(choose(undefined)).toMatchObject({ gender: "f" });
+    expect(choose("x")).toMatchObject({ gender: "f" });
   });
   it("rejects kinship / inappropriate custom names and notifies the parent", () => {
     const r = resolveTutorNameChoice({ choice: "custom", custom: "Мама" }, options, ctx);

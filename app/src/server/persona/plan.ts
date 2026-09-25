@@ -7,6 +7,8 @@ import {
   type PersonaWordlists,
   type TutorNameError,
 } from "@/lib/persona/validation";
+import { genderOfSuggestedName, parseTutorGender } from "@/lib/persona/gender";
+import type { TutorGender } from "@/i18n/uk";
 import type { PersonaEditable, TutorNameOptions } from "../db/types";
 
 export type Actor = "child" | "parent";
@@ -43,8 +45,20 @@ export function planNicknameChange(previous: string | null, next: string, by: Ac
   };
 }
 
-export function planTutorNameChange(previous: string | null, next: string, by: Actor): Plan {
-  if (previous === next) return { update: false };
+/**
+ * A gender-only change (same own name, "Вона" -> "Він") still updates the
+ * profile but is not a persona event for the parent: the name is unchanged.
+ */
+export function planTutorNameChange(
+  previous: { name: string | null; gender: TutorGender },
+  next: { name: string; gender: TutorGender },
+  by: Actor,
+): Plan {
+  if (previous.name === next.name) return { update: previous.gender !== next.gender };
+  return planTutorNameEvent(previous.name, next.name, by);
+}
+
+function planTutorNameEvent(previous: string | null, next: string, by: Actor): Plan {
   return {
     update: true,
     change: { field: "name", old_value: previous, new_value: next, changed_by: by },
@@ -56,7 +70,7 @@ export function planTutorNameChange(previous: string | null, next: string, by: A
 }
 
 export type TutorNameChoice =
-  | { ok: true; name: string; source: "suggested" | "custom" }
+  | { ok: true; name: string; source: "suggested" | "custom"; gender: TutorGender }
   | { ok: false; error: TutorNameError | "not_suggested"; notifyParent?: PlannedNotification };
 
 export function suggestedNames(options: TutorNameOptions): string[] {
@@ -66,22 +80,23 @@ export function suggestedNames(options: TutorNameOptions): string[] {
 /**
  * `choice` is "suggested:<name>" or "custom". Suggested names need no check
  * (KP-2) but must really be on the list; custom names go through PM-22 rules.
+ * Gender (BUG-002): a suggested name takes its group's gender; an own name
+ * takes the child's explicit `gender` ("f" | "m", default "f").
  * Content rejections (inappropriate / kinship) notify the parent (KP-3).
  */
 export function resolveTutorNameChoice(
-  input: { choice: string; custom: string },
+  input: { choice: string; custom: string; gender?: string },
   options: TutorNameOptions,
   context: { nickname: string | null; wordlists: PersonaWordlists },
 ): TutorNameChoice {
   if (input.choice.startsWith("suggested:")) {
     const name = input.choice.slice("suggested:".length);
-    return suggestedNames(options).includes(name)
-      ? { ok: true, name, source: "suggested" }
-      : { ok: false, error: "not_suggested" };
+    const gender = genderOfSuggestedName(options, name);
+    return gender ? { ok: true, name, source: "suggested", gender } : { ok: false, error: "not_suggested" };
   }
   if (input.choice !== "custom") return { ok: false, error: "empty" };
   const result = validateTutorName(input.custom, { nickname: context.nickname, wordlists: context.wordlists });
-  if (result.ok) return { ok: true, name: result.value, source: "custom" };
+  if (result.ok) return { ok: true, name: result.value, source: "custom", gender: parseTutorGender(input.gender) };
   const contentRejection = result.error === "inappropriate" || result.error === "kinship";
   return {
     ok: false,

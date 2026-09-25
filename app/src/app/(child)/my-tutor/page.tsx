@@ -44,7 +44,13 @@ export default async function MyTutorPage() {
               <span className={changeButton}>{t.change}</span>
             </summary>
             <div className="mt-4">
-              <TutorNamePicker options={options} current={profile.tutor_name} action={saveTutorNameAction} submitLabel={t.save} />
+              <TutorNamePicker
+                options={options}
+                current={profile.tutor_name}
+                currentGender={profile.tutor_name_gender}
+                action={saveTutorNameAction}
+                submitLabel={t.save}
+              />
             </div>
           </details>
         ) : (

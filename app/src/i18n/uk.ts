@@ -47,6 +47,7 @@ export const uk = {
   ai: {
     badge: "Я — ШІ",
     badgeSuffix: "не людина",
+    // Gendered forms: always read through gendered() from @/lib/persona/gender (BUG-002).
     roleNoun: { f: "ШІ-помічниця", m: "ШІ-помічник" } satisfies Record<TutorGender, string>,
     states: {
       listening: "Слухаю…",
@@ -85,6 +86,8 @@ export const uk = {
       custom: "Своє ім'я",
       customPlaceholder: "Напиши ім'я…",
       customHint: "Лише букви, пробіл, дефіс або апостроф — від 2 до 20 символів.",
+      genderLabel: "Як говорити про репетитора?",
+      gender: { f: "Вона", m: "Він" } satisfies Record<TutorGender, string>,
     },
     today: {
       greeting: (nickname: string) => `Привіт, ${nickname}!`,

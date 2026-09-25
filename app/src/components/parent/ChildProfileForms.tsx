@@ -4,7 +4,8 @@ import { useActionState, useState } from "react";
 import { parentSaveNicknameAction, parentSaveTutorNameAction } from "@/app/actions/parent";
 import { idleState } from "@/app/actions/state";
 import { FormMessage } from "@/components/FormMessage";
-import { uk } from "@/i18n/uk";
+import { uk, type TutorGender } from "@/i18n/uk";
+import { DEFAULT_TUTOR_GENDER, gendered } from "@/lib/persona/gender";
 import type { TutorNameOptions } from "@/server/db/types";
 
 const input =
@@ -34,7 +35,15 @@ export function ParentNicknameForm({ nickname }: { nickname: string | null }) {
 }
 
 /** Parent changes the tutor's name (US-1.7 KP-11): a suggestion or an own name (same rules). */
-export function ParentTutorNameForm({ options, current }: { options: TutorNameOptions; current: string | null }) {
+export function ParentTutorNameForm({
+  options,
+  current,
+  currentGender = DEFAULT_TUTOR_GENDER,
+}: {
+  options: TutorNameOptions;
+  current: string | null;
+  currentGender?: TutorGender;
+}) {
   const [state, action, pending] = useActionState(parentSaveTutorNameAction, idleState);
   const suggested = [...options.f, ...options.m].map((o) => o.name);
   const [choice, setChoice] = useState(current && suggested.includes(current) ? `suggested:${current}` : "custom");
@@ -73,14 +82,26 @@ export function ParentTutorNameForm({ options, current }: { options: TutorNameOp
         <option value="custom">{p.custom}</option>
       </select>
       {choice === "custom" && (
-        <input
-          name="custom"
-          aria-label={p.custom}
-          defaultValue={current && !suggested.includes(current) ? current : ""}
-          placeholder={p.customPlaceholder}
-          maxLength={40}
-          className={input}
-        />
+        <>
+          <input
+            name="custom"
+            aria-label={p.custom}
+            defaultValue={current && !suggested.includes(current) ? current : ""}
+            placeholder={p.customPlaceholder}
+            maxLength={40}
+            className={input}
+          />
+          <label htmlFor="parent-tutor-gender" className={label}>
+            {p.genderLabel}
+          </label>
+          <select id="parent-tutor-gender" name="gender" defaultValue={currentGender} className={input}>
+            {(["f", "m"] as const).map((g) => (
+              <option key={g} value={g}>
+                {gendered(g, p.gender)} — «{gendered(g, uk.ai.roleNoun)}»
+              </option>
+            ))}
+          </select>
+        </>
       )}
       <div>
         <button type="submit" disabled={pending} className={button}>

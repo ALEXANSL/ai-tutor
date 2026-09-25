@@ -41,6 +41,7 @@ export default async function ParentChildPage() {
                 <ParentTutorNameForm
                   options={settings.tutor_name_options}
                   current={profile.tutor_name}
+                  currentGender={profile.tutor_name_gender}
                 />
                 <dl className="text-[13px]">
                   <div className="flex justify-between gap-3 border-b border-p-line py-2">

@@ -4,7 +4,8 @@ import { useActionState, useState } from "react";
 import type { FormState } from "@/app/actions/state";
 import { idleState } from "@/app/actions/state";
 import { FormMessage } from "@/components/FormMessage";
-import { uk } from "@/i18n/uk";
+import { uk, type TutorGender } from "@/i18n/uk";
+import { DEFAULT_TUTOR_GENDER, gendered } from "@/lib/persona/gender";
 import type { TutorNameOptions } from "@/server/db/types";
 import { primaryButton } from "./ChildCard";
 
@@ -14,15 +15,19 @@ type Action = (prev: FormState, formData: FormData) => Promise<FormState>;
  * Suggested names (female / male groups, PM-21) + "own name" (US-1.7 KP-2, KP-3).
  * Custom names are checked on the server; a rejection is explained kindly
  * and the parent is informed there, so the client never pre-filters them.
+ * An own name comes with an explicit "Вона / Він" (default "Вона"): until a
+ * voice is chosen (S12) it sets the tutor's grammatical gender (BUG-002).
  */
 export function TutorNamePicker({
   options,
   current,
+  currentGender = DEFAULT_TUTOR_GENDER,
   action: serverAction,
   submitLabel,
 }: {
   options: TutorNameOptions;
   current: string | null;
+  currentGender?: TutorGender;
   action: Action;
   submitLabel: string;
 }) {
@@ -32,6 +37,7 @@ export function TutorNamePicker({
     current && suggested.includes(current) ? `suggested:${current}` : current ? "custom" : suggested[0] ? `suggested:${suggested[0]}` : "custom";
   const [choice, setChoice] = useState(initialChoice);
   const [custom, setCustom] = useState(current && !suggested.includes(current) ? current : "");
+  const [gender, setGender] = useState<TutorGender>(currentGender);
   const t = uk.child.tutorNamePicker;
 
   const card = (selected: boolean) =>
@@ -103,6 +109,29 @@ export function TutorNamePicker({
           <span className="mt-1 block text-xs text-muted">{t.customHint}</span>
         </span>
       </label>
+      {choice === "custom" && (
+        <fieldset className="flex flex-col gap-2" data-testid="tutor-gender">
+          <legend className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">{t.genderLabel}</legend>
+          <div className="grid grid-cols-2 gap-3">
+            {(["f", "m"] as const).map((g) => (
+              <label key={g} className={card(gender === g)}>
+                <input
+                  type="radio"
+                  name="gender"
+                  value={g}
+                  checked={gender === g}
+                  onChange={() => setGender(g)}
+                  className="sr-only"
+                />
+                <span>
+                  <b className="block text-[17px]">{gendered(g, t.gender)}</b>
+                  <span className="text-sm text-muted">«{gendered(g, uk.ai.roleNoun)}»</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
       <FormMessage state={state} />
       <button type="submit" className={primaryButton} disabled={pending || (choice === "custom" && custom.trim().length === 0)}>
         {submitLabel}

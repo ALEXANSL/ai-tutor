@@ -63,7 +63,7 @@ export async function changeNickname(
 
 export async function changeTutorName(
   familyId: string,
-  input: { choice: string; custom: string },
+  input: { choice: string; custom: string; gender?: string },
   by: Actor,
   options: { profileId?: string; firstTime?: boolean } = {},
 ): Promise<PersonaResult<TutorNameError | "not_suggested" | "not_allowed">> {
@@ -82,9 +82,12 @@ export async function changeTutorName(
     if (choice.notifyParent && by === "child") await notifyParent(scope, choice.notifyParent);
     return { ok: false, error: choice.error };
   }
-  await applyPlan(scope, profile, planTutorNameChange(profile.tutor_name, choice.name, by), {
+  const previous = { name: profile.tutor_name, gender: profile.tutor_name_gender };
+  const next = { name: choice.name, gender: choice.gender };
+  await applyPlan(scope, profile, planTutorNameChange(previous, next, by), {
     tutor_name: choice.name,
     tutor_name_source: choice.source,
+    tutor_name_gender: choice.gender,
     persona_updated_at: new Date().toISOString(),
   });
   return { ok: true };

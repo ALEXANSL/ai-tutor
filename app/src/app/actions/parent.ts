@@ -20,7 +20,11 @@ export async function parentSaveTutorNameAction(_prev: FormState, formData: Form
   const { familyId } = await requireParentAccess();
   const result = await changeTutorName(
     familyId,
-    { choice: String(formData.get("choice") ?? ""), custom: String(formData.get("custom") ?? "") },
+    {
+      choice: String(formData.get("choice") ?? ""),
+      custom: String(formData.get("custom") ?? ""),
+      gender: String(formData.get("gender") ?? ""),
+    },
     "parent",
   );
   if (!result.ok) {

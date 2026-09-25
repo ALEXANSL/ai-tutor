@@ -6,6 +6,8 @@ export interface ChildProfileRow {
   nickname: string | null;
   tutor_name: string | null;
   tutor_name_source: "suggested" | "custom" | null;
+  /** Gender implied by the name choice; used only while tutor_voice_id is null (BUG-002). */
+  tutor_name_gender: "f" | "m";
   tutor_voice_id: string | null;
   persona_updated_at: string | null;
   onboarding_completed_at: string | null;
