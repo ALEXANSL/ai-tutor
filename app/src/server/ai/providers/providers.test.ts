@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { anthropicStructured } from "./anthropic";
+import { anthropicStructured, anthropicVisionStructured } from "./anthropic";
 import { openaiEmbed } from "./openai";
 import { AiNotConfiguredError, ProviderError } from "../types";
 
@@ -55,6 +55,52 @@ describe("anthropicStructured (mocked SDK)", () => {
     await expect(anthropicStructured({ model: "m", system: "", prompt: "", schema, params: {} })).rejects.toBeInstanceOf(
       AiNotConfiguredError,
     );
+  });
+});
+
+describe("anthropicVisionStructured (mocked SDK, D-54 OCR)", () => {
+  const schema = z.object({ pages: z.array(z.object({ index: z.number(), text: z.string(), unreadable: z.boolean() })) });
+  const usage = { input_tokens: 2000, output_tokens: 400, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+
+  it("puts the PDF document(s) before the text prompt, base64 as given", async () => {
+    const answer = { pages: [{ index: 1, text: "Сторінка 1", unreadable: false }] };
+    const parse = streamOf({ stop_reason: "end_turn", parsed_output: answer, usage });
+    const res = await anthropicVisionStructured(
+      {
+        model: "claude-sonnet-5",
+        system: "sys",
+        prompt: "Розпізнай сторінки",
+        schema,
+        params: { effort: "low" },
+        documents: [{ mediaType: "application/pdf", data: "QkFTRTY0" }],
+      },
+      { messages: { stream: parse } } as never,
+    );
+    expect(res.data).toEqual(answer);
+    const [body] = parse.mock.calls[0]! as unknown as [{ messages: { content: { type: string }[] }[] }];
+    const content = body.messages[0]!.content;
+    expect(content[0]).toMatchObject({ type: "document", source: { type: "base64", media_type: "application/pdf", data: "QkFTRTY0" } });
+    expect(content.at(-1)).toMatchObject({ type: "text", text: "Розпізнай сторінки" });
+  });
+
+  it("sends an image block for a non-PDF document", async () => {
+    const parse = streamOf({ stop_reason: "end_turn", parsed_output: { pages: [] }, usage });
+    await anthropicVisionStructured(
+      { model: "m", system: "", prompt: "p", schema, params: {}, documents: [{ mediaType: "image/png", data: "abc" }] },
+      { messages: { stream: parse } } as never,
+    );
+    const [body] = parse.mock.calls[0]! as unknown as [{ messages: { content: { type: string }[] }[] }];
+    expect(body.messages[0]!.content[0]).toMatchObject({ type: "image", source: { type: "base64", media_type: "image/png" } });
+  });
+
+  it("reuses the same refusal/schema-mismatch handling as text-only calls", async () => {
+    const parse = streamOf({ stop_reason: "refusal", parsed_output: null, usage });
+    await expect(
+      anthropicVisionStructured(
+        { model: "m", system: "", prompt: "", schema, params: {}, documents: [] },
+        { messages: { stream: parse } } as never,
+      ),
+    ).rejects.toMatchObject({ name: "ProviderError", retryable: false });
   });
 });
 
