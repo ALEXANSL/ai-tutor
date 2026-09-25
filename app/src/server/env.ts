@@ -52,3 +52,45 @@ export function getAppBaseUrl(requestOrigin: string): string {
   const configured = process.env.APP_BASE_URL?.trim();
   return (configured || requestOrigin).replace(/\/+$/, "");
 }
+
+/** Optional server secret by name (S1+): trimmed value or null. Never log the value. */
+export function getServerSecret(
+  name:
+    | "ANTHROPIC_API_KEY"
+    | "OPENAI_API_KEY"
+    | "GOOGLE_API_KEY"
+    | "GOOGLE_SERVICE_ACCOUNT_JSON"
+    | "CRON_SECRET",
+): string | null {
+  return process.env[name]?.trim() || null;
+}
+
+export interface GoogleServiceAccount {
+  clientEmail: string;
+  privateKey: string;
+  tokenUri: string;
+}
+
+/**
+ * Parses GOOGLE_SERVICE_ACCOUNT_JSON (the whole JSON key file, docs/03 1.5 step 9).
+ * Returns null when missing or malformed — the caller shows "not configured".
+ */
+export function parseServiceAccount(raw: string | null | undefined): GoogleServiceAccount | null {
+  if (!raw) return null;
+  try {
+    const json = JSON.parse(raw) as { client_email?: unknown; private_key?: unknown; token_uri?: unknown };
+    if (typeof json.client_email !== "string" || typeof json.private_key !== "string") return null;
+    return {
+      clientEmail: json.client_email,
+      // Some UIs store the key with literal "\n" sequences.
+      privateKey: json.private_key.replace(/\\n/g, "\n"),
+      tokenUri: typeof json.token_uri === "string" ? json.token_uri : "https://oauth2.googleapis.com/token",
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function getGoogleServiceAccount(): GoogleServiceAccount | null {
+  return parseServiceAccount(getServerSecret("GOOGLE_SERVICE_ACCOUNT_JSON"));
+}

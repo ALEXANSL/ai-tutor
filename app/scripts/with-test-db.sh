@@ -57,6 +57,11 @@ PSQL=("$PG_BIN/psql" -h "$WORK_DIR" -p "$PORT" -U postgres -v ON_ERROR_STOP=1 -q
 for f in $(ls "$MIGRATIONS_DIR"/*.sql | sort); do
   "${PSQL[@]}" -d ai_tutor_test -f "$f"
 done
+# Migrations that promise to be re-runnable (Alex applies them by hand in the
+# SQL Editor) are applied a second time to prove it.
+for f in $(grep -l "Safe to re-run" "$MIGRATIONS_DIR"/*.sql | sort); do
+  "${PSQL[@]}" -d ai_tutor_test -f "$f" >/dev/null
+done
 
 export DATABASE_URL="postgresql://postgres@localhost/ai_tutor_test?host=$WORK_DIR&port=$PORT"
 "$@"

@@ -41,3 +41,11 @@ grant execute on function auth.uid() to anon, authenticated, service_role;
 alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
 alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
 alter default privileges in schema public grant execute on functions to anon, authenticated, service_role;
+
+-- Supabase installs extensions into the `extensions` schema, which is on the
+-- default search_path (S1: pgvector, pg_trgm).
+create schema extensions;
+grant usage on schema extensions to anon, authenticated, service_role;
+do $$ begin
+  execute format('alter database %I set search_path = "$user", public, extensions', current_database());
+end $$;
