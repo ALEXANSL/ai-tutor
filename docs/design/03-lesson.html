@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ШІ-Репетитор — Урок</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root[data-theme="light"]{
+    --bg:#FAF6EF; --surface:#FFFFFF; --surface-alt:#F1ECE0; --text:#2B2A28; --text-muted:#6B6862;
+    --primary:#FF7A50; --primary-press:#E85F37; --secondary:#2EC4B6; --accent:#7C6CF0;
+    --warn:#E8A33D; --danger:#E5484D; --border:#E7E0D2; --focus:#1D6FE0;
+  }
+  :root[data-theme="dark"]{
+    --bg:#15141C; --surface:#1F1E28; --surface-alt:#2A2833; --text:#F3F1EC; --text-muted:#A9A6A0;
+    --primary:#FF9470; --primary-press:#E87B54; --secondary:#3DDBC9; --accent:#9A8CFF;
+    --warn:#F0B95A; --danger:#FF6B6E; --border:#37353F; --focus:#5B9CFF;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:'Nunito',sans-serif; background:var(--bg); color:var(--text);}
+  .theme-toggle{position:fixed; top:12px; right:12px; z-index:80; display:flex; gap:8px; background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:6px; box-shadow:0 2px 10px rgba(0,0,0,.08);}
+  .theme-toggle button{border:none; background:transparent; color:var(--text); font-family:inherit; font-weight:700; font-size:12px; padding:7px 12px; border-radius:999px; cursor:pointer;}
+  .theme-toggle button.active{background:var(--primary); color:white;}
+
+  header.lesson-top{
+    display:flex; align-items:center; gap:14px; padding:14px 20px; background:var(--surface); border-bottom:1px solid var(--border);
+    position:sticky; top:0; z-index:30;
+  }
+  .progress-wrap{flex:1;}
+  .progress-wrap .lbl{display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); margin-bottom:6px; font-weight:700;}
+  .progress-bar{height:8px; background:var(--surface-alt); border-radius:99px; overflow:hidden;}
+  .progress-bar > div{height:100%; width:45%; background:var(--secondary); border-radius:99px; transition:width .3s;}
+  .voice-state{display:flex; align-items:center; gap:8px; background:var(--surface-alt); border-radius:999px; padding:6px 12px 6px 6px; flex:none;}
+  .voice-orb{width:28px; height:28px; border-radius:50%; background:radial-gradient(circle at 35% 30%, var(--accent), var(--primary)); flex:none;}
+  .voice-orb.listening{animation:breathe 1s ease-in-out infinite;}
+  .voice-orb.thinking{animation:spin 0.9s linear infinite;}
+  .voice-orb.speaking{animation:pulse .4s ease-in-out infinite alternate;}
+  .voice-orb.muted{opacity:.35; animation:none;}
+  @keyframes breathe{0%,100%{transform:scale(1);}50%{transform:scale(1.18);}}
+  @keyframes spin{from{transform:rotate(0);}to{transform:rotate(360deg);}}
+  @keyframes pulse{from{box-shadow:0 0 0 rgba(0,0,0,0);}to{box-shadow:0 0 14px color-mix(in srgb, var(--accent) 60%, transparent);}}
+  .voice-state span{font-size:12px; font-weight:700; color:var(--text-muted);}
+
+  main{padding:20px; max-width:760px; margin:0 auto 140px;}
+  .stepper-demo{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;}
+  .stepper-demo button{
+    border:1px solid var(--border); background:var(--surface); color:var(--text-muted); font-family:'Inter',sans-serif;
+    font-size:11px; padding:7px 10px; border-radius:10px; cursor:pointer;
+  }
+  .stepper-demo button.active{background:var(--secondary); color:white; border-color:var(--secondary);}
+
+  .slide-card{background:var(--surface); border-radius:24px; padding:28px 26px; box-shadow:0 6px 20px rgba(0,0,0,.06);}
+  .topic-tag{font-size:12px; font-weight:800; color:var(--secondary); text-transform:uppercase; letter-spacing:.03em; margin-bottom:8px;}
+  .slide-card h1{font-size:24px; margin:0 0 14px;}
+  .slide-illustration{
+    height:150px; border-radius:16px; background:linear-gradient(135deg, var(--surface-alt), var(--border));
+    display:flex; align-items:center; justify-content:center; font-size:48px; margin-bottom:16px;
+  }
+  .slide-card p{font-size:18px; line-height:1.55;}
+  .source-ref{font-size:12px; color:var(--text-muted); margin-top:14px;}
+  .audio-controls{display:flex; gap:10px; margin-top:18px; align-items:center; flex-wrap:wrap;}
+  .audio-controls button{
+    border:1px solid var(--border); background:var(--surface-alt); border-radius:14px; padding:10px 16px;
+    font-family:'Nunito',sans-serif; font-weight:700; font-size:14px; cursor:pointer; min-height:44px;
+  }
+  .audio-controls button.subs-on{background:var(--secondary); color:white; border-color:var(--secondary);}
+
+  .checkpoint-card{background:var(--surface); border-radius:24px; padding:26px; box-shadow:0 6px 20px rgba(0,0,0,.06);}
+  .checkpoint-card h2{font-size:20px; margin:0 0 18px;}
+  .choices{display:flex; flex-direction:column; gap:12px;}
+  .choice{
+    border:2px solid var(--border); border-radius:16px; padding:16px 18px; background:var(--surface-alt);
+    font-size:17px; font-weight:600; cursor:pointer; text-align:left; min-height:56px;
+  }
+  .choice.correct{border-color:var(--secondary); background:color-mix(in srgb, var(--secondary) 15%, var(--surface-alt));}
+  .choice.correct::after{content:" ✓"; color:var(--secondary); font-weight:900;}
+  .feedback{
+    margin-top:16px; padding:14px 16px; border-radius:14px; background:color-mix(in srgb, var(--secondary) 15%, var(--surface));
+    font-size:15px; display:flex; gap:10px; align-items:flex-start;
+  }
+  .mic-row{display:flex; gap:12px; margin-top:16px;}
+  .mic-btn{
+    display:flex; align-items:center; gap:10px; background:var(--accent); color:white; border:none; border-radius:16px;
+    padding:14px 20px; font-family:'Nunito',sans-serif; font-weight:800; font-size:16px; cursor:pointer; min-height:56px;
+  }
+  textarea{
+    width:100%; border-radius:14px; border:2px solid var(--border); background:var(--bg); color:var(--text);
+    font-family:'Nunito',sans-serif; font-size:16px; padding:14px; min-height:70px; resize:vertical;
+  }
+
+  .voice-dialog{background:var(--surface); border-radius:24px; padding:24px; box-shadow:0 6px 20px rgba(0,0,0,.06);}
+  .voice-dialog .orb-lg{
+    width:88px; height:88px; border-radius:50%; margin:0 auto 10px; background:radial-gradient(circle at 35% 30%, var(--accent), var(--primary));
+    animation:breathe 1.4s ease-in-out infinite; box-shadow:0 0 30px color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+  .voice-status-text{text-align:center; font-weight:800; margin-bottom:18px;}
+  .transcript{background:var(--surface-alt); border-radius:16px; padding:16px; max-height:260px; overflow:auto; display:flex; flex-direction:column; gap:10px;}
+  .transcript-header{display:flex; align-items:center; gap:8px; font-size:12px; font-weight:800; color:var(--accent); text-transform:uppercase; letter-spacing:.02em; margin-bottom:4px;}
+  .t-msg{max-width:80%; padding:10px 14px; border-radius:14px; font-size:15px; line-height:1.4; position:relative;}
+  .t-msg.child{align-self:flex-end; background:var(--primary); color:white; border-bottom-right-radius:4px;}
+  .t-msg.ai{align-self:flex-start; background:var(--surface); border:1px solid var(--border); border-left:4px solid var(--accent); border-bottom-left-radius:4px;}
+  .t-msg .wave{font-size:11px; opacity:.7; display:block; margin-top:4px;}
+
+  .break-card{background:var(--surface); border-radius:24px; padding:32px; text-align:center; box-shadow:0 6px 20px rgba(0,0,0,.06);}
+  .break-card .big-emoji{font-size:56px; margin-bottom:10px;}
+  .break-actions{display:flex; gap:12px; margin-top:22px; flex-wrap:wrap; justify-content:center;}
+  .break-actions button{
+    border:none; border-radius:16px; padding:16px 24px; font-family:'Nunito',sans-serif; font-weight:800; font-size:16px; cursor:pointer; min-height:56px;
+  }
+  .break-actions .go-break{background:var(--secondary); color:white;}
+  .break-actions .skip{background:var(--surface-alt); color:var(--text);}
+
+  .alarm-btn{
+    position:fixed; right:18px; bottom:18px; z-index:70; background:var(--danger); color:white; border:none; border-radius:999px;
+    padding:16px 20px; font-family:'Nunito',sans-serif; font-weight:800; font-size:15px; display:flex; align-items:center; gap:8px;
+    box-shadow:0 8px 22px rgba(229,72,77,.4); cursor:pointer; min-height:56px;
+  }
+
+  .air-banner{
+    position:fixed; inset:0; background:var(--danger); color:white; z-index:200; display:none; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center; padding:32px;
+  }
+  .air-banner.active{display:flex;}
+  .air-banner .siren{font-size:64px; margin-bottom:16px; animation:pulse2 .8s infinite alternate;}
+  @keyframes pulse2{from{transform:scale(1);}to{transform:scale(1.12);}}
+  .air-banner h1{font-size:28px; margin:0 0 10px;}
+  .air-banner p{font-size:17px; max-width:420px; margin:0 0 28px;}
+  .air-banner button{
+    background:white; color:var(--danger); border:none; border-radius:20px; padding:22px 40px; font-size:20px;
+    font-weight:900; font-family:'Nunito',sans-serif; cursor:pointer; min-height:64px;
+  }
+
+  .toast-saved{
+    position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(120%); background:var(--text); color:var(--bg);
+    padding:12px 20px; border-radius:14px; font-size:14px; font-weight:700; z-index:210; transition:transform .2s;
+  }
+  .toast-saved.show{transform:translateX(-50%) translateY(0);}
+
+  .resume-card{background:var(--surface); border:2px dashed var(--secondary); border-radius:20px; padding:20px; margin-bottom:16px; display:flex; align-items:center; gap:14px;}
+  .resume-card b{display:block; font-size:15px;}
+  .resume-card span{font-size:13px; color:var(--text-muted);}
+</style>
+</head>
+<body data-theme="light">
+  <div class="theme-toggle">
+    <button id="btn-light" class="active" onclick="setTheme('light')">☀️</button>
+    <button id="btn-dark" onclick="setTheme('dark')">🌙</button>
+  </div>
+
+  <header class="lesson-top">
+    <div class="progress-wrap">
+      <div class="lbl"><span>Математика · Дроби</span><span id="stepLbl">Крок 3 з 6</span></div>
+      <div class="progress-bar"><div style="width:45%"></div></div>
+    </div>
+    <div class="voice-state">
+      <div class="voice-orb listening" id="orbSmall"></div>
+      <span id="voiceLabel">Слухаю…</span>
+    </div>
+  </header>
+
+  <main>
+    <div class="stepper-demo">
+      <button class="active" onclick="showScreen('slide', this)">1. Слайд + озвучка</button>
+      <button onclick="showScreen('checkpoint', this)">2. Контрольна точка</button>
+      <button onclick="showScreen('voice', this)">3. Голосовий діалог</button>
+      <button onclick="showScreen('break', this)">4. Перерва</button>
+      <button onclick="showAirAlarm()">🚨 Демо: банер тривоги</button>
+    </div>
+
+    <div class="resume-card" id="resumeCard" style="display:none;">
+      <div style="font-size:26px;">↩️</div>
+      <div><b>Продовжуємо з того місця</b><span>Востаннє тут була перед перервою через тривогу</span></div>
+    </div>
+
+    <!-- SLIDE -->
+    <section id="s-slide">
+      <div class="slide-card">
+        <div class="topic-tag">Пояснення</div>
+        <h1>Скорочення дробів</h1>
+        <div class="slide-illustration">🍕➗2</div>
+        <p>Щоб скоротити дріб, треба поділити чисельник і знаменник на одне й те саме число. Наприклад, 6/8 ділимо на 2 — виходить 3/4.</p>
+        <div class="source-ref">📘 Джерело: підручник «Математика, 6 клас», с. 54</div>
+        <div class="audio-controls">
+          <button onclick="alert('Пауза озвучки')">⏸ Пауза</button>
+          <button onclick="alert('Повтор озвучки')">↺ Повторити</button>
+          <button class="subs-on" onclick="this.classList.toggle('subs-on')">CC Субтитри</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- CHECKPOINT -->
+    <section id="s-checkpoint" style="display:none;">
+      <div class="checkpoint-card">
+        <h2>Скороти дріб 8/12 наскільки можеш</h2>
+        <div class="choices">
+          <div class="choice" onclick="pickChoice(this,false)">4/6</div>
+          <div class="choice" onclick="pickChoice(this,true)">2/3</div>
+          <div class="choice" onclick="pickChoice(this,false)">1/2</div>
+        </div>
+        <div class="mic-row">
+          <button class="mic-btn">🎙️ Відповісти голосом</button>
+        </div>
+        <textarea placeholder="…або напиши відповідь тут"></textarea>
+        <div class="feedback" id="feedback" style="display:none;">
+          <span>✅</span><div><b>Так, 2/3 — це найбільше скорочення!</b><br>Ти поділила і чисельник, і знаменник на 4.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VOICE DIALOG -->
+    <section id="s-voice" style="display:none;">
+      <div class="voice-dialog">
+        <div class="orb-lg" id="orbLarge"></div>
+        <div class="voice-status-text" id="voiceStatusText">Говорить Ліра</div>
+        <div class="transcript">
+          <div class="transcript-header">🎧 Транскрипт голосової сесії · 00:42</div>
+          <div class="t-msg ai">Спробуй пояснити своїми словами, чому 8/12 і 2/3 — це те саме число.<span class="wave">〜〜〜 Ліра · 09:14</span></div>
+          <div class="t-msg child">Бо ми ділимо однаково зверху і знизу, тому дріб не змінюється насправді<span class="wave">〜〜ти · 09:14</span></div>
+          <div class="t-msg ai">Саме так! Це і називається скороченням дробу.<span class="wave">〜〜〜 Ліра · 09:15</span></div>
+        </div>
+        <div class="audio-controls" style="justify-content:center;">
+          <button onclick="alert('Мікрофон вимкнено, перехід у текст')">✋ Перебити</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- BREAK -->
+    <section id="s-break" style="display:none;">
+      <div class="break-card">
+        <div class="big-emoji">🧃</div>
+        <h2 style="margin:0;">Ти вчишся вже 20 хвилин!</h2>
+        <p style="color:var(--text-muted);">Розімнись, попий води або подивись у вікно.</p>
+        <div class="break-actions">
+          <button class="go-break">Перерва</button>
+          <button class="skip">Продовжити без перерви</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <button class="alarm-btn" onclick="triggerAlarm()">🚨 Тривога</button>
+
+  <div class="air-banner" id="airBanner">
+    <div class="siren">🚨</div>
+    <h1>Повітряна тривога!</h1>
+    <p>Постав урок на паузу і йди в укриття.</p>
+    <button onclick="pauseFromAlarm()">⏸ Пауза</button>
+  </div>
+
+  <div class="toast-saved" id="toastSaved">Збережено · продовжимо з цього кроку</div>
+
+<script>
+  function setTheme(t){
+    document.body.setAttribute('data-theme', t);
+    document.getElementById('btn-light').classList.toggle('active', t==='light');
+    document.getElementById('btn-dark').classList.toggle('active', t==='dark');
+  }
+  const screens=['slide','checkpoint','voice','break'];
+  function showScreen(name, btn){
+    screens.forEach(s=>document.getElementById('s-'+s).style.display = (s===name?'block':'none'));
+    document.querySelectorAll('.stepper-demo button').forEach(b=>b.classList.remove('active'));
+    if(btn) btn.classList.add('active');
+    document.getElementById('resumeCard').style.display = (name==='slide') ? 'flex' : 'none';
+    if(name==='voice'){ cycleVoice(); }
+  }
+  function pickChoice(el, correct){
+    document.querySelectorAll('.choice').forEach(c=>c.classList.remove('correct'));
+    if(correct){ el.classList.add('correct'); document.getElementById('feedback').style.display='flex'; }
+    else { document.getElementById('feedback').style.display='none'; alert('Майже! Спробуймо ще раз по-іншому.'); }
+  }
+  let voiceStates=['listening','thinking','speaking'];
+  let vi=0;
+  function cycleVoice(){
+    const orbSmall=document.getElementById('orbSmall');
+    const orbLarge=document.getElementById('orbLarge');
+    const label=document.getElementById('voiceLabel');
+    const statusText=document.getElementById('voiceStatusText');
+    const labels={listening:'Слухаю…', thinking:'Думаю…', speaking:'Говорить Ліра'};
+    orbSmall.className='voice-orb '+voiceStates[vi];
+    orbLarge.className='orb-lg';
+    label.textContent=labels[voiceStates[vi]];
+    statusText.textContent=labels[voiceStates[vi]];
+    vi=(vi+1)%voiceStates.length;
+  }
+  setInterval(()=>{ if(document.getElementById('s-voice').style.display!=='none'){ cycleVoice(); } }, 2200);
+
+  function triggerAlarm(){
+    showToast();
+  }
+  function showAirAlarm(){ document.getElementById('airBanner').classList.add('active'); }
+  function pauseFromAlarm(){
+    document.getElementById('airBanner').classList.remove('active');
+    document.getElementById('orbSmall').className='voice-orb muted';
+    document.getElementById('voiceLabel').textContent='Мікрофон вимкнено';
+    showToast();
+  }
+  function showToast(){
+    const t=document.getElementById('toastSaved');
+    t.classList.add('show');
+    setTimeout(()=>t.classList.remove('show'), 2200);
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ШІ-Репетитор — Сьогодні</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root[data-theme="light"]{
+    --bg:#FAF6EF; --surface:#FFFFFF; --surface-alt:#F1ECE0; --text:#2B2A28; --text-muted:#6B6862;
+    --primary:#FF7A50; --primary-press:#E85F37; --secondary:#2EC4B6; --accent:#7C6CF0;
+    --warn:#E8A33D; --danger:#E5484D; --border:#E7E0D2; --focus:#1D6FE0;
+  }
+  :root[data-theme="dark"]{
+    --bg:#15141C; --surface:#1F1E28; --surface-alt:#2A2833; --text:#F3F1EC; --text-muted:#A9A6A0;
+    --primary:#FF9470; --primary-press:#E87B54; --secondary:#3DDBC9; --accent:#9A8CFF;
+    --warn:#F0B95A; --danger:#FF6B6E; --border:#37353F; --focus:#5B9CFF;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:'Nunito',sans-serif; background:var(--bg); color:var(--text); padding-bottom:110px;}
+  .theme-toggle{position:fixed; top:14px; right:14px; z-index:50; display:flex; gap:8px; background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:6px; box-shadow:0 2px 10px rgba(0,0,0,.08);}
+  .theme-toggle button{border:none; background:transparent; color:var(--text); font-family:inherit; font-weight:700; font-size:12px; padding:7px 12px; border-radius:999px; cursor:pointer;}
+  .theme-toggle button.active{background:var(--primary); color:white;}
+
+  .offline-banner{
+    display:none; align-items:center; gap:10px; justify-content:center; background:var(--warn); color:#2B2A28;
+    font-weight:700; font-size:14px; padding:10px; position:sticky; top:0; z-index:40;
+  }
+  .offline-banner.active{display:flex;}
+
+  header.topbar{ padding:20px 24px 8px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;}
+  .greet h1{font-size:24px; margin:0 0 4px; font-weight:800;}
+  .greet p{margin:0; color:var(--text-muted); font-size:14px;}
+  .stat-pill{
+    display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--border);
+    border-radius:999px; padding:10px 16px; font-weight:700; font-size:14px;
+  }
+  .stats-row{display:flex; gap:10px; flex-wrap:wrap;}
+
+  main{padding:12px 24px 24px; display:grid; grid-template-columns:1fr; gap:20px;}
+  @media (min-width:900px) and (orientation:landscape){
+    main{grid-template-columns:1.15fr .85fr; align-items:start;}
+  }
+
+  .continue-card{
+    background:linear-gradient(120deg, var(--accent), var(--primary)); color:white; border-radius:22px;
+    padding:20px 22px; display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
+    box-shadow:0 8px 24px rgba(0,0,0,.12);
+  }
+  .continue-card .txt b{display:block; font-size:18px;}
+  .continue-card .txt span{font-size:13px; opacity:.9;}
+  .continue-card button{background:white; color:var(--primary-press); border:none; border-radius:14px; padding:12px 20px; font-weight:800; font-family:inherit; font-size:15px; cursor:pointer; min-height:44px;}
+
+  section.plan h2{font-size:18px; margin:18px 0 10px; display:flex; align-items:center; gap:8px;}
+  .group-badge{font-size:11px; font-weight:800; padding:3px 10px; border-radius:999px; text-transform:uppercase; letter-spacing:.02em;}
+  .badge-urgent{background:color-mix(in srgb, var(--danger) 18%, transparent); color:var(--danger);}
+  .badge-important{background:color-mix(in srgb, var(--warn) 20%, transparent); color:var(--warn);}
+  .badge-review{background:color-mix(in srgb, var(--secondary) 20%, transparent); color:var(--secondary);}
+
+  .block-card{
+    background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px 18px;
+    display:flex; align-items:center; gap:14px; margin-bottom:10px; cursor:pointer; transition:transform .1s;
+  }
+  .block-card:active{transform:scale(.99);}
+  .block-icon{width:44px; height:44px; border-radius:14px; background:var(--surface-alt); display:flex; align-items:center; justify-content:center; font-size:20px; flex:none;}
+  .block-info b{display:block; font-size:16px;}
+  .block-info span{font-size:13px; color:var(--text-muted);}
+  .block-meta{margin-left:auto; font-size:12px; color:var(--text-muted); text-align:right;}
+
+  .start-lesson-bar{
+    position:fixed; left:0; right:0; bottom:0; z-index:45; padding:14px 24px calc(14px + env(safe-area-inset-bottom));
+    background:var(--surface); border-top:1px solid var(--border); display:flex; gap:12px; align-items:center; justify-content:space-between;
+    box-shadow:0 -6px 20px rgba(0,0,0,.06);
+  }
+  .duration-select{display:flex; gap:6px; background:var(--surface-alt); border-radius:14px; padding:4px;}
+  .duration-select button{border:none; background:transparent; font-family:inherit; font-weight:700; font-size:13px; padding:10px 14px; border-radius:10px; cursor:pointer; color:var(--text-muted);}
+  .duration-select button.active{background:var(--primary); color:white;}
+  .btn-start{background:var(--primary); color:white; border:none; border-radius:16px; padding:16px 26px; font-family:inherit; font-weight:800; font-size:16px; cursor:pointer; min-height:56px; flex:1; max-width:280px;}
+
+  aside.subjects{background:var(--surface); border:1px solid var(--border); border-radius:22px; padding:18px;}
+  aside.subjects h2{margin:0 0 4px; font-size:18px;}
+  aside.subjects p{margin:0 0 14px; font-size:13px; color:var(--text-muted);}
+  .subject-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:10px;}
+  @media (min-width:1200px){ .subject-grid{grid-template-columns:repeat(3,1fr);} }
+  .subject-tile{
+    border-radius:16px; padding:14px 12px; background:var(--surface-alt); text-align:center; cursor:pointer; border:2px solid transparent;
+  }
+  .subject-tile.active-subject{border-color:var(--secondary);}
+  .subject-tile .ic{font-size:24px; display:block; margin-bottom:6px;}
+  .subject-tile b{font-size:13px; display:block;}
+  .subject-tile.stub{opacity:.55;}
+  .ring{width:26px;height:26px;margin:6px auto 0;border-radius:50%;background:conic-gradient(var(--secondary) var(--p,60%), var(--border) 0);}
+
+  .bottom-nav{
+    position:fixed; left:0; right:0; top:0; display:none;
+  }
+  .quick-nav{ display:flex; gap:10px; padding:0 24px 14px; flex-wrap:wrap; }
+  .quick-nav a{
+    text-decoration:none; color:var(--text); background:var(--surface); border:1px solid var(--border);
+    border-radius:14px; padding:10px 14px; font-size:13px; font-weight:700; display:flex; gap:6px; align-items:center;
+  }
+  .parent-mode-btn{
+    position:fixed; bottom:120px; right:16px; z-index:40; background:var(--surface); color:var(--text-muted);
+    border:1px solid var(--border); border-radius:999px; padding:10px 16px; font-family:'Inter',sans-serif; font-weight:600;
+    font-size:12px; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.08);
+  }
+  .demo-toggle{position:fixed; bottom:16px; left:16px; z-index:40; font-family:'Inter',sans-serif; font-size:11px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:8px 10px; color:var(--text-muted); cursor:pointer;}
+</style>
+</head>
+<body data-theme="light">
+  <div class="theme-toggle">
+    <button id="btn-light" class="active" onclick="setTheme('light')">☀️</button>
+    <button id="btn-dark" onclick="setTheme('dark')">🌙</button>
+  </div>
+
+  <div class="offline-banner" id="offlineBanner">☁️ Немає зв'язку. Усе збережено — продовжимо, коли з'явиться інтернет.</div>
+
+  <header class="topbar">
+    <div class="greet">
+      <h1>Привіт, Зірочка!</h1>
+      <p>Сьогодні, вівторок · 3 дні поспіль занять 🔥</p>
+    </div>
+    <div class="stats-row">
+      <div class="stat-pill">⭐ 240 балів</div>
+      <div class="stat-pill">🎁 До «400 Robux» — 160</div>
+    </div>
+  </header>
+
+  <div class="quick-nav">
+    <a href="04-library-chats-friend.html">📚 Бібліотека</a>
+    <a href="04-library-chats-friend.html#chats">💬 Чати</a>
+    <a href="04-library-chats-friend.html#friend">🧑‍🤝‍🧑 ШІ-друг</a>
+    <a href="05-progress-rewards.html">🏆 Прогрес</a>
+  </div>
+
+  <main>
+    <div>
+      <div class="continue-card" id="continueCard">
+        <div class="txt"><b>Продовжити з того місця</b><span>Математика · Дроби — крок 3 з 6 (перервано через тривогу)</span></div>
+        <button onclick="alert('Відкриється 03-lesson.html з кроку 3')">Продовжити ▶</button>
+      </div>
+
+      <section class="plan">
+        <h2><span class="group-badge badge-urgent">Терміново</span> Задане вчителькою</h2>
+        <div class="block-card" onclick="alert('Старт блоку')">
+          <div class="block-icon">✏️</div>
+          <div class="block-info"><b>Математика — Дроби, впр. 24–26</b><span>з «Єдиної школи», термін — завтра</span></div>
+          <div class="block-meta">~8 хв</div>
+        </div>
+
+        <h2><span class="group-badge badge-important">Важливо</span> Прогалини</h2>
+        <div class="block-card" onclick="alert('Старт блоку')">
+          <div class="block-icon">➗</div>
+          <div class="block-info"><b>Математика — Спільний знаменник</b><span>передумова для поточної теми</span></div>
+          <div class="block-meta">~7 хв</div>
+        </div>
+        <div class="block-card" onclick="alert('Старт блоку')">
+          <div class="block-icon">📖</div>
+          <div class="block-info"><b>Українська мова — Ненаголошені голосні</b><span>2 типові помилки минулого разу</span></div>
+          <div class="block-meta">~6 хв</div>
+        </div>
+
+        <h2><span class="group-badge badge-review">Повторення</span> За графіком</h2>
+        <div class="block-card" onclick="alert('Старт блоку')">
+          <div class="block-icon">🔁</div>
+          <div class="block-info"><b>Історія — Київська Русь</b><span>повторення через 7 днів</span></div>
+          <div class="block-meta">~5 хв</div>
+        </div>
+      </section>
+    </div>
+
+    <aside class="subjects">
+      <h2>Інший предмет</h2>
+      <p>Обери сама, чим хочеш зайнятись зараз.</p>
+      <div class="subject-grid">
+        <div class="subject-tile active-subject"><span class="ic">➗</span><b>Математика</b><div class="ring" style="--p:72%"></div></div>
+        <div class="subject-tile active-subject"><span class="ic">📜</span><b>Історія</b><div class="ring" style="--p:40%"></div></div>
+        <div class="subject-tile active-subject"><span class="ic">🔤</span><b>Українська мова</b><div class="ring" style="--p:55%"></div></div>
+        <div class="subject-tile active-subject"><span class="ic">📕</span><b>Література</b><div class="ring" style="--p:20%"></div></div>
+        <div class="subject-tile active-subject"><span class="ic">🇬🇧</span><b>Англійська</b><div class="ring" style="--p:33%"></div></div>
+        <div class="subject-tile active-subject"><span class="ic">🇩🇪</span><b>Німецька</b><div class="ring" style="--p:10%"></div></div>
+        <div class="subject-tile active-subject"><span class="ic">🌍</span><b>Географія</b><div class="ring" style="--p:15%"></div></div>
+        <div class="subject-tile stub" onclick="alert('Скоро тут будуть творчі завдання з відео-інструкціями')"><span class="ic">🎨</span><b>Мистецтво</b><span style="font-size:11px;color:var(--text-muted);">скоро</span></div>
+        <div class="subject-tile stub" onclick="alert('Скоро тут будуть творчі завдання з відео-інструкціями')"><span class="ic">🛠️</span><b>Технології</b><span style="font-size:11px;color:var(--text-muted);">скоро</span></div>
+        <div class="subject-tile stub" onclick="alert('Місце під майбутні модулі: підготовка до іспитів, додаткове навчання (напр. програмування) — з\'являються тут без перебудови екрана')"><span class="ic">🧩</span><b>Ще модулі</b><span style="font-size:11px;color:var(--text-muted);">скоро</span></div>
+      </div>
+      <p style="font-size:11px;color:var(--text-muted);margin-top:12px;">Нові предмети й модулі (напр. підготовка до іспитів) з'являються тут самі — без перебудови екрана.</p>
+    </aside>
+  </main>
+
+  <div class="start-lesson-bar">
+    <div class="duration-select">
+      <button class="active">30 хв</button>
+      <button>45 хв</button>
+    </div>
+    <button class="btn-start" onclick="alert('Відкриється вибір з 2–3 блоків → 03-lesson.html')">▶ Почати урок</button>
+  </div>
+
+  <button class="parent-mode-btn" onclick="alert('PIN-модалка — див. 01-entry-onboarding.html')">🔒 Режим тата</button>
+  <button class="demo-toggle" onclick="toggleOffline()">demo: перемкнути «немає зв'язку»</button>
+
+<script>
+  function setTheme(t){
+    document.body.setAttribute('data-theme', t);
+    document.getElementById('btn-light').classList.toggle('active', t==='light');
+    document.getElementById('btn-dark').classList.toggle('active', t==='dark');
+  }
+  document.querySelectorAll('.duration-select button').forEach(b=>{
+    b.onclick=()=>{document.querySelectorAll('.duration-select button').forEach(x=>x.classList.remove('active')); b.classList.add('active');};
+  });
+  function toggleOffline(){ document.getElementById('offlineBanner').classList.toggle('active'); }
+</script>
+</body>
+</html>

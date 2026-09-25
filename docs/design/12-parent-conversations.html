@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Кабінет тата — Розмови</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root[data-theme="light"]{
+    --bg:#F5F6F8; --surface:#FFFFFF; --text:#1D1F24; --text-muted:#6B7280;
+    --primary:#2F6FED; --success:#1FA97E; --warn:#D98A1E; --danger:#D6403F; --border:#E2E4E9; --accent:#7C6CF0;
+  }
+  :root[data-theme="dark"]{
+    --bg:#111318; --surface:#1A1D24; --text:#EDEEF2; --text-muted:#9CA3AF;
+    --primary:#5B9CFF; --success:#34D399; --warn:#F0B95A; --danger:#FF6B6E; --border:#2A2E38; --accent:#9A8CFF;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:'Inter',sans-serif; background:var(--bg); color:var(--text);}
+  a{color:inherit; text-decoration:none;}
+  .layout{display:grid; grid-template-columns:240px 1fr; min-height:100vh;}
+  @media(max-width:820px){ .layout{grid-template-columns:1fr;} .sidebar{display:none;} }
+  .sidebar{background:var(--surface); border-right:1px solid var(--border); padding:20px 14px; display:flex; flex-direction:column; gap:4px;}
+  .brand{display:flex; align-items:center; gap:10px; padding:8px 10px 18px; font-weight:800; font-size:16px;}
+  .brand .dot{width:10px; height:10px; border-radius:50%; background:var(--primary);}
+  .nav-item{display:flex; align-items:center; gap:10px; padding:12px 12px; border-radius:12px; font-size:14px; font-weight:600; color:var(--text-muted);}
+  .nav-item.active{background:color-mix(in srgb, var(--primary) 12%, transparent); color:var(--primary);}
+  .nav-item .badge{margin-left:auto; background:var(--danger); color:white; font-size:11px; padding:1px 7px; border-radius:99px;}
+  .mode-badge{margin-top:auto; background:var(--primary); color:white; border-radius:12px; padding:12px; font-size:12px; font-weight:700; text-align:center;}
+
+  .content{padding:22px 26px 60px;}
+  .topbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:10px;}
+  .topbar h1{font-size:22px; margin:0;}
+  .theme-toggle{display:flex; gap:8px; background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:5px;}
+  .theme-toggle button{border:none; background:transparent; color:var(--text); font-family:inherit; font-weight:700; font-size:12px; padding:6px 12px; border-radius:999px; cursor:pointer;}
+  .theme-toggle button.active{background:var(--primary); color:white;}
+
+  .conv-layout{display:grid; grid-template-columns:260px 1fr; gap:16px;}
+  @media(max-width:900px){ .conv-layout{grid-template-columns:1fr;} }
+  .panel{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:16px;}
+  .tree .subj{font-weight:800; font-size:13px; margin:12px 0 6px;}
+  .tree .topic{padding:9px 10px; border-radius:10px; font-size:13px; cursor:pointer; color:var(--text-muted);}
+  .tree .topic.active{background:var(--bg); color:var(--text); font-weight:700;}
+
+  .filters{display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;}
+  .filters input, .filters select{border:1px solid var(--border); border-radius:10px; padding:8px 12px; font-family:'Inter',sans-serif; font-size:13px; background:var(--bg); color:var(--text);}
+
+  .msg{max-width:80%; padding:11px 14px; border-radius:14px; margin-bottom:10px; font-size:14px; line-height:1.4;}
+  .msg.child{margin-left:auto; background:var(--primary); color:white; border-bottom-right-radius:4px;}
+  .msg.ai{background:var(--bg); border:1px solid var(--border); border-bottom-left-radius:4px;}
+  .msg.transcript{border:1px solid var(--accent); border-left:5px solid var(--accent); background:var(--surface);}
+  .msg .meta{font-size:10px; opacity:.7; margin-top:4px; display:block;}
+  .transcript-label{font-size:11px; font-weight:800; color:var(--accent); text-transform:uppercase; margin-bottom:6px;}
+  .safety-flag{background:color-mix(in srgb, var(--danger) 12%, transparent); border:1px solid var(--danger); border-radius:12px; padding:10px 14px; font-size:12px; margin-bottom:12px; color:var(--danger); font-weight:700;}
+</style>
+</head>
+<body data-theme="light">
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand"><span class="dot"></span> ШІ-Репетитор</div>
+    <a class="nav-item" href="10-parent-dashboard.html">📊 Дашборд</a>
+    <a class="nav-item" href="11-parent-notifications.html">🔔 Сповіщення <span class="badge">3</span></a>
+    <a class="nav-item active" href="12-parent-conversations.html">💬 Розмови</a>
+    <a class="nav-item" href="13-parent-child-profile.html">🧒 Профіль дитини</a>
+    <a class="nav-item" href="14-parent-directives.html">🗒️ Вказівки й повідомлення</a>
+    <a class="nav-item" href="15-parent-budget-models.html">💳 Бюджет і моделі</a>
+    <a class="nav-item" href="17-parent-sources.html">📚 Джерела / Мої книги</a>
+    <a class="nav-item" href="16-parent-settings.html">⚙️ Налаштування й ДЗ</a>
+    <a class="nav-item" style="opacity:.5; cursor:default;">🧩 Модулі (скоро): іспити, доп. навчання</a>
+    <div class="mode-badge">🔒 Режим тата активний</div>
+  </aside>
+
+  <main class="content">
+    <div class="topbar">
+      <h1>Розмови (дослівно)</h1>
+      <div class="theme-toggle">
+        <button id="btn-light" class="active" onclick="setTheme('light')">☀️</button>
+        <button id="btn-dark" onclick="setTheme('dark')">🌙</button>
+      </div>
+    </div>
+
+    <div class="conv-layout">
+      <div class="panel tree">
+        <div class="subj">➗ Математика</div>
+        <div class="topic active">Дроби</div>
+        <div class="topic">Рівняння</div>
+        <div class="subj">🔤 Українська мова</div>
+        <div class="topic">Ненаголошені голосні</div>
+        <div class="subj">🧑‍🤝‍🧑 ШІ-друг</div>
+        <div class="topic">Усі розмови</div>
+      </div>
+
+      <div class="panel">
+        <div class="filters">
+          <input type="text" placeholder="🔍 Пошук за змістом" style="flex:1; min-width:160px;">
+          <select><option>Весь час</option><option>Цей тиждень</option></select>
+          <select><option>Текст і голос</option><option>Лише транскрипти</option></select>
+        </div>
+
+        <div class="safety-flag">⚠️ У цій темі був 1 тривожний сигнал — див. Центр сповіщень</div>
+
+        <div class="msg ai">Привіт, Зірочко! Сьогодні розберемо, як скорочувати дроби. 📘 с. 54<span class="meta">Ліра · 09:10</span></div>
+        <div class="msg child">а навіщо це взагалі треба?<span class="meta">Зірочка · 09:11</span></div>
+        <div class="msg ai">Щоб дроби було легше порівнювати й рахувати.<span class="meta">Ліра · 09:11</span></div>
+        <div class="msg transcript">
+          <div class="transcript-label">🎧 Транскрипт голосової сесії · 3 хв 12 с</div>
+          <div class="msg ai" style="margin:0 0 8px;">Спробуй пояснити своїми словами, чому 8/12 і 2/3 — це те саме число.<span class="meta">Ліра · 09:14</span></div>
+          <div class="msg child" style="margin:0;">Бо ми ділимо однаково зверху і знизу<span class="meta">Зірочка · 09:14</span></div>
+        </div>
+        <div class="msg ai">Чудово попрацювали сьогодні! ⭐ +12 балів<span class="meta">Ліра · 09:20</span></div>
+      </div>
+    </div>
+  </main>
+</div>
+<script>
+  function setTheme(t){
+    document.body.setAttribute('data-theme', t);
+    document.getElementById('btn-light').classList.toggle('active', t==='light');
+    document.getElementById('btn-dark').classList.toggle('active', t==='dark');
+  }
+</script>
+</body>
+</html>
