@@ -1,7 +1,7 @@
 import { generateKeyPairSync, createVerify } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { parseServiceAccount } from "../env";
-import { buildServiceAccountAssertion, downloadFile, formatOf, isValidDriveId, listFolderFiles } from "./google";
+import { MAX_FILE_BYTES, buildServiceAccountAssertion, downloadFile, formatOf, isValidDriveId, listFolderFiles } from "./google";
 import { checkFolderPublicAccess } from "./public-access";
 
 const FOLDER = "FolderIdPlaceholder_0123456789";
@@ -81,6 +81,33 @@ describe("drive listing", () => {
     await expect(downloadFile("FilePdfPlaceholder001", "t", (async () => big) as never)).rejects.toMatchObject({
       code: "too_large",
     });
+  });
+
+  it("BUG-003: aborts a streamed download once MAX_FILE_BYTES is exceeded when Content-Length is missing, without buffering the whole file", async () => {
+    const chunkSize = 10 * 1024 * 1024; // 10 MB "chunks" — only `.byteLength` is real, no data is allocated.
+    let reads = 0;
+    let cancelled = false;
+    const reader = {
+      read: vi.fn(async () => {
+        reads += 1;
+        return { done: false, value: { byteLength: chunkSize } };
+      }),
+      cancel: vi.fn(async (_reason?: unknown) => {
+        cancelled = true;
+      }),
+    };
+    const res = {
+      status: 200,
+      ok: true,
+      headers: { get: () => null }, // no content-length header (the bug's trigger case)
+      body: { getReader: () => reader },
+    };
+    await expect(downloadFile("FilePdfPlaceholder001", "t", (async () => res) as never)).rejects.toMatchObject({
+      code: "too_large",
+    });
+    expect(cancelled).toBe(true);
+    // Stops right after crossing the limit — proof it never tries to read/buffer the "whole" (huge) stream.
+    expect(reads).toBeLessThanOrEqual(Math.ceil(MAX_FILE_BYTES / chunkSize) + 1);
   });
 });
 

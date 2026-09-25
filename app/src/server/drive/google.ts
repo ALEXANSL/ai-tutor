@@ -148,12 +148,46 @@ export async function listFolderFiles(
 
 export const MAX_FILE_BYTES = 150 * 1024 * 1024;
 
+/**
+ * Streams the response body with a running byte counter and aborts as soon as
+ * it exceeds `MAX_FILE_BYTES`, instead of buffering the whole file first
+ * (BUG-003): a missing `Content-Length` header must not let an oversized or
+ * mislabelled file exhaust the serverless function's memory.
+ */
+async function readBounded(res: Response): Promise<Uint8Array> {
+  if (!res.body) {
+    // No streaming body available (e.g. some test fetch mocks): fall back to
+    // a single buffered read, still bounded by the post-read check below.
+    const buf = new Uint8Array(await res.arrayBuffer());
+    if (buf.byteLength > MAX_FILE_BYTES) throw new DriveError("file too large", 413, "too_large");
+    return buf;
+  }
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_FILE_BYTES) {
+      await reader.cancel("file too large").catch(() => {});
+      throw new DriveError("file too large", 413, "too_large");
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
 export async function downloadFile(fileId: string, token: string, fetchImpl: typeof fetch = fetch): Promise<Uint8Array> {
   if (!isValidDriveId(fileId)) throw new DriveError("invalid file id", null, "not_found");
   const res = await driveGet(`${DRIVE_API}/files/${fileId}?alt=media&supportsAllDrives=true`, token, fetchImpl, 120_000);
   const length = Number(res.headers.get("content-length") ?? 0);
   if (length > MAX_FILE_BYTES) throw new DriveError("file too large", 413, "too_large");
-  const buf = new Uint8Array(await res.arrayBuffer());
-  if (buf.byteLength > MAX_FILE_BYTES) throw new DriveError("file too large", 413, "too_large");
-  return buf;
+  return readBounded(res);
 }
