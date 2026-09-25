@@ -57,7 +57,6 @@
 | **До S5** (тривоги) | 1.13 alerts.in.ua |
 | **До S9–S10** (фото) | 1.9 Gemini API (з білінгом) |
 | **До S12** (озвучка) | 1.10 ElevenLabs **[$]** · затвердити каталог голосів (1.10, крок 4) |
-| **До зрізу «Мій репетитор»** (аватар, US-1.8; номер зрізу визначить `product-manager`) | 1.5 Д — увімкнути Cloud Vision API (безкоштовно в наших обсягах) |
 | **До S17** (архів) | 1.6 крок «обмежити доступ повністю» · кнопка «Підключити архів» у кабінеті |
 | **Перед щоденним використанням донькою** (після MVP-α) | Supabase Pro **[$]** (1.4, крок 6) |
 
@@ -102,9 +101,7 @@
 
 **Г. Білінг для Gemini [$]** (до S9) — див. 1.9.
 
-**Д. Резервна перевірка аватарів — Cloud Vision API** (до зрізу з аватаром репетитора, US-1.8; потрібен прив'язаний білінг з 1.9)
-11. **APIs & Services → Library** → знайдіть **Cloud Vision API** → **Enable**. Нових ключів не потрібно: застосунок використовує той самий сервісний акаунт (`GOOGLE_SERVICE_ACCOUNT_JSON`).
-12. Вартість: перші **1 000 перевірок на місяць — безкоштовно** (у нас очікується кілька на місяць); далі $1,50 за 1 000. Окремий бюджет не потрібен — діє бюджет Google $30 зі сповіщеннями (1.9). Основна перевірка — безкоштовний фільтр OpenAI (ключ з 1.8), Vision — лише резерв.
+*(Крок «Cloud Vision API» для перевірки аватарів прибрано: за вашим рішенням 2026-09-25 автоматична модерація аватара в MVP не потрібна — ADR-019. Нічого вмикати не треба.)*
 
 ### 1.6. Папка Google Drive з підручниками (R-8) [!]
 1. Відкрийте папку в **drive.google.com** → **Поділитися (Share)**.
@@ -413,7 +410,7 @@ Supabase Free (1 ГБ файлів) **не вміщує** бібліотеку +
 | Переозвучити всю бібліотеку одразу (кнопка тата, не за замовчуванням) **[$]** | ≈ 8 000 символів × кількість уроків (рік «Економу» ≈ 110 уроків) | ≈ $0,80 за урок; до ≈ **$88** за річну бібліотеку |
 | Режим «старі уроки — старим голосом» (`keep_old`) | переозвучення не виконується | **$0** |
 | Аватар-картинка: сховище | ≤ 5 файлів × ≤ 150 КБ | **$0** (у межах Supabase Pro) |
-| Аватар: перевірка вмісту | OpenAI `omni-moderation` — безкоштовно; резерв Google Cloud Vision SafeSearch — 1 000/міс безкоштовно, далі $1,50 / 1 000; перевірка обличчя — на планшеті | **$0** |
+| Аватар: перевірка | лише валідація формату/розміру й стиснення на планшеті та сервері; автоматичної модерації в MVP немає (рішення PO 2026-09-25, ADR-019); зображення не йде в жодні моделі й сервіси | **$0** |
 | Анімація аватара (CSS/Canvas на планшеті) | без зовнішніх сервісів | **$0** |
 | **Разом для MVP** | | **≈ $0/міс** + переозвучення лише після зміни голосу |
 
@@ -429,6 +426,21 @@ Supabase Free (1 ГБ файлів) **не вміщує** бібліотеку +
 | D. Попередньо згенероване відео лише для пояснень бібліотеки | не перевірено (оцінити у Фазі 2) | — |
 
 Рішення про Фазу 2 — окреме, з підтвердженням Алекса **[$]**; у класах B–C картинка з аватара потрапляла б до стороннього постачальника — це теж окреме рішення щодо приватності.
+
+### 3.9а. Інтерактивні й анімовані уроки (рішення PO 2026-09-25; `docs/02` розд. 14.3, ADR-020)
+
+ШІ генерує не код, а короткі дані для наших готових компонентів (числова пряма, перетягування карток, покрокове пояснення). Тому додаткові витрати — лише на кілька сотень токенів у генерації нового уроку.
+
+| Що | Розрахунок | Вартість |
+|---|---|---|
+| Генерація нового уроку з компонентами | каталог компонентів у промпті ≈ +1–2K вхідних токенів на блок (кешується) + дані компонентів ≈ +0,5–1K вихідних (Opus 5.5: $4 / $20 за 1M) | ≈ **+$0,01–0,03 на блок**, ≈ +$0,05–0,1 на новий 30-хв урок |
+| «Економ» за місяць (≈ 11 нових уроків) | 44 блоки × ≈ $0,02 | ≈ **+$1/міс** |
+| Повтор з бібліотеки | дані збережено, генерації немає | **$0** |
+| Оцінювання інтерактивних відповідей | кодом компонента, без ШІ | **$0** (невелика економія на `answer_evaluation`) |
+| Сервіси й бібліотеки | компоненти — частина застосунку (`dnd-kit`, `motion`, KaTeX — безкоштовні) | **$0** |
+| Розробка MVP-мінімуму | формат + реєстр + `number_line`, `drag_sort`, `step_reveal` | ≈ **4–5 днів розробника** (мінімум з одним компонентом — ≈ 2,5 дня) |
+
+*Припущення:* розмір даних компонентів — оцінка для 1–2 інтерактивних кроків на блок; точніше — після перших згенерованих уроків (облік у `ai_calls`).
 
 ---
 
@@ -481,6 +493,8 @@ Supabase Free (1 ГБ файлів) **не вміщує** бібліотеку +
 | 8 | **E-mail** | **Безкоштовний відправник Resend** на пошту Алекса; власний домен — можливо пізніше | 1.11; ADR-010 |
 | 9 | **Стартовий сценарій** | **«Економ»** (≈ 1 урок 30 хв/день + «ШІ-друг» 10 хв/день); «Базовий»/«Комфорт» — після тестування | 0, 3.5, 5.1 |
 | 10 | **Модульність і можлива комерціалізація** (стратегічні рішення) | Закладаються без додаткових витрат ($0/міс; ≈ 1,5–2 дні розробника в S0–S1) | `docs/02` розд. 14; ADR-017, ADR-018. При комерціалізації додадуться платні тарифи (Vercel Pro, власний домен тощо) — окреме рішення |
+| 11 | **Модерація аватара** | **Не потрібна в MVP** (один користувач); контроль — тато (подія, заміна/скидання); Cloud Vision не вмикається; модерація — при комерціалізації | 1.5 (крок Д прибрано), 3.9; ADR-019, ADR-018 |
+| 12 | **Інтерактивні й анімовані уроки** | Стратегічний напрям (R2, частково MVP): ШІ генерує дані для бібліотеки безпечних компонентів, не код | 3.9а (≈ +$1/міс, ≈ 4–5 днів розробки MVP-мінімуму); ADR-020 |
 
 ### 5.1. Підсумок місячних витрат після рішень (будні, 22 навчальні дні, «ШІ-друг» 10 хв/день)
 
@@ -504,7 +518,7 @@ Supabase Free (1 ГБ файлів) **не вміщує** бібліотеку +
 - ElevenLabs: [ElevenAgents Pricing](https://elevenlabs.io/pricing/agents), [API Pricing](https://elevenlabs.io/pricing/api), [Lowered API & Agents pricing, PAYG](https://elevenlabs.io/blog/weve-lowered-api-agents-pricing-and-introduced-pay-as-you-go), [How much does ElevenAgents cost?](https://help.elevenlabs.io/hc/en-us/articles/29298065878929-How-much-does-ElevenAgents-cost), [Client tools](https://elevenlabs.io/docs/eleven-agents/customization/tools/client-tools), [Overrides](https://elevenlabs.io/docs/agents-platform/customization/personalization/overrides), [Models (LLM) for Agents](https://elevenlabs.io/docs/eleven-agents/customization/llm), [Zero Retention Mode (per-agent)](https://elevenlabs.io/docs/eleven-agents/customization/privacy/zrm), [Retention](https://elevenlabs.io/docs/eleven-agents/customization/privacy/retention)
 - ElevenLabs — перевірка «безкоштовної української озвучки» (2026-09-25): [Free Ukrainian Text to Speech](https://elevenlabs.io/text-to-speech/ukrainian), [Pricing (Free — 10 000 кредитів)](https://elevenlabs.io/pricing), [ElevenAgents Pricing (Free — 15 хв)](https://elevenlabs.io/pricing/agents), [Do you offer discounted or free plans?](https://help.elevenlabs.io/hc/en-us/articles/13315218812177-Do-you-offer-discounted-or-free-plans), [Can I publish the content I generate? (атрибуція, некомерційно на Free)](https://elevenlabs.io/docs/help-center/legal/can-i-publish-the-content-i-generate-on-the-platform), [Terms of Service](https://elevenlabs.io/terms-of-use), [Ukrainian Public Services partnership](https://elevenlabs.io/blog/ukrainian-public-services), [Мінцифри: партнерство з ElevenLabs](https://thedigital.gov.ua/news/technologies/ukrainski-derzhavni-servisi-govoritimut-zavdyaki-shi-pochinaemo-partnerstvo-z-elevenlabs)
 - ElevenLabs — голоси й образ репетитора (перевірено пошуком 2026-09-25): [Voice Library (docs)](https://elevenlabs.io/docs/eleven-creative/voices/voice-library), [Adult Female voices](https://elevenlabs.io/voice-library/adult-female-voices), [Adult Male voices](https://elevenlabs.io/voice-library/adult-male-voices), [Ukrainian TTS & voices](https://elevenlabs.io/text-to-speech/ukrainian), огляд українських голосів бібліотеки (сторонній, для орієнтиру) — [json2video: ElevenLabs voices in Ukrainian](https://json2video.com/ai-voices/elevenlabs/languages/ukrainian/), [What is a notice period?](https://elevenlabs.io/docs/help-center/product/voices/voice-library/what-is-a-notice-period), [Voice slots per tier (голоси з бібліотеки не займають слотів)](https://help.elevenlabs.io/hc/en-us/articles/24351056337937-How-many-voice-slots-do-I-get-per-tier-and-how-can-I-increase-it), [Agents overrides (зокрема TTS/voice)](https://elevenlabs.io/docs/eleven-agents/customization/personalization/overrides), [React SDK (гучність вводу/виводу)](https://elevenlabs.io/docs/eleven-agents/libraries/react), [TTS with timestamps](https://elevenlabs.io/docs/api-reference/text-to-speech/convert-with-timestamps)
-- Модерація зображень аватара (2026-09-25): [OpenAI Moderation guide (зображення, безкоштовно)](https://developers.openai.com/api/docs/guides/moderation), [omni-moderation model](https://developers.openai.com/api/docs/models/omni-moderation-latest), [Cloud Vision pricing (SafeSearch, 1 000/міс безкоштовно)](https://cloud.google.com/vision/pricing), [MediaPipe Face Detector for Web](https://ai.google.dev/edge/mediapipe/solutions/vision/face_detector/web_js)
+- Модерація зображень аватара (2026-09-25; **у MVP не використовується** за рішенням PO — довідково на випадок комерціалізації, ADR-018): [OpenAI Moderation guide (зображення, безкоштовно)](https://developers.openai.com/api/docs/guides/moderation), [omni-moderation model](https://developers.openai.com/api/docs/models/omni-moderation-latest), [Cloud Vision pricing (SafeSearch, 1 000/міс безкоштовно)](https://cloud.google.com/vision/pricing), [MediaPipe Face Detector for Web](https://ai.google.dev/edge/mediapipe/solutions/vision/face_detector/web_js)
 - Говорящий аватар, Фаза 2 (огляди цін, пошук 2026-09-25; звірити з постачальниками перед рішенням): [Real-Time Talking Avatar Providers — prices, September 2026 (Akapulu)](https://blog.akapulu.com/p/real-time-avatar-api-pricing-index/), [How much does a realtime AI avatar API cost in 2026?](https://realtimeavatar.ai/blog/realtime-ai-avatar-api-pricing), [HeyGen API pricing / LiveAvatar](https://realtimeavatar.ai/blog/heygen-api-pricing-explained), [Anam pricing](https://anam.ai/pricing), [Spatius — cost per minute](https://www.spatius.ai/blog/compare-pricing-leading-ai-avatar-services-2026/), [TalkingHead (відкрита JS-бібліотека, губи за таймінгами TTS)](https://github.com/met4citizen/talkinghead)
 - Supabase: [Pricing & Fees](https://supabase.com/pricing), [Edge Functions limits](https://supabase.com/docs/guides/functions/limits), [Cron](https://supabase.com/docs/guides/cron), [pg_net](https://supabase.com/docs/guides/database/extensions/pg_net), [pgvector](https://supabase.com/docs/guides/database/extensions/pgvector)
 - Vercel: [Functions duration](https://vercel.com/docs/functions/configuring-functions/duration), [Cron usage & pricing](https://vercel.com/docs/cron-jobs/usage-and-pricing), [AI Gateway fallbacks](https://vercel.com/docs/ai-gateway/models-and-providers/model-fallbacks)
