@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Кабінет тата — Профіль дитини</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root[data-theme="light"]{
+    --bg:#F5F6F8; --surface:#FFFFFF; --text:#1D1F24; --text-muted:#6B7280;
+    --primary:#2F6FED; --success:#1FA97E; --warn:#D98A1E; --danger:#D6403F; --border:#E2E4E9; --accent:#7C6CF0;
+  }
+  :root[data-theme="dark"]{
+    --bg:#111318; --surface:#1A1D24; --text:#EDEEF2; --text-muted:#9CA3AF;
+    --primary:#5B9CFF; --success:#34D399; --warn:#F0B95A; --danger:#FF6B6E; --border:#2A2E38; --accent:#9A8CFF;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:'Inter',sans-serif; background:var(--bg); color:var(--text);}
+  a{color:inherit; text-decoration:none;}
+  .layout{display:grid; grid-template-columns:240px 1fr; min-height:100vh;}
+  @media(max-width:820px){ .layout{grid-template-columns:1fr;} .sidebar{display:none;} }
+  .sidebar{background:var(--surface); border-right:1px solid var(--border); padding:20px 14px; display:flex; flex-direction:column; gap:4px;}
+  .brand{display:flex; align-items:center; gap:10px; padding:8px 10px 18px; font-weight:800; font-size:16px;}
+  .brand .dot{width:10px; height:10px; border-radius:50%; background:var(--primary);}
+  .nav-item{display:flex; align-items:center; gap:10px; padding:12px 12px; border-radius:12px; font-size:14px; font-weight:600; color:var(--text-muted);}
+  .nav-item.active{background:color-mix(in srgb, var(--primary) 12%, transparent); color:var(--primary);}
+  .nav-item .badge{margin-left:auto; background:var(--danger); color:white; font-size:11px; padding:1px 7px; border-radius:99px;}
+  .mode-badge{margin-top:auto; background:var(--primary); color:white; border-radius:12px; padding:12px; font-size:12px; font-weight:700; text-align:center;}
+
+  .content{padding:22px 26px 60px; max-width:920px;}
+  .topbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:10px;}
+  .topbar h1{font-size:22px; margin:0;}
+  .theme-toggle{display:flex; gap:8px; background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:5px;}
+  .theme-toggle button{border:none; background:transparent; color:var(--text); font-family:inherit; font-weight:700; font-size:12px; padding:6px 12px; border-radius:999px; cursor:pointer;}
+  .theme-toggle button.active{background:var(--primary); color:white;}
+
+  .panel{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:18px 20px; margin-bottom:16px;}
+  .panel h2{margin:0 0 14px; font-size:15px;}
+  .basics-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px;}
+  .field label{display:block; font-size:12px; color:var(--text-muted); font-weight:700; margin-bottom:6px;}
+  .field input, .field select{width:100%; border:1px solid var(--border); border-radius:10px; padding:9px 12px; font-family:'Inter',sans-serif; font-size:14px; background:var(--bg); color:var(--text);}
+
+  .statement{border:1px solid var(--border); border-radius:14px; padding:14px 16px; margin-bottom:10px; display:flex; gap:12px; align-items:flex-start;}
+  .statement .src{font-size:10px; font-weight:800; padding:3px 8px; border-radius:99px; flex:none; margin-top:2px;}
+  .src-parent{background:color-mix(in srgb, var(--primary) 15%, transparent); color:var(--primary);}
+  .src-ai{background:color-mix(in srgb, var(--success) 15%, transparent); color:var(--success);}
+  .src-child{background:color-mix(in srgb, var(--warn) 15%, transparent); color:var(--warn);}
+  .statement .txt{flex:1; font-size:13px;}
+  .statement .txt b{display:block; margin-bottom:2px;}
+  .statement .txt span{color:var(--text-muted); font-size:12px;}
+  .statement .del{border:none; background:none; color:var(--danger); font-size:12px; font-weight:700; cursor:pointer;}
+
+  .interest-chip{display:inline-flex; align-items:center; gap:6px; background:var(--bg); border:1px solid var(--border); border-radius:99px; padding:6px 12px; font-size:12px; margin:4px 6px 0 0;}
+  .add-row{display:flex; gap:8px; margin-top:10px;}
+  .add-row input{flex:1; border:1px solid var(--border); border-radius:10px; padding:9px 12px; font-family:'Inter',sans-serif; font-size:13px; background:var(--bg); color:var(--text);}
+  .add-row button{border:none; background:var(--primary); color:white; border-radius:10px; padding:9px 16px; font-weight:700; font-family:inherit; cursor:pointer;}
+  .disclaimer{font-size:12px; color:var(--text-muted); background:var(--bg); border-radius:10px; padding:10px 12px;}
+
+  .menu-btn{display:none; align-items:center; justify-content:center; width:40px; height:40px; border:1px solid var(--border); background:var(--surface); color:var(--text); border-radius:10px; font-size:18px; cursor:pointer; flex:none;}
+  .topbar-left{display:flex; align-items:center; gap:10px;}
+  .sidebar-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:85;}
+  .sidebar-overlay.open{display:block;}
+  .sidebar-close{display:none;}
+  @media(max-width:820px){
+    .menu-btn{display:flex;}
+    .sidebar.open{display:flex; position:fixed; inset:0 auto 0 0; z-index:90; width:82vw; max-width:300px; box-shadow:4px 0 24px rgba(0,0,0,.25);}
+    .sidebar-close{display:flex; justify-content:flex-end; margin-bottom:8px;}
+  }
+  .sidebar-close button{border:none; background:none; font-size:22px; color:var(--text-muted); cursor:pointer;}
+  .toast{position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(140%); background:var(--text); color:var(--bg); padding:12px 20px; border-radius:14px; font-size:14px; font-weight:700; z-index:300; transition:transform .2s; max-width:88vw; text-align:center; box-shadow:0 8px 24px rgba(0,0,0,.2);}
+  .toast.show{transform:translateX(-50%) translateY(0);}
+
+  .tutor-panel{display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start;}
+  .tutor-avatar-col{display:flex; flex-direction:column; align-items:center; gap:8px; flex:none;}
+  .avatar-ring{position:relative; width:76px; height:76px; border-radius:50%; display:flex; align-items:center; justify-content:center;}
+  .avatar-ring .ring-deco{position:absolute; inset:-6px; border-radius:50%; border:3px solid transparent; border-top-color:var(--accent); opacity:0;}
+  .avatar-core{width:70px; height:70px; border-radius:50%; overflow:hidden; background:radial-gradient(circle at 35% 30%, var(--accent), var(--primary)); display:flex; align-items:center; justify-content:center; font-size:28px; color:white; transition:transform .25s ease-out, opacity .2s;}
+  .avatar-core img{width:100%; height:100%; object-fit:cover;}
+  .avatar-ring[data-state="listening"] .avatar-core{ animation:tp-breathe 1s ease-in-out infinite; }
+  .avatar-ring[data-state="thinking"] .ring-deco{ opacity:1; animation:tp-spin .9s linear infinite; }
+  .avatar-ring[data-state="speaking"] .avatar-core{ animation:tp-sway .5s ease-in-out infinite alternate; }
+  .avatar-ring[data-state="paused"] .avatar-core{ opacity:.5; }
+  @keyframes tp-breathe{0%,100%{transform:scale(1);}50%{transform:scale(1.08);}}
+  @keyframes tp-spin{from{transform:rotate(0);}to{transform:rotate(360deg);}}
+  @keyframes tp-sway{from{transform:translateY(0);}to{transform:translateY(-3px);}}
+  @media (prefers-reduced-motion: reduce){ .avatar-ring .avatar-core, .avatar-ring .ring-deco{ animation:none !important; } }
+  .ai-badge-sm{font-size:10px; font-weight:800; color:var(--accent); background:color-mix(in srgb, var(--accent) 14%, transparent); padding:2px 8px; border-radius:99px;}
+  .state-mini-row{display:flex; gap:4px;}
+  .state-mini-row button{border:1px solid var(--border); background:var(--surface); color:var(--text-muted); font-size:10px; font-weight:700; padding:4px 7px; border-radius:8px; cursor:pointer; font-family:inherit;}
+  .state-mini-row button.active{background:var(--accent); color:white; border-color:var(--accent);}
+  .tutor-info{flex:1; min-width:200px;}
+  .tutor-info .trow{display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .tutor-info .trow:last-child{border-bottom:none;}
+  .replace-avatar-btn{border:1px solid var(--border); background:var(--bg); color:var(--text); border-radius:10px; padding:8px 14px; font-weight:700; font-size:12px; cursor:pointer; font-family:inherit;}
+</style>
+</head>
+<body data-theme="light">
+<div class="layout">
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-close"><button onclick="closeSidebar()" aria-label="Закрити меню">✕</button></div>
+    <div class="brand"><span class="dot"></span> ШІ-Репетитор</div>
+    <a class="nav-item" href="10-parent-dashboard.html">📊 Дашборд</a>
+    <a class="nav-item" href="11-parent-notifications.html">🔔 Сповіщення <span class="badge">3</span></a>
+    <a class="nav-item" href="12-parent-conversations.html">💬 Розмови</a>
+    <a class="nav-item active" href="13-parent-child-profile.html">🧒 Профіль дитини</a>
+    <a class="nav-item" href="14-parent-directives.html">🗒️ Вказівки й повідомлення</a>
+    <a class="nav-item" href="15-parent-budget-models.html">💳 Бюджет і моделі</a>
+    <a class="nav-item" href="17-parent-sources.html">📚 Джерела / Мої книги</a>
+    <a class="nav-item" href="16-parent-settings.html">⚙️ Налаштування й ДЗ</a>
+    <a class="nav-item" style="opacity:.5; cursor:default;">🧩 Модулі (скоро)</a>
+    <div class="mode-badge">🔒 Режим тата активний</div>
+  </aside>
+
+  <main class="content">
+    <div class="topbar">
+      <div class="topbar-left"><button class="menu-btn" onclick="toggleSidebar()" aria-label="Меню">☰</button><h1>Профіль дитини</h1></div>
+      <div class="theme-toggle">
+        <button id="btn-light" class="active" onclick="setTheme('light')">☀️</button>
+        <button id="btn-dark" onclick="setTheme('dark')">🌙</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Основне</h2>
+      <div class="basics-grid">
+        <div class="field"><label>Нікнейм</label><input type="text" value="Зірочка"></div>
+        <div class="field"><label>Ім'я репетитора</label>
+          <select><option>Ліра</option><option>Веснянка</option><option>Зоряна</option></select>
+        </div>
+        <div class="field"><label>Бажана тривалість уроку</label><select><option>30 хв</option><option>45 хв</option></select></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Репетитор доньки</h2>
+      <div class="desc" style="font-size:12px;color:var(--text-muted);margin-bottom:14px;">Ім'я, голос і аватар донька обирає сама на онбордингу й може змінити в «Мій репетитор». Тут — лише перегляд і заміна аватара, якщо потрібно.</div>
+      <div class="tutor-panel">
+        <div class="tutor-avatar-col">
+          <div class="avatar-ring" id="tutorAvatarRing" data-state="listening">
+            <div class="ring-deco"></div>
+            <div class="avatar-core" id="tutorAvatarCore">✦</div>
+          </div>
+          <span class="ai-badge-sm">✦ Я — ШІ</span>
+          <div class="state-mini-row">
+            <button class="active" onclick="setTutorPreviewState('listening', this)" title="Слухаю">👂</button>
+            <button onclick="setTutorPreviewState('thinking', this)" title="Думаю">💭</button>
+            <button onclick="setTutorPreviewState('speaking', this)" title="Говорю">🗣️</button>
+            <button onclick="setTutorPreviewState('paused', this)" title="Пауза">⏸</button>
+          </div>
+        </div>
+        <div class="tutor-info">
+          <div class="trow"><span>Ім'я</span><b>Ліра</b></div>
+          <div class="trow"><span>Голос</span><b>Тепла (жіночий)</b></div>
+          <div class="trow"><span>Аватар</span><b>Вогник (за замовчуванням)</b></div>
+          <div class="trow">
+            <span>Замінити аватар</span>
+            <button class="replace-avatar-btn" onclick="document.getElementById('tutorAvatarFile').click();">🖼️ Завантажити картинку</button>
+            <input type="file" id="tutorAvatarFile" accept="image/*" style="display:none;" onchange="onTutorAvatarUpload(event)">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Твердження профілю (з доказами)</h2>
+      <div class="statement">
+        <span class="src src-parent">тато</span>
+        <div class="txt"><b>Важко довго втримувати увагу й концентрацію</b><span>допомагають короткі блоки, зміна активностей, миттєвий відгук, заохочення — стартове припущення</span></div>
+        <button class="del">Видалити</button>
+      </div>
+      <div class="statement">
+        <span class="src src-ai">ШІ</span>
+        <div class="txt"><b>Частіше відповідає правильно після схеми, ніж після тексту</b><span>7 з 9 випадків за останній тиждень</span></div>
+        <button class="del">Видалити</button>
+      </div>
+      <div class="statement">
+        <span class="src src-ai">ШІ</span>
+        <div class="txt"><b>Після ~8 хв пояснень без дії частота помилок зростає</b><span>спостереження за 4 уроки</span></div>
+        <button class="del">Видалити</button>
+      </div>
+      <div class="statement">
+        <span class="src src-child">дитина</span>
+        <div class="txt"><b>Любить приклади з тваринами й космосом</b><span>сама розповіла в «ШІ-другові» 20 вер</span></div>
+        <button class="del">Видалити</button>
+      </div>
+      <div class="disclaimer">Видалене твердження не повернеться автоматично. Профіль не містить діагнозів чи оцінок особистості — лише поведінку з доказом.</div>
+    </div>
+
+    <div class="panel">
+      <h2>Інтереси</h2>
+      <div>
+        <span class="interest-chip">🐾 тварини</span>
+        <span class="interest-chip">🚀 космос</span>
+        <span class="interest-chip">🎮 ігри</span>
+      </div>
+      <div class="add-row">
+        <input type="text" placeholder="Додати інтерес вручну…">
+        <button>Додати</button>
+      </div>
+    </div>
+  </main>
+</div>
+<script>
+  function toggleSidebar(){ document.getElementById('sidebar').classList.add('open'); document.getElementById('sidebarOverlay').classList.add('open'); }
+  function closeSidebar(){ document.getElementById('sidebar').classList.remove('open'); document.getElementById('sidebarOverlay').classList.remove('open'); }
+  let toastTimer=null;
+  function showToast(msg){
+    const t=document.getElementById('toast');
+    t.textContent=msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer=setTimeout(()=>t.classList.remove('show'), 2400);
+  }
+  function setTheme(t){
+    document.body.setAttribute('data-theme', t);
+    document.getElementById('btn-light').classList.toggle('active', t==='light');
+    document.getElementById('btn-dark').classList.toggle('active', t==='dark');
+  }
+  function setTutorPreviewState(st, btn){
+    document.getElementById('tutorAvatarRing').dataset.state = st;
+    btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  function onTutorAvatarUpload(ev){
+    const file = ev.target.files[0];
+    if(!file) return;
+    const url = URL.createObjectURL(file);
+    const core = document.getElementById('tutorAvatarCore');
+    core.innerHTML = '';
+    const img = document.createElement('img');
+    img.src = url;
+    core.appendChild(img);
+    document.querySelectorAll('.tutor-info .trow')[2].querySelector('b').textContent = 'Своя картинка (завантажено татом)';
+    showToast('Аватар оновлено (демо, локально) — донька побачить зміну одразу');
+  }
+</script>
+<div class="toast" id="toast"></div>
+</body>
+</html>

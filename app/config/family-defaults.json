@@ -1,0 +1,38 @@
+{
+  "$comment": "Family bootstrap data (ADR-017, ADR-018 K-4, ADR-021). Inserted once, when the first allowlisted account signs in. Editing this file later does not change an existing family: use the parent cabinet or a data migration. Year/grade/subjects live here as DATA, never in core code (NFR-PLAT-7, DoD p.10). tutorNameOptions: 3 female (f) + 3 male (m) suggestions (US-1.7 KP-2, PM-21); the group sets the tutor's grammatical gender until a voice is chosen (S12).",
+  "timezone": "Europe/Kyiv",
+  "locale": "uk",
+  "learningModules": [
+    { "code": "school", "enabled": true, "config": { "titleUk": "Шкільна програма" } }
+  ],
+  "academicYear": {
+    "label": "2026/27",
+    "grade": 6,
+    "startsOn": "2026-09-01",
+    "endsOn": "2027-08-31"
+  },
+  "subjects": [
+    { "code": "math", "nameUk": "Математика", "config": { "icon": "➗" } },
+    { "code": "history", "nameUk": "Історія", "config": { "icon": "📜" } },
+    { "code": "ukrainian_language", "nameUk": "Українська мова", "config": { "icon": "🔤" } },
+    { "code": "ukrainian_literature", "nameUk": "Українська література", "config": { "icon": "📘" } },
+    { "code": "foreign_literature", "nameUk": "Зарубіжна література", "config": { "icon": "📕" } },
+    { "code": "english", "nameUk": "Англійська мова", "config": { "icon": "🇬🇧", "language": "uk+en" } },
+    { "code": "german", "nameUk": "Німецька мова", "config": { "icon": "🇩🇪", "language": "uk+de" } },
+    { "code": "geography", "nameUk": "Географія", "config": { "icon": "🌍" } },
+    { "code": "art", "nameUk": "Мистецтво", "isStub": true, "config": { "icon": "🎨" } },
+    { "code": "technology", "nameUk": "Технології (дизайн)", "isStub": true, "config": { "icon": "🛠️", "shortNameUk": "Технології" } }
+  ],
+  "tutorNameOptions": {
+    "f": [
+      { "name": "Ліра", "hint": "тепла й терпляча" },
+      { "name": "Веснянка", "hint": "енергійна й весела" },
+      { "name": "Зоряна", "hint": "спокійна й уважна" }
+    ],
+    "m": [
+      { "name": "Мирон", "hint": "спокійний і уважний" },
+      { "name": "Остап", "hint": "веселий і енергійний" },
+      { "name": "Ярема", "hint": "терплячий і дружній" }
+    ]
+  }
+}

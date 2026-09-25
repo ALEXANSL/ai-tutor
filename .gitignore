@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Next.js / build output
+.next/
+out/
+build/
+*.tsbuildinfo
+next-env.d.ts
+
+# Service worker generated at build time (Serwist)
+app/public/sw.js
+app/public/sw.js.map
+app/public/swe-worker-*.js
+
+# Secrets: never commit real env files (NFR-PRIV-3, NFR-PRIV-8)
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env*.local
+
+# Local test database / tooling
+.tmp/
+coverage/
+supabase/.branches/
+supabase/.temp/
+
+# Playwright (qa-tester, app/tests/e2e)
+app/playwright-report/
+app/test-results/
+app/blob-report/
+
+# OS / editor
+.DS_Store
+*.log
+.vercel

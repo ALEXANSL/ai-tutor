@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Кабінет тата — Джерела / Мої книги</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root[data-theme="light"]{
+    --bg:#F5F6F8; --surface:#FFFFFF; --text:#1D1F24; --text-muted:#6B7280;
+    --primary:#2F6FED; --success:#1FA97E; --warn:#D98A1E; --danger:#D6403F; --border:#E2E4E9;
+  }
+  :root[data-theme="dark"]{
+    --bg:#111318; --surface:#1A1D24; --text:#EDEEF2; --text-muted:#9CA3AF;
+    --primary:#5B9CFF; --success:#34D399; --warn:#F0B95A; --danger:#FF6B6E; --border:#2A2E38;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:'Inter',sans-serif; background:var(--bg); color:var(--text);}
+  a{color:inherit; text-decoration:none;}
+  .layout{display:grid; grid-template-columns:240px 1fr; min-height:100vh;}
+  @media(max-width:820px){ .layout{grid-template-columns:1fr;} .sidebar{display:none;} }
+  .sidebar{background:var(--surface); border-right:1px solid var(--border); padding:20px 14px; display:flex; flex-direction:column; gap:4px;}
+  .brand{display:flex; align-items:center; gap:10px; padding:8px 10px 18px; font-weight:800; font-size:16px;}
+  .brand .dot{width:10px; height:10px; border-radius:50%; background:var(--primary);}
+  .nav-item{display:flex; align-items:center; gap:10px; padding:12px 12px; border-radius:12px; font-size:14px; font-weight:600; color:var(--text-muted);}
+  .nav-item.active{background:color-mix(in srgb, var(--primary) 12%, transparent); color:var(--primary);}
+  .nav-item .badge{margin-left:auto; background:var(--danger); color:white; font-size:11px; padding:1px 7px; border-radius:99px;}
+  .mode-badge{margin-top:auto; background:var(--primary); color:white; border-radius:12px; padding:12px; font-size:12px; font-weight:700; text-align:center;}
+
+  .content{padding:22px 26px 60px;}
+  .topbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:10px;}
+  .topbar h1{font-size:22px; margin:0;}
+  .theme-toggle{display:flex; gap:8px; background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:5px;}
+  .theme-toggle button{border:none; background:transparent; color:var(--text); font-family:inherit; font-weight:700; font-size:12px; padding:6px 12px; border-radius:999px; cursor:pointer;}
+  .theme-toggle button.active{background:var(--primary); color:white;}
+
+  .warn-banner{background:color-mix(in srgb, var(--warn) 15%, transparent); border:1px solid var(--warn); color:var(--warn); border-radius:12px; padding:14px 16px; font-size:13px; margin-bottom:16px; display:flex; gap:10px; align-items:flex-start;}
+  .warn-banner b{display:block; margin-bottom:2px; color:var(--text);}
+  .warn-banner a{color:var(--primary); font-weight:700;}
+
+  .panel{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:18px 20px; margin-bottom:16px;}
+  .panel h2{margin:0 0 4px; font-size:15px;}
+  .panel .desc{font-size:12px; color:var(--text-muted); margin-bottom:14px;}
+
+  .toolbar{display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap;}
+  .toolbar input, .toolbar select{border:1px solid var(--border); border-radius:10px; padding:8px 12px; font-family:'Inter',sans-serif; font-size:13px; background:var(--bg); color:var(--text);}
+  .toolbar .grow{flex:1; min-width:160px;}
+  .toolbar button{border:none; background:var(--primary); color:white; border-radius:10px; padding:9px 16px; font-weight:700; font-family:inherit; cursor:pointer;}
+
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  th{text-align:left; font-size:11px; text-transform:uppercase; color:var(--text-muted); padding:8px 10px; border-bottom:1px solid var(--border);}
+  td{padding:10px; border-bottom:1px solid var(--border); vertical-align:middle;}
+  .file-name{display:flex; align-items:center; gap:10px;}
+  .file-ic{width:34px; height:34px; border-radius:9px; background:var(--bg); display:flex; align-items:center; justify-content:center; font-size:16px; flex:none;}
+  .kind-tag{font-size:10px; font-weight:800; padding:3px 8px; border-radius:99px;}
+  .kind-textbook{background:color-mix(in srgb, var(--primary) 15%, transparent); color:var(--primary);}
+  .kind-work{background:color-mix(in srgb, var(--success) 15%, transparent); color:var(--success);}
+  .kind-ref{background:color-mix(in srgb, var(--warn) 15%, transparent); color:var(--warn);}
+  .status{display:flex; align-items:center; gap:6px; font-size:12px;}
+  .status .dot{width:8px; height:8px; border-radius:50%;}
+  .dot-ok{background:var(--success);} .dot-progress{background:var(--warn);} .dot-error{background:var(--danger);}
+  select.mini{border:1px solid var(--border); border-radius:8px; padding:5px 8px; font-family:'Inter',sans-serif; font-size:12px; background:var(--bg); color:var(--text);}
+
+  .upload-zone{border:2px dashed var(--border); border-radius:14px; padding:22px; text-align:center; color:var(--text-muted); font-size:13px; cursor:pointer;}
+  .upload-zone:hover{border-color:var(--primary); color:var(--primary);}
+
+  .search-test{display:flex; gap:8px;}
+  .search-test input{flex:1; border:1px solid var(--border); border-radius:10px; padding:10px 14px; font-family:'Inter',sans-serif; font-size:13px; background:var(--bg); color:var(--text);}
+  .search-result{background:var(--bg); border-radius:10px; padding:12px 14px; margin-top:10px; font-size:13px;}
+  .search-result .src{font-size:11px; color:var(--text-muted); margin-top:4px;}
+
+  .menu-btn{display:none; align-items:center; justify-content:center; width:40px; height:40px; border:1px solid var(--border); background:var(--surface); color:var(--text); border-radius:10px; font-size:18px; cursor:pointer; flex:none;}
+  .topbar-left{display:flex; align-items:center; gap:10px;}
+  .sidebar-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:85;}
+  .sidebar-overlay.open{display:block;}
+  .sidebar-close{display:none;}
+  @media(max-width:820px){
+    .menu-btn{display:flex;}
+    .sidebar.open{display:flex; position:fixed; inset:0 auto 0 0; z-index:90; width:82vw; max-width:300px; box-shadow:4px 0 24px rgba(0,0,0,.25);}
+    .sidebar-close{display:flex; justify-content:flex-end; margin-bottom:8px;}
+  }
+  .sidebar-close button{border:none; background:none; font-size:22px; color:var(--text-muted); cursor:pointer;}
+  .toast{position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(140%); background:var(--text); color:var(--bg); padding:12px 20px; border-radius:14px; font-size:14px; font-weight:700; z-index:300; transition:transform .2s; max-width:88vw; text-align:center; box-shadow:0 8px 24px rgba(0,0,0,.2);}
+  .toast.show{transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body data-theme="light">
+<div class="layout">
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-close"><button onclick="closeSidebar()" aria-label="Закрити меню">✕</button></div>
+    <div class="brand"><span class="dot"></span> ШІ-Репетитор</div>
+    <a class="nav-item" href="10-parent-dashboard.html">📊 Дашборд</a>
+    <a class="nav-item" href="11-parent-notifications.html">🔔 Сповіщення <span class="badge">3</span></a>
+    <a class="nav-item" href="12-parent-conversations.html">💬 Розмови</a>
+    <a class="nav-item" href="13-parent-child-profile.html">🧒 Профіль дитини</a>
+    <a class="nav-item" href="14-parent-directives.html">🗒️ Вказівки й повідомлення</a>
+    <a class="nav-item" href="15-parent-budget-models.html">💳 Бюджет і моделі</a>
+    <a class="nav-item active" href="17-parent-sources.html">📚 Джерела / Мої книги</a>
+    <a class="nav-item" href="16-parent-settings.html">⚙️ Налаштування й ДЗ</a>
+    <a class="nav-item" style="opacity:.5; cursor:default;">🧩 Модулі (скоро)</a>
+    <div class="mode-badge">🔒 Режим тата активний</div>
+  </aside>
+
+  <main class="content">
+    <div class="topbar">
+      <div class="topbar-left"><button class="menu-btn" onclick="toggleSidebar()" aria-label="Меню">☰</button><h1>Джерела / Мої книги</h1></div>
+      <div class="theme-toggle">
+        <button id="btn-light" class="active" onclick="setTheme('light')">☀️</button>
+        <button id="btn-dark" onclick="setTheme('dark')">🌙</button>
+      </div>
+    </div>
+
+    <div class="warn-banner">
+      ⚠️ <div><b>Папка Google Drive відкрита «всім, хто має посилання» (право «Читач»)</b>
+      Рекомендуємо повністю обмежити доступ. <a href="#">Як це зробити →</a></div>
+    </div>
+
+    <div class="panel">
+      <h2>Усі книги й матеріали</h2>
+      <div class="desc">Не лише підручники — можна додати будь-яку книгу (довідник, збірку задач, повний текст твору) з папки Google Drive.</div>
+      <div class="toolbar">
+        <input type="text" class="grow" placeholder="🔍 Пошук за назвою">
+        <select><option>Усі предмети</option><option>Математика</option><option>Література</option></select>
+        <select><option>Усі типи</option><option>Підручник</option><option>Художній твір</option><option>Довідкова книга</option></select>
+        <button onclick="showToast('Перевірка нових файлів у папці Drive')">🔄 Перевірити нові файли</button>
+      </div>
+
+      <table>
+        <thead><tr><th>Файл</th><th>Тип</th><th>Предмет / тема</th><th>Статус індексації</th><th></th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="file-name"><div class="file-ic">📘</div>Математика 6 клас.pdf</td>
+            <td><span class="kind-tag kind-textbook">Підручник</span></td>
+            <td><select class="mini"><option>Математика</option></select></td>
+            <td><span class="status"><span class="dot dot-ok"></span>Готово · 210 стор.</span></td>
+            <td><a href="#" style="color:var(--primary); font-size:12px;">Переіндексувати</a></td>
+          </tr>
+          <tr>
+            <td class="file-name"><div class="file-ic">📙</div>Кобзар (повний текст).epub</td>
+            <td><span class="kind-tag kind-work">Художній твір</span></td>
+            <td><select class="mini"><option>Укр. література</option></select></td>
+            <td><span class="status"><span class="dot dot-progress"></span>Індексується…</span></td>
+            <td><a href="#" style="color:var(--text-muted); font-size:12px;">—</a></td>
+          </tr>
+          <tr>
+            <td class="file-name"><div class="file-ic">📕</div>Зарубіжна література 6 клас.pdf</td>
+            <td><span class="kind-tag kind-textbook">Підручник</span></td>
+            <td><select class="mini"><option>Заруб. література</option></select></td>
+            <td><span class="status"><span class="dot dot-ok"></span>Готово · 176 стор.</span></td>
+            <td><a href="#" style="color:var(--primary); font-size:12px;">Переіндексувати</a></td>
+          </tr>
+          <tr>
+            <td class="file-name"><div class="file-ic">📗</div>Довідник з математики.pdf</td>
+            <td><span class="kind-tag kind-ref">Довідкова книга</span></td>
+            <td><select class="mini"><option>Математика</option></select></td>
+            <td><span class="status"><span class="dot dot-ok"></span>Готово · 48 стор.</span></td>
+            <td><a href="#" style="color:var(--primary); font-size:12px;">Переіндексувати</a></td>
+          </tr>
+          <tr>
+            <td class="file-name"><div class="file-ic">📄</div>Скан_Історія_старий.pdf</td>
+            <td><span class="kind-tag kind-textbook">Підручник</span></td>
+            <td><select class="mini"><option>Історія</option></select></td>
+            <td><span class="status"><span class="dot dot-error"></span>Скан без тексту — не підтримується</span></td>
+            <td><a href="#" style="color:var(--text-muted); font-size:12px;">—</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel" id="addBook">
+      <h2>Додати книгу</h2>
+      <div class="desc">Поклади текстовий PDF/EPUB у папку Drive — застосунок підхопить його при наступній перевірці. Прив'язка до предмета й типу («підручник» / «художній твір» / «довідкова книга») — вище в таблиці, і її можна виправити вручну.</div>
+      <div class="upload-zone" onclick="showToast('Відкриється Google Drive Picker (демо)')">☁️ Відкрити папку Drive, щоб додати файл</div>
+    </div>
+
+    <div class="panel">
+      <h2>Перевірити пошук по матеріалах</h2>
+      <div class="search-test">
+        <input type="text" value="дроби зі спільним знаменником">
+        <button style="border:none;background:var(--primary);color:white;border-radius:10px;padding:0 18px;font-weight:700;cursor:pointer;" onclick="document.getElementById('sres').style.display='block'">Шукати</button>
+      </div>
+      <div class="search-result" id="sres" style="display:none;">
+        <b>Щоб додати дроби з різними знаменниками, спершу зводимо їх до спільного…</b>
+        <div class="src">📘 Математика 6 клас, с. 61</div>
+      </div>
+    </div>
+  </main>
+</div>
+<script>
+  function toggleSidebar(){ document.getElementById('sidebar').classList.add('open'); document.getElementById('sidebarOverlay').classList.add('open'); }
+  function closeSidebar(){ document.getElementById('sidebar').classList.remove('open'); document.getElementById('sidebarOverlay').classList.remove('open'); }
+  let toastTimer=null;
+  function showToast(msg){
+    const t=document.getElementById('toast');
+    t.textContent=msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer=setTimeout(()=>t.classList.remove('show'), 2400);
+  }
+  function setTheme(t){
+    document.body.setAttribute('data-theme', t);
+    document.getElementById('btn-light').classList.toggle('active', t==='light');
+    document.getElementById('btn-dark').classList.toggle('active', t==='dark');
+  }
+</script>
+<div class="toast" id="toast"></div>
+</body>
+</html>

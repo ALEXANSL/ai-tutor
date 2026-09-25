@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ШІ-Репетитор — Бібліотека · Чати · ШІ-друг</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root[data-theme="light"]{
+    --bg:#FAF6EF; --surface:#FFFFFF; --surface-alt:#F1ECE0; --text:#2B2A28; --text-muted:#6B6862;
+    --primary:#FF7A50; --primary-press:#E85F37; --secondary:#2EC4B6; --accent:#7C6CF0;
+    --warn:#E8A33D; --danger:#E5484D; --border:#E7E0D2; --focus:#1D6FE0;
+  }
+  :root[data-theme="dark"]{
+    --bg:#15141C; --surface:#1F1E28; --surface-alt:#2A2833; --text:#F3F1EC; --text-muted:#A9A6A0;
+    --primary:#FF9470; --primary-press:#E87B54; --secondary:#3DDBC9; --accent:#9A8CFF;
+    --warn:#F0B95A; --danger:#FF6B6E; --border:#37353F; --focus:#5B9CFF;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:'Nunito',sans-serif; background:var(--bg); color:var(--text);}
+  .theme-toggle{position:fixed; top:12px; right:12px; z-index:80; display:flex; gap:8px; background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:6px; box-shadow:0 2px 10px rgba(0,0,0,.08);}
+  .theme-toggle button{border:none; background:transparent; color:var(--text); font-family:inherit; font-weight:700; font-size:12px; padding:7px 12px; border-radius:999px; cursor:pointer;}
+  .theme-toggle button.active{background:var(--primary); color:white;}
+
+  nav.tabs{display:flex; gap:8px; padding:16px 20px 0; position:sticky; top:0; background:var(--bg); z-index:30;}
+  nav.tabs button{
+    border:none; background:var(--surface); color:var(--text-muted); font-family:'Nunito',sans-serif; font-weight:800; font-size:15px;
+    padding:14px 20px; border-radius:16px 16px 0 0; cursor:pointer; border:1px solid var(--border); border-bottom:none;
+  }
+  nav.tabs button.active{background:var(--surface); color:var(--primary); box-shadow:0 -2px 0 var(--primary) inset;}
+  .page{display:none; padding:0 20px 40px; max-width:1100px; margin:0 auto;}
+  .page.active{display:block;}
+  .panel{background:var(--surface); border-radius:0 20px 20px 20px; padding:22px; border:1px solid var(--border);}
+
+  .breadcrumb{font-size:13px; color:var(--text-muted); margin-bottom:14px; font-weight:700;}
+  .breadcrumb b{color:var(--text);}
+  .topic-pick{display:flex; gap:10px; overflow:auto; margin-bottom:18px; padding-bottom:4px;}
+  .topic-chip{flex:none; background:var(--surface-alt); border-radius:14px; padding:10px 16px; font-size:13px; font-weight:700; cursor:pointer; border:2px solid transparent;}
+  .topic-chip.active{border-color:var(--secondary); color:var(--secondary);}
+
+  .lesson-item{display:flex; align-items:center; gap:14px; padding:16px; border:1px solid var(--border); border-radius:16px; margin-bottom:10px;}
+  .lesson-ic{width:44px; height:44px; border-radius:12px; background:var(--surface-alt); display:flex; align-items:center; justify-content:center; font-size:20px; flex:none;}
+  .lesson-item b{display:block; font-size:16px;}
+  .lesson-item span{font-size:13px; color:var(--text-muted);}
+  .status-pill{font-size:11px; font-weight:800; padding:4px 10px; border-radius:999px; margin-left:auto;}
+  .status-done{background:color-mix(in srgb, var(--secondary) 20%, transparent); color:var(--secondary);}
+  .status-todo{background:color-mix(in srgb, var(--warn) 20%, transparent); color:var(--warn);}
+  .replay-btn{background:var(--primary); color:white; border:none; border-radius:12px; padding:10px 16px; font-weight:800; font-family:inherit; cursor:pointer; min-height:44px;}
+
+  /* CHATS */
+  .chat-layout{display:grid; grid-template-columns:260px 1fr; gap:16px;}
+  @media (max-width:800px){ .chat-layout{grid-template-columns:1fr;} }
+  .chat-tree{border-right:1px solid var(--border); padding-right:14px;}
+  .chat-tree .subj{font-weight:800; font-size:14px; margin:12px 0 6px;}
+  .chat-tree .topic{padding:9px 10px; border-radius:10px; font-size:13px; cursor:pointer; color:var(--text-muted);}
+  .chat-tree .topic.active{background:var(--surface-alt); color:var(--text); font-weight:700;}
+  .filters{display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;}
+  .filters input, .filters select{
+    border:1px solid var(--border); border-radius:12px; padding:9px 12px; font-family:'Nunito',sans-serif; font-size:13px; background:var(--bg); color:var(--text);
+  }
+  .msg{max-width:78%; padding:12px 14px; border-radius:14px; margin-bottom:10px; font-size:15px; line-height:1.4;}
+  .msg.child{margin-left:auto; background:var(--primary); color:white; border-bottom-right-radius:4px;}
+  .msg.ai{background:var(--surface-alt); border-bottom-left-radius:4px;}
+  .msg.transcript{background:var(--surface); border:1px solid var(--accent); border-left:5px solid var(--accent);}
+  .msg .meta{font-size:11px; opacity:.7; margin-top:4px; display:block;}
+  .transcript-label{font-size:11px; font-weight:800; color:var(--accent); text-transform:uppercase; margin-bottom:6px; display:flex; gap:6px; align-items:center;}
+
+  /* FRIEND */
+  .friend-header{display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:10px;}
+  .voice-limit{display:flex; align-items:center; gap:10px; background:var(--surface-alt); border-radius:14px; padding:10px 14px;}
+  .voice-limit .bar{width:100px; height:8px; background:var(--border); border-radius:99px; overflow:hidden;}
+  .voice-limit .bar>div{height:100%; width:60%; background:var(--accent);}
+  .friend-chat{display:flex; flex-direction:column; gap:10px; min-height:340px;}
+  .input-row{display:flex; gap:10px; margin-top:16px;}
+  .input-row input{flex:1; border:2px solid var(--border); border-radius:14px; padding:14px; font-family:'Nunito',sans-serif; font-size:15px; background:var(--bg); color:var(--text);}
+  .input-row button{border:none; background:var(--primary); color:white; border-radius:14px; padding:0 20px; font-weight:800; font-family:inherit; cursor:pointer;}
+  .input-row .mic{background:var(--accent);}
+  .toast{position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(140%); background:var(--text); color:var(--bg); padding:12px 20px; border-radius:14px; font-size:14px; font-weight:700; z-index:300; transition:transform .2s; max-width:88vw; text-align:center; box-shadow:0 8px 24px rgba(0,0,0,.2);}
+  .toast.show{transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body data-theme="light">
+  <div class="theme-toggle">
+    <button id="btn-light" class="active" onclick="setTheme('light')">☀️</button>
+    <button id="btn-dark" onclick="setTheme('dark')">🌙</button>
+  </div>
+
+  <nav class="tabs">
+    <button class="active" onclick="showTab('library', this)">📚 Бібліотека</button>
+    <button onclick="showTab('chats', this)">💬 Чати</button>
+    <button onclick="showTab('friend', this)">🧑‍🤝‍🧑 ШІ-друг</button>
+  </nav>
+
+  <!-- LIBRARY -->
+  <div class="page active" id="page-library">
+    <div class="panel">
+      <div class="breadcrumb">Бібліотека → <b>Математика</b> → Дроби</div>
+      <div class="topic-pick">
+        <div class="topic-chip active">Дроби</div>
+        <div class="topic-chip">Десяткові дроби</div>
+        <div class="topic-chip">Відсотки</div>
+        <div class="topic-chip">Рівняння</div>
+      </div>
+
+      <div class="lesson-item">
+        <div class="lesson-ic">🍕</div>
+        <div><b>Скорочення дробів</b><span>Пройдено 22 вер · 4 кроки, з озвучкою</span></div>
+        <span class="status-pill status-done">Пройдено</span>
+        <button class="replay-btn" onclick="showToast('Проходження без нової генерації — 0 витрат')">Пройти знову</button>
+      </div>
+      <div class="lesson-item">
+        <div class="lesson-ic">➗</div>
+        <div><b>Спільний знаменник</b><span>Не пройдено · 5 кроків</span></div>
+        <span class="status-pill status-todo">Не пройдено</span>
+        <button class="replay-btn">Почати</button>
+      </div>
+      <div class="lesson-item">
+        <div class="lesson-ic">🔁</div>
+        <div><b>Повторення: дії з дробами</b><span>Набір вправ · останнє повторення 18 вер</span></div>
+        <span class="status-pill status-done">Пройдено</span>
+        <button class="replay-btn">Повторити</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHATS -->
+  <div class="page" id="page-chats">
+    <div class="panel">
+      <div class="chat-layout">
+        <div class="chat-tree">
+          <div class="subj">➗ Математика</div>
+          <div class="topic active">Дроби</div>
+          <div class="topic">Рівняння</div>
+          <div class="subj">🔤 Українська мова</div>
+          <div class="topic">Ненаголошені голосні</div>
+          <div class="subj">📜 Історія</div>
+          <div class="topic">Київська Русь</div>
+        </div>
+        <div>
+          <div class="filters">
+            <input type="text" placeholder="🔍 Пошук: «скорочення дробів»" style="flex:1;min-width:180px;">
+            <select><option>Весь час</option><option>Цей тиждень</option><option>Минулий тиждень</option></select>
+          </div>
+
+          <div class="msg ai">Привіт, Зірочко! Сьогодні розберемо, як скорочувати дроби. 📘 с. 54<span class="meta">Ліра · 09:10</span></div>
+          <div class="msg child">а навіщо це взагалі треба?<span class="meta">Зірочка · 09:11</span></div>
+          <div class="msg ai">Щоб дроби було легше порівнювати й рахувати — 4/8 і 1/2 це те саме число, просто 1/2 простіше.<span class="meta">Ліра · 09:11</span></div>
+
+          <div class="msg transcript">
+            <div class="transcript-label">🎧 Транскрипт голосової сесії · 3 хв 12 с</div>
+            <div class="msg ai" style="margin:0 0 8px;">Спробуй пояснити своїми словами, чому 8/12 і 2/3 — це те саме число.<span class="meta">Ліра · 09:14</span></div>
+            <div class="msg child" style="margin:0;">Бо ми ділимо однаково зверху і знизу<span class="meta">Зірочка · 09:14</span></div>
+          </div>
+
+          <div class="msg ai">Чудово попрацювали сьогодні! ⭐ +12 балів<span class="meta">Ліра · 09:20</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FRIEND -->
+  <div class="page" id="page-friend">
+    <div class="panel">
+      <div class="friend-header">
+        <div><b style="font-size:18px;">🧑‍🤝‍🧑 ШІ-друг</b><div style="font-size:13px;color:var(--text-muted);">Поговорити про будь-що. Тато бачить цю розмову дослівно.</div></div>
+        <div class="voice-limit">🎙️ Голос сьогодні: 6 / 10 хв<div class="bar"><div></div></div></div>
+      </div>
+      <div class="friend-chat">
+        <div class="msg ai">Привіт, Зірочко! Як пройшов день у школі? 😊<span class="meta">Ліра · 15:02</span></div>
+        <div class="msg child">норм, але математика важка була<span class="meta">Зірочка · 15:03</span></div>
+        <div class="msg ai">Розумію, дроби на початку завжди трохи заплутані. Хочеш, пройдемо разом коротке пояснення, чи просто побалакаємо?<span class="meta">Ліра · 15:03</span></div>
+      </div>
+      <div class="input-row">
+        <button class="mic">🎙️</button>
+        <input type="text" placeholder="Напиши щось…">
+        <button>Надіслати</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+  function setTheme(t){
+    document.body.setAttribute('data-theme', t);
+    document.getElementById('btn-light').classList.toggle('active', t==='light');
+    document.getElementById('btn-dark').classList.toggle('active', t==='dark');
+  }
+  function showTab(name, btn){
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+    document.getElementById('page-'+name).classList.add('active');
+    document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  if(location.hash === '#chats') showTab('chats', document.querySelectorAll('nav.tabs button')[1]);
+  if(location.hash === '#friend') showTab('friend', document.querySelectorAll('nav.tabs button')[2]);
+
+  let toastTimer=null;
+  function showToast(msg){
+    const t=document.getElementById('toast');
+    t.textContent=msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer=setTimeout(()=>t.classList.remove('show'), 2400);
+  }
+</script>
+<div class="toast" id="toast"></div>
+</body>
+</html>

@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Кабінет тата — Бюджет і моделі</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root[data-theme="light"]{
+    --bg:#F5F6F8; --surface:#FFFFFF; --text:#1D1F24; --text-muted:#6B7280;
+    --primary:#2F6FED; --success:#1FA97E; --warn:#D98A1E; --danger:#D6403F; --border:#E2E4E9;
+  }
+  :root[data-theme="dark"]{
+    --bg:#111318; --surface:#1A1D24; --text:#EDEEF2; --text-muted:#9CA3AF;
+    --primary:#5B9CFF; --success:#34D399; --warn:#F0B95A; --danger:#FF6B6E; --border:#2A2E38;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:'Inter',sans-serif; background:var(--bg); color:var(--text);}
+  a{color:inherit; text-decoration:none;}
+  .layout{display:grid; grid-template-columns:240px 1fr; min-height:100vh;}
+  @media(max-width:820px){ .layout{grid-template-columns:1fr;} .sidebar{display:none;} }
+  .sidebar{background:var(--surface); border-right:1px solid var(--border); padding:20px 14px; display:flex; flex-direction:column; gap:4px;}
+  .brand{display:flex; align-items:center; gap:10px; padding:8px 10px 18px; font-weight:800; font-size:16px;}
+  .brand .dot{width:10px; height:10px; border-radius:50%; background:var(--primary);}
+  .nav-item{display:flex; align-items:center; gap:10px; padding:12px 12px; border-radius:12px; font-size:14px; font-weight:600; color:var(--text-muted);}
+  .nav-item.active{background:color-mix(in srgb, var(--primary) 12%, transparent); color:var(--primary);}
+  .nav-item .badge{margin-left:auto; background:var(--danger); color:white; font-size:11px; padding:1px 7px; border-radius:99px;}
+  .mode-badge{margin-top:auto; background:var(--primary); color:white; border-radius:12px; padding:12px; font-size:12px; font-weight:700; text-align:center;}
+
+  .content{padding:22px 26px 60px;}
+  .topbar{display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:10px;}
+  .topbar h1{font-size:22px; margin:0;}
+  .theme-toggle{display:flex; gap:8px; background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:5px;}
+  .theme-toggle button{border:none; background:transparent; color:var(--text); font-family:inherit; font-weight:700; font-size:12px; padding:6px 12px; border-radius:999px; cursor:pointer;}
+  .theme-toggle button.active{background:var(--primary); color:white;}
+
+  .panel{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:18px 20px; margin-bottom:16px;}
+  .panel h2{margin:0 0 6px; font-size:15px;}
+  .panel .desc{font-size:12px; color:var(--text-muted); margin-bottom:14px;}
+
+  .budget-row{display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:10px;}
+  .budget-row .amount{font-size:26px; font-weight:800;}
+  .budget-row .cap{font-size:13px; color:var(--text-muted);}
+  .track{position:relative; height:16px; background:var(--bg); border-radius:99px; overflow:hidden; margin:14px 0 8px;}
+  .track > .fill{position:absolute; left:0; top:0; bottom:0; background:linear-gradient(90deg, var(--success), var(--warn)); width:80%; border-radius:99px;}
+  .marker{position:absolute; top:-4px; bottom:-4px; width:2px; background:var(--text-muted);}
+  .marker span{position:absolute; top:-20px; font-size:10px; font-weight:700; transform:translateX(-50%); white-space:nowrap;}
+  .state-badges{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;}
+  .state-badge{font-size:11px; font-weight:800; padding:4px 10px; border-radius:99px;}
+  .sb-ok{background:color-mix(in srgb, var(--success) 18%, transparent); color:var(--success);}
+  .sb-warn{background:color-mix(in srgb, var(--warn) 18%, transparent); color:var(--warn);}
+  .sb-danger{background:color-mix(in srgb, var(--danger) 18%, transparent); color:var(--danger);}
+
+  .limit-controls{display:flex; gap:10px; align-items:center; margin-top:14px; flex-wrap:wrap;}
+  .limit-controls input{width:100px; border:1px solid var(--border); border-radius:10px; padding:9px 12px; font-family:'Inter',sans-serif; font-size:14px; background:var(--bg); color:var(--text);}
+  .limit-controls button{border:none; background:var(--primary); color:white; border-radius:10px; padding:9px 16px; font-weight:700; font-family:inherit; cursor:pointer;}
+  .infra-note{font-size:11px; color:var(--text-muted); margin-top:10px;}
+
+  .cost-breakdown{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-top:14px;}
+  .cost-item{background:var(--bg); border-radius:12px; padding:12px;}
+  .cost-item b{display:block; font-size:16px;}
+  .cost-item span{font-size:11px; color:var(--text-muted);}
+
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  th{text-align:left; font-size:11px; text-transform:uppercase; color:var(--text-muted); padding:8px 10px; border-bottom:1px solid var(--border);}
+  td{padding:10px; border-bottom:1px solid var(--border);}
+  select{border:1px solid var(--border); border-radius:8px; padding:6px 8px; font-family:'Inter',sans-serif; font-size:12px; background:var(--bg); color:var(--text); width:100%;}
+  .role-name{font-weight:700;}
+  .fallback-missing{color:var(--danger); font-size:11px; font-weight:700;}
+
+  .menu-btn{display:none; align-items:center; justify-content:center; width:40px; height:40px; border:1px solid var(--border); background:var(--surface); color:var(--text); border-radius:10px; font-size:18px; cursor:pointer; flex:none;}
+  .topbar-left{display:flex; align-items:center; gap:10px;}
+  .sidebar-overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:85;}
+  .sidebar-overlay.open{display:block;}
+  .sidebar-close{display:none;}
+  @media(max-width:820px){
+    .menu-btn{display:flex;}
+    .sidebar.open{display:flex; position:fixed; inset:0 auto 0 0; z-index:90; width:82vw; max-width:300px; box-shadow:4px 0 24px rgba(0,0,0,.25);}
+    .sidebar-close{display:flex; justify-content:flex-end; margin-bottom:8px;}
+  }
+  .sidebar-close button{border:none; background:none; font-size:22px; color:var(--text-muted); cursor:pointer;}
+  .toast{position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(140%); background:var(--text); color:var(--bg); padding:12px 20px; border-radius:14px; font-size:14px; font-weight:700; z-index:300; transition:transform .2s; max-width:88vw; text-align:center; box-shadow:0 8px 24px rgba(0,0,0,.2);}
+  .toast.show{transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body data-theme="light">
+<div class="layout">
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-close"><button onclick="closeSidebar()" aria-label="Закрити меню">✕</button></div>
+    <div class="brand"><span class="dot"></span> ШІ-Репетитор</div>
+    <a class="nav-item" href="10-parent-dashboard.html">📊 Дашборд</a>
+    <a class="nav-item" href="11-parent-notifications.html">🔔 Сповіщення <span class="badge">3</span></a>
+    <a class="nav-item" href="12-parent-conversations.html">💬 Розмови</a>
+    <a class="nav-item" href="13-parent-child-profile.html">🧒 Профіль дитини</a>
+    <a class="nav-item" href="14-parent-directives.html">🗒️ Вказівки й повідомлення</a>
+    <a class="nav-item active" href="15-parent-budget-models.html">💳 Бюджет і моделі</a>
+    <a class="nav-item" href="17-parent-sources.html">📚 Джерела / Мої книги</a>
+    <a class="nav-item" href="16-parent-settings.html">⚙️ Налаштування й ДЗ</a>
+    <a class="nav-item" style="opacity:.5; cursor:default;">🧩 Модулі (скоро)</a>
+    <div class="mode-badge">🔒 Режим тата активний</div>
+  </aside>
+
+  <main class="content">
+    <div class="topbar">
+      <div class="topbar-left"><button class="menu-btn" onclick="toggleSidebar()" aria-label="Меню">☰</button><h1>Бюджет і моделі</h1></div>
+      <div class="theme-toggle">
+        <button id="btn-light" class="active" onclick="setTheme('light')">☀️</button>
+        <button id="btn-dark" onclick="setTheme('dark')">🌙</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Витрати на ШІ за вересень</h2>
+      <div class="desc">Ліміт охоплює лише ШІ-виклики. Supabase Pro ($25) і ElevenLabs Creator ($22) — окремо, поза лімітом.</div>
+      <div class="budget-row">
+        <div class="amount">$81 <span class="cap">/ $100 (запас до $110)</span></div>
+      </div>
+      <div class="track">
+        <div class="fill" style="width:81%"></div>
+        <div class="marker" style="left:80%;"><span>80%</span></div>
+        <div class="marker" style="left:100%;"><span>100%</span></div>
+        <div class="marker" style="left:110%; display:none;"></div>
+      </div>
+      <div class="state-badges">
+        <span class="state-badge sb-warn">81% — попередження активне</span>
+        <span class="state-badge sb-ok">Модерація безпеки — завжди активна</span>
+      </div>
+      <div class="limit-controls">
+        <label style="font-size:12px;color:var(--text-muted);">Місячний ліміт, $</label>
+        <input type="number" value="100">
+        <button onclick="showToast('Ліміт оновлено')">Зберегти</button>
+      </div>
+      <div class="infra-note">Максимум з урахуванням запасу +10%: $110. Значення &gt; $200 вимагає додаткового підтвердження.</div>
+
+      <div class="cost-breakdown">
+        <div class="cost-item"><b>$34</b><span>Живий голос — уроки</span></div>
+        <div class="cost-item"><b>$9</b><span>Живий голос — «ШІ-друг»</span></div>
+        <div class="cost-item"><b>$18</b><span>Генерація уроків</span></div>
+        <div class="cost-item"><b>$11</b><span>Озвучка (кеш)</span></div>
+        <div class="cost-item"><b>$6</b><span>Розпізнавання фото/скріна</span></div>
+        <div class="cost-item"><b>$3</b><span>Індексація й пошук</span></div>
+        <div class="cost-item"><b>$0.4</b><span>Безпека понад ліміт (окремо)</span></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Демо станів деградації</h2>
+      <div class="desc">Кнопки нижче лише перемикають вигляд шкали для демонстрації Алексу.</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button onclick="setState(60)" style="padding:8px 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg);cursor:pointer;">60% — норма</button>
+        <button onclick="setState(84)" style="padding:8px 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg);cursor:pointer;">84% — попередження</button>
+        <button onclick="setState(103)" style="padding:8px 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg);cursor:pointer;">103% — режим бюджету</button>
+        <button onclick="setState(111)" style="padding:8px 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg);cursor:pointer;">111% — жорстка межа</button>
+      </div>
+      <div id="stateResult" style="margin-top:12px; font-size:13px;"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Маршрутизація моделей «роль → модель»</h2>
+      <div class="desc">Змінює лише тато. Застосовується з наступного виклику. Дитина цього розділу не бачить.</div>
+      <table>
+        <thead><tr><th>Роль</th><th>Основна</th><th>Резервна</th><th>Ескалація</th><th>Економ (режим бюджету)</th></tr></thead>
+        <tbody>
+          <tr><td class="role-name">Пояснення / генерація уроку</td><td><select><option>Claude Opus 5.5</option></select></td><td><select><option>GPT-5.6 Sol</option></select></td><td><select><option>—</option></select></td><td><select><option>Gemini 3.8 Flash</option></select></td></tr>
+          <tr><td class="role-name">Оцінка відповідей</td><td><select><option>Claude Sonnet 5</option></select></td><td><select><option>GPT-5.6 Terra</option></select></td><td><select><option>Claude Opus 5.5</option></select></td><td><select><option>Gemini 3.8 Flash</option></select></td></tr>
+          <tr><td class="role-name">Діагностика</td><td><select><option>Claude Sonnet 5</option></select></td><td><select><option>GPT-5.6 Terra</option></select></td><td><select><option>Claude Opus 5.5</option></select></td><td><select><option>Gemini 3.8 Flash</option></select></td></tr>
+          <tr><td class="role-name">Чат теми / «ШІ-друг»</td><td><select><option>Claude Sonnet 5</option></select></td><td><select><option>GPT-5.6 Terra</option></select></td><td><select><option>—</option></select></td><td><select><option>Claude Haiku 4.5</option></select></td></tr>
+          <tr><td class="role-name">Модератор безпеки</td><td><select><option>Omni-moderation + Haiku 4.5</option></select></td><td><select><option>Gemini 3.8 Flash</option></select></td><td><select><option>Claude Sonnet 5</option></select></td><td><span class="fallback-missing">не деградує</span></td></tr>
+          <tr><td class="role-name">Голос (живий)</td><td><select><option>ElevenLabs Agent</option></select></td><td><select><option>перехід на текст</option></select></td><td><select><option>—</option></select></td><td><span class="fallback-missing">вимкнено</span></td></tr>
+          <tr><td class="role-name">Звіти</td><td><select><option>Claude Sonnet 5 / Opus 5.5</option></select></td><td><select><option>GPT-5.6 Terra/Sol</option></select></td><td><select><option>—</option></select></td><td><select><option>Gemini 3.8 Flash</option></select></td></tr>
+          <tr><td class="role-name">Розпізнавання зошита</td><td><select><option>Gemini 3.1 Pro</option></select></td><td><select><option>GPT-5.6 Sol</option></select></td><td><select><option>Claude Opus 5.5</option></select></td><td><select><option>Gemini 3.8 Flash</option></select></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+<script>
+  function toggleSidebar(){ document.getElementById('sidebar').classList.add('open'); document.getElementById('sidebarOverlay').classList.add('open'); }
+  function closeSidebar(){ document.getElementById('sidebar').classList.remove('open'); document.getElementById('sidebarOverlay').classList.remove('open'); }
+  let toastTimer=null;
+  function showToast(msg){
+    const t=document.getElementById('toast');
+    t.textContent=msg;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer=setTimeout(()=>t.classList.remove('show'), 2400);
+  }
+  function setTheme(t){
+    document.body.setAttribute('data-theme', t);
+    document.getElementById('btn-light').classList.toggle('active', t==='light');
+    document.getElementById('btn-dark').classList.toggle('active', t==='dark');
+  }
+  function setState(pct){
+    const fill=document.querySelector('.track .fill');
+    fill.style.width=Math.min(pct,110)+'%';
+    let html='';
+    if(pct<80) html='<span class="state-badge sb-ok">Норма — усі можливості доступні</span>';
+    else if(pct<100) html='<span class="state-badge sb-warn">'+pct+'% — сповіщення надіслано, поточний темп у межах ліміту</span>';
+    else if(pct<110) html='<span class="state-badge sb-danger">Режим бюджету: живий голос вимкнено, економ-моделі, поточний урок дозавершується</span>';
+    else html='<span class="state-badge sb-danger">Жорстка межа 110%: нові ШІ-виклики призупинено, крім безпеки й сповіщень. Дитина бачить «Заняття на паузі — продовжимо пізніше», без згадки грошей.</span>';
+    document.getElementById('stateResult').innerHTML=html;
+  }
+</script>
+<div class="toast" id="toast"></div>
+</body>
+</html>

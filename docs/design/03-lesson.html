@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ШІ-Репетитор — Урок</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root[data-theme="light"]{
+    --bg:#FAF6EF; --surface:#FFFFFF; --surface-alt:#F1ECE0; --text:#2B2A28; --text-muted:#6B6862;
+    --primary:#FF7A50; --primary-press:#E85F37; --secondary:#2EC4B6; --accent:#7C6CF0;
+    --warn:#E8A33D; --danger:#E5484D; --border:#E7E0D2; --focus:#1D6FE0;
+  }
+  :root[data-theme="dark"]{
+    --bg:#15141C; --surface:#1F1E28; --surface-alt:#2A2833; --text:#F3F1EC; --text-muted:#A9A6A0;
+    --primary:#FF9470; --primary-press:#E87B54; --secondary:#3DDBC9; --accent:#9A8CFF;
+    --warn:#F0B95A; --danger:#FF6B6E; --border:#37353F; --focus:#5B9CFF;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:'Nunito',sans-serif; background:var(--bg); color:var(--text);}
+  .theme-toggle{position:fixed; top:12px; right:12px; z-index:80; display:flex; gap:8px; background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:6px; box-shadow:0 2px 10px rgba(0,0,0,.08);}
+  .theme-toggle button{border:none; background:transparent; color:var(--text); font-family:inherit; font-weight:700; font-size:12px; padding:7px 12px; border-radius:999px; cursor:pointer;}
+  .theme-toggle button.active{background:var(--primary); color:white;}
+
+  header.lesson-top{
+    display:flex; align-items:center; gap:14px; padding:14px 20px; background:var(--surface); border-bottom:1px solid var(--border);
+    position:sticky; top:0; z-index:30;
+  }
+  .progress-wrap{flex:1;}
+  .progress-wrap .lbl{display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); margin-bottom:6px; font-weight:700;}
+  .progress-bar{height:8px; background:var(--surface-alt); border-radius:99px; overflow:hidden;}
+  .progress-bar > div{height:100%; width:45%; background:var(--secondary); border-radius:99px; transition:width .3s;}
+  .voice-state{display:flex; align-items:center; gap:8px; background:var(--surface-alt); border-radius:999px; padding:6px 12px 6px 6px; flex:none;}
+  .voice-orb{width:28px; height:28px; border-radius:50%; background:radial-gradient(circle at 35% 30%, var(--accent), var(--primary)); flex:none; overflow:hidden; display:flex; align-items:center; justify-content:center; font-size:14px; color:white;}
+  .voice-orb img{width:100%; height:100%; object-fit:cover;}
+  .voice-orb.listening{animation:breathe 1s ease-in-out infinite;}
+  .voice-orb.thinking{animation:spin 0.9s linear infinite;}
+  .voice-orb.speaking{animation:pulse .4s ease-in-out infinite alternate;}
+  .voice-orb.muted{opacity:.35; animation:none;}
+  @keyframes breathe{0%,100%{transform:scale(1);}50%{transform:scale(1.18);}}
+  @keyframes spin{from{transform:rotate(0);}to{transform:rotate(360deg);}}
+  @keyframes pulse{from{box-shadow:0 0 0 rgba(0,0,0,0);}to{box-shadow:0 0 14px color-mix(in srgb, var(--accent) 60%, transparent);}}
+  @keyframes sway{from{transform:translateY(0);}to{transform:translateY(-3px);}}
+  .voice-state span{font-size:12px; font-weight:700; color:var(--text-muted);}
+  .ai-badge-mini{font-size:10px; font-weight:800; color:var(--accent); background:color-mix(in srgb, var(--accent) 14%, transparent); padding:2px 7px; border-radius:99px; flex:none;}
+  .avatar-switch{display:flex; gap:6px; align-items:center;}
+  .avatar-switch button{border:1px solid var(--border); background:var(--surface); color:var(--text-muted); font-family:'Inter',sans-serif; font-weight:700; font-size:11px; padding:6px 10px; border-radius:999px; cursor:pointer;}
+  .avatar-switch button.active{background:var(--accent); color:white; border-color:var(--accent);}
+  @media (prefers-reduced-motion: reduce){
+    .voice-orb, .orb-lg{ animation:none !important; }
+  }
+
+  main{padding:20px; max-width:760px; margin:0 auto 140px;}
+  .stepper-demo{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;}
+  .stepper-demo button{
+    border:1px solid var(--border); background:var(--surface); color:var(--text-muted); font-family:'Inter',sans-serif;
+    font-size:11px; padding:7px 10px; border-radius:10px; cursor:pointer;
+  }
+  .stepper-demo button.active{background:var(--secondary); color:white; border-color:var(--secondary);}
+
+  .slide-card{background:var(--surface); border-radius:24px; padding:28px 26px; box-shadow:0 6px 20px rgba(0,0,0,.06);}
+  .topic-tag{font-size:12px; font-weight:800; color:var(--secondary); text-transform:uppercase; letter-spacing:.03em; margin-bottom:8px;}
+  .slide-card h1{font-size:24px; margin:0 0 14px;}
+  .slide-illustration{
+    height:150px; border-radius:16px; background:linear-gradient(135deg, var(--surface-alt), var(--border));
+    display:flex; align-items:center; justify-content:center; font-size:48px; margin-bottom:16px;
+  }
+  .slide-card p{font-size:18px; line-height:1.55;}
+  .source-ref{font-size:12px; color:var(--text-muted); margin-top:14px;}
+  .audio-controls{display:flex; gap:10px; margin-top:18px; align-items:center; flex-wrap:wrap;}
+  .audio-controls button{
+    border:1px solid var(--border); background:var(--surface-alt); border-radius:14px; padding:10px 16px;
+    font-family:'Nunito',sans-serif; font-weight:700; font-size:14px; cursor:pointer; min-height:44px;
+  }
+  .audio-controls button.subs-on{background:var(--secondary); color:white; border-color:var(--secondary);}
+
+  .checkpoint-card{background:var(--surface); border-radius:24px; padding:26px; box-shadow:0 6px 20px rgba(0,0,0,.06);}
+  .checkpoint-card h2{font-size:20px; margin:0 0 18px;}
+  .choices{display:flex; flex-direction:column; gap:12px;}
+  .choice{
+    border:2px solid var(--border); border-radius:16px; padding:16px 18px; background:var(--surface-alt);
+    font-size:17px; font-weight:600; cursor:pointer; text-align:left; min-height:56px;
+  }
+  .choice.correct{border-color:var(--secondary); background:color-mix(in srgb, var(--secondary) 15%, var(--surface-alt));}
+  .choice.correct::after{content:" ✓"; color:var(--secondary); font-weight:900;}
+  .feedback{
+    margin-top:16px; padding:14px 16px; border-radius:14px; background:color-mix(in srgb, var(--secondary) 15%, var(--surface));
+    font-size:15px; display:flex; gap:10px; align-items:flex-start;
+  }
+  .mic-row{display:flex; gap:12px; margin-top:16px;}
+  .mic-btn{
+    display:flex; align-items:center; gap:10px; background:var(--accent); color:white; border:none; border-radius:16px;
+    padding:14px 20px; font-family:'Nunito',sans-serif; font-weight:800; font-size:16px; cursor:pointer; min-height:56px;
+  }
+  textarea{
+    width:100%; border-radius:14px; border:2px solid var(--border); background:var(--bg); color:var(--text);
+    font-family:'Nunito',sans-serif; font-size:16px; padding:14px; min-height:70px; resize:vertical;
+  }
+
+  .voice-dialog{background:var(--surface); border-radius:24px; padding:24px; box-shadow:0 6px 20px rgba(0,0,0,.06);}
+  .voice-dialog .orb-wrap{display:flex; flex-direction:column; align-items:center; gap:8px; margin-bottom:6px;}
+  .voice-dialog .orb-lg{
+    width:88px; height:88px; border-radius:50%; background:radial-gradient(circle at 35% 30%, var(--accent), var(--primary));
+    animation:breathe 1.4s ease-in-out infinite; box-shadow:0 0 30px color-mix(in srgb, var(--accent) 40%, transparent);
+    overflow:hidden; display:flex; align-items:center; justify-content:center; font-size:36px; color:white;
+  }
+  .voice-dialog .orb-lg img{width:100%; height:100%; object-fit:cover;}
+  .voice-status-text{text-align:center; font-weight:800; margin-bottom:18px;}
+  .transcript{background:var(--surface-alt); border-radius:16px; padding:16px; max-height:260px; overflow:auto; display:flex; flex-direction:column; gap:10px;}
+  .transcript-header{display:flex; align-items:center; gap:8px; font-size:12px; font-weight:800; color:var(--accent); text-transform:uppercase; letter-spacing:.02em; margin-bottom:4px;}
+  .t-msg{max-width:80%; padding:10px 14px; border-radius:14px; font-size:15px; line-height:1.4; position:relative;}
+  .t-msg.child{align-self:flex-end; background:var(--primary); color:white; border-bottom-right-radius:4px;}
+  .t-msg.ai{align-self:flex-start; background:var(--surface); border:1px solid var(--border); border-left:4px solid var(--accent); border-bottom-left-radius:4px;}
+  .t-msg .wave{font-size:11px; opacity:.7; display:block; margin-top:4px;}
+
+  .break-card{background:var(--surface); border-radius:24px; padding:32px; text-align:center; box-shadow:0 6px 20px rgba(0,0,0,.06);}
+  .break-card .big-emoji{font-size:56px; margin-bottom:10px;}
+  .break-actions{display:flex; gap:12px; margin-top:22px; flex-wrap:wrap; justify-content:center;}
+  .break-actions button{
+    border:none; border-radius:16px; padding:16px 24px; font-family:'Nunito',sans-serif; font-weight:800; font-size:16px; cursor:pointer; min-height:56px;
+  }
+  .break-actions .go-break{background:var(--secondary); color:white;}
+  .break-actions .skip{background:var(--surface-alt); color:var(--text);}
+
+  .alarm-btn{
+    position:fixed; right:18px; bottom:18px; z-index:70; background:var(--danger); color:white; border:none; border-radius:999px;
+    padding:16px 20px; font-family:'Nunito',sans-serif; font-weight:800; font-size:15px; display:flex; align-items:center; gap:8px;
+    box-shadow:0 8px 22px rgba(229,72,77,.4); cursor:pointer; min-height:56px;
+  }
+
+  .air-banner{
+    position:fixed; inset:0; background:var(--danger); color:white; z-index:200; display:none; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center; padding:32px;
+  }
+  .air-banner.active{display:flex;}
+  .air-banner .siren{font-size:64px; margin-bottom:16px; animation:pulse2 .8s infinite alternate;}
+  @keyframes pulse2{from{transform:scale(1);}to{transform:scale(1.12);}}
+  .air-banner h1{font-size:28px; margin:0 0 10px;}
+  .air-banner p{font-size:17px; max-width:420px; margin:0 0 28px;}
+  .air-banner button{
+    background:white; color:var(--danger); border:none; border-radius:20px; padding:22px 40px; font-size:20px;
+    font-weight:900; font-family:'Nunito',sans-serif; cursor:pointer; min-height:64px;
+  }
+
+  .toast-saved{
+    position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(120%); background:var(--text); color:var(--bg);
+    padding:12px 20px; border-radius:14px; font-size:14px; font-weight:700; z-index:210; transition:transform .2s;
+  }
+  .toast-saved.show{transform:translateX(-50%) translateY(0);}
+
+  .resume-card{background:var(--surface); border:2px dashed var(--secondary); border-radius:20px; padding:20px; margin-bottom:16px; display:flex; align-items:center; gap:14px;}
+  .resume-card b{display:block; font-size:15px;}
+  .resume-card span{font-size:13px; color:var(--text-muted);}
+
+  /* --- Interactive lesson components (ADR-020) --- */
+  .hint-box{margin-top:14px; padding:12px 14px; border-radius:12px; background:color-mix(in srgb, var(--warn) 20%, var(--surface)); border:1px solid var(--warn); font-size:14px;}
+  .ds-hint-note{font-size:13px; color:var(--text-muted); margin-top:12px;}
+  .points-pop{position:fixed; font-family:'Nunito',sans-serif; font-weight:900; font-size:20px; color:var(--secondary); pointer-events:none; z-index:250; animation:pointsUp .75s ease-out forwards;}
+  @keyframes pointsUp{0%{opacity:0; transform:translateY(0) scale(.8);}20%{opacity:1;}100%{opacity:0; transform:translateY(-36px) scale(1.1);}}
+  @media (prefers-reduced-motion: reduce){ .points-pop{animation:none; opacity:1;} }
+
+  /* number_line */
+  .nl-wrap{padding:30px 10px 50px; position:relative;}
+  .nl-track{position:relative; height:8px; background:var(--surface-alt); border-radius:99px; margin:0 14px; touch-action:none; cursor:pointer;}
+  .nl-track:focus-visible{outline:3px solid var(--focus); outline-offset:8px;}
+  .nl-tick{position:absolute; top:-4px; width:2px; height:16px; background:var(--border); transform:translateX(-50%);}
+  .nl-tick span{position:absolute; top:22px; left:50%; transform:translateX(-50%); font-size:13px; font-weight:700; color:var(--text-muted); white-space:nowrap;}
+  .nl-marker{position:absolute; top:50%; width:48px; height:48px; margin-left:-24px; margin-top:-24px; border-radius:50%; background:var(--accent); color:white; display:flex; align-items:center; justify-content:center; font-size:20px; box-shadow:0 4px 14px rgba(0,0,0,.25); cursor:grab; transition:left .15s ease-out, background .15s;}
+  .nl-marker:active{cursor:grabbing;}
+  .nl-marker.correct{background:var(--secondary);}
+  .nl-marker.retry{background:var(--warn);}
+  @media (prefers-reduced-motion: reduce){ .nl-marker{transition:none;} }
+
+  /* drag_sort */
+  .ds-tabs{display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;}
+  .ds-tabs button{border:1px solid var(--border); background:var(--surface); color:var(--text-muted); font-family:'Nunito',sans-serif; font-weight:700; font-size:14px; padding:11px 16px; border-radius:12px; cursor:pointer; min-height:48px;}
+  .ds-tabs button.active{background:var(--accent); color:white; border-color:var(--accent);}
+  .ds-slots{display:flex; flex-direction:column; gap:10px; margin-bottom:18px;}
+  .ds-slot{min-height:56px; border:2px dashed var(--border); border-radius:14px; display:flex; align-items:center; gap:10px; padding:8px 14px; background:var(--surface-alt); cursor:pointer;}
+  .ds-slot.filled{border-style:solid;}
+  .ds-slot.correct{border-color:var(--secondary); background:color-mix(in srgb, var(--secondary) 16%, var(--surface));}
+  .ds-slot.correct::after{content:" ✓"; color:var(--secondary); font-weight:900; margin-left:auto;}
+  .ds-slot.wrong{border-color:var(--danger); background:color-mix(in srgb, var(--danger) 10%, var(--surface));}
+  .ds-slot.wrong::after{content:" ↺ спробуй ще"; color:var(--danger); font-weight:800; font-size:12px; margin-left:auto;}
+  .ds-slot-num{flex:none; min-width:28px; height:28px; padding:0 6px; border-radius:14px; background:var(--border); color:var(--text); font-weight:800; font-size:13px; display:flex; align-items:center; justify-content:center;}
+  .ds-slot-content{font-weight:700; font-size:15px;}
+  .ds-pool{display:flex; flex-wrap:wrap; gap:10px;}
+  .ds-card{min-height:48px; min-width:48px; padding:12px 16px; border-radius:14px; background:var(--surface); border:2px solid var(--border); font-weight:700; font-size:15px; cursor:grab; touch-action:none; user-select:none;}
+  .ds-card:active{cursor:grabbing;}
+  .ds-card.selected{border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);}
+  .ds-card.placed{opacity:.35; pointer-events:none;}
+  .ds-card.dragging{position:fixed; z-index:220; box-shadow:0 10px 24px rgba(0,0,0,.25); opacity:.95; pointer-events:none;}
+  .ds-actions{display:flex; gap:12px; margin-top:16px; flex-wrap:wrap;}
+  .ds-actions button{border:none; border-radius:14px; padding:12px 20px; font-family:'Nunito',sans-serif; font-weight:800; font-size:15px; cursor:pointer; min-height:48px;}
+  .ds-check{background:var(--primary); color:white;}
+  .ds-reset{background:var(--surface-alt); color:var(--text);}
+
+  /* step_reveal */
+  .sr-frame{min-height:150px; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:12px; padding:24px 20px; border-radius:16px; background:var(--surface-alt);}
+  .sr-fraction{font-size:40px; font-weight:900;}
+  .sr-frac-num{display:flex; flex-direction:column; align-items:center; line-height:1.15;}
+  .sr-frac-num small{display:block; width:44px; border-top:3px solid var(--text); margin:3px 0;}
+  .sr-frac-num.sr-highlight{color:var(--primary);}
+  .sr-frac-num.sr-highlight small{border-color:var(--primary);}
+  .sr-caption{font-size:15px; color:var(--text-muted); text-align:center; max-width:440px;}
+  .sr-frame.fade{animation:srFade .3s ease-out;}
+  @keyframes srFade{from{opacity:0; transform:translateY(6px);}to{opacity:1; transform:translateY(0);}}
+  @media (prefers-reduced-motion: reduce){ .sr-frame.fade{animation:none;} }
+  .sr-controls{display:flex; gap:10px; margin-top:18px; align-items:center; flex-wrap:wrap; justify-content:center;}
+  .sr-controls button{border:none; border-radius:14px; padding:12px 18px; font-family:'Nunito',sans-serif; font-weight:800; font-size:15px; cursor:pointer; min-height:48px; background:var(--surface-alt); color:var(--text);}
+  .sr-controls button:disabled{opacity:.4; cursor:default;}
+  .sr-controls #srNext{background:var(--primary); color:white;}
+  .sr-controls #srAuto.active{background:var(--accent); color:white;}
+  .sr-dots{display:flex; gap:6px;}
+  .sr-dot{width:9px; height:9px; border-radius:50%; background:var(--border); display:inline-block;}
+  .sr-dot.active{background:var(--accent); width:22px; border-radius:6px;}
+</style>
+</head>
+<body data-theme="light">
+  <div class="theme-toggle">
+    <button id="btn-light" class="active" onclick="setTheme('light')">☀️</button>
+    <button id="btn-dark" onclick="setTheme('dark')">🌙</button>
+  </div>
+
+  <header class="lesson-top">
+    <div class="progress-wrap">
+      <div class="lbl"><span>Математика · Дроби</span><span id="stepLbl">Крок 3 з 6</span></div>
+      <div class="progress-bar"><div style="width:45%"></div></div>
+    </div>
+    <div class="voice-state">
+      <div class="voice-orb listening" id="orbSmall">✦</div>
+      <span id="voiceLabel">Слухаю…</span>
+      <span class="ai-badge-mini">✦ Я — ШІ</span>
+    </div>
+  </header>
+
+  <div style="display:flex; justify-content:flex-end; padding:8px 20px 0;">
+    <div class="avatar-switch">
+      <span style="font-size:11px; color:var(--text-muted); font-family:'Inter',sans-serif; font-weight:700;">Демо аватара:</span>
+      <button class="active" id="avatarBtnGlow" onclick="setAvatarMode('glow')">✦ Вогник</button>
+      <button id="avatarBtnPersona" onclick="setAvatarMode('persona')">🦉 Персонаж</button>
+    </div>
+  </div>
+
+  <main>
+    <div class="stepper-demo">
+      <button class="active" onclick="showScreen('slide', this)">1. Слайд + озвучка</button>
+      <button onclick="showScreen('checkpoint', this)">2. Контрольна точка</button>
+      <button onclick="showScreen('voice', this)">3. Голосовий діалог</button>
+      <button onclick="showScreen('break', this)">4. Перерва</button>
+      <button onclick="showScreen('numberline', this)">5. Числова пряма</button>
+      <button onclick="showScreen('dragsort', this)">6. Перетягни й розстав</button>
+      <button onclick="showScreen('stepreveal', this)">7. Крок за кроком</button>
+      <button onclick="showAirAlarm()">🚨 Демо: банер тривоги</button>
+    </div>
+
+    <div class="resume-card" id="resumeCard" style="display:none;">
+      <div style="font-size:26px;">↩️</div>
+      <div><b>Продовжуємо з того місця</b><span>Востаннє тут була перед перервою через тривогу</span></div>
+    </div>
+
+    <!-- SLIDE -->
+    <section id="s-slide">
+      <div class="slide-card">
+        <div class="topic-tag">Пояснення</div>
+        <h1>Скорочення дробів</h1>
+        <div class="slide-illustration">🍕➗2</div>
+        <p>Щоб скоротити дріб, треба поділити чисельник і знаменник на одне й те саме число. Наприклад, 6/8 ділимо на 2 — виходить 3/4.</p>
+        <div class="source-ref">📘 Джерело: підручник «Математика, 6 клас», с. 54</div>
+        <div class="audio-controls">
+          <button onclick="showToast('Пауза озвучки')">⏸ Пауза</button>
+          <button onclick="showToast('Повтор озвучки')">↺ Повторити</button>
+          <button class="subs-on" onclick="this.classList.toggle('subs-on')">CC Субтитри</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- CHECKPOINT -->
+    <section id="s-checkpoint" style="display:none;">
+      <div class="checkpoint-card">
+        <h2>Скороти дріб 8/12 наскільки можеш</h2>
+        <div class="choices">
+          <div class="choice" onclick="pickChoice(this,false)">4/6</div>
+          <div class="choice" onclick="pickChoice(this,true)">2/3</div>
+          <div class="choice" onclick="pickChoice(this,false)">1/2</div>
+        </div>
+        <div class="mic-row">
+          <button class="mic-btn">🎙️ Відповісти голосом</button>
+        </div>
+        <textarea placeholder="…або напиши відповідь тут"></textarea>
+        <div class="feedback" id="feedback" style="display:none;">
+          <span>✅</span><div><b>Так, 2/3 — це найбільше скорочення!</b><br>Ти поділила і чисельник, і знаменник на 4.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VOICE DIALOG -->
+    <section id="s-voice" style="display:none;">
+      <div class="voice-dialog">
+        <div class="orb-wrap">
+          <div class="orb-lg" id="orbLarge">✦</div>
+          <span class="ai-badge-mini">✦ Я — ШІ, не людина</span>
+        </div>
+        <div class="voice-status-text" id="voiceStatusText">Говорить Ліра</div>
+        <div class="transcript">
+          <div class="transcript-header">🎧 Транскрипт голосової сесії · 00:42</div>
+          <div class="t-msg ai">Спробуй пояснити своїми словами, чому 8/12 і 2/3 — це те саме число.<span class="wave">〜〜〜 Ліра · 09:14</span></div>
+          <div class="t-msg child">Бо ми ділимо однаково зверху і знизу, тому дріб не змінюється насправді<span class="wave">〜〜ти · 09:14</span></div>
+          <div class="t-msg ai">Саме так! Це і називається скороченням дробу.<span class="wave">〜〜〜 Ліра · 09:15</span></div>
+        </div>
+        <div class="audio-controls" style="justify-content:center;">
+          <button onclick="showToast('Мікрофон вимкнено, перехід у текст')">✋ Перебити</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- BREAK -->
+    <section id="s-break" style="display:none;">
+      <div class="break-card">
+        <div class="big-emoji">🧃</div>
+        <h2 style="margin:0;">Ти вчишся вже 20 хвилин!</h2>
+        <p style="color:var(--text-muted);">Розімнись, попий води або подивись у вікно.</p>
+        <div class="break-actions">
+          <button class="go-break">Перерва</button>
+          <button class="skip">Продовжити без перерви</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- INTERACTIVE: number_line -->
+    <section id="s-numberline" style="display:none;">
+      <div class="checkpoint-card">
+        <h2>Постав крапку там, де на прямій стоїть дріб <strong>3/4</strong></h2>
+        <div class="nl-wrap">
+          <div class="nl-track" id="nlTrack" role="slider" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0" aria-label="Позначка на числовій прямій від 0 до 1, познач 3/4" tabindex="0">
+            <div class="nl-tick" style="left:0%"><span>0</span></div>
+            <div class="nl-tick" style="left:25%"><span>1/4</span></div>
+            <div class="nl-tick" style="left:50%"><span>1/2</span></div>
+            <div class="nl-tick" style="left:75%"><span>3/4</span></div>
+            <div class="nl-tick" style="left:100%"><span>1</span></div>
+            <div class="nl-marker" id="nlMarker" style="left:0%">●</div>
+          </div>
+        </div>
+        <div class="feedback" id="nlFeedback" style="display:none;"></div>
+        <div class="hint-box" id="nlHint" style="display:none;">💡 Підказка: розділи пряму на 4 рівні частини між 0 і 1 — 3/4 це третя поділка, майже біля кінця.</div>
+        <div class="ds-hint-note">Перетягни кружечок пальцем чи мишею, або торкнись потрібного місця на прямій — стрілки ⬅➡ і Enter теж працюють.</div>
+      </div>
+    </section>
+
+    <!-- INTERACTIVE: drag_sort -->
+    <section id="s-dragsort" style="display:none;">
+      <div class="checkpoint-card">
+        <h2>Перетягни й розстав по місцях</h2>
+        <div class="ds-tabs">
+          <button class="active" id="dsTabTimeline" onclick="dsSwitchMode('timeline')">🕰️ Хронологія (історія)</button>
+          <button id="dsTabPairs" onclick="dsSwitchMode('pairs')">🌍 Пари слів (англійська)</button>
+        </div>
+        <div id="dsBoard"></div>
+        <div class="ds-actions">
+          <button class="ds-check" onclick="dsCheck()">Перевірити</button>
+          <button class="ds-reset" onclick="dsReset()">Почати заново</button>
+        </div>
+        <div class="ds-hint-note">Перетягни картку в порожнє місце пальцем чи мишею — або спочатку торкнись картки, а потім місця, куди її поставити.</div>
+      </div>
+    </section>
+
+    <!-- INTERACTIVE: step_reveal -->
+    <section id="s-stepreveal" style="display:none;">
+      <div class="checkpoint-card">
+        <h2>Подивись, як дріб 8/12 скорочується крок за кроком</h2>
+        <div class="sr-frame" id="srFrame"></div>
+        <div class="sr-controls">
+          <button id="srBack" onclick="srStep(-1)">← Назад</button>
+          <span class="sr-dots" id="srDots"></span>
+          <button id="srNext" onclick="srStep(1)">Далі →</button>
+          <button id="srAuto" onclick="srToggleAuto()">▶ Авто-показ</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <button class="alarm-btn" onclick="triggerAlarm()">🚨 Тривога</button>
+
+  <div class="air-banner" id="airBanner">
+    <div class="siren">🚨</div>
+    <h1>Повітряна тривога!</h1>
+    <p>Постав урок на паузу і йди в укриття.</p>
+    <button onclick="pauseFromAlarm()">⏸ Пауза</button>
+  </div>
+
+  <div class="toast-saved" id="toastSaved">Збережено · продовжимо з цього кроку</div>
+
+<script>
+  function setTheme(t){
+    document.body.setAttribute('data-theme', t);
+    document.getElementById('btn-light').classList.toggle('active', t==='light');
+    document.getElementById('btn-dark').classList.toggle('active', t==='dark');
+  }
+  const screens=['slide','checkpoint','voice','break','numberline','dragsort','stepreveal'];
+  function showScreen(name, btn){
+    screens.forEach(s=>document.getElementById('s-'+s).style.display = (s===name?'block':'none'));
+    document.querySelectorAll('.stepper-demo button').forEach(b=>b.classList.remove('active'));
+    if(btn) btn.classList.add('active');
+    document.getElementById('resumeCard').style.display = (name==='slide') ? 'flex' : 'none';
+    if(name==='voice'){ cycleVoice(); }
+  }
+  function pickChoice(el, correct){
+    document.querySelectorAll('.choice').forEach(c=>c.classList.remove('correct'));
+    if(correct){ el.classList.add('correct'); document.getElementById('feedback').style.display='flex'; }
+    else { document.getElementById('feedback').style.display='none'; showToast('Майже! Спробуймо ще раз по-іншому.'); }
+  }
+
+  // --- Avatar mode: "вогник" (default glow) vs "персонаж" (demo) ---
+  let avatarMode='glow';
+  const avatarContent={glow:'✦', persona:'🦉'};
+  function setAvatarMode(mode){
+    avatarMode=mode;
+    document.getElementById('avatarBtnGlow').classList.toggle('active', mode==='glow');
+    document.getElementById('avatarBtnPersona').classList.toggle('active', mode==='persona');
+    document.getElementById('orbSmall').textContent = avatarContent[mode];
+    document.getElementById('orbLarge').textContent = avatarContent[mode];
+  }
+
+  let voiceStates=['listening','thinking','speaking'];
+  let vi=0;
+  function cycleVoice(){
+    const orbSmall=document.getElementById('orbSmall');
+    const orbLarge=document.getElementById('orbLarge');
+    const label=document.getElementById('voiceLabel');
+    const statusText=document.getElementById('voiceStatusText');
+    const labels={listening:'Слухаю…', thinking:'Думаю…', speaking:'Говорить Ліра'};
+    orbSmall.className='voice-orb '+voiceStates[vi];
+    orbLarge.className='orb-lg '+voiceStates[vi];
+    orbSmall.textContent = avatarContent[avatarMode];
+    orbLarge.textContent = avatarContent[avatarMode];
+    label.textContent=labels[voiceStates[vi]];
+    statusText.textContent=labels[voiceStates[vi]];
+    vi=(vi+1)%voiceStates.length;
+  }
+  setInterval(()=>{ if(document.getElementById('s-voice').style.display!=='none'){ cycleVoice(); } }, 2200);
+
+  function triggerAlarm(){
+    showToast('Збережено · продовжимо з цього кроку');
+  }
+  function showAirAlarm(){ document.getElementById('airBanner').classList.add('active'); }
+  function pauseFromAlarm(){
+    document.getElementById('airBanner').classList.remove('active');
+    document.getElementById('orbSmall').className='voice-orb muted';
+    document.getElementById('orbSmall').textContent = avatarContent[avatarMode];
+    document.getElementById('voiceLabel').textContent='Мікрофон вимкнено';
+    showToast('Збережено · продовжимо з цього кроку');
+  }
+  function showToast(msg){
+    const t=document.getElementById('toastSaved');
+    t.textContent = msg || 'Збережено · продовжимо з цього кроку';
+    t.classList.add('show');
+    clearTimeout(window.__toastTimer);
+    window.__toastTimer=setTimeout(()=>t.classList.remove('show'), 2400);
+  }
+
+  // ==================== Interactive lesson components (ADR-020) ====================
+
+  function flashPoints(x, y, n){
+    const el=document.createElement('div');
+    el.className='points-pop';
+    el.textContent='+'+n;
+    el.style.left=x+'px';
+    el.style.top=y+'px';
+    document.body.appendChild(el);
+    setTimeout(()=>el.remove(), 800);
+  }
+
+  // ---- number_line: place a point on 0..1 to represent a fraction ----
+  const nlTrack=document.getElementById('nlTrack');
+  const nlMarker=document.getElementById('nlMarker');
+  const nlFeedback=document.getElementById('nlFeedback');
+  const nlHint=document.getElementById('nlHint');
+  const nlTarget=0.75; // 3/4
+  let nlValue=0, nlAttempts=0, nlSolved=false, nlDragging=false;
+
+  function nlSetFromClientX(clientX){
+    const rect=nlTrack.getBoundingClientRect();
+    let ratio=(clientX-rect.left)/rect.width;
+    ratio=Math.max(0, Math.min(1, ratio));
+    ratio=Math.round(ratio*8)/8; // snap to eighths for a fair, predictable touch target
+    nlValue=ratio;
+    nlMarker.style.left=(ratio*100)+'%';
+    nlMarker.classList.remove('correct','retry');
+    nlTrack.setAttribute('aria-valuenow', ratio.toFixed(2));
+  }
+  nlTrack.addEventListener('pointerdown', function(e){
+    if(nlSolved) return;
+    nlDragging=true;
+    nlSetFromClientX(e.clientX);
+  });
+  window.addEventListener('pointermove', function(e){
+    if(!nlDragging) return;
+    nlSetFromClientX(e.clientX);
+  });
+  window.addEventListener('pointerup', function(){
+    if(!nlDragging) return;
+    nlDragging=false;
+    nlCheck();
+  });
+  nlTrack.addEventListener('keydown', function(e){
+    if(nlSolved) return;
+    if(e.key==='ArrowRight'){ nlValue=Math.min(1, nlValue+0.125); nlMarker.style.left=(nlValue*100)+'%'; e.preventDefault(); }
+    if(e.key==='ArrowLeft'){ nlValue=Math.max(0, nlValue-0.125); nlMarker.style.left=(nlValue*100)+'%'; e.preventDefault(); }
+    if(e.key==='Enter' || e.key===' '){ nlCheck(); e.preventDefault(); }
+  });
+  function nlCheck(){
+    nlAttempts++;
+    const correct=Math.abs(nlValue-nlTarget)<0.001;
+    nlFeedback.style.display='flex';
+    if(correct){
+      nlSolved=true;
+      nlMarker.classList.add('correct');
+      nlFeedback.innerHTML='<span>✅</span><div><b>Правильно! Це 3/4.</b><br>Ти поставила крапку між 1/2 і 1, ближче до кінця.</div>';
+      const r=nlMarker.getBoundingClientRect();
+      flashPoints(r.left, r.top, 5);
+    } else {
+      nlMarker.classList.add('retry');
+      nlFeedback.innerHTML='<span>🤔</span><div><b>Майже! Спробуй ще раз.</b><br>Подумай, скільки чвертей укладається до твоєї крапки.</div>';
+      if(nlAttempts>=2){ nlHint.style.display='block'; }
+    }
+  }
+  function nlReset(){
+    nlValue=0; nlAttempts=0; nlSolved=false;
+    nlMarker.style.left='0%'; nlMarker.classList.remove('correct','retry');
+    nlFeedback.style.display='none'; nlHint.style.display='none';
+  }
+
+  // ---- drag_sort: timeline ordering + word/translation pairs ----
+  const dsData={
+    timeline:{
+      instruction:'Розстав події в правильному хронологічному порядку',
+      slots:[1,2,3,4],
+      items:[
+        {id:'a', label:'Заснування Києва', order:1},
+        {id:'b', label:'Об’єднання Новгорода і Києва (Олег, 882 р.)', order:2},
+        {id:'c', label:'Хрещення Русі (988 р.)', order:3},
+        {id:'d', label:'Розпад на удільні князівства (XII ст.)', order:4}
+      ]
+    },
+    pairs:{
+      instruction:'Перетягни переклад до кожного англійського слова',
+      slots:[{id:1,label:'cat'},{id:2,label:'dog'},{id:3,label:'sun'},{id:4,label:'book'}],
+      items:[
+        {id:'e', label:'кіт', order:1},
+        {id:'f', label:'собака', order:2},
+        {id:'g', label:'сонце', order:3},
+        {id:'h', label:'книга', order:4}
+      ]
+    }
+  };
+  let dsMode='timeline', dsPlacement={}, dsSelectedCard=null, dsShuffledItems=[];
+  let dsDragEl=null, dsDragItemId=null, dsDragOffset={x:0,y:0};
+
+  function dsSlotsFor(mode){
+    return mode==='timeline' ? dsData.timeline.slots.map(n=>({id:n, label:n})) : dsData.pairs.slots;
+  }
+  function dsItemsFor(mode){ return mode==='timeline' ? dsData.timeline.items : dsData.pairs.items; }
+  function dsShuffle(arr){
+    const a=[...arr];
+    for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+    return a;
+  }
+  function dsSwitchMode(mode){
+    dsMode=mode;
+    document.getElementById('dsTabTimeline').classList.toggle('active', mode==='timeline');
+    document.getElementById('dsTabPairs').classList.toggle('active', mode==='pairs');
+    dsReset();
+  }
+  function dsRender(){
+    dsPlacement={}; dsSelectedCard=null;
+    dsShuffledItems=dsShuffle(dsItemsFor(dsMode));
+    const slots=dsSlotsFor(dsMode);
+    const board=document.getElementById('dsBoard');
+    const slotsHtml=slots.map(s=>'<div class="ds-slot" data-slot="'+s.id+'" onclick="dsSlotTap('+s.id+')"><span class="ds-slot-num">'+(dsMode==='timeline'?s.id:s.label)+'</span><span class="ds-slot-content"></span></div>').join('');
+    const poolHtml=dsShuffledItems.map(it=>'<div class="ds-card" data-item="'+it.id+'" tabindex="0" onclick="dsCardTap(\''+it.id+'\')" onpointerdown="dsPointerDown(event,\''+it.id+'\')">'+it.label+'</div>').join('');
+    board.innerHTML='<p style="font-size:14px; color:var(--text-muted); margin:0 0 12px;">'+(dsMode==='timeline'?dsData.timeline.instruction:dsData.pairs.instruction)+'</p>'
+      + '<div class="ds-slots" id="dsSlots">'+slotsHtml+'</div>'
+      + '<div class="ds-pool" id="dsPool">'+poolHtml+'</div>';
+  }
+  function dsPointerDown(e, itemId){
+    const card=e.currentTarget;
+    if(card.classList.contains('placed')) return;
+    e.preventDefault();
+    dsDragItemId=itemId;
+    const rect=card.getBoundingClientRect();
+    dsDragOffset={x:e.clientX-rect.left, y:e.clientY-rect.top};
+    dsDragEl=card.cloneNode(true);
+    dsDragEl.classList.add('dragging');
+    dsDragEl.style.width=rect.width+'px';
+    dsDragEl.style.left=rect.left+'px';
+    dsDragEl.style.top=rect.top+'px';
+    document.body.appendChild(dsDragEl);
+    card.style.opacity='.3';
+    window.addEventListener('pointermove', dsPointerMove);
+    window.addEventListener('pointerup', dsPointerUpHandler);
+  }
+  function dsPointerMove(e){
+    if(!dsDragEl) return;
+    dsDragEl.style.left=(e.clientX-dsDragOffset.x)+'px';
+    dsDragEl.style.top=(e.clientY-dsDragOffset.y)+'px';
+  }
+  function dsPointerUpHandler(e){
+    if(!dsDragEl) return;
+    dsDragEl.style.display='none';
+    const target=document.elementFromPoint(e.clientX, e.clientY);
+    dsDragEl.remove();
+    dsDragEl=null;
+    const slotEl=target && target.closest ? target.closest('.ds-slot') : null;
+    const origCard=document.querySelector('.ds-card[data-item="'+dsDragItemId+'"]');
+    if(origCard) origCard.style.opacity='';
+    window.removeEventListener('pointermove', dsPointerMove);
+    window.removeEventListener('pointerup', dsPointerUpHandler);
+    if(slotEl){ dsPlaceItem(dsDragItemId, Number(slotEl.dataset.slot)); }
+    dsDragItemId=null;
+  }
+  function dsCardTap(itemId){
+    const card=document.querySelector('.ds-card[data-item="'+itemId+'"]');
+    if(!card || card.classList.contains('placed')) return;
+    document.querySelectorAll('.ds-card.selected').forEach(c=>c.classList.remove('selected'));
+    if(dsSelectedCard===itemId){ dsSelectedCard=null; return; }
+    dsSelectedCard=itemId;
+    card.classList.add('selected');
+  }
+  function dsSlotTap(slotId){
+    if(!dsSelectedCard) return;
+    dsPlaceItem(dsSelectedCard, slotId);
+    dsSelectedCard=null;
+  }
+  function dsPlaceItem(itemId, slotId){
+    Object.keys(dsPlacement).forEach(k=>{ if(dsPlacement[k]===itemId) delete dsPlacement[k]; });
+    dsPlacement[slotId]=itemId;
+    dsRenderPlacement();
+  }
+  function dsRenderPlacement(){
+    const items=dsItemsFor(dsMode);
+    document.querySelectorAll('.ds-slot').forEach(slotEl=>{
+      const slotId=Number(slotEl.dataset.slot);
+      const itemId=dsPlacement[slotId];
+      const contentEl=slotEl.querySelector('.ds-slot-content');
+      slotEl.classList.remove('correct','wrong');
+      if(itemId){
+        const item=items.find(i=>i.id===itemId);
+        contentEl.textContent=item?item.label:'';
+        slotEl.classList.add('filled');
+      } else {
+        contentEl.textContent='';
+        slotEl.classList.remove('filled');
+      }
+    });
+    document.querySelectorAll('.ds-card').forEach(c=>{
+      const placed=Object.values(dsPlacement).includes(c.dataset.item);
+      c.classList.toggle('placed', placed);
+      c.classList.remove('selected');
+    });
+  }
+  function dsCheck(){
+    const items=dsItemsFor(dsMode);
+    const slots=dsSlotsFor(dsMode);
+    let allCorrect=true, allFilled=true;
+    slots.forEach(s=>{
+      const itemId=dsPlacement[s.id];
+      const slotEl=document.querySelector('.ds-slot[data-slot="'+s.id+'"]');
+      if(!itemId){ allFilled=false; return; }
+      const item=items.find(i=>i.id===itemId);
+      const ok=item && item.order===s.id;
+      slotEl.classList.toggle('correct', ok);
+      slotEl.classList.toggle('wrong', !ok);
+      if(!ok) allCorrect=false;
+    });
+    if(!allFilled){ showToast('Заповни всі місця, потім перевір'); return; }
+    if(allCorrect){
+      showToast('Правильно! Молодець ✅');
+      const board=document.getElementById('dsBoard').getBoundingClientRect();
+      flashPoints(board.left+board.width/2, board.top, 10);
+    } else {
+      showToast('Майже! Подивись, де переплутано, і спробуй ще');
+    }
+  }
+  function dsReset(){ dsRender(); }
+
+  // ---- step_reveal: fraction reduction, frame by frame ----
+  const srFrames=[
+    {num:'8', den:'12', caption:'Починаємо з дробу 8/12.', hi:false},
+    {num:'4', den:'6', caption:'Ділимо чисельник і знаменник на 2: 8÷2=4, 12÷2=6.', hi:true},
+    {num:'2', den:'3', caption:'Ділимо ще раз на 2: 4÷2=2, 6÷2=3. Далі скорочувати нема на що — це відповідь!', hi:true}
+  ];
+  let srIndex=0, srAutoTimer=null, srAutoOn=false;
+  function srRender(){
+    const f=srFrames[srIndex];
+    const frameEl=document.getElementById('srFrame');
+    frameEl.classList.remove('fade'); void frameEl.offsetWidth; frameEl.classList.add('fade');
+    frameEl.innerHTML='<div class="sr-fraction"><div class="sr-frac-num'+(f.hi?' sr-highlight':'')+'"><span>'+f.num+'</span><small></small><span>'+f.den+'</span></div></div>'
+      + '<div class="sr-caption">'+f.caption+'</div>';
+    document.getElementById('srDots').innerHTML=srFrames.map((_,i)=>'<span class="sr-dot'+(i===srIndex?' active':'')+'"></span>').join('');
+    document.getElementById('srBack').disabled=(srIndex===0);
+    document.getElementById('srNext').textContent=(srIndex===srFrames.length-1) ? 'Готово ✓' : 'Далі →';
+    if(srIndex===srFrames.length-1){
+      const r=frameEl.getBoundingClientRect();
+      flashPoints(r.left+r.width/2, r.top, 3);
+    }
+  }
+  function srStep(dir){
+    if(dir>0 && srIndex===srFrames.length-1){ srIndex=0; srRender(); return; }
+    srIndex=Math.max(0, Math.min(srFrames.length-1, srIndex+dir));
+    srRender();
+  }
+  function srToggleAuto(){
+    srAutoOn=!srAutoOn;
+    const btn=document.getElementById('srAuto');
+    btn.classList.toggle('active', srAutoOn);
+    btn.textContent=srAutoOn?'⏸ Авто-показ':'▶ Авто-показ';
+    if(srAutoOn){
+      srAutoTimer=setInterval(function(){
+        if(srIndex<srFrames.length-1){ srIndex++; srRender(); }
+        else { clearInterval(srAutoTimer); srAutoOn=false; btn.classList.remove('active'); btn.textContent='▶ Авто-показ'; }
+      }, 2600);
+    } else {
+      clearInterval(srAutoTimer);
+    }
+  }
+
+  // init interactive demos (sections start hidden, but pre-render for instant display)
+  dsRender();
+  srRender();
+</script>
+</body>
+</html>
