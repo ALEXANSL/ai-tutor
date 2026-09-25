@@ -42,7 +42,13 @@ npm test               # юніт-тести (vitest)
 npm run test:db        # RLS-тести: піднімає тимчасовий PostgreSQL, застосовує міграції
 npm run build          # продакшн-збірка
 npm run check:bundle   # збірка з «канарковими» секретами + перевірка, що вони не потрапили в браузер
+npm run build && npm run test:e2e   # Playwright: публічна/незалогінена поверхня (S0) на планшеті й телефоні
 ```
+
+`npm run test:e2e` не потребує акаунтів Supabase/Google: перевіряє екрани, доступні без сесії
+(вхід, offline, маніфест PWA, редіректи без сесії, відсутність секретів у HTML) у двох
+в'юпортах — Lenovo Yoga 11 і Galaxy S24+ (`app/tests/e2e/`). Повні сценарії входу й PIN —
+після появи акаунтів (`docs/06-test-plan.md`).
 
 `npm run test:db` потребує локально встановленого PostgreSQL ≥ 15 (`initdb`) або змінної
 `TEST_DATABASE_URL` на базу з уже застосованими міграціями.

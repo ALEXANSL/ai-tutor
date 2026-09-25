@@ -15,7 +15,8 @@
     "test": "vitest run --project unit",
     "test:db": "bash scripts/with-test-db.sh vitest run --project db",
     "check:bundle": "node scripts/check-client-bundle.mjs --build",
-    "icons": "node scripts/generate-icons.mjs"
+    "icons": "node scripts/generate-icons.mjs",
+    "test:e2e": "playwright test --config tests/e2e/playwright.config.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.1",
@@ -30,6 +31,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^22.20.4",
     "@types/pg": "^8.23.1",

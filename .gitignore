@@ -27,6 +27,11 @@ coverage/
 supabase/.branches/
 supabase/.temp/
 
+# Playwright (qa-tester, app/tests/e2e)
+app/playwright-report/
+app/test-results/
+app/blob-report/
+
 # OS / editor
 .DS_Store
 *.log
