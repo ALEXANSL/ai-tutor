@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { z } from "zod";
 import { getServerSecret } from "../../env";
-import { AiNotConfiguredError, ProviderError, type RouteParams, type Usage } from "../types";
+import { AiNotConfiguredError, ProviderError, type RouteParams, type Usage, type VisionDocument } from "../types";
 
 export interface StructuredRequest<S extends z.ZodType> {
   model: string;
@@ -11,6 +11,11 @@ export interface StructuredRequest<S extends z.ZodType> {
   prompt: string;
   schema: S;
   params: RouteParams;
+}
+
+/** Same as `StructuredRequest`, plus page images/PDFs to OCR (D-54). */
+export interface VisionStructuredRequest<S extends z.ZodType> extends StructuredRequest<S> {
+  documents: VisionDocument[];
 }
 
 export interface StructuredResult<T> {
@@ -27,31 +32,44 @@ function client(): Anthropic {
   return cached.client;
 }
 
+function documentBlocks(documents: VisionDocument[]): Anthropic.ContentBlockParam[] {
+  return documents.map((d) =>
+    d.mediaType === "application/pdf"
+      ? { type: "document", source: { type: "base64", media_type: d.mediaType, data: d.data } }
+      : { type: "image", source: { type: "base64", media_type: d.mediaType, data: d.data } },
+  );
+}
+
 /**
- * Structured (JSON-schema) output from a Claude model. Current models
- * (e.g. Opus 5.5) run adaptive thinking by default and reject sampling
- * parameters, so only `effort` is configurable (route params). Streaming is
- * used so that long answers (thinking + a big table of contents) never hit
- * HTTP timeouts; the SDK assembles and parses the final message.
+ * One structured (JSON-schema) call to a Claude model, optionally with
+ * page images/PDF attached (D-54 OCR). Current models (e.g. Opus 5.5) run
+ * adaptive thinking by default and reject sampling parameters, so only
+ * `effort` is configurable (route params). Streaming is used so that long
+ * answers never hit HTTP timeouts; the SDK assembles and parses the final
+ * message.
  */
-export async function anthropicStructured<S extends z.ZodType>(
-  req: StructuredRequest<S>,
-  anthropic: Pick<Anthropic, "messages"> = client(),
+async function runStructured<S extends z.ZodType>(
+  anthropic: Pick<Anthropic, "messages">,
+  model: string,
+  system: string,
+  content: string | Anthropic.ContentBlockParam[],
+  schema: S,
+  params: RouteParams,
 ): Promise<StructuredResult<z.infer<S>>> {
   try {
     const response = await anthropic.messages
       .stream(
         {
-          model: req.model,
-          max_tokens: req.params.max_tokens ?? 32000,
-          system: req.system,
-          messages: [{ role: "user", content: req.prompt }],
+          model,
+          max_tokens: params.max_tokens ?? 32000,
+          system,
+          messages: [{ role: "user", content }],
           output_config: {
-            format: zodOutputFormat(req.schema),
-            ...(req.params.effort ? { effort: req.params.effort } : {}),
+            format: zodOutputFormat(schema),
+            ...(params.effort ? { effort: params.effort } : {}),
           },
         },
-        { timeout: req.params.timeout_ms ?? 120_000 },
+        { timeout: params.timeout_ms ?? 120_000 },
       )
       .finalMessage();
     const usage: Usage = {
@@ -83,4 +101,25 @@ export async function anthropicStructured<S extends z.ZodType>(
     }
     throw new ProviderError(`anthropic call failed: ${(e as Error).message}`, "anthropic", null, true);
   }
+}
+
+/** Text-only structured (JSON-schema) output from a Claude model. */
+export async function anthropicStructured<S extends z.ZodType>(
+  req: StructuredRequest<S>,
+  anthropic: Pick<Anthropic, "messages"> = client(),
+): Promise<StructuredResult<z.infer<S>>> {
+  return runStructured(anthropic, req.model, req.system, req.prompt, req.schema, req.params);
+}
+
+/**
+ * Structured output with page images/PDF attached (D-54 OCR: `ocr_page`
+ * role). Documents come first in the content, per Anthropic's guidance for
+ * the best recognition quality; the instruction/prompt follows.
+ */
+export async function anthropicVisionStructured<S extends z.ZodType>(
+  req: VisionStructuredRequest<S>,
+  anthropic: Pick<Anthropic, "messages"> = client(),
+): Promise<StructuredResult<z.infer<S>>> {
+  const content: Anthropic.ContentBlockParam[] = [...documentBlocks(req.documents), { type: "text", text: req.prompt }];
+  return runStructured(anthropic, req.model, req.system, content, req.schema, req.params);
 }

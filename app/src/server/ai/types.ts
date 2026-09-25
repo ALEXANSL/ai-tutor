@@ -32,6 +32,13 @@ export interface ModelRoute {
   params: RouteParams;
 }
 
+/** A page image sent to a vision-capable model (D-54: OCR of scanned books). */
+export interface VisionDocument {
+  mediaType: "application/pdf" | "image/jpeg" | "image/png" | "image/webp";
+  /** Base64, no data: prefix, no newlines. */
+  data: string;
+}
+
 export interface Usage {
   inputTokens: number;
   outputTokens: number;
