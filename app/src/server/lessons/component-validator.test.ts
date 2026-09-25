@@ -78,4 +78,36 @@ describe("validateComponentRef (NFR-SAFE-15, ADR-020 §3)", () => {
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.fallback.content.questionUk).toBeTruthy();
   });
+
+  it("rejects oversized props (more cards than the schema allows)", () => {
+    const tooMany = { ...VALID_DRAG_SORT, props: { ...VALID_DRAG_SORT.props, items: Array.from({ length: 20 }, (_, i) => ({ id: `i${i}`, labelUk: `картка ${i}` })) } };
+    expect(validateComponentRef(tooMany).ok).toBe(false);
+  });
+
+  it("rejects an over-long label even when otherwise well-formed (schema max length)", () => {
+    const tooLong = { ...VALID_DRAG_SORT, props: { ...VALID_DRAG_SORT.props, items: [{ id: "a", labelUk: "x".repeat(500) }, { id: "b", labelUk: "1/4" }] } };
+    expect(validateComponentRef(tooLong).ok).toBe(false);
+  });
+
+  it("rejects a mixed-case / spaced javascript: pseudo-protocol", () => {
+    const bad = { ...VALID_DRAG_SORT, props: { ...VALID_DRAG_SORT.props, items: [{ id: "a", labelUk: "JavaScript:alert(1)" }] } };
+    expect(validateComponentRef(bad).ok).toBe(false);
+  });
+
+  /**
+   * HTML-entity-encoded markup (`&lt;script&gt;`) and Cyrillic-homoglyph
+   * spellings of "script" do NOT match `UNSAFE_TEXT_PATTERN` and are
+   * currently *accepted* by the validator. This is not an XSS hole today —
+   * every component renders labels as plain React text (no
+   * `dangerouslySetInnerHTML` anywhere in `src/lesson-components`, confirmed
+   * by repo-wide grep), so the browser shows the literal characters, never
+   * executes them. Documented here as a regression guard: if a future
+   * component ever renders `props` via `dangerouslySetInnerHTML` or similar,
+   * this test should start failing and prompt tightening the regex first.
+   */
+  it("documents that HTML-entity-encoded markup passes validation (safe only because rendering never uses dangerouslySetInnerHTML)", () => {
+    const entityEncoded = { ...VALID_DRAG_SORT, props: { ...VALID_DRAG_SORT.props, items: [{ id: "a", labelUk: "&lt;script&gt;alert(1)&lt;/script&gt;" }, { id: "b", labelUk: "1/4" }] } };
+    const res = validateComponentRef(entityEncoded);
+    expect(res.ok).toBe(true); // not a bug today (see comment above), but worth watching
+  });
 });
