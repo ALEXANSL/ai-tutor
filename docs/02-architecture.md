@@ -516,7 +516,7 @@ erDiagram
 | Таблиця | Ключові поля | Примітки |
 |---|---|---|
 | `subjects` | `code`, `name_uk`, `active`, `order`, `is_stub`, `config jsonb` (мовний режим, дозволені типи кроків, профіль оцінювання, чи потрібна діагностика) | Заглушки «Мистецтво», «Технології» — `is_stub` (US-3.4). Новий предмет = новий рядок (ADR-017). |
-| `materials` | `drive_file_id`, `name`, `mime`, `format` (`pdf`/`epub`), `kind` (MVP: `textbook`/`literary_work`/`test_fragment`; розширення без міграції логіки: `workbook`/`reference`/`general_book`), `subject_id` (**nullable** — книга може не належати предмету), `status`, `error`, `content_hash`, `modified_time` | `kind` визначає ШІ, правиться вручну (US-2.5 КП-2); `kind` обирає стратегію структурування (ADR-017). |
+| `materials` | `drive_file_id`, `name`, `mime`, `format` (`pdf`/`epub`), `kind` (реєстр типів джерел, S1: `textbook`/`literary_work`/`popular_science`/`reference`/`other`/`test_fragment`), `subject_id` (**nullable** — книга може не належати предмету), `status`, `error`, `content_hash`, `modified_time` | `kind` визначає ШІ, правиться вручну (US-2.5 КП-2); `kind` обирає стратегію структурування (ADR-017). |
 | `material_sections` | `material_id`, `parent_id`, `title`, `page_from`, `page_to`, `order`, `manual_override` | `manual_override=true` не перезаписується індексацією (US-2.2 КП-2). |
 | `topics` | `subject_id`, `section_id`, `title`, `pages`, `order`, `is_current`, `manual_override` | |
 | `topic_dependencies` | `topic_id`, `depends_on_id`, `source` (`ai`/`parent`) | Граф для діагностики (US-4.2). |
