@@ -9,7 +9,11 @@ const lists = {
 
 describe("parseEmailList", () => {
   it("splits on commas, semicolons, whitespace and newlines, lowercases and dedupes", () => {
-    expect(parseEmailList("A@x.io; b@x.io\nc@x.io  a@X.io,")).toEqual(["a@x.io", "b@x.io", "c@x.io"]);
+    expect(parseEmailList("A@example.com; b@example.com\nc@example.com  a@EXAMPLE.com,")).toEqual([
+      "a@example.com",
+      "b@example.com",
+      "c@example.com",
+    ]);
   });
   it("returns [] for empty/undefined and drops garbage", () => {
     expect(parseEmailList(undefined)).toEqual([]);
