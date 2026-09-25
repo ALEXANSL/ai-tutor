@@ -2,9 +2,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CurrentTopicPicker } from "@/components/parent/subjects/CurrentTopicPicker";
 import { ForecastPlanPanel } from "@/components/parent/subjects/ForecastPlanPanel";
+import { LibraryCardsList } from "@/components/parent/subjects/LibraryCardsList";
 import { StartLessonButton } from "@/components/parent/subjects/StartLessonButton";
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
+import { listLibraryCardsForTopic } from "@/server/lessons/library";
 import { getSubjectDetail, getSubjectForecastPlan } from "@/server/subjects/queries";
 import { PageTitle, Panel } from "../../ui";
 
@@ -23,6 +25,7 @@ export default async function SubjectDetailPage({ params }: { params: Promise<{ 
   if (!subject) notFound();
   const t = uk.parent.subjects;
   const plan = subject.currentTopicId ? await getSubjectForecastPlan(familyId, id) : null;
+  const libraryCards = subject.currentTopicId ? await listLibraryCardsForTopic(familyId, subject.currentTopicId) : [];
 
   return (
     <>
@@ -56,6 +59,12 @@ export default async function SubjectDetailPage({ params }: { params: Promise<{ 
         <Panel title={t.detail.lessonTitle}>
           <p className="mb-3 text-[13px] text-p-muted">{t.detail.lessonHint}</p>
           <StartLessonButton subjectId={subject.id} topicId={subject.currentTopicId} />
+        </Panel>
+      )}
+
+      {subject.currentTopicId && (
+        <Panel title={t.library.title}>
+          <LibraryCardsList cards={libraryCards} />
         </Panel>
       )}
     </>

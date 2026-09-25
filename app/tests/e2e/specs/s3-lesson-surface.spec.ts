@@ -24,3 +24,17 @@ test.describe("Урок without a session (NFR-PRIV-4)", () => {
     });
   }
 });
+
+// ADR-022 / D-55: the "methodical passport" library card page — parent-only
+// like every other cabinet route.
+const LIBRARY_PAGES = ["/parent/library/00000000-0000-4000-8000-000000000000"];
+
+test.describe("Бібліотека (методичний паспорт) without a session (NFR-PRIV-4)", () => {
+  for (const path of LIBRARY_PAGES) {
+    test(`${path} sends the visitor to the login screen`, async ({ request }) => {
+      const res = await request.get(path, { maxRedirects: 0 });
+      expect([303, 307, 308]).toContain(res.status());
+      expect(res.headers()["location"] ?? "").toMatch(/\/login/);
+    });
+  }
+});
