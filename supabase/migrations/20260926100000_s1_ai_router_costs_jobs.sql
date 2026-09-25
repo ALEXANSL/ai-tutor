@@ -89,7 +89,7 @@ as $$
     (p_family, 'embeddings', 'openai', 'text-embedding-3-large',
      '{"dimensions": 1536, "batch_size": 64, "timeout_ms": 60000, "budget_policy": "primary"}'::jsonb),
     (p_family, 'indexing_structure', 'anthropic', 'claude-opus-5-5',
-     '{"max_tokens": 16000, "effort": "medium", "timeout_ms": 240000, "budget_policy": "defer"}'::jsonb)
+     '{"max_tokens": 32000, "effort": "medium", "timeout_ms": 240000, "budget_policy": "defer"}'::jsonb)
   on conflict (family_id, role) do nothing;
 $$;
 revoke all on function app_private.seed_default_model_routes(uuid) from public;

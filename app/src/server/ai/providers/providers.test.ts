@@ -8,21 +8,26 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+/** Mimics `client.messages.stream(...)` whose `.finalMessage()` resolves to `message`. */
+function streamOf(message: unknown) {
+  return vi.fn(() => ({ finalMessage: async () => message }));
+}
+
 describe("anthropicStructured (mocked SDK)", () => {
   const schema = z.object({ title: z.string() });
   const usage = { input_tokens: 1200, output_tokens: 300, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
 
   it("sends model, effort and JSON schema; returns parsed output and usage", async () => {
-    const parse = vi.fn().mockResolvedValue({ stop_reason: "end_turn", parsed_output: { title: "Т" }, usage });
+    const parse = streamOf({ stop_reason: "end_turn", parsed_output: { title: "Т" }, usage });
     const res = await anthropicStructured(
       { model: "claude-opus-5-5", system: "sys", prompt: "hi", schema, params: { effort: "medium", max_tokens: 9000 } },
-      { messages: { parse } } as never,
+      { messages: { stream: parse } } as never,
     );
     expect(res).toEqual({
       data: { title: "Т" },
       usage: { inputTokens: 1200, outputTokens: 300, cachedInputTokens: 0, cacheWriteTokens: 0 },
     });
-    const [body] = parse.mock.calls[0]!;
+    const [body] = parse.mock.calls[0]! as unknown as [{ output_config: { effort?: string; format?: unknown } }];
     expect(body).toMatchObject({ model: "claude-opus-5-5", max_tokens: 9000, system: "sys" });
     expect(body.output_config.effort).toBe("medium");
     expect(body.output_config.format).toBeDefined();
@@ -32,16 +37,16 @@ describe("anthropicStructured (mocked SDK)", () => {
   });
 
   it("treats a refusal as a non-retryable provider error", async () => {
-    const parse = vi.fn().mockResolvedValue({ stop_reason: "refusal", parsed_output: null, usage });
+    const parse = streamOf({ stop_reason: "refusal", parsed_output: null, usage });
     await expect(
-      anthropicStructured({ model: "m", system: "", prompt: "", schema, params: {} }, { messages: { parse } } as never),
+      anthropicStructured({ model: "m", system: "", prompt: "", schema, params: {} }, { messages: { stream: parse } } as never),
     ).rejects.toMatchObject({ name: "ProviderError", retryable: false });
   });
 
   it("reports a schema mismatch as a retryable provider error", async () => {
-    const parse = vi.fn().mockResolvedValue({ stop_reason: "end_turn", parsed_output: null, usage });
+    const parse = streamOf({ stop_reason: "end_turn", parsed_output: null, usage });
     await expect(
-      anthropicStructured({ model: "m", system: "", prompt: "", schema, params: {} }, { messages: { parse } } as never),
+      anthropicStructured({ model: "m", system: "", prompt: "", schema, params: {} }, { messages: { stream: parse } } as never),
     ).rejects.toMatchObject({ retryable: true });
   });
 

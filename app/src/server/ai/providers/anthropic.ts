@@ -30,26 +30,30 @@ function client(): Anthropic {
 /**
  * Structured (JSON-schema) output from a Claude model. Current models
  * (e.g. Opus 5.5) run adaptive thinking by default and reject sampling
- * parameters, so only `effort` is configurable (route params).
+ * parameters, so only `effort` is configurable (route params). Streaming is
+ * used so that long answers (thinking + a big table of contents) never hit
+ * HTTP timeouts; the SDK assembles and parses the final message.
  */
 export async function anthropicStructured<S extends z.ZodType>(
   req: StructuredRequest<S>,
   anthropic: Pick<Anthropic, "messages"> = client(),
 ): Promise<StructuredResult<z.infer<S>>> {
   try {
-    const response = await anthropic.messages.parse(
-      {
-        model: req.model,
-        max_tokens: req.params.max_tokens ?? 16000,
-        system: req.system,
-        messages: [{ role: "user", content: req.prompt }],
-        output_config: {
-          format: zodOutputFormat(req.schema),
-          ...(req.params.effort ? { effort: req.params.effort } : {}),
+    const response = await anthropic.messages
+      .stream(
+        {
+          model: req.model,
+          max_tokens: req.params.max_tokens ?? 32000,
+          system: req.system,
+          messages: [{ role: "user", content: req.prompt }],
+          output_config: {
+            format: zodOutputFormat(req.schema),
+            ...(req.params.effort ? { effort: req.params.effort } : {}),
+          },
         },
-      },
-      { timeout: req.params.timeout_ms ?? 120_000 },
-    );
+        { timeout: req.params.timeout_ms ?? 120_000 },
+      )
+      .finalMessage();
     const usage: Usage = {
       inputTokens: response.usage.input_tokens,
       outputTokens: response.usage.output_tokens,
