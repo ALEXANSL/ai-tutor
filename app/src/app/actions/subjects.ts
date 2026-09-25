@@ -13,12 +13,26 @@ import type { FormState } from "./state";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const t = uk.parent.subjects.errors;
 
+/** errcode -> user-facing message, set by `public.set_current_topic` (BUG-006). */
+const RPC_ERROR_MESSAGE: Record<string, string> = {
+  P0002: uk.common.error, // subject_not_found
+  P0003: t.topicNotFound, // topic_not_found
+  P0004: t.noTextbook, // no_textbook
+};
+
 /**
  * Picks the subject's current topic and activates the subject (US-3.1 KP-1).
  * A subject with no ready, enabled textbook cannot be activated (KP-2): the
- * action returns a plain explanation instead of a generic error, and the
- * check is re-done here even though the page already hides the form, since a
- * server action must not trust the client state.
+ * action returns a plain explanation instead of a generic error.
+ *
+ * The clear-old / set-new / activate-subject sequence used to be three
+ * separate, non-transactional PostgREST calls (BUG-006): a network drop or a
+ * double submit between them could leave the subject with zero or two
+ * current topics. It is now a single atomic `security definer` RPC
+ * (`public.set_current_topic`, service_role only) that re-validates
+ * ownership and the "ready textbook" precondition itself, never trusting
+ * the client, and a partial unique index backs the invariant at the schema
+ * level regardless of the code path.
  */
 export async function setCurrentTopicAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const { familyId } = await requireParentAccess();
@@ -28,26 +42,14 @@ export async function setCurrentTopicAction(_prev: FormState, formData: FormData
   if (!UUID.test(topicId)) return { status: "error", message: t.pickTopicFirst };
 
   const scope = forFamily(familyId);
-  const { data: subject } = await scope.select("subjects", "id").eq("id", subjectId).eq("is_stub", false).maybeSingle<{ id: string }>();
-  if (!subject) return { status: "error", message: uk.common.error };
-
-  const { count: readyTextbooks } = await scope
-    .count("materials")
-    .eq("subject_id", subjectId)
-    .eq("kind", "textbook")
-    .eq("status", "ready")
-    .eq("use_in_lessons", true);
-  if (!readyTextbooks) return { status: "error", message: t.noTextbook };
-
-  const { data: topic } = await scope.select("topics", "id, subject_id").eq("id", topicId).maybeSingle<{ id: string; subject_id: string }>();
-  if (!topic || topic.subject_id !== subjectId) return { status: "error", message: t.topicNotFound };
-
-  const clear = await scope.update("topics", { is_current: false }).eq("subject_id", subjectId).eq("is_current", true);
-  if (clear.error) return { status: "error", message: uk.common.error };
-  const set = await scope.update("topics", { is_current: true }).eq("id", topicId);
-  if (set.error) return { status: "error", message: uk.common.error };
-  const activate = await scope.update("subjects", { active: true }).eq("id", subjectId);
-  if (activate.error) return { status: "error", message: uk.common.error };
+  const { error } = await scope.client.rpc("set_current_topic", {
+    p_family_id: familyId,
+    p_subject_id: subjectId,
+    p_topic_id: topicId,
+  });
+  if (error) {
+    return { status: "error", message: RPC_ERROR_MESSAGE[error.code ?? ""] ?? uk.common.error };
+  }
 
   revalidatePath("/parent/subjects", "layout");
   return { status: "ok", message: uk.parent.subjects.detail.saved };

@@ -5,7 +5,7 @@
 | Серйозність | **Major** |
 | Зріз | S2 |
 | Пов'язані критерії | US-3.1 КП-1 («тема збережена й позначена «поточна»», а вибір теми активує предмет); DoD п.1 (стійкість — задача оркестратора: обрив зв'язку/повторна дія) |
-| Статус | **Open** (знайдено QA S2, регресійний тест доданий) |
+| Статус | **Fixed** (міграція `supabase/migrations/20260927100000_s2_current_topic_atomic.sql`: атомарна RPC `public.set_current_topic` + частковий унікальний індекс `topics_one_current_per_subject_idx`; `setCurrentTopicAction` переведено на RPC; `app/tests/db/s2-subjects.test.ts` оновлено — перевіряє, що інваріант тримається) |
 
 ## Кроки відтворення (код-рев'ю + DB-тест)
 1. `setCurrentTopicAction` (`app/src/app/actions/subjects.ts`) виконує **три послідовні,

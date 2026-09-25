@@ -53,6 +53,17 @@ npm run build && npm run test:e2e   # Playwright: публічна/незало�
 `npm run test:db` потребує локально встановленого PostgreSQL ≥ 15 (`initdb`) або змінної
 `TEST_DATABASE_URL` на базу з уже застосованими міграціями.
 
+**Пісочниці з проксі (Claude Code sandboxes тощо):** `npm run build` і `npm run test:e2e`
+підвантажують `next/font/google` (Google Fonts) під час збірки, що йде через HTTPS. Якщо
+мережа доступна лише через проксі (наприклад, `HTTPS_PROXY` з `/root/.ccr/`), постав
+змінну середовища `NODE_USE_ENV_PROXY=1` перед цими командами, інакше збірка падає з
+помилкою мережі:
+
+```bash
+NODE_USE_ENV_PROXY=1 npm run build
+NODE_USE_ENV_PROXY=1 npm run build && NODE_USE_ENV_PROXY=1 npm run test:e2e
+```
+
 ## Як S0 запрацює на Vercel — кроки для Алекса
 
 Акаунти створюються за `docs/03-resources-and-costs.md`, розділ 1 (кроки «До S0»). Нічого платного.

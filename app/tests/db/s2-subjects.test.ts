@@ -1,13 +1,15 @@
 /**
  * S2 database tests: "поточна тема" invariant (US-3.1 KP-1).
  *
- * `setCurrentTopicAction` (app/src/app/actions/subjects.ts) enforces "only
- * one current topic per subject" purely in application code, with three
- * sequential (non-transactional) PostgREST calls: clear old current -> set
- * new current -> activate subject. There is no database-level constraint
- * (e.g. a partial unique index) backing that invariant. This test documents
- * the gap: two rows of the same subject can both end up with
- * `is_current = true` at the same time, which the DB schema allows today.
+ * BUG-006 fix: `setCurrentTopicAction` (app/src/app/actions/subjects.ts) now
+ * calls a single atomic `security definer` RPC (`public.set_current_topic`,
+ * migration `20260927100000_s2_current_topic_atomic.sql`) that clears the
+ * old current topic, sets the new one and activates the subject in one
+ * transaction. A partial unique index (`topics_one_current_per_subject_idx`
+ * on `topics (subject_id) where is_current`) backs the invariant at the
+ * schema level regardless of which code path writes to `topics`: this test
+ * checks that a second, unmediated `UPDATE` trying to mark a second topic of
+ * the same subject as current is rejected by the database itself.
  *
  * See docs/bugs/BUG-006-current-topic-not-atomic.md.
  */
@@ -40,6 +42,13 @@ beforeAll(async () => {
   );
   topicA = t.find((r: { is_current: boolean }) => r.is_current)!.id as unknown as string;
   topicB = t.find((r: { is_current: boolean }) => !r.is_current)!.id as unknown as string;
+  // A ready, enabled textbook is required for set_current_topic() to
+  // activate the subject (US-3.1 KP-2).
+  await db.query(
+    `insert into public.materials (owner_family_id, drive_file_id, name, mime, format, kind, subject_id, status, use_in_lessons)
+     values ($1, 'drive-file-1', 'Підручник.pdf', 'application/pdf', 'pdf', 'textbook', $2, 'ready', true)`,
+    [family, subject],
+  );
 });
 
 afterAll(async () => {
@@ -48,19 +57,32 @@ afterAll(async () => {
 });
 
 describe("S2 topics.is_current invariant (US-3.1 KP-1)", () => {
-  it("BUG-006: the schema does NOT prevent two topics of the same subject from both being current", async () => {
-    // Simulates a partial failure of setCurrentTopicAction between its
-    // "clear old current" and "set new current" steps, or a race between two
-    // concurrent saves: nothing at the DB level stops topic B from becoming
-    // current while topic A is still marked current too.
-    await db.query("update public.topics set is_current = true where id = $1", [topicB]);
+  it("BUG-006 fixed: the schema now prevents two topics of the same subject from both being current", async () => {
+    // Simulates a partial failure between "clear old current" and "set new
+    // current" steps, or a race between two concurrent saves: without the
+    // partial unique index, nothing at the DB level would stop topic B from
+    // becoming current while topic A is still marked current too. Now the
+    // unique index rejects it.
+    await expect(db.query("update public.topics set is_current = true where id = $1", [topicB])).rejects.toThrow(
+      /duplicate key value violates unique constraint "topics_one_current_per_subject_idx"/,
+    );
 
     const { rows } = await db.query("select id, is_current from public.topics where subject_id = $1 and is_current = true", [subject]);
-    // Documents today's (undesired) behaviour: both rows are "current".
-    // When BUG-006 is fixed (partial unique index and/or a single atomic
-    // RPC), this assertion should start failing loudly — flip it to
-    // `toHaveLength(1)` as part of that fix.
-    expect(rows).toHaveLength(2);
-    expect(rows.map((r: { id: string }) => r.id).sort()).toEqual([topicA, topicB].sort());
+    expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(topicA);
+  });
+
+  it("BUG-006 fixed: set_current_topic() atomically clears the old topic, sets the new one and activates the subject", async () => {
+    const { rows } = await db.query("select * from public.set_current_topic($1, $2, $3)", [family, subject, topicB]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].out_subject_id).toBe(subject);
+    expect(rows[0].out_topic_id).toBe(topicB);
+
+    const { rows: current } = await db.query("select id from public.topics where subject_id = $1 and is_current = true", [subject]);
+    expect(current).toHaveLength(1);
+    expect(current[0].id).toBe(topicB);
+
+    const { rows: subj } = await db.query("select active from public.subjects where id = $1", [subject]);
+    expect(subj[0].active).toBe(true);
   });
 });
