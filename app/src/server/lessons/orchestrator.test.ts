@@ -70,7 +70,7 @@ vi.mock("./generate", () => ({
   getOrGenerateLessonBlocks: (...a: unknown[]) => getOrGenerateLessonBlocks(...a),
 }));
 
-const { continueAfterBlock, resumeLessonSession } = await import("./orchestrator");
+const { continueAfterBlock, resumeLessonSession, startLessonSession } = await import("./orchestrator");
 
 function resetScope() {
   scopeState.tables = {};
@@ -113,6 +113,30 @@ describe("continueAfterBlock (BUG-009: no block repeats within one session)", ()
 
     expect(next).toEqual({ kind: "lesson_complete" });
     expect(scopeState.updates.some((u) => u.table === "lesson_sessions" && u.values.status === "completed")).toBe(true);
+  });
+});
+
+describe("startLessonSession — BUG-011: US-6.11 requires a 'safe simplified template' fallback " +
+  "when every generated block ends up needs_review, but none exists yet", () => {
+  it("currently throws a generic error instead of falling back to a safe template (documents the gap)", async () => {
+    resetScope();
+    scopeState.tables = {
+      subjects: { id: "subj1", name_uk: "Математика", config: {} },
+      topics: { id: "top1", title: "Дроби", grade: 6 },
+    };
+    // Every pipeline attempt ended in `needs_review` (e.g. `lesson_review`
+    // hitting `AiNotConfiguredError` because `OPENAI_API_KEY` is unset, the
+    // exact scenario `docs/STATUS.md` warns is likely at first demo) — no
+    // "active" block was ever produced for this topic.
+    getOrGenerateLessonBlocks.mockResolvedValue([]);
+
+    // TODO(BUG-011): once `developer` implements the safe simplified
+    // template fallback required by US-6.11, replace this assertion with
+    // one that expects a `sessionId` + a fallback candidate instead of a
+    // thrown error.
+    await expect(startLessonSession("fam1", "child1", "subj1", "top1", 30)).rejects.toThrow(
+      "could not prepare any lesson block for this topic",
+    );
   });
 
   it("ends the lesson after the current block when time is already up, without even asking for a next block", async () => {
