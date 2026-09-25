@@ -5,7 +5,7 @@
 | Серйозність | **Major** |
 | Зріз | S0 |
 | Пов'язані критерії | US-1.7 КП-4, КП-10; US-1.6 КП-4; US-12.3 КП-1; NFR-SAFE-1 |
-| Статус | Відкрито |
+| Статус | **Fixed** (коміт `f8d36ce`, 2026-09-25) — очікує перевірки `qa-tester` |
 | Залежить від | BUG-001 (без чоловічих імен цей шлях недосяжний з UI онбордингу, але доступний через «власне ім'я» вже зараз) |
 
 ## Кроки відтворення
@@ -56,3 +56,10 @@
 
 Додати тест: онбординг/AiIntro з чоловічим tutor_name (зі списку `m` після BUG-001, і власним)
 → `uk.ai.roleNoun` відповідає роду імені, а не порожньому `tutor_voice_id`.
+
+## Виправлення (`developer`, коміт `f8d36ce`) — варіант 1
+- Нова колонка `child_profile.tutor_name_gender` (`f`/`m`, за замовчуванням `f`), міграція `supabase/migrations/20260925100300_s0_tutor_name_gender.sql`.
+- Ім'я зі списку → рід групи (`f`/`m`); власне ім'я → явний вибір «Вона / Він» на тому ж кроці (за замовчуванням «Вона»), також у формі тата.
+- `getTutorGender`: рід голосу, якщо `tutor_voice_id` задано (S12), інакше `tutor_name_gender` — S12 не потребує міграції даних.
+- Усі тексти з родом — через `gendered()` (`app/src/lib/persona/gender.ts`); docs/02 7.6.1 і ADR-006 оновлено.
+- Тести: `app/src/lib/persona/gender.test.ts`, `app/src/server/persona/plan.test.ts`, `app/src/app/(child)/AiIntro.test.tsx`, `app/tests/db/rls.test.ts`. E2E онбордингу з входом — після появи тестових акаунтів Supabase/Google (docs/06, S0).
