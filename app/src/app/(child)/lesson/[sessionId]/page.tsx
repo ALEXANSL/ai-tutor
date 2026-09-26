@@ -1,4 +1,3 @@
-import { uk } from "@/i18n/uk";
 import { requireLessonAccess } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
 import { loadLibraryItemTitles } from "@/server/lessons/generate";
@@ -23,7 +22,6 @@ export const maxDuration = 300;
 export default async function LessonPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params;
   const { familyId } = await requireLessonAccess();
-  const t = uk.child.lesson;
   const { session, step } = await getLessonView(familyId, sessionId);
 
   if (session.mode === "choosing") {
@@ -65,7 +63,6 @@ export default async function LessonPage({ params }: { params: Promise<{ session
         step={step}
         idleHintS={child?.idle_hint_s ?? 60}
         idlePauseS={child?.idle_pause_s ?? 180}
-        labels={t}
       />
     </div>
   );

@@ -3,9 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { askFriendChatAction } from "@/app/actions/friend";
-import type { uk } from "@/i18n/uk";
-
-type Labels = typeof uk.child.friend;
+import { uk } from "@/i18n/uk";
 
 interface MessageView {
   id: string;
@@ -14,8 +12,14 @@ interface MessageView {
   createdAt: string;
 }
 
+// BUG-017: same class of bug as the lesson screen — `uk.child.friend` is
+// imported directly here (client module) rather than passed down as a
+// `labels` prop from the server component in `page.tsx`, so a function
+// added to that namespace later can never re-trigger "Functions cannot be
+// passed directly to Client Components".
 /** US-8.5: no lesson framing at all — just a running chat, text without a time limit. */
-export function FriendChatScreen({ initialMessages, labels: t }: { initialMessages: MessageView[]; labels: Labels }) {
+export function FriendChatScreen({ initialMessages }: { initialMessages: MessageView[] }) {
+  const t = uk.child.friend;
   const [messages, setMessages] = useState(initialMessages);
   const [question, setQuestion] = useState("");
   const [pending, setPending] = useState(false);

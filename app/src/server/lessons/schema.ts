@@ -74,7 +74,15 @@ export interface LessonPlan {
 }
 
 export const planSchema: z.ZodType<LessonPlan> = z.object({
-  goalUk: z.string().min(1).max(200),
+  // BUG-018: the model is asked for "one sentence" but real one-sentence
+  // goals in Ukrainian (with a subordinate clause, as this phrasing tends
+  // to produce) regularly ran past the original 200-char cap — a purely
+  // cosmetic overage that should never fail a whole lesson generation.
+  // 400 gives real headroom for a slightly-long-but-correct sentence while
+  // still rejecting a genuinely bloated one (a paragraph, several
+  // sentences); the prompt below also asks for a hard budget so this
+  // ceiling is rarely the thing actually doing the work.
+  goalUk: z.string().min(1).max(400),
   hookUk: z.string().min(1).max(400),
   visibleOutcomeUk: z.string().min(1).max(200),
   techniques: z
