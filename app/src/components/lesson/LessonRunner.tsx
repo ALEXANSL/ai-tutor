@@ -79,6 +79,9 @@ export function LessonRunner({
   const [queuedAnswer, setQueuedAnswer] = useState<{ channel: string; answer: unknown } | null>(null);
   const [blockComplete, setBlockComplete] = useState<{ libraryItemId: string; visibleOutcomeUk: string | null } | null>(null);
   const [breakOffer, setBreakOffer] = useState(false);
+  // BUG-020: confirm before leaving, so an accidental tap never cuts off a
+  // step mid-answer.
+  const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
   const lastInteractionRef = useRef<number>(0);
   useEffect(() => {
     lastInteractionRef.current = Date.now();
@@ -92,6 +95,19 @@ export function LessonRunner({
   const alarm = useCallback(() => {
     setBusy(true);
     pauseLessonAction(sessionId, "manual_alert").finally(() => router.refresh());
+  }, [sessionId, router]);
+
+  // BUG-020: reuses the same pause mechanism as the alarm/idle/offline paths
+  // (BUG-008's resume reminder is keyed off exactly this — `paused_at` +
+  // `current_step_id`, untouched by a pause) so "Продовжити" on "Сьогодні"
+  // picks the lesson back up on the same step, whether or not she had
+  // already answered it.
+  const exitLesson = useCallback(() => {
+    setBusy(true);
+    pauseLessonAction(sessionId, "manual_exit")
+      .then(() => router.push("/today"))
+      .catch(() => router.push("/today"))
+      .finally(() => setBusy(false));
   }, [sessionId, router]);
 
   // Idle hint / auto-pause (US-16.4).
@@ -188,7 +204,13 @@ export function LessonRunner({
   }
 
   function applyAnswerResult(result: AnswerResultView) {
-    setFeedback({ correct: result.verdict === "correct", text: result.verdict === "correct" ? t.correct : `${t.almost}${result.explanation ? ` — ${result.explanation}` : ""}` });
+    // BUG-019: `partial` and `incorrect` used to share the same "Майже!"
+    // text, which is exactly why a genuinely wrong answer read the same as
+    // a real "close, try again" — this made a evaluator bug (BUG-019) look
+    // like ordinary feedback instead of a wrong verdict. Each verdict now
+    // gets its own wording.
+    const headline = result.verdict === "correct" ? t.correct : result.verdict === "partial" ? t.almost : t.incorrect;
+    setFeedback({ correct: result.verdict === "correct", text: `${headline}${result.explanation ? ` — ${result.explanation}` : ""}` });
     if (result.formatChangeSuggested) setFormatOffer(true);
     if (result.next.kind !== "retry_step") goToNext(result.next);
   }
@@ -291,7 +313,14 @@ export function LessonRunner({
         </div>
       )}
 
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => setExitConfirmOpen(true)}
+          className="rounded-full border border-line px-4 py-2 text-sm font-bold text-muted"
+        >
+          {t.exitLesson}
+        </button>
         <span className="text-sm font-bold text-muted">{t.stepOf(step.stepNumber, step.totalSteps)}</span>
         <button type="button" onClick={alarm} className="rounded-full bg-danger px-4 py-2 text-sm font-bold text-white">
           {t.alarmButton}
@@ -301,6 +330,21 @@ export function LessonRunner({
         <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${(step.stepNumber / step.totalSteps) * 100}%` }} />
       </div>
 
+      {exitConfirmOpen && (
+        <div className="mb-4 rounded-2xl border border-line bg-surface-alt p-3.5" role="alertdialog" aria-label={t.exitLessonConfirmTitle}>
+          <p className="mb-1 text-sm font-bold">{t.exitLessonConfirmTitle}</p>
+          <p className="mb-2.5 text-sm text-muted">{t.exitLessonConfirmBody}</p>
+          <div className="flex gap-2">
+            <button type="button" disabled={busy} onClick={exitLesson} className="rounded-xl bg-danger px-3 py-2 text-sm font-bold text-white disabled:opacity-60">
+              {t.exitLessonConfirmYes}
+            </button>
+            <button type="button" onClick={() => setExitConfirmOpen(false)} className="rounded-xl bg-primary px-3 py-2 text-sm font-bold text-white">
+              {t.exitLessonConfirmNo}
+            </button>
+          </div>
+        </div>
+      )}
+
       <StepBody
         step={step}
         busy={busy}
@@ -308,7 +352,16 @@ export function LessonRunner({
         setOpenAnswer={setOpenAnswer}
         onChoice={(optionId) => submit("choice", { optionId })}
         onOpenSubmit={() => submit("text", { text: openAnswer })}
-        onInteractiveSubmit={(answer, correct) => submit("text", { component: step.visual.component, answer, correct })}
+        // BUG-019 (regression root cause for interactive steps, e.g.
+        // `drag_sort`): this used to send `{ component, answer, correct }` —
+        // the server's `evaluateAnswer` for type "interactive" expects the
+        // raw answer shape only (`def.evaluate(props, answer)`), so every
+        // submission was graded against the wrong shape and came back
+        // `incorrect` regardless of what the child actually placed. The
+        // client-computed `correct` was never trusted anyway — the server
+        // re-grades deterministically off the same `props` (ADR-020 §1) —
+        // so it is simply dropped here, not forwarded.
+        onInteractiveSubmit={(answer) => submit("text", answer)}
         onSlideNext={acknowledgeSlide}
         labels={t}
       />

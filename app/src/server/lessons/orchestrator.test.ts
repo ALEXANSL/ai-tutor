@@ -119,7 +119,7 @@ vi.mock("@/server/safety/moderate", () => ({ moderateMessage: (...a: unknown[]) 
 const recordSafetyEvent = vi.fn().mockResolvedValue({ flagged: false, urgent: false, eventId: null });
 vi.mock("@/server/safety/events", () => ({ recordSafetyEvent: (...a: unknown[]) => recordSafetyEvent(...a) }));
 
-const { chooseStartBlock, continueAfterBlock, resumeLessonSession, startLessonSession, submitStepAnswer } = await import("./orchestrator");
+const { chooseStartBlock, continueAfterBlock, pauseLessonSession, resumeLessonSession, startLessonSession, submitStepAnswer } = await import("./orchestrator");
 
 function resetScope() {
   scopeState.tables = {};
@@ -533,5 +533,179 @@ describe("chooseStartBlock (BUG-016: picking an offered block after a real gener
     };
     loadLibraryItem.mockRejectedValue(new Error("timeout fetching library item"));
     await expect(chooseStartBlock("fam1", "s1", "blk1")).rejects.toThrow("timeout fetching library item");
+  });
+});
+
+describe("submitStepAnswer — BUG-019 (objectively correct answers were graded 'partial'/'incorrect')", () => {
+  /**
+   * Root causes fixed:
+   *  1. `LessonRunner.tsx`'s `onInteractiveSubmit` sent `{ component, answer,
+   *     correct }` to the server instead of the raw answer shape
+   *     `evaluateAnswer`'s "interactive" branch expects
+   *     (`def.evaluate(props, answer)`) — every `drag_sort` submission was
+   *     graded against the wrong shape and came back `incorrect` no matter
+   *     what the child placed. This describe block locks the *server*
+   *     contract: the raw answer shape the fixed client now sends must
+   *     grade `correct` when it objectively is.
+   *  2. The open-answer LLM evaluator had no protection against grading a
+   *     right-in-substance answer down for its *format* (a bare number, a
+   *     lettered list "а)/б)/в)" instead of full sentences matching the
+   *     "Еталон" text's own wording) — a real teacher never does that. A
+   *     deterministic substance check now catches the unambiguous cases
+   *     before ever asking the model.
+   */
+  function baseSessionTables(stepRow: FakeRow) {
+    // A correct verdict always takes `submitStepAnswer` into `advanceAfterStep`
+    // (`decideBranch` only stays on the step for a non-correct first attempt),
+    // which loads the block via `loadLibraryItem` to find what comes next —
+    // so every test below needs it mocked, even though it is not what BUG-019
+    // is about.
+    loadLibraryItem.mockResolvedValue({
+      id: "A",
+      title: "Блок A",
+      estimatedMinutes: 7,
+      visibleOutcomeUk: "Готово!",
+      steps: [{ id: stepRow.id as string, sortOrder: 0, type: stepRow.type as string, content: stepRow.content, visual: stepRow.visual, sourceRefs: [] }],
+    });
+    return {
+      lesson_sessions: { id: "s1", current_step_id: "st1", current_block_order: 1, subject_id: "subj1", topic_id: "top1", child_profile_id: "child1" },
+      library_steps: stepRow,
+      step_attempts: [],
+      session_blocks: [{ session_id: "s1", sort_order: 1, library_item_id: "A" }],
+    };
+  }
+
+  it("a correct `choice` answer grades `correct` (baseline, unaffected by the fix)", async () => {
+    resetScope();
+    scopeState.tables = baseSessionTables({
+      id: "st1",
+      type: "choice",
+      content: { questionUk: "Скільки буде 10% від 200?", options: [{ id: "a", textUk: "20" }, { id: "b", textUk: "10" }], correctOptionId: "a", explanationUk: "10% — одна десята." },
+      visual: {},
+      source_refs: [],
+    });
+
+    const result = await submitStepAnswer("fam1", "s1", "st1", "idem-1", "choice", { optionId: "a" }, 3000);
+
+    expect(result.verdict).toBe("correct");
+  });
+
+  it("a correct `drag_sort` (interactive) answer, sent as the raw item->slot map, grades `correct` — the exact regression from the wrapped `{ component, answer, correct }` payload the client used to send", async () => {
+    resetScope();
+    scopeState.tables = baseSessionTables({
+      id: "st1",
+      type: "interactive",
+      content: {},
+      visual: {
+        component: "drag_sort",
+        v: 1,
+        props: {
+          variant: "pairs",
+          instructionUk: "Розстав картки за зростанням.",
+          items: [{ id: "i1", labelUk: "10%" }, { id: "i2", labelUk: "50%" }],
+          slots: [{ id: "s1", labelUk: "Менше" }, { id: "s2", labelUk: "Більше" }],
+          answer: { i1: "s1", i2: "s2" },
+        },
+        fallback_text: "Обери правильну відповідь.",
+      },
+      source_refs: [],
+    });
+
+    // This is exactly what `LessonRunner.tsx`'s (fixed) `onInteractiveSubmit`
+    // now sends: the raw placement, nothing wrapped around it.
+    const result = await submitStepAnswer("fam1", "s1", "st1", "idem-1", "text", { i1: "s1", i2: "s2" }, 5000);
+
+    expect(result.verdict).toBe("correct");
+  });
+
+  it("an open-answer reply that is JUST a number, matching the reference answer's own number, grades `correct` without even calling the LLM evaluator", async () => {
+    resetScope();
+    scopeState.tables = baseSessionTables({
+      id: "st1",
+      type: "open",
+      content: { questionUk: "Скільки буде 10% від 20?", expectedAnswerUk: "Правильна відповідь — 2.", rubricUk: "приймати короткий запис" },
+      visual: {},
+      source_refs: [],
+    });
+    moderateMessage.mockResolvedValue({ category: "none", severity: "normal", confidence: 0.99, reasonUk: "", layer1Flagged: false, escalated: false });
+
+    const result = await submitStepAnswer("fam1", "s1", "st1", "idem-1", "text", { text: "2" }, 4000);
+
+    expect(result.verdict).toBe("correct");
+    expect(callStructured).not.toHaveBeenCalled();
+  });
+
+  it("an open-answer reply written as a lettered list ('а) ... б) ... в) ...') that matches the reference answer's content grades `correct`, regardless of the punctuation/spacing difference", async () => {
+    resetScope();
+    scopeState.tables = baseSessionTables({
+      id: "st1",
+      type: "open",
+      content: { questionUk: "Знайди 25% від 20, 48 і 80.", expectedAnswerUk: "а) 5, б) 12, в) 20.", rubricUk: "приймати будь-який формат запису" },
+      visual: {},
+      source_refs: [],
+    });
+    moderateMessage.mockResolvedValue({ category: "none", severity: "normal", confidence: 0.99, reasonUk: "", layer1Flagged: false, escalated: false });
+
+    const result = await submitStepAnswer("fam1", "s1", "st1", "idem-1", "text", { text: "а) 5 б) 12 в) 20" }, 6000);
+
+    expect(result.verdict).toBe("correct");
+    expect(callStructured).not.toHaveBeenCalled();
+  });
+
+  it("an open-answer reply that does NOT match the reference answer still goes to the LLM evaluator and its verdict is not silently overridden", async () => {
+    resetScope();
+    scopeState.tables = baseSessionTables({
+      id: "st1",
+      type: "open",
+      content: { questionUk: "Скільки буде 10% від 20?", expectedAnswerUk: "2", rubricUk: "приймати короткий запис" },
+      visual: {},
+      source_refs: [],
+    });
+    moderateMessage.mockResolvedValue({ category: "none", severity: "normal", confidence: 0.99, reasonUk: "", layer1Flagged: false, escalated: false });
+    callStructured.mockResolvedValue({ result: { verdict: "incorrect", explanationUk: "Це не так, спробуй порахувати ще раз." }, model: {}, costUsd: 0, fallbackUsed: false });
+
+    const result = await submitStepAnswer("fam1", "s1", "st1", "idem-1", "text", { text: "3" }, 4000);
+
+    expect(callStructured).toHaveBeenCalledTimes(1);
+    expect(result.verdict).toBe("incorrect");
+  });
+});
+
+describe("pauseLessonSession — BUG-020 ('Вийти з уроку' preserves resume state, same as any other pause)", () => {
+  it("an explicit exit (manual_exit) pauses the session without ever touching current_step_id — the exact step it was on stays resumable", async () => {
+    resetScope();
+    scopeState.tables = {
+      lesson_sessions: { id: "s1", status: "active", current_step_id: "st7", current_block_order: 2, pause_reason: null, paused_at: null },
+    };
+
+    await pauseLessonSession("fam1", "s1", "manual_exit");
+
+    const update = scopeState.updates.find((u) => u.table === "lesson_sessions");
+    expect(update).toBeTruthy();
+    expect(update!.values).toMatchObject({ status: "paused", pause_reason: "manual_exit" });
+    // `pauseFor` never mentions `current_step_id` — a pause (of any kind,
+    // including this explicit exit) must never clear or move it.
+    expect(update!.values.current_step_id).toBeUndefined();
+  });
+
+  it("resuming right after an explicit exit reopens the exact same step (no false 24h+ reminder for a same-session exit)", async () => {
+    resetScope();
+    const pausedAt = new Date(Date.now() - 5 * 60 * 1000).toISOString(); // 5 min ago
+    scopeState.tables = {
+      lesson_sessions: { id: "s1", status: "paused", pause_reason: "manual_exit", paused_at: pausedAt, current_step_id: "st1", current_block_order: 1 },
+      session_blocks: [{ session_id: "s1", sort_order: 1, library_item_id: "A" }],
+    };
+    loadLibraryItem.mockResolvedValue({
+      id: "A",
+      title: "Блок A",
+      estimatedMinutes: 7,
+      visibleOutcomeUk: null,
+      steps: [{ id: "st1", sortOrder: 0, type: "slide", content: { textUk: "..." }, visual: {}, sourceRefs: [] }],
+    });
+
+    const result = await resumeLessonSession("fam1", "s1");
+
+    expect(result.step?.stepId).toBe("st1");
+    expect(result.reminder).toBeNull();
   });
 });

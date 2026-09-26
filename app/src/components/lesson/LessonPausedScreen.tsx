@@ -8,6 +8,9 @@ import { resumeLessonAction } from "@/app/actions/lesson";
 
 const REASON_TEXT: Record<string, string> = {
   manual_alert: "Ти натиснула «Тривога» — усе збережено.",
+  // BUG-020: text lives in `uk.ts` (this map's other, pre-existing entries
+  // do not — out of scope here) since this is the one added for this fix.
+  manual_exit: uk.child.lesson.pausedManualExit,
   air_alert: "Заняття призупинено через повітряну тривогу.",
   idle: "Заняття на паузі — ти давно нічого не робила.",
   network: "Зв'язок пропав — усе збережено.",

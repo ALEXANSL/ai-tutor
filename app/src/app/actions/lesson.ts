@@ -139,8 +139,12 @@ export async function acknowledgeSlideAction(sessionId: string, stepId: string) 
   return next;
 }
 
-/** US-6.6 (Тривога), US-16.4 КП-2 (бездіяльність), and the offline banner all pause the same way. */
-export async function pauseLessonAction(sessionId: string, reason: "manual_alert" | "idle" | "network"): Promise<FormState> {
+/**
+ * US-6.6 (Тривога), US-16.4 КП-2 (бездіяльність), the offline banner, and
+ * BUG-020's explicit "Вийти з уроку" all pause the same way — the current
+ * step is kept, and `resumeLessonAction` picks up right there.
+ */
+export async function pauseLessonAction(sessionId: string, reason: "manual_alert" | "manual_exit" | "idle" | "network"): Promise<FormState> {
   const { familyId } = await requireLessonAccess();
   UUID.parse(sessionId);
   await pauseLessonSession(familyId, sessionId, reason);
