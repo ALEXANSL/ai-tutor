@@ -1,4 +1,3 @@
-import { uk } from "@/i18n/uk";
 import { requireChild } from "@/server/auth/guards";
 import { listFriendChatMessages } from "@/server/lessons/friendChat";
 import { FriendChatScreen } from "@/components/child/FriendChatScreen";
@@ -9,7 +8,7 @@ export default async function FriendPage() {
   const { messages } = await listFriendChatMessages(ctx.familyId, profile.id);
   return (
     <div className="pb-10">
-      <FriendChatScreen initialMessages={messages} labels={uk.child.friend} />
+      <FriendChatScreen initialMessages={messages} />
     </div>
   );
 }

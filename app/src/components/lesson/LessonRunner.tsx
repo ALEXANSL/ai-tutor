@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DragSortStep } from "@/lesson-components/drag_sort/DragSortStep";
 import type { DragSortProps } from "@/lesson-components/drag_sort";
-import type { uk } from "@/i18n/uk";
+import { uk } from "@/i18n/uk";
 import {
   acknowledgeSlideAction,
   askTopicChatAction,
@@ -46,7 +46,6 @@ export function LessonRunner({
   step: initialStep,
   idleHintS,
   idlePauseS,
-  labels: t,
 }: {
   sessionId: string;
   subjectId: string;
@@ -54,8 +53,18 @@ export function LessonRunner({
   step: StepView;
   idleHintS: number;
   idlePauseS: number;
-  labels: Labels;
 }) {
+  // BUG-017: `uk.child.lesson` (and, transitively, `sourceRef`/`stepOf`,
+  // which are functions) must be imported directly here rather than
+  // received as a `labels` prop from the server component in `page.tsx` —
+  // a function value can't cross the server->client props boundary
+  // ("Functions cannot be passed directly to Client Components..."). This
+  // component is itself a client module, so importing the static `uk`
+  // object (functions included) locally is safe; only the plain function
+  // components nested below (in this same client file) still take
+  // `labels` as an ordinary prop, which is fine since they never cross
+  // that boundary.
+  const t = uk.child.lesson;
   const router = useRouter();
   const [step, setStep] = useState(initialStep);
   const [stepStartedAt, setStepStartedAt] = useState(() => Date.now());
