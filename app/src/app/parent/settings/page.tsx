@@ -1,7 +1,9 @@
 import { PinForm } from "@/components/parent/PinForm";
+import { UrgentChannelsPanel } from "@/components/parent/UrgentChannelsPanel";
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
 import { forFamily, getFamilyTimezone } from "@/server/db/family-scope";
+import { isEmailConfigured } from "@/server/notify/email";
 import { loadParentSettings } from "@/server/persona/service";
 import { PageTitle, Panel } from "../ui";
 
@@ -29,6 +31,10 @@ export default async function SettingsPage() {
           {t.policy(settings.pin_max_attempts, settings.pin_lock_minutes, settings.parent_mode_idle_min)}
         </p>
         {via === "account" ? <PinForm /> : <p className="text-sm">{t.pinOnlyOwnAccount}</p>}
+      </Panel>
+      <Panel title={t.urgentTitle}>
+        <p className="mb-3 text-[13px] text-p-muted">{t.urgentHelp}</p>
+        <UrgentChannelsPanel emailConfigured={isEmailConfigured()} telegramLinked={settings.telegram_linked_at != null} />
       </Panel>
     </>
   );

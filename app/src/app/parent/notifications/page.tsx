@@ -15,6 +15,10 @@ const ICONS: Record<string, string> = {
   provider_fallback: "🔁",
   lesson_block_needs_review: "🧐",
   lesson_started_with_fallback: "🧩",
+  safety_alert: "⚠️",
+  external_delivery_failed: "📵",
+  telegram_linked: "🔗",
+  break_missed: "☕",
 };
 const WITH_CHANGE_BUTTON = new Set(["nickname_changed", "persona_changed", "tutor_name_rejected"]);
 
@@ -38,6 +42,14 @@ function title(n: NotificationRow): string {
       return types.lesson_block_needs_review(p);
     case "lesson_started_with_fallback":
       return types.lesson_started_with_fallback(p);
+    case "safety_alert":
+      return types.safety_alert(p);
+    case "external_delivery_failed":
+      return types.external_delivery_failed(p);
+    case "telegram_linked":
+      return types.telegram_linked();
+    case "break_missed":
+      return types.break_missed();
     default:
       return types.unknown;
   }

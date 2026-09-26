@@ -36,7 +36,7 @@ export async function enqueueJob(
   familyId: string,
   type: string,
   payload: Record<string, unknown>,
-  opts: { dedupeKey?: string; runAfter?: Date } = {},
+  opts: { dedupeKey?: string; runAfter?: Date; maxAttempts?: number } = {},
 ): Promise<void> {
   const { error } = await createServiceClient()
     .from("jobs")
@@ -46,6 +46,7 @@ export async function enqueueJob(
       payload,
       dedupe_key: opts.dedupeKey ?? null,
       run_after: (opts.runAfter ?? new Date()).toISOString(),
+      ...(opts.maxAttempts ? { max_attempts: opts.maxAttempts } : {}),
     });
   // 23505: the same job is already pending — enqueue is idempotent (NFR-RES-3).
   if (error && error.code !== "23505") throw new Error(`enqueueJob failed: ${error.message}`);

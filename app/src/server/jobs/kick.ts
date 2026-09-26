@@ -2,12 +2,14 @@ import "server-only";
 import { after } from "next/server";
 import { registerAll } from "@/modules";
 import { registerIngestJobs } from "../ingest/pipeline";
+import { registerNotifyJobs } from "../notify/jobs";
 import { runJobs } from "./runner";
 
 /** Composition root for background work: registries + job handlers. */
 export function ensureJobHandlers(): void {
   registerAll();
   registerIngestJobs();
+  registerNotifyJobs();
 }
 
 /**
