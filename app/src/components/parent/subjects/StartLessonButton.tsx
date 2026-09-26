@@ -6,9 +6,9 @@ import { uk } from "@/i18n/uk";
 import { startLessonAction } from "@/app/actions/lesson";
 
 /**
- * S3 demo entry point: starts a lesson session from the parent cabinet.
- * There is no child-facing "Почати урок" yet on purpose (the lesson is
- * father-mode-only until S4, see docs/STATUS.md).
+ * Starts a lesson session from the parent cabinet (demo, QA, "тато грає за
+ * дитину"). The child's own entry point is `ChildStartLessonButton`
+ * (`(child)/subject/[id]`, S4) — this one keeps the parent-cabinet styling.
  */
 export function StartLessonButton({ subjectId, topicId }: { subjectId: string; topicId: string }) {
   const router = useRouter();

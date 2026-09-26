@@ -3,8 +3,13 @@ import { getLessonComponent } from "@/lesson-components";
 import { callStructured } from "@/server/ai/router";
 import { forFamily } from "@/server/db/family-scope";
 import { notifyParent } from "@/server/notifications";
+import { moderateMessage } from "@/server/safety/moderate";
+import { recordSafetyEvent } from "@/server/safety/events";
+import { safetyPreambleGenericUk } from "@/server/safety/preamble";
+import { URGENT_REPLY_UK } from "@/server/safety/urgentReplyUk";
 import { getOrCreateFallbackBlock, getOrGenerateLessonBlocks, loadLibraryItem, nextSessionBlock, type LibraryItemView, type LibraryStepView } from "./generate";
 import {
+  breakDue,
   decideBranch,
   idleAutoPauseDue,
   idleHintDue,
@@ -49,6 +54,10 @@ interface SessionRow {
   current_block_order: number;
   current_step_id: string | null;
   active_seconds: number;
+  seconds_since_break: number;
+  breaks_offered: number;
+  breaks_taken: number;
+  breaks_skipped: number;
   planned_minutes: number;
   points_earned: number;
   paused_at: string | null;
@@ -228,7 +237,7 @@ async function evaluateAnswer(
     const res = await callStructured(
       "answer_evaluation",
       {
-        system: "Оціни відповідь дитини на відкрите питання уроку (правильно/частково/неправильно), тепло й конкретно.",
+        system: `${safetyPreambleGenericUk()}\n\nОціни відповідь дитини на відкрите питання уроку (правильно/частково/неправильно), тепло й конкретно.`,
         prompt: `Питання: ${step.content.questionUk}\nЕталон: ${step.content.expectedAnswerUk}\nРубрика: ${step.content.rubricUk}\nВідповідь: ${String(answer ?? "")}`,
         schema: evalVerdictSchema,
       },
@@ -287,7 +296,33 @@ export async function submitStepAnswer(
   const priorAttempts = priorRows ?? [];
   const attemptNo = existing ? (priorAttempts.at(-1)?.attempt_no ?? 1) : priorAttempts.length + 1;
 
-  const { verdict, explanation } = existing ? { verdict: existing.verdict, explanation: "" } : await evaluateAnswer(familyId, sessionId, step, channel, answer);
+  // NFR-SAFE-4, US-12.1: an open-question free-text answer is moderated like
+  // any other reply from the child, once per real (non-idempotent-replay)
+  // submission, in parallel with evaluating it (ADR-009 §4 — no added latency).
+  const openText = step.type === "open" && typeof (answer as { text?: unknown } | null)?.text === "string" ? (answer as { text: string }).text : null;
+  const moderationPromise = !existing && openText ? moderateMessage({ familyId, sessionId, mode: "lesson", message: openText }) : null;
+
+  let { verdict, explanation } = existing ? { verdict: existing.verdict, explanation: "" } : await evaluateAnswer(familyId, sessionId, step, channel, answer);
+
+  if (moderationPromise) {
+    const moderation = await moderationPromise;
+    await recordSafetyEvent(familyId, session.child_profile_id, "lesson", openText!, moderation, { sessionId }).catch((e: Error) =>
+      console.error(`recordSafetyEvent (lesson) failed: ${e.message}`),
+    );
+    // BUG-013 fix (NFR-SAFE-4, US-12.1 КП-2): same deterministic override as
+    // chat.ts/friendChat.ts — the child NEVER sees `answer_evaluation`'s own
+    // feedback for an "urgent" reply, no matter what it said. `verdict` is
+    // also forced away from "correct" so `decideBranch` cannot skip straight
+    // to the next step right after a safety signal (it goes through
+    // `alt_explanation` — the child stays on the same step, seeing the
+    // go-to-dad message — unless this was already the 2nd consecutive
+    // non-correct attempt, in which case it behaves like any other repeated
+    // miss, US-6.4, and still advances rather than looping forever).
+    if (moderation.severity === "urgent") {
+      verdict = "partial";
+      explanation = URGENT_REPLY_UK;
+    }
+  }
 
   const questionLength = String(step.content.questionUk ?? step.content.textUk ?? "").length;
   const guessFlag = looksLikeGuess(channel, attemptNo, latencyMs, questionLength);
@@ -397,6 +432,53 @@ export async function acknowledgeSlide(familyId: string, sessionId: string, step
   const session = await loadSession(familyId, sessionId);
   if (!session || session.current_step_id !== stepId) throw new Error("stale step — reload the session");
   return advanceAfterStep(familyId, session);
+}
+
+/**
+ * US-12.2 КП-1: a client heartbeat (every ~20 s while the lesson is on
+ * screen and not idle) accumulates continuous work time; once it reaches the
+ * child's `break_after_minutes` (налашт., default 20), the next answer's
+ * `AnswerResult` offers a break instead of silently continuing (docs/02 5.3
+ * style: server owns the decision, the client only reports elapsed time).
+ */
+export async function tickLessonActivity(familyId: string, sessionId: string, deltaSeconds: number): Promise<{ breakOffer: boolean }> {
+  const scope = forFamily(familyId);
+  const session = await loadSession(familyId, sessionId);
+  if (!session || session.status !== "active" || deltaSeconds <= 0) return { breakOffer: false };
+  const { data: child } = await scope
+    .select("child_profile", "break_after_minutes")
+    .eq("id", session.child_profile_id)
+    .maybeSingle<{ break_after_minutes: number }>();
+  const clampedDelta = Math.min(deltaSeconds, 120);
+  const newSinceBreak = session.seconds_since_break + clampedDelta;
+  const offer = breakDue(newSinceBreak, child?.break_after_minutes ?? 20);
+  await scope
+    .update("lesson_sessions", {
+      active_seconds: session.active_seconds + clampedDelta,
+      // Holds at the trigger point (doesn't keep climbing) until the child
+      // resolves the offer (take/skip), so a slow answer doesn't re-offer twice.
+      seconds_since_break: offer ? session.seconds_since_break : newSinceBreak,
+      ...(offer && session.seconds_since_break < (child?.break_after_minutes ?? 20) * 60 ? { breaks_offered: session.breaks_offered + 1 } : {}),
+    })
+    .eq("id", sessionId);
+  return { breakOffer: offer };
+}
+
+/** US-12.2 КП-1/КП-2: "Перерва" — pauses exactly like an alarm/idle pause, resumed the same way. */
+export async function takeLessonBreak(familyId: string, sessionId: string): Promise<void> {
+  const scope = forFamily(familyId);
+  const session = await loadSession(familyId, sessionId);
+  if (!session) throw new Error("session not found");
+  await scope.update("lesson_sessions", { breaks_taken: session.breaks_taken + 1, seconds_since_break: 0 }).eq("id", sessionId);
+  await pauseLessonSession(familyId, sessionId, "break");
+}
+
+/** US-12.2 КП-1: "Продовжити без перерви" — logged (US-11.1 daily summary), never blocks. */
+export async function skipLessonBreak(familyId: string, sessionId: string): Promise<void> {
+  const scope = forFamily(familyId);
+  const session = await loadSession(familyId, sessionId);
+  if (!session) throw new Error("session not found");
+  await scope.update("lesson_sessions", { breaks_skipped: session.breaks_skipped + 1, seconds_since_break: 0 }).eq("id", sessionId);
 }
 
 /** US-6.6 (alarm), US-16.4 КП-2 (idle), offline (US-6.5) — always "paused", step kept (docs/02 5.3). */

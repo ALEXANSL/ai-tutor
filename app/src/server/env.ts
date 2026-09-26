@@ -71,7 +71,14 @@ export function getServerSecret(
     | "OPENAI_API_KEY"
     | "GOOGLE_API_KEY"
     | "GOOGLE_SERVICE_ACCOUNT_JSON"
-    | "CRON_SECRET",
+    | "CRON_SECRET"
+    // S4 (ADR-010): urgent e-mail (Resend) + Telegram bot.
+    | "RESEND_API_KEY"
+    | "ALERT_EMAIL_TO"
+    | "ALERT_EMAIL_FROM"
+    | "TELEGRAM_BOT_TOKEN"
+    | "TELEGRAM_WEBHOOK_SECRET"
+    | "APP_BASE_URL",
 ): string | null {
   return process.env[name]?.trim() || null;
 }

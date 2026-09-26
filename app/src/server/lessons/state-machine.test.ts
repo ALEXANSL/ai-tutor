@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  breakDue,
   decideBranch,
   idleAutoPauseDue,
   idleHintDue,
@@ -104,5 +105,16 @@ describe("idle / lesson timing (US-16.4, US-6.7)", () => {
     const paused = new Date("2026-01-01T10:00:00Z");
     expect(needsResumeReminder(paused, new Date("2026-01-02T09:59:00Z"))).toBe(false);
     expect(needsResumeReminder(paused, new Date("2026-01-02T10:00:01Z"))).toBe(true);
+  });
+});
+
+describe("breakDue (US-12.2 КП-1, налашт. default 20 min)", () => {
+  it("not due before the threshold, due exactly at it", () => {
+    expect(breakDue(19 * 60, 20)).toBe(false);
+    expect(breakDue(20 * 60, 20)).toBe(true);
+  });
+  it("respects a per-child break_after_minutes setting", () => {
+    expect(breakDue(29 * 60, 30)).toBe(false);
+    expect(breakDue(30 * 60, 30)).toBe(true);
   });
 });

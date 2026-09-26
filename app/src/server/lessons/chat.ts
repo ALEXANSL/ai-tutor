@@ -5,6 +5,11 @@ import { z } from "zod";
 import { callStructured } from "@/server/ai/router";
 import { forFamily } from "@/server/db/family-scope";
 import { fillTemplate, splitPrompt } from "@/server/ingest/structure";
+import { safetyPreambleUk } from "@/server/safety/preamble";
+import { moderateMessage } from "@/server/safety/moderate";
+import { recordSafetyEvent } from "@/server/safety/events";
+import { URGENT_REPLY_UK } from "@/server/safety/urgentReplyUk";
+import type { TutorGender } from "@/i18n/uk";
 
 /**
  * Topic chat (US-8.1, 8.2): one chat per subject+topic per child; answers
@@ -66,6 +71,7 @@ export async function askTopicChat(
   childProfileId: string,
   nickname: string,
   tutorName: string,
+  tutorGender: TutorGender,
   subjectId: string,
   subjectName: string,
   topicId: string,
@@ -75,6 +81,12 @@ export async function askTopicChat(
 ): Promise<ChatMessageView> {
   const scope = forFamily(familyId);
   const chatId = await getOrCreateChat(familyId, childProfileId, subjectId, topicId);
+  const cleanQuestion = question.trim().slice(0, 800);
+
+  // NFR-SAFE-4, US-12.1: moderate the child's own message before answering it
+  // (in parallel with generating the reply — ADR-009 §4 — so this never adds
+  // latency the child notices).
+  const moderation = moderateMessage({ familyId, sessionId, mode: "tutor_chat", message: cleanQuestion });
 
   const { data: chunkRows } = await scope.client
     .from("chunks")
@@ -91,7 +103,6 @@ export async function askTopicChat(
     .limit(20)
     .returns<{ author: string; content: string }[]>();
 
-  const cleanQuestion = question.trim().slice(0, 800);
   await scope.client.from("messages").insert({ family_id: familyId, chat_id: chatId, session_id: sessionId ?? null, author: "child", type: "text", content: cleanQuestion });
 
   const { system, user } = tutorChatPrompt();
@@ -110,15 +121,25 @@ export async function askTopicChat(
     history: (history ?? []).reverse().map((m) => `${m.author}: ${m.content}`).join("\n") || "(немає)",
     question: cleanQuestion,
   });
-  const system2 = fillTemplate(system, { tutor_name: tutorName, subject_name: subjectName, topic_title: topicTitle, nickname });
+  const roleNoun = tutorGender === "m" ? "ШІ-помічник" : "ШІ-помічниця";
+  const system2 = `${safetyPreambleUk(tutorName, roleNoun)}\n\n${fillTemplate(system, { tutor_name: tutorName, subject_name: subjectName, topic_title: topicTitle, nickname })}`;
 
-  let answerText: string;
-  try {
-    const res = await callStructured("tutor_chat", { system: system2, prompt, schema: answerSchema }, { familyId, sessionId });
-    answerText = res.result.answerUk;
-  } catch {
-    answerText = "Зараз не вдалося відповісти — спробуй, будь ласка, ще раз за хвилинку.";
-  }
+  const [moderationResult, answerOutcome] = await Promise.all([
+    moderation,
+    callStructured("tutor_chat", { system: system2, prompt, schema: answerSchema }, { familyId, sessionId })
+      .then((res) => res.result.answerUk)
+      .catch(() => null),
+  ]);
+  await recordSafetyEvent(familyId, childProfileId, "tutor_chat", cleanQuestion, moderationResult, { sessionId, chatId }).catch(
+    (e: Error) => console.error(`recordSafetyEvent (tutor_chat) failed: ${e.message}`),
+  );
+  // NFR-SAFE-4, US-12.1 КП-2: "urgent" always gets the deterministic "go to
+  // dad now" reply — never the tutor_chat model's own answer, whatever it
+  // said, so this rule cannot be missed or phrased away by the model.
+  const answerText =
+    moderationResult.severity === "urgent"
+      ? URGENT_REPLY_UK
+      : (answerOutcome ?? "Зараз не вдалося відповісти — спробуй, будь ласка, ще раз за хвилинку.");
 
   const { data: saved, error } = await scope.client
     .from("messages")

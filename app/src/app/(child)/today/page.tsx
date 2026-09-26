@@ -41,6 +41,9 @@ export default async function TodayPage() {
         <Link href="/about-ai" className="flex min-h-12 items-center gap-1.5 rounded-2xl border border-line bg-surface px-4 text-sm font-bold">
           {t.aboutAi}
         </Link>
+        <Link href="/friend" className="flex min-h-12 items-center gap-1.5 rounded-2xl border border-line bg-surface px-4 text-sm font-bold">
+          {t.friend}
+        </Link>
       </nav>
 
       <main className="grid grid-cols-1 gap-5 px-6 pt-3 landscape:min-[900px]:grid-cols-[1.15fr_0.85fr] landscape:min-[900px]:items-start">
@@ -71,11 +74,12 @@ export default async function TodayPage() {
                 );
               }
               if (s.active) {
-                // Activated subjects open their lessons from S2/S3 on.
+                // S4: an activated subject opens the child's own minimal subject
+                // screen — "Почати урок" (the S3 "тато-only" restriction is lifted).
                 return (
-                  <div key={s.id} className={`${tileBase} border-secondary`}>
+                  <Link key={s.id} href={`/subject/${s.id}`} className={`${tileBase} border-secondary`}>
                     {label}
-                  </div>
+                  </Link>
                 );
               }
               return (

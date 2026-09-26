@@ -10,8 +10,11 @@ import {
   askTopicChatAction,
   continueAfterBlockAction,
   pauseLessonAction,
+  skipLessonBreakAction,
   submitBlockFeedbackAction,
   submitStepAnswerAction,
+  takeLessonBreakAction,
+  tickLessonActivityAction,
 } from "@/app/actions/lesson";
 import { dequeueAnswer, listQueuedAnswers, resendQueued, submitAnswerOffline, type QueuedAnswer } from "./offlineQueue";
 
@@ -66,6 +69,7 @@ export function LessonRunner({
   // queued offline, so she sees "what she did" rather than a blank step.
   const [queuedAnswer, setQueuedAnswer] = useState<{ channel: string; answer: unknown } | null>(null);
   const [blockComplete, setBlockComplete] = useState<{ libraryItemId: string; visibleOutcomeUk: string | null } | null>(null);
+  const [breakOffer, setBreakOffer] = useState(false);
   const lastInteractionRef = useRef<number>(0);
   useEffect(() => {
     lastInteractionRef.current = Date.now();
@@ -94,6 +98,22 @@ export function LessonRunner({
     }, 2000);
     return () => clearInterval(id);
   }, [idleHintS, idlePauseS, sessionId, router]);
+
+  // US-12.2 КП-1: a heartbeat every 20 s of continuous, non-idle work — the
+  // server decides when the break threshold is reached (`tickLessonActivity`).
+  useEffect(() => {
+    const HEARTBEAT_S = 20;
+    const id = setInterval(() => {
+      const idleSeconds = (Date.now() - lastInteractionRef.current) / 1000;
+      if (idleSeconds >= idleHintS || offline) return; // not "continuous work" right now.
+      tickLessonActivityAction(sessionId, HEARTBEAT_S)
+        .then((r) => {
+          if (r.breakOffer) setBreakOffer(true);
+        })
+        .catch(() => {});
+    }, HEARTBEAT_S * 1000);
+    return () => clearInterval(id);
+  }, [sessionId, idleHintS, offline]);
 
   // Offline banner (US-6.5): pause is recorded, but the screen stays put —
   // "Немає зв'язку, усе збережено" — until the connection returns.
@@ -201,6 +221,27 @@ export function LessonRunner({
     } finally {
       setBusy(false);
     }
+  }
+
+  if (breakOffer) {
+    return (
+      <BreakOfferScreen
+        labels={t}
+        busy={busy}
+        onTakeBreak={() => {
+          setBusy(true);
+          takeLessonBreakAction(sessionId)
+            .then(() => router.refresh())
+            .finally(() => setBusy(false));
+        }}
+        onSkip={() => {
+          setBusy(true);
+          skipLessonBreakAction(sessionId)
+            .then(() => setBreakOffer(false))
+            .finally(() => setBusy(false));
+        }}
+      />
+    );
   }
 
   if (blockComplete) {
@@ -428,6 +469,36 @@ function TopicChat({ sessionId, subjectId, topicId, labels: t }: { sessionId: st
  * (КП-1/2), plus an optional one-tap feedback (КП-3) that never affects
  * points. "Далі" is the only way forward — never an auto-advance.
  */
+/** US-12.2 КП-1: "Перерва" or "Продовжити без перерви" — either way the child decides. */
+function BreakOfferScreen({
+  labels: t,
+  busy,
+  onTakeBreak,
+  onSkip,
+}: {
+  labels: Labels;
+  busy: boolean;
+  onTakeBreak: () => void;
+  onSkip: () => void;
+}) {
+  return (
+    <div className="flex min-h-[70vh] items-center justify-center px-6">
+      <div className="rounded-[22px] border border-line bg-surface p-5 text-center">
+        <h2 className="mb-2 text-xl font-extrabold">{t.breakOfferTitle}</h2>
+        <p className="mb-5 text-base text-muted">{t.breakOfferBody}</p>
+        <div className="flex flex-col gap-2.5">
+          <button type="button" disabled={busy} onClick={onTakeBreak} className="min-h-12 rounded-2xl bg-primary px-5 text-base font-bold text-white">
+            {t.takeBreak}
+          </button>
+          <button type="button" disabled={busy} onClick={onSkip} className="min-h-12 rounded-2xl border-2 border-line bg-bg px-5 text-base font-bold">
+            {t.skipBreak}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BlockCompleteScreen({
   libraryItemId,
   visibleOutcomeUk,

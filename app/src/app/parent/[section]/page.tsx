@@ -4,7 +4,6 @@ import { requireParentAccess } from "@/server/auth/guards";
 import { PageTitle, Panel } from "../ui";
 
 const SECTIONS = {
-  conversations: uk.parent.nav.conversations,
   directives: uk.parent.nav.directives,
   budget: uk.parent.nav.budget,
 } as const;

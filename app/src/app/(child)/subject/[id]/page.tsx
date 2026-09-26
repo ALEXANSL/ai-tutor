@@ -1,0 +1,41 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { ChildStartLessonButton } from "@/components/child/ChildStartLessonButton";
+import { uk } from "@/i18n/uk";
+import { requireChild } from "@/server/auth/guards";
+import { getSubjectDetail } from "@/server/subjects/queries";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The child's own minimal subject screen (S4 — replaces the S3 restriction
+ * that made `/parent/subjects/[id]` the only "Почати урок" entry point).
+ * Deliberately small: the real "Сьогодні" plan-of-day with its own recommended
+ * blocks is US-9.1 (S8) — this only unblocks "the child can start today's
+ * current topic on her own" for an already-activated subject.
+ */
+export default async function ChildSubjectPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  if (!UUID.test(id)) notFound();
+  const { ctx } = await requireChild();
+  const subject = await getSubjectDetail(ctx.familyId, id);
+  if (!subject || !subject.active) notFound();
+  const t = uk.child.today;
+
+  return (
+    <div className="px-6 pt-5 pb-10">
+      <Link href="/today" className="mb-3 inline-block text-sm font-bold text-muted underline">
+        {uk.child.lesson.backToToday}
+      </Link>
+      <h1 className="mb-4 text-2xl font-extrabold">{subject.name}</h1>
+      {subject.currentTopicId ? (
+        <div className="rounded-[22px] border border-line bg-surface p-4.5">
+          <p className="mb-3 text-sm text-muted">{t.subjectsSubtitle}</p>
+          <ChildStartLessonButton subjectId={subject.id} topicId={subject.currentTopicId} />
+        </div>
+      ) : (
+        <p className="text-sm text-muted">{t.emptyPlanBody}</p>
+      )}
+    </div>
+  );
+}

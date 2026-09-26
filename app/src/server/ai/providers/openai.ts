@@ -17,6 +17,49 @@ export interface EmbedResult {
 
 const ENDPOINT = "https://api.openai.com/v1/embeddings";
 const RESPONSES_ENDPOINT = "https://api.openai.com/v1/responses";
+const MODERATIONS_ENDPOINT = "https://api.openai.com/v1/moderations";
+
+export interface OmniModerationResult {
+  flagged: boolean;
+  categories: string[];
+}
+
+/**
+ * ADR-009 layer 1: OpenAI `omni-moderation` — free, fast, general categories
+ * (self-harm, violence, …). Not routed through `model_routes` (it is not a
+ * model choice, it is a fixed classifier endpoint always called first) and
+ * not billed (docs/02 7.3: "$0"); a failure here never blocks layer 2 or the
+ * child's reply — the caller treats a thrown error as "not flagged by layer
+ * 1" and still runs the Haiku classifier (ADR-009: three providers in the
+ * chain, one being down never stops moderation).
+ */
+export async function openaiModerate(text: string, fetchImpl: typeof fetch = fetch): Promise<OmniModerationResult> {
+  const key = getServerSecret("OPENAI_API_KEY");
+  if (!key) throw new AiNotConfiguredError("OPENAI_API_KEY is not set");
+  let res: Response;
+  try {
+    res = await fetchImpl(MODERATIONS_ENDPOINT, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model: "omni-moderation-latest", input: text }),
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (e) {
+    throw new ProviderError(`openai network error: ${(e as Error).name}`, "openai", null, true);
+  }
+  if (!res.ok) {
+    const retryable = res.status === 429 || res.status >= 500;
+    throw new ProviderError(`openai moderations error ${res.status}`, "openai", res.status, retryable);
+  }
+  const body = (await res.json()) as {
+    results?: { flagged?: boolean; categories?: Record<string, boolean> }[];
+  };
+  const result = body.results?.[0];
+  const categories = Object.entries(result?.categories ?? {})
+    .filter(([, v]) => v)
+    .map(([k]) => k);
+  return { flagged: result?.flagged ?? false, categories };
+}
 
 /**
  * OpenAI embeddings (docs/02 7.3: text-embedding-3-large, 1536 dimensions).
