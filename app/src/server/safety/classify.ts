@@ -51,6 +51,17 @@ export interface ModerationResult {
   reasonUk: string;
   layer1Flagged: boolean;
   escalated: boolean;
+  /**
+   * QA residual-risk finding (see docs/adr/009-safety-moderation.md §"Резерв
+   * поза резервом" / BUG report): set when BOTH layer 1 (omni-moderation)
+   * AND layer 2 (safety_moderator) failed for this one message, so the
+   * "category: none / severity: none" this carries is a synthetic fail-open
+   * default, not a real "this message is safe" verdict. Never true when at
+   * least one layer actually ran. Callers (`recordSafetyEvent`) use this to
+   * tell the parent moderation itself was down, even though nothing was
+   * "flagged".
+   */
+  layersUnavailable: boolean;
 }
 
 /** Combines layer 1 + layer 2 (+ an optional escalation verdict) into the final call. */
@@ -58,10 +69,11 @@ export function mergeVerdict(
   layer1Flagged: boolean,
   layer2: ModerationVerdict,
   escalation: ModerationVerdict | null,
+  layersUnavailable = false,
 ): ModerationResult {
   const escalated = escalation != null;
   const final = escalation ?? layer2;
-  return { ...final, layer1Flagged, escalated };
+  return { ...final, layer1Flagged, escalated, layersUnavailable };
 }
 
 /** US-12.1 КП-1/КП-2: only `urgent` triggers "go to dad now" + external channels. */

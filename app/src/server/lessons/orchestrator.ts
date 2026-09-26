@@ -6,6 +6,7 @@ import { notifyParent } from "@/server/notifications";
 import { moderateMessage } from "@/server/safety/moderate";
 import { recordSafetyEvent } from "@/server/safety/events";
 import { safetyPreambleGenericUk } from "@/server/safety/preamble";
+import { URGENT_REPLY_UK } from "@/server/safety/urgentReplyUk";
 import { getOrCreateFallbackBlock, getOrGenerateLessonBlocks, loadLibraryItem, nextSessionBlock, type LibraryItemView, type LibraryStepView } from "./generate";
 import {
   breakDue,
@@ -301,13 +302,26 @@ export async function submitStepAnswer(
   const openText = step.type === "open" && typeof (answer as { text?: unknown } | null)?.text === "string" ? (answer as { text: string }).text : null;
   const moderationPromise = !existing && openText ? moderateMessage({ familyId, sessionId, mode: "lesson", message: openText }) : null;
 
-  const { verdict, explanation } = existing ? { verdict: existing.verdict, explanation: "" } : await evaluateAnswer(familyId, sessionId, step, channel, answer);
+  let { verdict, explanation } = existing ? { verdict: existing.verdict, explanation: "" } : await evaluateAnswer(familyId, sessionId, step, channel, answer);
 
   if (moderationPromise) {
     const moderation = await moderationPromise;
     await recordSafetyEvent(familyId, session.child_profile_id, "lesson", openText!, moderation, { sessionId }).catch((e: Error) =>
       console.error(`recordSafetyEvent (lesson) failed: ${e.message}`),
     );
+    // BUG-013 fix (NFR-SAFE-4, US-12.1 КП-2): same deterministic override as
+    // chat.ts/friendChat.ts — the child NEVER sees `answer_evaluation`'s own
+    // feedback for an "urgent" reply, no matter what it said. `verdict` is
+    // also forced away from "correct" so `decideBranch` cannot skip straight
+    // to the next step right after a safety signal (it goes through
+    // `alt_explanation` — the child stays on the same step, seeing the
+    // go-to-dad message — unless this was already the 2nd consecutive
+    // non-correct attempt, in which case it behaves like any other repeated
+    // miss, US-6.4, and still advances rather than looping forever).
+    if (moderation.severity === "urgent") {
+      verdict = "partial";
+      explanation = URGENT_REPLY_UK;
+    }
   }
 
   const questionLength = String(step.content.questionUk ?? step.content.textUk ?? "").length;

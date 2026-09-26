@@ -31,7 +31,7 @@ vi.mock("@/server/notify/urgent", () => ({ enqueueUrgentDelivery: (...a: unknown
 const { recordSafetyEvent } = await import("./events");
 
 function verdict(over: Partial<ModerationResult>): ModerationResult {
-  return { category: "none", severity: "none", confidence: 1, reasonUk: "", layer1Flagged: false, escalated: false, ...over };
+  return { category: "none", severity: "none", confidence: 1, reasonUk: "", layer1Flagged: false, escalated: false, layersUnavailable: false, ...over };
 }
 
 beforeEach(() => {
@@ -47,6 +47,20 @@ describe("recordSafetyEvent (ADR-009, US-11.6/11.7)", () => {
     expect(r).toEqual({ flagged: false, urgent: false, eventId: null });
     expect(insert).not.toHaveBeenCalled();
     expect(notifyParent).not.toHaveBeenCalled();
+    expect(enqueueUrgentDelivery).not.toHaveBeenCalled();
+  });
+
+  it("residual-risk fix: both moderation layers unavailable -> no safety_events row (can't classify), but the parent IS still notified", async () => {
+    const r = await recordSafetyEvent(
+      "fam1", "child1", "friend_chat", "я хочу собі зашкодити",
+      verdict({ layersUnavailable: true }),
+    );
+    expect(r).toEqual({ flagged: false, urgent: false, eventId: null });
+    expect(insert).not.toHaveBeenCalled();
+    expect(notifyParent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ type: "safety_moderation_unavailable", severity: "urgent", payload: expect.objectContaining({ mode: "friend_chat" }) }),
+    );
     expect(enqueueUrgentDelivery).not.toHaveBeenCalled();
   });
 

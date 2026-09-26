@@ -20,7 +20,29 @@ export async function recordSafetyEvent(
   result: ModerationResult,
   refs: { sessionId?: string; chatId?: string } = {},
 ): Promise<{ flagged: boolean; urgent: boolean; eventId: string | null }> {
-  if (!isFlagged(result)) return { flagged: false, urgent: false, eventId: null };
+  if (!isFlagged(result)) {
+    // Residual-risk fix (QA, S4): `result.layersUnavailable` means BOTH
+    // moderation layers failed for this message, so "category: none" here is
+    // a fail-open default, not a real verdict — this message was never
+    // actually checked. `safety_events` can't hold it (its `severity` column
+    // only allows 'normal'/'urgent', by design — there is no real category
+    // to store), so we can't raise the usual e-mail/Telegram urgent delivery
+    // either without a schema change; ADR-009's own fail-open choice (never
+    // block the child's reply for a provider outage) stays as-is here too.
+    // The minimal, non-schema-changing safeguard: tell the parent, in the
+    // cabinet, as an urgent-looking item, that moderation itself was down
+    // for this message, so a human checks the conversation. This never
+    // delays or blocks the child's own reply (chat.ts/friendChat.ts/
+    // orchestrator.ts already returned it by the time this resolves).
+    if (result.layersUnavailable) {
+      await notifyParent(forFamily(familyId), {
+        type: "safety_moderation_unavailable",
+        severity: "urgent",
+        payload: { mode, ...refs },
+      }).catch((e: Error) => console.error(`safety_moderation_unavailable notification failed: ${e.message}`));
+    }
+    return { flagged: false, urgent: false, eventId: null };
+  }
 
   const scope = forFamily(familyId);
   const { data, error } = await scope.client

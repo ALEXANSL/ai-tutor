@@ -253,19 +253,22 @@ describe("resumeLessonSession (BUG-008: 24h+ pause reminder is actually wired)",
   });
 });
 
-describe("submitStepAnswer + moderation (NFR-SAFE-4, US-12.1 КП-2) — QA finding, see docs/bugs/BUG-013", () => {
+describe("submitStepAnswer + moderation (NFR-SAFE-4, US-12.1 КП-2) — BUG-013 fix", () => {
   /**
    * `chat.ts` (`askTopicChat`) and `friendChat.ts` (`askFriendChat`) both
    * hard-code: `severity === "urgent"` -> the deterministic "піди зараз до
-   * тата" reply REPLACES whatever the model said, no matter what. This test
-   * proves the lesson open-answer path (`submitStepAnswer`) does NOT do the
-   * same for the `explanation` text shown to the child — it always uses
-   * whatever `answer_evaluation` (or the on-device rubric) produced, even
-   * when the same message was just classified `severity: "urgent"` and a
-   * `safety_events`/external delivery was raised for the parent. The
-   * *notification* to the parent still fires (`recordSafetyEvent` is
-   * called and, in the app, escalates to e-mail/Telegram) — only the
-   * on-screen text to the child is not overridden.
+   * тата" reply REPLACES whatever the model said, no matter what. BUG-013:
+   * the lesson open-answer path (`submitStepAnswer`) did NOT do the same for
+   * the `explanation` text shown to the child — it always used whatever
+   * `answer_evaluation` (or the on-device rubric) produced, even when the
+   * same message was just classified `severity: "urgent"` and a
+   * `safety_events`/external delivery was raised for the parent. Fixed: the
+   * same deterministic sentence (`URGENT_REPLY_UK`) now overrides it, and
+   * `verdict` is forced to "partial" so the branch logic cannot skip
+   * straight ahead ("correct") right after a safety signal. The
+   * *notification* to the parent still fires exactly as before
+   * (`recordSafetyEvent` is called and, in the app, escalates to
+   * e-mail/Telegram).
    */
   const openStep = {
     id: "st1",
@@ -284,7 +287,7 @@ describe("submitStepAnswer + moderation (NFR-SAFE-4, US-12.1 КП-2) — QA find
     };
   }
 
-  it("an 'urgent' open answer still gets the model's own explanation, not the deterministic go-to-dad reply", async () => {
+  it("an 'urgent' open answer ALWAYS gets the deterministic go-to-dad reply, never the model's own explanation", async () => {
     resetScope();
     scopeState.tables = baseTables();
     moderateMessage.mockResolvedValue({ category: "self_harm", severity: "urgent", confidence: 0.95, reasonUk: "x", layer1Flagged: true, escalated: false });
@@ -298,10 +301,24 @@ describe("submitStepAnswer + moderation (NFR-SAFE-4, US-12.1 КП-2) — QA find
       expect.objectContaining({ severity: "urgent" }),
       expect.objectContaining({ sessionId: "s1" }),
     );
-    // QA finding (BUG-013): this is the actual, current, and WRONG behaviour —
-    // documented here so the fix is easy to verify. It should instead equal
-    // the same deterministic sentence chat.ts/friendChat.ts use.
+    // BUG-013 fix: overrides the model's own feedback with the same
+    // deterministic sentence chat.ts/friendChat.ts use, and does not
+    // silently advance past it as "correct".
+    expect(result.explanation).toBe("Це звучить дуже серйозно. Будь ласка, зараз піди й скажи про це тату — він удома і допоможе.");
+    expect(result.verdict).toBe("partial");
+    expect(result.next).toEqual({ kind: "retry_step" });
+  });
+
+  it("a non-urgent (normal) moderation result does NOT override the model's own pedagogical explanation", async () => {
+    resetScope();
+    scopeState.tables = baseTables();
+    moderateMessage.mockResolvedValue({ category: "sadness", severity: "normal", confidence: 0.8, reasonUk: "x", layer1Flagged: false, escalated: false });
+    callStructured.mockResolvedValue({ result: { verdict: "correct", explanationUk: "Гарна спроба, продовжуй!" }, model: {}, costUsd: 0, fallbackUsed: false });
+    loadLibraryItem.mockResolvedValue({ id: "A", title: "Блок A", estimatedMinutes: 7, visibleOutcomeUk: null, steps: [{ id: "st1", sortOrder: 0, type: "open", content: openStep.content, visual: {}, sourceRefs: [] }, { id: "st2", sortOrder: 1, type: "slide", content: {}, visual: {}, sourceRefs: [] }] });
+
+    const result = await submitStepAnswer("fam1", "s1", "st1", "idem-1", "text", { text: "мені трохи сумно" }, 4000);
+
     expect(result.explanation).toBe("Гарна спроба, продовжуй!");
-    expect(result.explanation).not.toMatch(/до тата/);
+    expect(result.verdict).toBe("correct");
   });
 });

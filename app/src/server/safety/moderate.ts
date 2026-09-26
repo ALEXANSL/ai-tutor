@@ -61,25 +61,35 @@ export async function moderateTutorName(familyId: string, name: string): Promise
 }
 
 export async function moderateMessage(input: ModerateInput): Promise<ModerationResult> {
+  let layer1Failed = false;
+  let layer2Failed = false;
   const [layer1, layer2] = await Promise.all([
     openaiModerate(input.message).catch((e: Error) => {
       console.error(`safety layer 1 (omni-moderation) failed: ${e.message}`);
+      layer1Failed = true;
       return { flagged: false, categories: [] };
     }),
     classify(input, false).catch((e: Error) => {
       console.error(`safety layer 2 (safety_moderator) failed: ${e.message}`);
+      layer2Failed = true;
       return { category: "none" as const, severity: "none" as const, confidence: 1, reasonUk: "" };
     }),
   ]);
+  // QA residual-risk finding: when BOTH layers failed for this one message,
+  // the "none" verdict below is a synthetic fail-open default, not a real
+  // safety judgement — `layersUnavailable` lets `recordSafetyEvent` still
+  // tell the parent to check the conversation manually, even though nothing
+  // was technically "flagged" (see classify.ts doc comment, ADR-009).
+  const layersUnavailable = layer1Failed && layer2Failed;
 
   if (!needsEscalation(layer1.flagged, layer2)) {
-    return mergeVerdict(layer1.flagged, layer2, null);
+    return mergeVerdict(layer1.flagged, layer2, null, layersUnavailable);
   }
   try {
     const escalation = await classify(input, true);
-    return mergeVerdict(layer1.flagged, layer2, escalation);
+    return mergeVerdict(layer1.flagged, layer2, escalation, layersUnavailable);
   } catch (e) {
     console.error(`safety escalation failed: ${(e as Error).message}`);
-    return mergeVerdict(layer1.flagged, layer2, null);
+    return mergeVerdict(layer1.flagged, layer2, null, layersUnavailable);
   }
 }

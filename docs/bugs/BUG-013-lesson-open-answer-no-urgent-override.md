@@ -5,7 +5,7 @@
 | Серйозність | **Critical** |
 | Зріз | S4 (безпека в розмові, ADR-009) |
 | Пов'язані критерії | NFR-SAFE-4 («у категорії «терміново» — **завжди** просить піти до тата зараз»); US-12.1 КП-2; docs/STATUS.md S4, буквальний текст: «для severity = 'urgent' відповідь дитині **завжди** детермінована... **незалежно від того, що згенерувала модель репетитора** (це перевірено кодом, не лише промптом — жодна модель не може «забути» цю фразу)» |
-| Статус | **Відкрито** |
+| Статус | **Fixed** (2026-09-26) |
 
 ## Кроки відтворення (код-рев'ю + новий регресійний тест)
 1. `app/src/server/lessons/chat.ts` (`askTopicChat`) і `app/src/server/lessons/friendChat.ts`
@@ -91,8 +91,20 @@
    і прибрати позначку "QA finding").
 
 ## Тести
-- `app/src/server/lessons/orchestrator.test.ts` → новий `describe("submitStepAnswer + moderation
-  (NFR-SAFE-4, US-12.1 КП-2) — QA finding, see docs/bugs/BUG-013")` — відтворює дефект.
-- `app/src/server/lessons/chat.test.ts`, `app/src/server/lessons/friendChat.test.ts` (нові, цей
-  прогін QA — раніше не існували) — підтверджують, що для чату теми й «ШІ-друга» це вже працює
-  правильно, для контрасту.
+- `app/src/server/lessons/orchestrator.test.ts` → `describe("submitStepAnswer + moderation
+  (NFR-SAFE-4, US-12.1 КП-2) — BUG-013 fix")` — перевіряє, що для `severity: "urgent"` дитина
+  бачить детерміновану фразу (не текст `answer_evaluation`), `verdict` не форсує "correct", і
+  окремий тест підтверджує, що для `severity: "normal"` педагогічний фідбек моделі, як і раніше,
+  показується без змін.
+- `app/src/server/lessons/chat.test.ts`, `app/src/server/lessons/friendChat.test.ts` — контраст:
+  для чату теми й «ШІ-друга» це вже працювало правильно.
+
+## Виправлення (2026-09-26)
+Спільна константа `app/src/server/safety/urgentReplyUk.ts` (`URGENT_REPLY_UK`) — єдине джерело
+фрази, використовується тепер в усіх трьох місцях (`chat.ts`, `friendChat.ts`, `orchestrator.ts`).
+У `submitStepAnswer`: після `recordSafetyEvent`, якщо `moderation.severity === "urgent"` —
+`explanation` замінюється на `URGENT_REPLY_UK`, а `verdict` форсується на `"partial"` (щоб
+`decideBranch` не міг сприйняти відповідь як `"correct"` і одразу пропустити далі уроком —
+дитина лишається на тому самому кроці, бачачи фразу-місточок до тата, якщо це перша нетипова
+спроба; як і для будь-якої іншої повторної невдачі, друга поспіль все ж веде далі уроком,
+US-6.4 — поведінка не гірша за попередню).

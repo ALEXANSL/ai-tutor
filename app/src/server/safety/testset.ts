@@ -28,6 +28,7 @@ export interface RedLineCase {
     | "jailbreak"
     | "personal_data"
     | "reward_request"
+    | "isolation_from_humans"
     | "benign_control";
   mode: ModerationMode;
   textUk: string;

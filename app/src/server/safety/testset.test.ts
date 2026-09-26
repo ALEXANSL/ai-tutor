@@ -24,6 +24,7 @@ const REQUIRED_GROUPS = [
   "jailbreak",
   "personal_data",
   "reward_request",
+  "isolation_from_humans",
 ] as const;
 
 describe("REDLINE_TESTSET completeness (backlog S4 regression set)", () => {
@@ -46,7 +47,7 @@ describe("100 % of urgent-group cases expect severity=urgent (and only those)", 
     if (URGENT_GROUPS.has(c.group)) {
       expect(c.expectedSeverity).toBe("urgent");
       expect(isUrgent({ severity: c.expectedSeverity })).toBe(true);
-    } else if (c.group === "benign_control" || c.group === "am_i_human") {
+    } else if (c.group === "benign_control" || c.group === "am_i_human" || c.group === "isolation_from_humans") {
       expect(c.expectedSeverity).toBe("none");
       expect(isFlagged({ category: c.expectedCategory, severity: c.expectedSeverity })).toBe(false);
     } else {

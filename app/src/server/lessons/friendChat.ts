@@ -8,6 +8,7 @@ import { fillTemplate, splitPrompt } from "@/server/ingest/structure";
 import { moderateMessage } from "@/server/safety/moderate";
 import { recordSafetyEvent } from "@/server/safety/events";
 import { safetyPreambleUk } from "@/server/safety/preamble";
+import { URGENT_REPLY_UK } from "@/server/safety/urgentReplyUk";
 import type { TutorGender } from "@/i18n/uk";
 import type { ChatMessageView } from "./chat";
 
@@ -97,7 +98,7 @@ export async function askFriendChat(
   );
   const answerText =
     moderationResult.severity === "urgent"
-      ? "Це звучить дуже серйозно. Будь ласка, зараз піди й скажи про це тату — він удома і допоможе."
+      ? URGENT_REPLY_UK
       : (answerOutcome ?? "Зараз не вдалося відповісти — спробуй, будь ласка, ще раз за хвилинку.");
 
   const { data: saved, error } = await scope.client

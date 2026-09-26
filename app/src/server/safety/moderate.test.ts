@@ -69,21 +69,29 @@ describe("moderateMessage", () => {
     await expect(moderateMessage({ familyId: "f1", mode: "lesson", message: "будь-що" })).resolves.toMatchObject({ category: "none", severity: "none" });
   });
 
-  it("QA: both layers unavailable at once (no API keys) -> fails open to 'none' without throwing, escalation is skipped (not attempted uselessly)", async () => {
+  it("both layers unavailable at once (no API keys) -> fails open to 'none' without throwing, escalation is skipped (not attempted uselessly), and layersUnavailable is set", async () => {
     openaiModerate.mockRejectedValueOnce(new Error("openai down"));
     callStructured.mockRejectedValueOnce(new Error("anthropic down"));
     await expect(
       moderateMessage({ familyId: "f1", mode: "friend_chat", message: "я хочу собі зашкодити" }),
-    ).resolves.toMatchObject({ category: "none", severity: "none", layer1Flagged: false, escalated: false });
+    ).resolves.toMatchObject({ category: "none", severity: "none", layer1Flagged: false, escalated: false, layersUnavailable: true });
     // Only the initial (non-escalated) layer-2 attempt runs — a confident-looking
     // synthetic "none" (confidence: 1 from the catch handler) does not trigger a
     // second, equally doomed call: documented trade-off (ADR-009 §4/moderate.ts
     // comment) — a genuine full-outage silently lets an unsafe message through
     // rather than blocking the child's lesson/chat. `recordSafetyEvent` is never
-    // reached in this case (severity "none" is not `isFlagged`), so the parent
-    // gets no cabinet/urgent alert either — this is the residual risk to flag
-    // to the developer/PO, not a code defect on its own (see BUG report).
+    // reached in this case (severity "none" is not `isFlagged`), but the
+    // `layersUnavailable` flag it carries is what lets `recordSafetyEvent` still
+    // alert the parent separately (`events.test.ts` — residual-risk fix) even
+    // though nothing was technically "flagged".
     expect(callStructured).toHaveBeenCalledTimes(1);
+  });
+
+  it("only ONE layer down -> layersUnavailable stays false (a single provider outage is not the residual-risk case)", async () => {
+    openaiModerate.mockRejectedValueOnce(new Error("openai down"));
+    callStructured.mockResolvedValueOnce(structuredResult({ category: "sadness", severity: "normal", confidence: 0.9, reasonUk: "сумно" }));
+    const r = await moderateMessage({ familyId: "f1", mode: "lesson", message: "мені сумно" });
+    expect(r.layersUnavailable).toBe(false);
   });
 
   it("escalation itself fails -> falls back to layer 2's own verdict, never throws", async () => {
