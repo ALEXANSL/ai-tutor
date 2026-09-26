@@ -160,6 +160,16 @@ export const uk = {
       tryAgain: "Спробуй ще раз",
       correct: "Правильно!",
       almost: "Майже! Спробуй ще раз",
+      // BUG-019: a genuinely wrong answer used to show the same "Майже!" text
+      // as a real partial credit — a child (and a watching parent) couldn't
+      // tell "close, try again" from "no, that's not it". `incorrect` is
+      // shown only for verdict `incorrect`; `almost` stays for `partial`.
+      incorrect: "Не зовсім так. Спробуй ще раз",
+      // BUG-019: the deterministic fast path in `evaluateAnswer` (a bare
+      // number, a lettered list, or otherwise differently-formatted answer
+      // that matches the reference answer in substance) has no per-question
+      // model-written explanation, so it uses this generic, warm one.
+      openAnswerCorrectGeneric: "Молодець, правильно! Головне — суть відповіді, а не як саме вона записана.",
       formatChangeOffer: "Здається, це не найкращий формат зараз. Спробуймо інакше?",
       changeFormat: "Так, змінити формат",
       keepGoing: "Ні, продовжуй так",
@@ -193,6 +203,18 @@ export const uk = {
       feedbackNormal: "Нормально 🙂",
       feedbackBoring: "Нудно 😐",
       feedbackThanks: "Дякую!",
+      // BUG-020: explicit exit, instead of the browser's own "back" button —
+      // saves the current step (the existing pause/resume mechanism, BUG-008)
+      // so "Продовжити" picks up from exactly here next time.
+      exitLesson: "Вийти з уроку",
+      exitLessonConfirmTitle: "Вийти з уроку?",
+      exitLessonConfirmBody: "Усе, що ти вже зробила, збережено. Наступного разу зможеш продовжити з цього самого місця.",
+      exitLessonConfirmYes: "Так, вийти",
+      exitLessonConfirmNo: "Ні, продовжити урок",
+      // Shown on `LessonPausedScreen` after an explicit "Вийти з уроку"
+      // (BUG-020), if she opens the lesson's own link again instead of
+      // starting fresh from "Сьогодні".
+      pausedManualExit: "Ти вийшла з уроку — усе збережено. Продовжиш із того самого місця.",
       // US-12.2: break offer after 20 continuous minutes (налашт.).
       breakOfferTitle: "Ти вже займаєшся якийсь час — може, зробимо перерву?",
       breakOfferBody: "Розімнись, попий води або подивись у вікно.",

@@ -1,4 +1,5 @@
 import "server-only";
+import { uk } from "@/i18n/uk";
 import { getLessonComponent } from "@/lesson-components";
 import { callStructured } from "@/server/ai/router";
 import { forFamily } from "@/server/db/family-scope";
@@ -225,6 +226,76 @@ export async function getLessonView(
 
 const evalVerdictSchema = z.object({ verdict: z.enum(["correct", "partial", "incorrect"]), explanationUk: z.string().min(1).max(300) });
 
+/**
+ * BUG-019: strips everything that carries no meaning for *matching* an
+ * answer — case, accents' normalization form, and punctuation used only as
+ * list markup ("а)", "1.", quotes, "…") — down to bare words/numbers
+ * separated by single spaces. Never used for anything but the substance
+ * check below; the child's raw text is still what gets stored and, if this
+ * doesn't resolve it, what the model sees.
+ */
+function normalizeForSubstanceMatch(raw: string): string {
+  return raw
+    .normalize("NFKC")
+    .toLocaleLowerCase("uk-UA")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * BUG-019 root cause (part 1): the open-answer path had no deterministic
+ * "this is obviously right" check at all — every answer, however it was
+ * written, went straight to an LLM prompt that (per Alex's real examples)
+ * graded a bare number ("2") or a lettered list ("а) ... б) ... в) ...")
+ * as not matching its own "Еталон" text closely enough, and came back
+ * `partial`. A real teacher marks the *result* right regardless of a
+ * child writing just the number, just the option letter, or a full
+ * sentence — at most a soft note about the preferred format, never a
+ * lower verdict. This check catches the common, unambiguous case (the
+ * child's whole answer, once format-only differences are stripped, IS the
+ * reference answer or appears in it word-for-word) without ever needing
+ * the model to resist over-literal template matching; whatever it can't
+ * resolve this way still goes to `answer_evaluation` below, whose prompt
+ * was rewritten for the same reason (part 2).
+ */
+function matchesExpectedBySubstance(answerText: string, expectedAnswerUk: string): boolean {
+  const answer = normalizeForSubstanceMatch(answerText);
+  const expected = normalizeForSubstanceMatch(expectedAnswerUk);
+  if (!answer || !expected) return false;
+  if (answer === expected) return true;
+  const answerWords = answer.split(" ");
+  const expectedWords = expected.split(" ");
+  for (let i = 0; i + answerWords.length <= expectedWords.length; i++) {
+    if (expectedWords.slice(i, i + answerWords.length).join(" ") === answer) return true;
+  }
+  return false;
+}
+
+/**
+ * BUG-019 root cause (part 2): the old prompt just handed the model a
+ * one-line instruction and an "Еталон" (reference) string, with nothing
+ * telling it that the reference is an *example* of a right answer, not a
+ * template the child must match — so it graded down for format (a number
+ * instead of a sentence, an option letter instead of spelling the option
+ * out) as if that were a content mistake. This system prompt is explicit
+ * about grading substance only, the way a real teacher would.
+ */
+const OPEN_ANSWER_EVALUATION_SYSTEM_UK = [
+  "Оціни відповідь дитини на відкрите питання уроку: `correct` (правильно по суті),",
+  "`partial` (частково правильно/неповно) або `incorrect` (неправильно по суті).",
+  "«Еталон» — це ОРІЄНТОВНА правильна відповідь для довідки, а НЕ шаблон, який",
+  "дитина мусить повторити слово в слово чи в тій самій формі. Онови ЗМІСТ і",
+  "правильність результату в контексті питання, а не форму запису: коротка",
+  "відповідь (просто число, просто літера варіанту «а)/б)/в)», кілька слів)",
+  "рахується як `correct`, якщо результат по суті вірний — так само, як",
+  "розгорнуте речення. НІКОЛИ не знижуй оцінку лише за формат чи довжину",
+  "запису (як реальний вчитель — за відсутність повного речення максимум",
+  "легка примітка в поясненні, ніколи не нижчий вердикт). `partial` — тільки",
+  "коли сам РЕЗУЛЬТАТ неповний чи частково вірний по суті. Пояснення — тепле",
+  "й конкретне.",
+].join(" ");
+
 async function evaluateAnswer(
   familyId: string,
   sessionId: string,
@@ -244,12 +315,17 @@ async function evaluateAnswer(
     return { verdict: result.correct ? "correct" : "incorrect", explanation: def.describe(step.visual.props as never, result) };
   }
   // "open": no exact answer on the device — ask the evaluation role (US-6.2 КП-1).
+  const openAnswerText = typeof (answer as { text?: unknown } | null)?.text === "string" ? (answer as { text: string }).text : String(answer ?? "");
+  const expectedAnswerUk = String(step.content.expectedAnswerUk ?? "");
+  if (expectedAnswerUk && matchesExpectedBySubstance(openAnswerText, expectedAnswerUk)) {
+    return { verdict: "correct", explanation: uk.child.lesson.openAnswerCorrectGeneric };
+  }
   try {
     const res = await callStructured(
       "answer_evaluation",
       {
-        system: `${safetyPreambleGenericUk()}\n\nОціни відповідь дитини на відкрите питання уроку (правильно/частково/неправильно), тепло й конкретно.`,
-        prompt: `Питання: ${step.content.questionUk}\nЕталон: ${step.content.expectedAnswerUk}\nРубрика: ${step.content.rubricUk}\nВідповідь: ${String(answer ?? "")}`,
+        system: `${safetyPreambleGenericUk()}\n\n${OPEN_ANSWER_EVALUATION_SYSTEM_UK}`,
+        prompt: `Питання: ${step.content.questionUk}\nЕталон (орієнтовна відповідь, не шаблон для копіювання): ${step.content.expectedAnswerUk}\nРубрика: ${step.content.rubricUk}\nВідповідь дитини: ${openAnswerText}`,
         schema: evalVerdictSchema,
       },
       { familyId, sessionId },

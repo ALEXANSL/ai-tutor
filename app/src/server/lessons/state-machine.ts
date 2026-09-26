@@ -3,7 +3,11 @@
  * purpose: every branching rule is a plain function, unit-tested directly;
  * `orchestrator.ts` is the only place that touches the database.
  */
-export type PauseReason = "manual_alert" | "air_alert" | "idle" | "network" | "budget_hard" | "parent_mode" | "break";
+// BUG-020: "manual_exit" is a deliberate "Вийти з уроку" tap, not an alarm or
+// an interruption — reuses the very same pause/resume mechanism (BUG-008)
+// so the current step is preserved and `resumeLessonSession` picks up right
+// there, exactly like any other pause.
+export type PauseReason = "manual_alert" | "manual_exit" | "air_alert" | "idle" | "network" | "budget_hard" | "parent_mode" | "break";
 export type Verdict = "correct" | "partial" | "incorrect";
 export type Channel = "choice" | "text" | "voice" | "photo";
 
