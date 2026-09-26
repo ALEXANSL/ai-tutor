@@ -8,6 +8,12 @@ import { LessonRunner } from "@/components/lesson/LessonRunner";
 import { LessonPausedScreen } from "@/components/lesson/LessonPausedScreen";
 import { LessonSummaryScreen } from "@/components/lesson/LessonSummaryScreen";
 
+// Shares the 300s budget used on every page that can call into the lesson
+// pipeline (`(child)/subject/[id]`, `parent/subjects/[id]`): `LessonPicker`
+// here calls `chooseStartBlockAction`, which is normally cheap but keeps
+// the same generous ceiling for consistency and any future slow path.
+export const maxDuration = 300;
+
 /**
  * Lesson screen (S4: open to the child herself, docs/STATUS.md — the S3
  * "режим тата only" restriction is lifted now that safety moderation

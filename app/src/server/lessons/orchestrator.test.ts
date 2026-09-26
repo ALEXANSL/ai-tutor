@@ -24,7 +24,7 @@ interface FakeRow {
  * `submitStepAnswer` at all.
  */
 function makeScope(tables: Record<string, FakeRow[] | FakeRow>, updates: { table: string; values: FakeRow }[]) {
-  function builder(table: string) {
+  function builder(table: string, isUpdate = false) {
     const filters: [string, unknown][] = [];
     const self = {
       eq(col: string, val: unknown) {
@@ -53,7 +53,11 @@ function makeScope(tables: Record<string, FakeRow[] | FakeRow>, updates: { table
       single: () => Promise.resolve({ data: self.matched()[0] ?? null, error: null }),
       returns: () => Promise.resolve({ data: self.matched(), error: null }),
       then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
-        Promise.resolve({ data: self.matched(), error: null }).then(res, rej),
+        Promise.resolve(
+          isUpdate && updateErrorOverride && updateErrorOverride.table === table
+            ? { data: null, error: updateErrorOverride.error }
+            : { data: self.matched(), error: null },
+        ).then(res, rej),
     };
     return self;
   }
@@ -61,17 +65,36 @@ function makeScope(tables: Record<string, FakeRow[] | FakeRow>, updates: { table
     select: (table: string) => builder(table),
     update: (table: string, values: FakeRow) => {
       updates.push({ table, values });
-      return builder(table);
+      return builder(table, true);
     },
     client: {
-      from: () => ({
-        insert: () => ({
-          select: () => ({ single: () => Promise.resolve({ data: { id: "s1" }, error: null }) }),
-        }),
-      }),
+      from: (...args: unknown[]) =>
+        clientFromOverride
+          ? clientFromOverride(...(args as [string]))
+          : {
+              insert: () => ({
+                select: () => ({ single: () => Promise.resolve({ data: { id: "s1" }, error: null }) }),
+              }),
+            },
     },
   };
 }
+
+/**
+ * A per-test escape hatch for `scope.client.from(...)` (BUG-016 test only):
+ * lets one test simulate a rejected write without changing the shared fake
+ * for every other test in this file.
+ */
+let clientFromOverride: ((table: string) => { insert: (row: unknown) => unknown }) | null = null;
+
+/**
+ * A per-test escape hatch for `scope.update(table, ...).eq(...)` (BUG-016
+ * exploratory tests, `qa-tester`): lets one test simulate a rejected *second*
+ * write (the `lesson_sessions` update in `activateBlock`, distinct from the
+ * `session_blocks` insert already covered above) without touching every
+ * other test in this file.
+ */
+let updateErrorOverride: { table: string; error: { message: string } } | null = null;
 
 const scopeState = { tables: {} as Record<string, FakeRow[] | FakeRow>, updates: [] as { table: string; values: FakeRow }[] };
 vi.mock("@/server/db/family-scope", () => ({ forFamily: () => makeScope(scopeState.tables, scopeState.updates) }));
@@ -96,11 +119,12 @@ vi.mock("@/server/safety/moderate", () => ({ moderateMessage: (...a: unknown[]) 
 const recordSafetyEvent = vi.fn().mockResolvedValue({ flagged: false, urgent: false, eventId: null });
 vi.mock("@/server/safety/events", () => ({ recordSafetyEvent: (...a: unknown[]) => recordSafetyEvent(...a) }));
 
-const { continueAfterBlock, resumeLessonSession, startLessonSession, submitStepAnswer } = await import("./orchestrator");
+const { chooseStartBlock, continueAfterBlock, resumeLessonSession, startLessonSession, submitStepAnswer } = await import("./orchestrator");
 
 function resetScope() {
   scopeState.tables = {};
   scopeState.updates = [];
+  clientFromOverride = null;
   nextSessionBlock.mockClear();
   loadLibraryItem.mockClear();
   getOrGenerateLessonBlocks.mockClear();
@@ -320,5 +344,194 @@ describe("submitStepAnswer + moderation (NFR-SAFE-4, US-12.1 КП-2) — BUG-013
 
     expect(result.explanation).toBe("Гарна спроба, продовжуй!");
     expect(result.verdict).toBe("correct");
+  });
+});
+
+describe("chooseStartBlock (BUG-016: picking an offered block after a real generation must not crash the lesson screen)", () => {
+  /**
+   * A realistic multi-step block — one of *every* step shape
+   * `generate.ts#toStepRow` actually produces from a real, reviewed
+   * pipeline output (slide, choice, open, and a validated `drag_sort`
+   * interactive), each carrying real `sourceRefs` — unlike the
+   * single-slide, empty-`sourceRefs` fixtures the rest of this file uses.
+   * BUG-016 (from a live demo): choosing a block sent the child to Next's
+   * generic "a server error occurred" page instead of the next step; this
+   * locks down that `chooseStartBlock` handles this full shape cleanly and
+   * that a rejected write is a specific, catchable `Error` — never silently
+   * swallowed and never an unrelated crash later.
+   */
+  const realisticItem = {
+    id: "blk1",
+    title: "Відсотки: як знайти відсотки від числа",
+    estimatedMinutes: 8,
+    visibleOutcomeUk: "Тепер ти вмієш рахувати відсотки від числа!",
+    steps: [
+      {
+        id: "st1",
+        sortOrder: 0,
+        type: "slide",
+        content: { textUk: "Відсоток — це сота частина числа.", exampleUk: "10% від 200 — це 20." },
+        visual: {},
+        sourceRefs: [{ materialId: "mat1", materialTitle: "Математика, підручник", page: 42 }],
+      },
+      {
+        id: "st2",
+        sortOrder: 1,
+        type: "choice",
+        content: {
+          questionUk: "Скільки буде 10% від 200?",
+          options: [
+            { id: "a", textUk: "20" },
+            { id: "b", textUk: "10" },
+          ],
+          correctOptionId: "a",
+          explanationUk: "10% — це одна десята, 200 / 10 = 20.",
+        },
+        visual: {},
+        sourceRefs: [{ materialId: "mat1", materialTitle: "Математика, підручник", page: 42 }],
+      },
+      {
+        id: "st3",
+        sortOrder: 2,
+        type: "open",
+        content: { questionUk: "Поясни своїми словами, що таке відсоток.", expectedAnswerUk: "сота частина числа", rubricUk: "приймати будь-яке розумне пояснення" },
+        visual: {},
+        sourceRefs: [{ materialId: "mat1", materialTitle: "Математика, підручник", page: 43 }],
+      },
+      {
+        id: "st4",
+        sortOrder: 3,
+        type: "interactive",
+        content: {},
+        visual: {
+          component: "drag_sort",
+          v: 1,
+          props: {
+            instructionUk: "Розстав картки за зростанням.",
+            items: [
+              { id: "i1", labelUk: "10%" },
+              { id: "i2", labelUk: "50%" },
+            ],
+            slots: [
+              { id: "s1", labelUk: "Менше" },
+              { id: "s2", labelUk: "Більше" },
+            ],
+            correctPlacement: { i1: "s1", i2: "s2" },
+          },
+          fallback_text: "Обери правильну відповідь.",
+        },
+        sourceRefs: [{ materialId: "mat1", materialTitle: "Математика, підручник", page: 44 }],
+      },
+    ],
+  };
+
+  it("activates the chosen offered block and returns its first step without throwing", async () => {
+    resetScope();
+    scopeState.tables = {
+      lesson_sessions: {
+        id: "s1",
+        mode: "choosing",
+        status: "active",
+        current_block_order: 0,
+        candidate_library_item_ids: ["blk1", "blk2"],
+      },
+    };
+    loadLibraryItem.mockResolvedValue(realisticItem);
+
+    const step = await chooseStartBlock("fam1", "s1", "blk1");
+
+    expect(step.stepId).toBe("st1");
+    expect(step.type).toBe("slide");
+    expect(step.totalSteps).toBe(4);
+    expect(scopeState.updates).toContainEqual(
+      expect.objectContaining({ table: "lesson_sessions", values: expect.objectContaining({ mode: "lesson", current_step_id: "st1", current_block_order: 1 }) }),
+    );
+  });
+
+  it("rejects a block that was never offered, with a specific catchable error", async () => {
+    resetScope();
+    scopeState.tables = {
+      lesson_sessions: { id: "s1", mode: "choosing", status: "active", current_block_order: 0, candidate_library_item_ids: ["blk2"] },
+    };
+    loadLibraryItem.mockResolvedValue(realisticItem);
+
+    await expect(chooseStartBlock("fam1", "s1", "blk1")).rejects.toThrow("not an offered block");
+  });
+
+  it("surfaces a failed session_blocks write as a specific Error instead of silently leaving the session inconsistent", async () => {
+    resetScope();
+    scopeState.tables = {
+      lesson_sessions: { id: "s1", mode: "choosing", status: "active", current_block_order: 0, candidate_library_item_ids: ["blk1"] },
+    };
+    loadLibraryItem.mockResolvedValue(realisticItem);
+    clientFromOverride = () => ({
+      insert: () => Promise.resolve({ data: null, error: { message: "duplicate key value violates unique constraint" } }),
+    });
+
+    try {
+      await expect(chooseStartBlock("fam1", "s1", "blk1")).rejects.toThrow(/activating lesson block failed/);
+    } finally {
+      clientFromOverride = null;
+    }
+  });
+
+  /**
+   * Exploratory (qa-tester, S4 re-verification of BUG-016): the fix's own
+   * regression tests above only cover the *one* failure shape from the live
+   * demo (a rejected `session_blocks` insert). These three additional
+   * failure shapes must *also* surface as a specific, catchable `Error` —
+   * never an unhandled rejection — because `chooseStartBlockAction`'s
+   * `catch` and the `/lesson/[sessionId]/error.tsx` route boundary are the
+   * child's only two safety nets and both depend on every failure inside
+   * `chooseStartBlock`/`activateBlock` being a thrown `Error`, not a crash
+   * that bypasses `catch` (e.g. a rejected promise chain that isn't awaited,
+   * or a TypeError from reading a property of `undefined`).
+   */
+  it("rejects with a specific error when the session itself cannot be found (e.g. a stale/expired link)", async () => {
+    resetScope();
+    scopeState.tables = {}; // no lesson_sessions row at all
+    await expect(chooseStartBlock("fam1", "missing-session", "blk1")).rejects.toThrow("session not found");
+  });
+
+  it("rejects with a specific error for a corrupted library item with zero steps (bad generation output)", async () => {
+    resetScope();
+    scopeState.tables = {
+      lesson_sessions: { id: "s1", mode: "choosing", status: "active", current_block_order: 0, candidate_library_item_ids: ["blk1"] },
+    };
+    loadLibraryItem.mockResolvedValue({ ...realisticItem, steps: [] });
+    await expect(chooseStartBlock("fam1", "s1", "blk1")).rejects.toThrow("chosen block has no steps");
+  });
+
+  it("rejects with a specific error when loadLibraryItem itself can't find the block (deleted/never generated)", async () => {
+    resetScope();
+    scopeState.tables = {
+      lesson_sessions: { id: "s1", mode: "choosing", status: "active", current_block_order: 0, candidate_library_item_ids: ["blk1"] },
+    };
+    loadLibraryItem.mockResolvedValue(null);
+    await expect(chooseStartBlock("fam1", "s1", "blk1")).rejects.toThrow("chosen block has no steps");
+  });
+
+  it("surfaces a failed *second* write (lesson_sessions update) as a specific Error, not just the first (session_blocks insert)", async () => {
+    resetScope();
+    scopeState.tables = {
+      lesson_sessions: { id: "s1", mode: "choosing", status: "active", current_block_order: 0, candidate_library_item_ids: ["blk1"] },
+    };
+    loadLibraryItem.mockResolvedValue(realisticItem);
+    updateErrorOverride = { table: "lesson_sessions", error: { message: "connection timeout" } };
+
+    try {
+      await expect(chooseStartBlock("fam1", "s1", "blk1")).rejects.toThrow(/activating lesson block failed/);
+    } finally {
+      updateErrorOverride = null;
+    }
+  });
+
+  it("rejects loadLibraryItem's own downstream failure (e.g. a timed-out/misconfigured fetch) rather than hanging or crashing uncaught", async () => {
+    resetScope();
+    scopeState.tables = {
+      lesson_sessions: { id: "s1", mode: "choosing", status: "active", current_block_order: 0, candidate_library_item_ids: ["blk1"] },
+    };
+    loadLibraryItem.mockRejectedValue(new Error("timeout fetching library item"));
+    await expect(chooseStartBlock("fam1", "s1", "blk1")).rejects.toThrow("timeout fetching library item");
   });
 });

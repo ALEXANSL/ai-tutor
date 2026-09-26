@@ -7,6 +7,16 @@ import { getSubjectDetail } from "@/server/subjects/queries";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// BUG (urgent, pre-D-65 demo fix): `ChildStartLessonButton` here calls
+// `startLessonAction`, which can run the full lesson-generation pipeline
+// synchronously (planning + generation on Claude, then review) — routinely
+// past the platform's default Server Function timeout, so "Почати" just
+// hung with no error. A "use server" file may only export async functions
+// (this Next.js version rejects `maxDuration` there at build time), so the
+// fix lives here instead, on every page that can trigger the action. Same
+// 300s budget as the books indexing routes (`parent/books/*`).
+export const maxDuration = 300;
+
 /**
  * The child's own minimal subject screen (S4 — replaces the S3 restriction
  * that made `/parent/subjects/[id]` the only "Почати урок" entry point).
@@ -21,6 +31,7 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
   const subject = await getSubjectDetail(ctx.familyId, id);
   if (!subject || !subject.active) notFound();
   const t = uk.child.today;
+  const ts = uk.child.subject;
 
   return (
     <div className="px-6 pt-5 pb-10">
@@ -28,10 +39,23 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
         {uk.child.lesson.backToToday}
       </Link>
       <h1 className="mb-4 text-2xl font-extrabold">{subject.name}</h1>
-      {subject.currentTopicId ? (
-        <div className="rounded-[22px] border border-line bg-surface p-4.5">
-          <p className="mb-3 text-sm text-muted">{t.subjectsSubtitle}</p>
-          <ChildStartLessonButton subjectId={subject.id} topicId={subject.currentTopicId} />
+      {subject.topics.length > 0 ? (
+        <div className="space-y-3">
+          <p className="text-sm text-muted">{ts.topicsSubtitle}</p>
+          {subject.topics.map((topic) => (
+            <div key={topic.id} className="rounded-[22px] border border-line bg-surface p-4.5">
+              <div className="mb-1 flex items-center gap-2">
+                <p className="font-bold">{topic.title}</p>
+                {topic.id === subject.currentTopicId && (
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">{ts.priorityBadge}</span>
+                )}
+              </div>
+              {topic.pageFrom != null && topic.pageTo != null && (
+                <p className="mb-3 text-sm text-muted">{ts.pages(topic.pageFrom, topic.pageTo)}</p>
+              )}
+              <ChildStartLessonButton subjectId={subject.id} topicId={topic.id} />
+            </div>
+          ))}
         </div>
       ) : (
         <p className="text-sm text-muted">{t.emptyPlanBody}</p>

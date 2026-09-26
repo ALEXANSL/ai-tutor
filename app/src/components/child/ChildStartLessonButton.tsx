@@ -27,7 +27,7 @@ export function ChildStartLessonButton({ subjectId, topicId }: { subjectId: stri
   return (
     <div>
       <button type="button" disabled={pending} onClick={start} className="inline-flex min-h-12 items-center rounded-2xl bg-primary px-5 text-base font-bold text-white disabled:opacity-60">
-        {t.startAny}
+        {pending ? t.startingLesson : t.startAny}
       </button>
       {error && <p className="mt-2 text-sm font-semibold text-danger">{error}</p>}
     </div>
