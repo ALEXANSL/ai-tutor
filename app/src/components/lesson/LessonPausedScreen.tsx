@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { ChildCard, primaryButton } from "@/components/child/ChildCard";
@@ -47,7 +48,11 @@ export function LessonPausedScreen({ sessionId, reason }: { sessionId: string; r
 
   if (reminder) {
     return (
-      <div className="flex min-h-[70vh] items-center justify-center px-4 py-8">
+      <div className="flex min-h-[70vh] flex-col items-center justify-center gap-3 px-4 py-8">
+        {/* BUG-025 */}
+        <Link href="/today" className="self-center text-sm font-bold text-muted underline">
+          {t.backToToday}
+        </Link>
         <ChildCard>
           <p className="mb-2 text-sm font-bold text-muted">{t.reminderTitle}</p>
           <p className="mb-6 whitespace-pre-line text-lg">{reminder}</p>
@@ -60,7 +65,13 @@ export function LessonPausedScreen({ sessionId, reason }: { sessionId: string; r
   }
 
   return (
-    <div className="flex min-h-[70vh] items-center justify-center px-4 py-8">
+    <div className="flex min-h-[70vh] flex-col items-center justify-center gap-3 px-4 py-8">
+      {/* BUG-025: every pause screen (including the one reached via the
+          "Вийти з уроку" button itself, BUG-020) must still offer a way
+          back to "Сьогодні" — not only "Продовжити". */}
+      <Link href="/today" className="self-center text-sm font-bold text-muted underline">
+        {t.backToToday}
+      </Link>
       <ChildCard>
         <p className="mb-6 text-lg font-bold">{REASON_TEXT[reason ?? ""] ?? REASON_TEXT.parent_mode}</p>
         <button type="button" disabled={pending} onClick={resume} className={primaryButton}>
