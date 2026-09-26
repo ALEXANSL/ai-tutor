@@ -3,7 +3,7 @@
  * purpose: every branching rule is a plain function, unit-tested directly;
  * `orchestrator.ts` is the only place that touches the database.
  */
-export type PauseReason = "manual_alert" | "air_alert" | "idle" | "network" | "budget_hard" | "parent_mode";
+export type PauseReason = "manual_alert" | "air_alert" | "idle" | "network" | "budget_hard" | "parent_mode" | "break";
 export type Verdict = "correct" | "partial" | "incorrect";
 export type Channel = "choice" | "text" | "voice" | "photo";
 
@@ -73,6 +73,15 @@ export function idleHintDue(idleSeconds: number, idleHintS: number): boolean {
 /** US-16.4 КП-2: auto-pause after `idlePauseS` (налашт., default 180). */
 export function idleAutoPauseDue(idleSeconds: number, idlePauseS: number): boolean {
   return idleSeconds >= idlePauseS;
+}
+
+/**
+ * US-12.2 КП-1 (налашт., default 20 min): offer a break once continuous work
+ * (since the lesson started, or since the last break) reaches the threshold.
+ * Offered again after another full threshold of continuous work — КП-3.
+ */
+export function breakDue(secondsSinceBreak: number, breakAfterMinutes: number): boolean {
+  return secondsSinceBreak >= breakAfterMinutes * 60;
 }
 
 /** US-6.7 КП-2: the lesson ends after the block in progress, once time is up — never mid-block. */

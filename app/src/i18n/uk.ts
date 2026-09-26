@@ -6,6 +6,35 @@ import type { NicknameError, TutorNameError } from "@/lib/persona/validation";
 
 export type TutorGender = "f" | "m";
 
+/** Labels for the notification centre's `safety_alert` card (US-11.6 КП-1). Not exhaustive by design — an unknown value still shows something readable. */
+const SAFETY_CATEGORY_UK: Record<string, string> = {
+  fear: "страх",
+  sadness: "смуток",
+  self_harm: "самоушкодження",
+  dangerous_act: "небезпечна дія",
+  violence: "насильство",
+  stranger_contact: "контакт з незнайомцем",
+  secret_from_parent: "прохання про секрет",
+  personal_data: "особисті дані",
+  reward_request: "прохання про нагороду",
+  jailbreak: "спроба обійти правила",
+  inappropriate_name: "недоречне ім'я репетитора",
+  other: "інше",
+};
+function safetyCategoryUk(category?: string): string {
+  return SAFETY_CATEGORY_UK[category ?? ""] ?? category ?? "?";
+}
+const SAFETY_MODE_UK: Record<string, string> = {
+  lesson: "урок",
+  tutor_chat: "чат теми",
+  friend_chat: "ШІ-друг",
+  voice: "голосова розмова",
+  tutor_name: "ім'я репетитора",
+};
+function safetyModeUk(mode?: string): string {
+  return SAFETY_MODE_UK[mode ?? ""] ?? mode ?? "?";
+}
+
 export const uk = {
   app: {
     name: "ШІ-Репетитор",
@@ -94,6 +123,7 @@ export const uk = {
       subtitle: "Гарного дня для навчання!",
       myTutor: "🧑‍🏫 Мій репетитор",
       aboutAi: "✦ Я — ШІ",
+      friend: "💬 ШІ-друг",
       emptyPlanTitle: "Скоро тут з'явиться план занять",
       emptyPlanBody: "Тато вже готує підручники. Поки що можна налаштувати свого репетитора.",
       subjectsTitle: "Предмети",
@@ -106,8 +136,6 @@ export const uk = {
       back: "← Назад до «Сьогодні»",
     },
     lesson: {
-      parentOnlyBadge: "🔒 Режим тата — урок ще не для доньки",
-      parentOnlyHint: "Урок відкривається лише в режимі тата, доки не перевірено правила безпеки (S4).",
       pickTitle: "З чого почнемо?",
       pickSubtitle: "Обери один із блоків",
       startAny: "Почати",
@@ -156,6 +184,20 @@ export const uk = {
       feedbackNormal: "Нормально 🙂",
       feedbackBoring: "Нудно 😐",
       feedbackThanks: "Дякую!",
+      // US-12.2: break offer after 20 continuous minutes (налашт.).
+      breakOfferTitle: "Ти вже займаєшся якийсь час — може, зробимо перерву?",
+      breakOfferBody: "Розімнись, попий води або подивись у вікно.",
+      takeBreak: "☕ Перерва",
+      skipBreak: "Продовжити без перерви",
+    },
+    friend: {
+      title: "ШІ-друг",
+      back: "← Сьогодні",
+      parentSeesHint: "Тато бачить цю розмову дослівно.",
+      empty: "Напиши щось — і почнемо розмову 🙂",
+      placeholder: "Напиши повідомлення…",
+      send: "Надіслати",
+      thinking: "Секунду…",
     },
     myTutor: {
       title: "Мій репетитор",
@@ -289,9 +331,27 @@ export const uk = {
           `Тема «${p.topicTitle ?? ""}»: блок «${p.title ?? ""}» не пройшов рецензію — дитині не показано`,
         lesson_started_with_fallback: (p: { topicTitle?: string; reason?: string }) =>
           `Урок з теми «${p.topicTitle ?? ""}» запущено зі спрощеним резервним блоком: ${p.reason ?? "блок не пройшов рецензію"}`,
+        safety_alert: (p: { category?: string; mode?: string; isTest?: boolean }) =>
+          p.isTest
+            ? "Тестове термінове сповіщення (перевірка каналів)"
+            : `Тривожна репліка (${safetyCategoryUk(p.category)}) у режимі «${safetyModeUk(p.mode)}»`,
+        external_delivery_failed: (p: { channel?: string }) => `Не вдалося доставити термінове сповіщення через ${p.channel ?? "?"}`,
+        telegram_linked: () => "Telegram прив'язано до кабінету",
+        break_missed: () => "Пропущено пропозицію перерви",
         unknown: "Подія",
       },
       nicknameHint: "Змініть, якщо схоже на справжнє ім'я.",
+    },
+    conversations: {
+      title: "Розмови",
+      help: "Дитина знає, що тато бачить усі розмови дослівно (US-12.3) — зокрема «ШІ-друга». Пошук і фільтри за датою з'являться пізніше (S14).",
+      listTitle: "Чати",
+      empty: "Розмов ще немає.",
+      pickHint: "Оберіть чат зліва.",
+      noMessages: "У цьому чаті ще немає повідомлень.",
+      friendChat: "💬 ШІ-друг",
+      unknownChat: "Чат",
+      authorLabel: { child: "Дитина", ai: "Репетитор", system: "Система", parent: "Тато" },
     },
     child: {
       title: "Профіль дитини",
@@ -533,6 +593,25 @@ export const uk = {
       pinLockedUntil: (time: string) => `Введення PIN на планшеті заблоковано до ${time}`,
       policy: (attempts: number, lockMin: number, idleMin: number) =>
         `Після ${attempts} неправильних спроб — блокування на ${lockMin} хв. Автовихід з режиму тата — після ${idleMin} хв без дій.`,
+      // S4 (ADR-010, US-11.7): urgent e-mail + Telegram channel status.
+      urgentTitle: "Термінові сповіщення",
+      urgentHelp: "Лише для термінових тривожних сигналів (US-12.1) — не для будь-яких інших подій (D-12).",
+      emailConfigured: "E-mail (Resend): налаштовано",
+      // The exact variable-name wording (BUG-005 pattern) lives server-only in
+      // `lib/urgent-channel-messages.ts` — `check:bundle` treats a secret
+      // variable's NAME as a leak too, so it must never reach this shared
+      // dictionary (client components import `uk`).
+      emailNotConfigured: "E-mail (Resend): не налаштовано.",
+      telegram: {
+        linked: "Telegram: прив'язано",
+        notLinked: "Telegram: не прив'язано",
+        link: "🔗 Прив'язати Telegram",
+        linkHint: "Відкриє чат з ботом — натисніть у ньому «Start» протягом 10 хв.",
+        unlink: "Відв'язати",
+        unlinked: "Telegram відв'язано.",
+        test: "📨 Надіслати тестове термінове сповіщення",
+        testSent: "Тестове сповіщення надіслано (позначка «ТЕСТ») — перевірте пошту і Telegram.",
+      },
     },
     placeholder: {
       title: (name: string) => name,
