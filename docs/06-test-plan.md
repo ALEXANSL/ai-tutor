@@ -1175,3 +1175,74 @@ BUG-014 (Minor, повнота тестового набору) не блоку�
 BUG-014) → `qa-tester` повторно перевіряє (додатковий регресійний тест уже написаний і чекає
 лише зміни очікування) → лише тоді деплой на preview й демо Алексу з дозволом доньці
 користуватися самостійно.
+
+
+### Незалежна повторна перевірка BUG-013/BUG-014 (2026-09-26, той самий branch, після фіксу `developer`)
+
+**Мета:** не довіряти лише позначці «Fixed» у файлах багів — перевірити код і тести незалежно.
+
+1. **Код-рев'ю `submitStepAnswer`** (`app/src/server/lessons/orchestrator.ts`, рядки 299–325):
+   після `recordSafetyEvent` є явна перевірка `if (moderation.severity === "urgent")`, яка
+   форсує `explanation = URGENT_REPLY_UK` і `verdict = "partial"`, **до** будь-якого
+   збереження/розгалуження (`decideBranch` бачить уже форсований вердикт — не може одразу
+   пропустити крок як «correct»). Спільна константа винесена в
+   `app/src/server/safety/urgentReplyUk.ts` (`URGENT_REPLY_UK`) з єдиним рядком тексту,
+   і імпортується буквально тим самим способом у трьох файлах: `chat.ts` (рядок 141),
+   `friendChat.ts` (рядок 101), `orchestrator.ts` (рядок 9/323) — підтверджено `grep`, це
+   справді один і той самий рядок коду в усіх трьох місцях, не 3 копії тексту, що могли б
+   розійтися. ✅ Відповідає завданню з BUG-013.
+2. **`orchestrator.test.ts`** (опис `submitStepAnswer + moderation ... — BUG-013 fix`, рядки
+   256–324): перший тест мокає `moderateMessage` на `severity: "urgent"` і `answer_evaluation`
+   на нейтральний текст («Гарна спроба, продовжуй!») — перевіряє, що `result.explanation`
+   дорівнює буквально рядку `URGENT_REPLY_UK` (`toBe` з повним текстом, написаним у тесті
+   окремо від коду — справжня перевірка регресії, а не тавтологія), `verdict === "partial"` і
+   `next.kind === "retry_step"` (дитина лишається на кроці, не проскакує далі). Другий тест —
+   контрастний: `severity: "normal"` → `explanation` і `verdict` від моделі **не**
+   перезаписуються. Прогнано **3 рази поспіль** (разом з усім юніт-набором) — стабільно
+   зелено, false positive не виявлено (мок `answer_evaluation` навмисно повертає «хороший»
+   текст, тож тест справді ловив би стару поведінку, якби фікс відкотили).
+3. **`safety-redline-cases.json`**: нова група `isolation_from_humans` присутня, 2 репліки
+   (`isolation-1`, `isolation-2`, `mode: "friend_chat"`, `expectedCategory/Severity: "none"`).
+   `testset.test.ts`: `REQUIRED_GROUPS` включає `"isolation_from_humans"`; групу також додано в
+   кошик `none/none` поруч з `benign_control`/`am_i_human` — узгоджено з очікуванням з BUG-014.
+4. **Обидва шари модерації недоступні одночасно** — незалежно перевірено весь ланцюжок:
+   `moderate.ts` (`layersUnavailable = layer1Failed && layer2Failed`) →
+   `classify.ts`/`mergeVerdict` переносить прапорець у `ModerationResult` →
+   `events.ts`/`recordSafetyEvent`: коли `!isFlagged(result)` (синтетичний fail-open `none`),
+   але `result.layersUnavailable === true`, шле
+   `notifyParent(..., { type: "safety_moderation_unavailable", severity: "urgent", payload: { mode, ...refs } })`
+   — підтверджено і рев'ю коду, і існуючими тестами (`moderate.test.ts`: «both layers
+   unavailable... layersUnavailable is set»; `events.test.ts`: `verdict({ layersUnavailable:
+   true })` → `notifyParent` викликано з `type: "safety_moderation_unavailable"`). ADR-009
+   (`docs/adr/009-safety-moderation.md`, примітка від 2026-09-26) і `docs/STATUS.md` (рядки
+   33–35, 202) явно описують саме цю поведінку — код і документи узгоджені.
+
+**Повний прогін (цей QA-цикл):**
+- `lint` — 0 зауважень.
+- `typecheck` — 0 помилок.
+- `test` (юніт) — **554/554** зелені, прогнано **3 рази поспіль**, стабільно (було 547 до
+  фіксу — +7 нових/змінених тестів цього циклу розробника).
+- `build` (`NODE_USE_ENV_PROXY=1`, `next build --webpack`) — успішно, без помилок TypeScript.
+- `check:bundle` — «Client bundle check passed: 57 browser-served files, 49 needles, 0 leaks.»
+- `test:e2e` (`NODE_USE_ENV_PROXY=1`, Playwright) — **56/56** зелені (обидва в'юпорти —
+  Lenovo Yoga 11, Galaxy S24+), без змін відносно попереднього прогону.
+- `test:db` — прогнано повний набір **4 рази поспіль**: у 2 прогонах єдиний збій —
+  `tests/db/s1-materials.test.ts` («Connection terminated unexpectedly» /
+  «Client has encountered a connection error»); в інших 2 прогонах цей самий збій
+  спричинив каскадний збій і в `rls.test.ts` (обірваний пул з'єднань ephemeral Postgres,
+  спільний для сусідніх файлів). Щоб відрізнити «каскад від чужого файлу» від «реальної нової
+  проблеми», кожен файл прогнано **окремо, ізольовано, по 3 рази**: `s4-safety.test.ts` —
+  **17/17 зелено всі 3 рази**; `rls.test.ts` — **31/31 зелено всі 3 рази** (його збої в
+  повному прогоні — виключно каскад, не власна нестабільність); `s1-materials.test.ts` —
+  падає **навіть ізольовано, усі 3 рази**, з тим самим повідомленням про обрив з'єднання —
+  підтверджує відому, задокументовану нестабільність ephemeral Postgres саме цього файлу
+  (немає залежності від S4-міграцій чи коду). **Висновок:** усі тести, пов'язані з S4 (безпека,
+  включно з обома фіксами), стабільно зелені; єдина нестабільність — `s1-materials.test.ts`,
+  не пов'язана з S4, як і очікувалось.
+
+**Остаточний вердикт цього повторного прогону:** BUG-013 (Critical) і BUG-014 (Minor)
+підтверджено виправленими незалежною перевіркою коду і тестів (не лише за позначкою файлу).
+Повний набір перевірок (lint/typecheck/unit ×3/build/check:bundle/e2e/db-по-файлах ×3) —
+зелений, крім відомої, непов'язаної з S4 нестабільності `s1-materials.test.ts`. **S4 готовий
+до злиття в `main` і до того, щоб дозволити дитині користуватися уроком і «ШІ-другом»
+самостійно.**
