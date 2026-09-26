@@ -15,6 +15,8 @@ export interface ChildProfileRow {
   lesson_minutes: 30 | 45;
   idle_hint_s: number;
   idle_pause_s: number;
+  /** US-12.2 КП-1 (налашт.): offer a break after this many continuous minutes. */
+  break_after_minutes: number;
 }
 
 export interface TutorNameOption {
@@ -44,6 +46,34 @@ export interface ParentSettingsRow {
   parent_mode_idle_min: number;
   tutor_name_options: TutorNameOptions;
   persona_child_editable: PersonaEditable;
+  telegram_linked_at: string | null;
+}
+
+/** US-12.1 (ADR-009): one flagged reply, parent-only (the quote never leaves this row). */
+export interface SafetyEventRow {
+  id: string;
+  family_id: string;
+  child_profile_id: string;
+  mode: "lesson" | "tutor_chat" | "friend_chat" | "voice" | "tutor_name";
+  session_id: string | null;
+  chat_id: string | null;
+  category: string;
+  severity: "normal" | "urgent";
+  quote: string;
+  model_confidence: number | null;
+  created_at: string;
+}
+
+export interface OutboundDeliveryRow {
+  id: string;
+  family_id: string;
+  safety_event_id: string | null;
+  channel: "email" | "telegram";
+  status: "pending" | "sent" | "failed";
+  attempts: number;
+  last_error: string | null;
+  is_test: boolean;
+  created_at: string;
 }
 
 export interface SubjectRow {
