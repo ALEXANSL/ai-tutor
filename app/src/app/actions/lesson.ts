@@ -27,9 +27,14 @@ import type { FormState } from "./state";
 // lesson-generation pipeline (lesson_planning + lesson_generation on Claude,
 // then lesson_review, possibly with rework) synchronously, which regularly
 // exceeds the platform's default Server Function duration and the request
-// gets cut off with no error surfaced to the child ("Почати" just hangs).
-// Same fix already applied to the books indexing routes.
-export const maxDuration = 300;
+// gets cut off with no error surfaced to the child ("Почати" just hangs").
+// A "use server" file itself may only export async functions (this Next.js
+// version rejects a `maxDuration` export here at build time), so the fix
+// instead lives as a `maxDuration` route-segment export on every page that
+// can trigger this action: `(child)/subject/[id]`, `parent/subjects/[id]`
+// (both call `startLessonAction`) and `(child)/lesson/[sessionId]` (calls
+// `chooseStartBlockAction`, which runs `activateBlock` — cheap, but shares
+// the same generous budget for consistency and any future slow path there).
 
 /**
  * Lesson server actions. **S4 (docs/STATUS.md):** the child now opens and

@@ -7,6 +7,16 @@ import { getSubjectDetail } from "@/server/subjects/queries";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// BUG (urgent, pre-D-65 demo fix): `ChildStartLessonButton` here calls
+// `startLessonAction`, which can run the full lesson-generation pipeline
+// synchronously (planning + generation on Claude, then review) — routinely
+// past the platform's default Server Function timeout, so "Почати" just
+// hung with no error. A "use server" file may only export async functions
+// (this Next.js version rejects `maxDuration` there at build time), so the
+// fix lives here instead, on every page that can trigger the action. Same
+// 300s budget as the books indexing routes (`parent/books/*`).
+export const maxDuration = 300;
+
 /**
  * The child's own minimal subject screen (S4 — replaces the S3 restriction
  * that made `/parent/subjects/[id]` the only "Почати урок" entry point).

@@ -12,6 +12,14 @@ import { PageTitle, Panel } from "../../ui";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// BUG (urgent, pre-D-65 demo fix): `StartLessonButton` on this page calls
+// `startLessonAction`, which can run the full lesson-generation pipeline
+// synchronously (planning + generation on Claude, then review) — routinely
+// past the platform's default Server Function timeout, so the request was
+// cut off with no error ("Почати урок" just hung). Same 300s budget as the
+// books indexing routes (`parent/books/*`).
+export const maxDuration = 300;
+
 /**
  * Subject detail (US-3.1, US-3.2): activate the subject by picking its
  * current topic, or — if it has no ready textbook yet — a plain explanation
