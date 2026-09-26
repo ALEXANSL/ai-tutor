@@ -314,10 +314,15 @@ export function LessonRunner({
       )}
 
       <div className="mb-4 flex items-center justify-between gap-2">
+        {/* BUG-026: the previous style (`border-line` + `text-muted`) was the
+            same visual weight as an inactive/secondary element, so it read
+            as unclickable next to the bright red "Тривога" — a contrastier
+            but still non-alarming secondary style, not a full ghost/primary
+            button, so it doesn't compete with "Тривога" for attention. */}
         <button
           type="button"
           onClick={() => setExitConfirmOpen(true)}
-          className="rounded-full border border-line px-4 py-2 text-sm font-bold text-muted"
+          className="rounded-full border-2 border-text/40 bg-surface-alt px-4 py-2 text-sm font-bold text-text"
         >
           {t.exitLesson}
         </button>

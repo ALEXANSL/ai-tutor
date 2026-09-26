@@ -2,7 +2,7 @@ import "server-only";
 import { redirect } from "next/navigation";
 import type { ChildProfileRow } from "../db/types";
 import { createUserClient } from "../supabase/clients";
-import { getSessionContext, type UserContext } from "./session";
+import { getSessionContext, type ParentModeState, type UserContext } from "./session";
 
 /** Any registered user, or redirect to the right entry screen. */
 export async function requireUser(): Promise<UserContext> {
@@ -48,13 +48,31 @@ export interface ParentAccess {
   via: "account" | "tablet";
 }
 
+/**
+ * Where a non-active tablet parent mode sends the caller. Split out as a
+ * pure function so BUG-027's "which screen does a softened auto-exit land
+ * on" fix is testable without mocking cookies/Supabase for the whole of
+ * `requireParentAccess`.
+ *
+ * `"expired"` covers both an ordinary idle timeout AND, since BUG-027, the
+ * `ParentModeAutoExit` side effect (`expireParentModeSilently` deliberately
+ * produces this same state rather than `"none"`) — both are "you were in,
+ * now you're not, no big deal" and get the friendly `/today` redirect.
+ * `"none"` means parent mode was never entered on this device at all, which
+ * is a real access-denied case (e.g. a direct URL to a cabinet route).
+ */
+export function parentAccessRedirectTarget(mode: ParentModeState): "/today" | "/denied" {
+  return mode === "expired" ? "/today" : "/denied";
+}
+
 /** Cabinet screens and actions (US-1.2 KP-2, US-1.5 KP-1, NFR-PRIV-4). */
 export async function requireParentAccess(): Promise<ParentAccess> {
   const ctx = await requireUser();
   if (ctx.role === "parent") return { ctx, familyId: ctx.familyId, via: "account" };
   if (ctx.parentMode === "active") return { ctx, familyId: ctx.familyId, via: "tablet" };
-  // Parent mode timed out (auto-exit) -> back to the child's screen; otherwise: denied.
-  redirect(ctx.parentMode === "expired" ? "/today" : "/denied");
+  // Parent mode timed out or was softly auto-exited (BUG-027) -> back to the
+  // child's screen; genuinely never entered -> denied.
+  redirect(parentAccessRedirectTarget(ctx.parentMode));
 }
 
 /**

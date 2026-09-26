@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { ChildCard, primaryButton } from "@/components/child/ChildCard";
@@ -39,7 +40,12 @@ export function LessonPicker({
   }
 
   return (
-    <div className="flex min-h-[70vh] items-center justify-center px-4 py-8">
+    <div className="flex min-h-[70vh] flex-col items-center justify-center gap-3 px-4 py-8">
+      {/* BUG-025: the very first screen after every "Почати урок" had no way
+          back to "Сьогодні" besides the browser's own back button. */}
+      <Link href="/today" className="self-center text-sm font-bold text-muted underline">
+        {t.backToToday}
+      </Link>
       <ChildCard wide>
         <h1 className="mb-1 text-2xl font-extrabold">{t.pickTitle}</h1>
         <p className="mb-6 text-sm text-muted">{t.pickSubtitle}</p>

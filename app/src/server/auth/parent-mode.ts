@@ -104,6 +104,44 @@ export async function clearParentMode(): Promise<void> {
   (await cookies()).delete(PARENT_MODE_COOKIE);
 }
 
+/**
+ * BUG-027: `ParentModeAutoExit` treats *any* render of a child screen as
+ * "the parent left the cabinet" — which also fires for an unrelated tab or
+ * window on the same shared tablet that simply still has a child screen
+ * open, while the parent is legitimately working in the cabinet elsewhere.
+ * Deleting the cookie outright (`clearParentMode`) makes the next read of
+ * `parentMode` come back `"none"` ("never entered"), which sends that other,
+ * still-active cabinet tab to the harsh `/denied` screen on its next
+ * request (`requireParentAccess`).
+ *
+ * This is a deliberately narrow fix (see BUG-027 §"Завдання для developer"
+ * item 2): rather than removing the cookie, it is overwritten with a value
+ * that fails `verifyParentModeToken`'s signature check (any string without
+ * a valid `payload.signature` shape does), so the state reads back as
+ * `"expired"` instead of `"none"` — the same friendly `"/today"` redirect
+ * already used for an ordinary idle timeout, instead of `/denied`.
+ *
+ * This does not fix the underlying heuristic (a child screen anywhere still
+ * ends parent mode for the whole device); it only makes the fallout of that
+ * heuristic land as a friendly "session ended, log in again" instead of an
+ * "access denied" error. A real fix (e.g. a BroadcastChannel/localStorage
+ * signal that only the tab that *itself* opened the child screen "counts",
+ * or dropping this side effect in favour of the explicit exit button + the
+ * existing `IdleWatcher` timeout) is out of scope for this fix and should be
+ * tracked separately.
+ */
+export async function expireParentModeSilently(): Promise<void> {
+  const store = await cookies();
+  if (!store.get(PARENT_MODE_COOKIE)) return; // nothing active on this device to soften.
+  store.set(PARENT_MODE_COOKIE, "auto-exit", {
+    httpOnly: true,
+    secure: secureCookies(),
+    sameSite: "strict",
+    path: "/",
+    maxAge: 60,
+  });
+}
+
 export type SetPinError = "format" | "mismatch" | "unavailable";
 
 /** US-1.5 KP-5: only the parent's own account sets/changes the PIN. */
