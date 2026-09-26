@@ -5,6 +5,7 @@ import type { LessonComponentDefinition } from "@/lesson-components/registry";
 import { callStructured } from "@/server/ai/router";
 import { AiNotConfiguredError } from "@/server/ai/types";
 import { fillTemplate, splitPrompt } from "@/server/ingest/structure";
+import { safetyPreambleGenericUk } from "@/server/safety/preamble";
 import { pedagogyCatalogForPrompt, REVIEW_CRITERION_LABELS_UK } from "./pedagogy";
 import { buildLessonBlockSchema, planSchema, reviewSchema, type GeneratedStep, type LessonBlockGenerated, type LessonPlan, type ReviewOutput } from "./schema";
 
@@ -145,7 +146,8 @@ async function generateDraft(
     plan_tone: plan.toneNotesUk,
     revision_notes: revisionNotesUk?.length ? revisionNotesUk.map((n) => `- ${n}`).join("\n") : "(це перша спроба — попередніх зауважень немає)",
   });
-  const res = await callStructured("lesson_generation", { system, prompt, schema }, { familyId: input.familyId, ref: { table: "topics", id: input.topicId } });
+  const system2 = `${safetyPreambleGenericUk()}\n\n${system}`;
+  const res = await callStructured("lesson_generation", { system: system2, prompt, schema }, { familyId: input.familyId, ref: { table: "topics", id: input.topicId } });
   return { block: res.result, call: { role: "lesson_generation", provider: res.model.provider, model: res.model.model, costUsd: res.costUsd } };
 }
 

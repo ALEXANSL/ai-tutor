@@ -4,6 +4,7 @@ import { personaWordlists } from "@/lib/persona/wordlists";
 import { forFamily, type FamilyScope } from "../db/family-scope";
 import type { ChildProfileRow, ParentSettingsRow } from "../db/types";
 import { notifyParent } from "../notifications";
+import { moderateTutorName } from "../safety/moderate";
 import {
   canChildEdit,
   planNicknameChange,
@@ -81,6 +82,19 @@ export async function changeTutorName(
   if (!choice.ok) {
     if (choice.notifyParent && by === "child") await notifyParent(scope, choice.notifyParent);
     return { ok: false, error: choice.error };
+  }
+  // US-1.7 КП-3, S4: the dictionary above catches known kinship/inappropriate
+  // words instantly; a custom name that slips past it (a slur the wordlist
+  // doesn't have, a clever misspelling) still goes through the model
+  // moderator before it is ever saved (`[$L]`, docs/01 US-1.7).
+  if (choice.source === "custom") {
+    const modelFlag = await moderateTutorName(familyId, choice.name).catch(() => null);
+    if (modelFlag) {
+      if (by === "child") {
+        await notifyParent(scope, { type: "tutor_name_rejected", severity: "normal", payload: { name: choice.name.slice(0, 40), reason: "inappropriate" } });
+      }
+      return { ok: false, error: "inappropriate" };
+    }
   }
   const previous = { name: profile.tutor_name, gender: profile.tutor_name_gender };
   const next = { name: choice.name, gender: choice.gender };
