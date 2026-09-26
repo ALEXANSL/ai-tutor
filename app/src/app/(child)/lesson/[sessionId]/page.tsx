@@ -1,5 +1,5 @@
 import { uk } from "@/i18n/uk";
-import { requireParentAccess } from "@/server/auth/guards";
+import { requireLessonAccess } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
 import { loadLibraryItemTitles } from "@/server/lessons/generate";
 import { getLessonView } from "@/server/lessons/orchestrator";
@@ -7,16 +7,16 @@ import { LessonPicker } from "@/components/lesson/LessonPicker";
 import { LessonRunner } from "@/components/lesson/LessonRunner";
 import { LessonPausedScreen } from "@/components/lesson/LessonPausedScreen";
 import { LessonSummaryScreen } from "@/components/lesson/LessonSummaryScreen";
-import { ParentOnlyBadge } from "@/components/lesson/ParentOnlyBadge";
 
 /**
- * S3 lesson screen. Access is `requireParentAccess()`, not `requireChild()`:
- * per the backlog note for S3, a lesson opens only in "режим тата" / for the
- * parent until S4's safety rules are verified — the badge below says so.
+ * Lesson screen (S4: open to the child herself, docs/STATUS.md — the S3
+ * "режим тата only" restriction is lifted now that safety moderation
+ * (ADR-009) is wired in). `requireLessonAccess()` also still lets a parent's
+ * own account or tablet parent mode open it (demo, QA).
  */
 export default async function LessonPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params;
-  const { familyId } = await requireParentAccess();
+  const { familyId } = await requireLessonAccess();
   const t = uk.child.lesson;
   const { session, step } = await getLessonView(familyId, sessionId);
 
@@ -24,7 +24,6 @@ export default async function LessonPage({ params }: { params: Promise<{ session
     const candidates = await loadLibraryItemTitles(familyId, session.candidate_library_item_ids);
     return (
       <div className="pb-10">
-        <ParentOnlyBadge />
         <LessonPicker sessionId={sessionId} candidates={candidates} />
       </div>
     );
@@ -33,7 +32,6 @@ export default async function LessonPage({ params }: { params: Promise<{ session
   if (session.status === "paused") {
     return (
       <div className="pb-10">
-        <ParentOnlyBadge />
         <LessonPausedScreen sessionId={sessionId} reason={session.pause_reason} />
       </div>
     );
@@ -42,7 +40,6 @@ export default async function LessonPage({ params }: { params: Promise<{ session
   if (session.status === "completed" || !step) {
     return (
       <div className="pb-10">
-        <ParentOnlyBadge />
         <LessonSummaryScreen subjectId={session.subject_id} />
       </div>
     );
@@ -55,7 +52,6 @@ export default async function LessonPage({ params }: { params: Promise<{ session
 
   return (
     <div className="pb-10">
-      <ParentOnlyBadge />
       <LessonRunner
         sessionId={sessionId}
         subjectId={session.subject_id}

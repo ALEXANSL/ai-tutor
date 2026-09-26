@@ -2,10 +2,9 @@ import { expect, test } from "@playwright/test";
 
 /**
  * S3: the lesson screen needs no accounts to check that it is never
- * reachable without a session (NFR-PRIV-4) — same pattern as S1/S2. The
- * lesson is additionally father-mode-only (`requireParentAccess`, not
- * `requireChild`) until S4's safety rules are verified, so an anonymous
- * visitor is sent to the login screen exactly like every other parent route.
+ * reachable without a session (NFR-PRIV-4) — same pattern as S1/S2. Since S4
+ * it uses `requireLessonAccess()` (the child may open it herself now), which
+ * still sends an anonymous visitor to /login exactly like every parent route.
  *
  * Full interactive coverage (starting a lesson, answering steps, dragging
  * `drag_sort` cards by touch) needs a signed-in parent/tablet session and is

@@ -57,6 +57,21 @@ export async function requireParentAccess(): Promise<ParentAccess> {
   redirect(ctx.parentMode === "expired" ? "/today" : "/denied");
 }
 
+/**
+ * Lesson / topic chat / "ШІ-друг" screens (S4, US-12.1..12.3 verified —
+ * docs/STATUS.md): the child now uses these herself, not only "режим тата"
+ * (the S3 restriction this replaced). A parent's own account or tablet
+ * parent mode may still open them too (demo, QA, "тато грає за дитину").
+ */
+export async function requireLessonAccess(): Promise<{ ctx: UserContext; familyId: string }> {
+  const session = await getSessionContext();
+  if (session.kind === "user" && session.role === "child") {
+    const { ctx } = await requireChild(); // also redirects to /onboarding if not finished yet.
+    return { ctx, familyId: ctx.familyId };
+  }
+  return requireParentAccess();
+}
+
 /** Parent's own Google session only (e.g. setting the PIN — US-1.5 KP-5). */
 export async function requireParentAccount(): Promise<ParentAccess> {
   const access = await requireParentAccess();
