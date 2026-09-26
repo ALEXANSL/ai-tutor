@@ -12,9 +12,19 @@ interface FakeRow {
   [k: string]: unknown;
 }
 
-/** A tiny thenable query-builder stand-in for `forFamily(...)`'s chainable API. */
+/**
+ * A tiny thenable query-builder stand-in for `forFamily(...)`'s chainable
+ * API. QA note: single-vs-array shape is decided by the *terminal method the
+ * production code actually calls* (`maybeSingle`/`single` -> one row or
+ * `null`; `returns`/bare `then` -> an array) rather than by a fixed per-table
+ * guess — the same table (e.g. `step_attempts`) is read both ways in
+ * `submitStepAnswer` (a `maybeSingle()` idempotency lookup and a `returns()`
+ * history list), so a table-name-based mode would silently mis-shape one of
+ * the two and was only "safe" before because no existing test exercised
+ * `submitStepAnswer` at all.
+ */
 function makeScope(tables: Record<string, FakeRow[] | FakeRow>, updates: { table: string; values: FakeRow }[]) {
-  function builder(table: string, mode: "single" | "many") {
+  function builder(table: string) {
     const filters: [string, unknown][] = [];
     const self = {
       eq(col: string, val: unknown) {
@@ -34,25 +44,24 @@ function makeScope(tables: Record<string, FakeRow[] | FakeRow>, updates: { table
       select() {
         return self;
       },
-      resolve() {
+      matched() {
         const rows = tables[table];
         const list = Array.isArray(rows) ? rows : rows ? [rows] : [];
-        const matched = list.filter((r) => filters.every(([c, v]) => (Array.isArray(v) ? v.includes(r[c]) : r[c] === v)));
-        if (mode === "single") return { data: matched[0] ?? null, error: null };
-        return { data: matched, error: null };
+        return list.filter((r) => filters.every(([c, v]) => (Array.isArray(v) ? v.includes(r[c]) : r[c] === v)));
       },
-      maybeSingle: () => Promise.resolve(self.resolve()),
-      single: () => Promise.resolve(self.resolve()),
-      returns: () => Promise.resolve(self.resolve()),
-      then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => Promise.resolve(self.resolve()).then(res, rej),
+      maybeSingle: () => Promise.resolve({ data: self.matched()[0] ?? null, error: null }),
+      single: () => Promise.resolve({ data: self.matched()[0] ?? null, error: null }),
+      returns: () => Promise.resolve({ data: self.matched(), error: null }),
+      then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) =>
+        Promise.resolve({ data: self.matched(), error: null }).then(res, rej),
     };
     return self;
   }
   return {
-    select: (table: string) => builder(table, table === "lesson_sessions" || table === "subjects" || table === "topics" ? "single" : "many"),
+    select: (table: string) => builder(table),
     update: (table: string, values: FakeRow) => {
       updates.push({ table, values });
-      return builder(table, "single");
+      return builder(table);
     },
     client: {
       from: () => ({
@@ -80,7 +89,14 @@ vi.mock("./generate", () => ({
 }));
 vi.mock("@/server/notifications", () => ({ notifyParent: (...a: unknown[]) => notifyParent(...a) }));
 
-const { continueAfterBlock, resumeLessonSession, startLessonSession } = await import("./orchestrator");
+const callStructured = vi.fn();
+vi.mock("@/server/ai/router", () => ({ callStructured: (...a: unknown[]) => callStructured(...a) }));
+const moderateMessage = vi.fn();
+vi.mock("@/server/safety/moderate", () => ({ moderateMessage: (...a: unknown[]) => moderateMessage(...a) }));
+const recordSafetyEvent = vi.fn().mockResolvedValue({ flagged: false, urgent: false, eventId: null });
+vi.mock("@/server/safety/events", () => ({ recordSafetyEvent: (...a: unknown[]) => recordSafetyEvent(...a) }));
+
+const { continueAfterBlock, resumeLessonSession, startLessonSession, submitStepAnswer } = await import("./orchestrator");
 
 function resetScope() {
   scopeState.tables = {};
@@ -90,6 +106,9 @@ function resetScope() {
   getOrGenerateLessonBlocks.mockClear();
   getOrCreateFallbackBlock.mockClear();
   notifyParent.mockClear();
+  callStructured.mockClear();
+  moderateMessage.mockClear();
+  recordSafetyEvent.mockClear().mockResolvedValue({ flagged: false, urgent: false, eventId: null });
 }
 
 describe("continueAfterBlock (BUG-009: no block repeats within one session)", () => {
@@ -231,5 +250,58 @@ describe("resumeLessonSession (BUG-008: 24h+ pause reminder is actually wired)",
 
     const result = await resumeLessonSession("fam1", "s1");
     expect(result.reminder).toBeNull();
+  });
+});
+
+describe("submitStepAnswer + moderation (NFR-SAFE-4, US-12.1 КП-2) — QA finding, see docs/bugs/BUG-013", () => {
+  /**
+   * `chat.ts` (`askTopicChat`) and `friendChat.ts` (`askFriendChat`) both
+   * hard-code: `severity === "urgent"` -> the deterministic "піди зараз до
+   * тата" reply REPLACES whatever the model said, no matter what. This test
+   * proves the lesson open-answer path (`submitStepAnswer`) does NOT do the
+   * same for the `explanation` text shown to the child — it always uses
+   * whatever `answer_evaluation` (or the on-device rubric) produced, even
+   * when the same message was just classified `severity: "urgent"` and a
+   * `safety_events`/external delivery was raised for the parent. The
+   * *notification* to the parent still fires (`recordSafetyEvent` is
+   * called and, in the app, escalates to e-mail/Telegram) — only the
+   * on-screen text to the child is not overridden.
+   */
+  const openStep = {
+    id: "st1",
+    type: "open",
+    content: { questionUk: "Як почуваєшся?", expectedAnswerUk: "—", rubricUk: "—" },
+    visual: {},
+    source_refs: [],
+  };
+
+  function baseTables() {
+    return {
+      lesson_sessions: { id: "s1", current_step_id: "st1", current_block_order: 1, subject_id: "subj1", topic_id: "top1", child_profile_id: "child1" },
+      library_steps: openStep,
+      step_attempts: [],
+      session_blocks: [{ session_id: "s1", sort_order: 1, library_item_id: "A" }],
+    };
+  }
+
+  it("an 'urgent' open answer still gets the model's own explanation, not the deterministic go-to-dad reply", async () => {
+    resetScope();
+    scopeState.tables = baseTables();
+    moderateMessage.mockResolvedValue({ category: "self_harm", severity: "urgent", confidence: 0.95, reasonUk: "x", layer1Flagged: true, escalated: false });
+    callStructured.mockResolvedValue({ result: { verdict: "partial", explanationUk: "Гарна спроба, продовжуй!" }, model: {}, costUsd: 0, fallbackUsed: false });
+    loadLibraryItem.mockResolvedValue({ id: "A", title: "Блок A", estimatedMinutes: 7, visibleOutcomeUk: null, steps: [{ id: "st1", sortOrder: 0, type: "open", content: openStep.content, visual: {}, sourceRefs: [] }, { id: "st2", sortOrder: 1, type: "slide", content: {}, visual: {}, sourceRefs: [] }] });
+
+    const result = await submitStepAnswer("fam1", "s1", "st1", "idem-1", "text", { text: "я хочу собі зашкодити" }, 4000);
+
+    expect(recordSafetyEvent).toHaveBeenCalledWith(
+      "fam1", "child1", "lesson", "я хочу собі зашкодити",
+      expect.objectContaining({ severity: "urgent" }),
+      expect.objectContaining({ sessionId: "s1" }),
+    );
+    // QA finding (BUG-013): this is the actual, current, and WRONG behaviour —
+    // documented here so the fix is easy to verify. It should instead equal
+    // the same deterministic sentence chat.ts/friendChat.ts use.
+    expect(result.explanation).toBe("Гарна спроба, продовжуй!");
+    expect(result.explanation).not.toMatch(/до тата/);
   });
 });
