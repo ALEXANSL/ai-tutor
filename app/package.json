@@ -16,7 +16,8 @@
     "test:db": "bash scripts/with-test-db.sh vitest run --project db",
     "check:bundle": "node scripts/check-client-bundle.mjs --build",
     "icons": "node scripts/generate-icons.mjs",
-    "test:e2e": "playwright test --config tests/e2e/playwright.config.ts"
+    "test:e2e": "playwright test --config tests/e2e/playwright.config.ts",
+    "safety:manual-run": "node scripts/safety-manual-run.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
