@@ -23,6 +23,14 @@ import {
 } from "@/server/lessons/orchestrator";
 import type { FormState } from "./state";
 
+// BUG (urgent, pre-D-65 demo fix): `startLessonAction` runs the full
+// lesson-generation pipeline (lesson_planning + lesson_generation on Claude,
+// then lesson_review, possibly with rework) synchronously, which regularly
+// exceeds the platform's default Server Function duration and the request
+// gets cut off with no error surfaced to the child ("Почати" just hangs).
+// Same fix already applied to the books indexing routes.
+export const maxDuration = 300;
+
 /**
  * Lesson server actions. **S4 (docs/STATUS.md):** the child now opens and
  * plays a lesson herself (`requireLessonAccess()`); a parent's own account

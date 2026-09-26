@@ -131,6 +131,14 @@ export const uk = {
       soon: "скоро",
       modulesTile: "Ще модулі",
     },
+    subject: {
+      // D-65: the child picks any topic of the textbook, not only the one
+      // marked "current" (that stays a priority hint for the forecast plan
+      // in the parent cabinet, US-3.1/3.2 — unchanged).
+      topicsSubtitle: "Обери тему, з якої почнемо:",
+      priorityBadge: "Пріоритет",
+      pages: (from: number, to: number) => (from === to ? `стор. ${from}` : `стор. ${from}–${to}`),
+    },
     soon: {
       creative: "Скоро тут будуть творчі завдання з відео-інструкціями",
       back: "← Назад до «Сьогодні»",
@@ -139,6 +147,7 @@ export const uk = {
       pickTitle: "З чого почнемо?",
       pickSubtitle: "Обери один із блоків",
       startAny: "Почати",
+      startingLesson: "Готуємо урок…",
       stepOf: (k: number, n: number) => `Крок ${k} з ${n}`,
       alarmButton: "🚨 Тривога",
       alarmSaved: "Йди в безпечне місце. Я все збережу, продовжимо потім.",

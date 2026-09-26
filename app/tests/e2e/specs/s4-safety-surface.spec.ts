@@ -32,6 +32,20 @@ test.describe("S4 screens without a session (NFR-PRIV-4)", () => {
   }
 });
 
+test.describe("D-65: the child's /subject/[id] screen (any topic, not just is_current)", () => {
+  // The malformed-id check runs before `requireChild()`, so this alone needs
+  // no account: it locks down that `ChildSubjectPage` still 404s a
+  // non-UUID id rather than ever reaching `getSubjectDetail`. Full
+  // interactive coverage (every topic listed and clickable, the "Пріоритет"
+  // badge on the is_current one, starting a lesson from a non-current
+  // topic) needs a signed-in session and is exercised manually on Alex's
+  // device per the demo checklist in docs/STATUS.md.
+  test("a non-UUID id 404s without needing a session", async ({ request }) => {
+    const res = await request.get("/subject/not-a-uuid", { maxRedirects: 0 });
+    expect(res.status()).toBe(404);
+  });
+});
+
 test.describe("Telegram webhook (ADR-010)", () => {
   test("rejects a request without the secret header", async ({ request }) => {
     const res = await request.post("/api/telegram/webhook", { data: {} });
