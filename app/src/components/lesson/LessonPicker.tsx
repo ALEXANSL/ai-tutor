@@ -23,9 +23,16 @@ export function LessonPicker({
     setError(null);
     startTransition(async () => {
       try {
-        await chooseStartBlockAction(sessionId, id);
+        const result = await chooseStartBlockAction(sessionId, id);
+        if (result.status === "error") {
+          setError(result.message);
+          return;
+        }
         router.refresh();
       } catch {
+        // BUG-016: `chooseStartBlockAction` now always resolves with
+        // `{status: "error", ...}` on failure rather than throwing, but this
+        // stays as a last-resort net for a genuine transport-level failure.
         setError(uk.common.error);
       }
     });

@@ -198,6 +198,11 @@ export const uk = {
       breakOfferBody: "Розімнись, попий води або подивись у вікно.",
       takeBreak: "☕ Перерва",
       skipBreak: "Продовжити без перерви",
+      // BUG-016: the lesson route's own error boundary — never Next's generic page.
+      crashTitle: "Щось пішло не так",
+      crashBody: "Урок не вдалося відкрити. Спробуй ще раз або повернись на «Сьогодні» — усе, що ти вже зробила, збережено.",
+      crashRetry: "Спробувати ще раз",
+      crashBackToToday: "← До «Сьогодні»",
     },
     friend: {
       title: "ШІ-друг",

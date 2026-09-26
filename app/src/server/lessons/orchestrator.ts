@@ -147,24 +147,35 @@ export async function startLessonSession(
   };
 }
 
+/**
+ * BUG-016: neither write here was error-checked — a rejected insert/update
+ * (e.g. a duplicate `(session_id, sort_order)` from a retried click) used to
+ * be silently swallowed, leaving `current_step_id` pointing at a step the
+ * next render couldn't find a matching `session_blocks` row for. The child
+ * never saw *why* — only Next's generic error page (BUG-016) once the
+ * following render hit that mismatch. Both writes are now checked so the
+ * failure surfaces as a specific, catchable `Error` instead.
+ */
 async function activateBlock(familyId: string, session: SessionRow, libraryItemId: string): Promise<LibraryItemView> {
   const scope = forFamily(familyId);
   const item = await loadLibraryItem(familyId, libraryItemId);
   if (!item || item.steps.length === 0) throw new Error("chosen block has no steps");
-  const nextOrder = session.current_block_order + (session.mode === "choosing" ? 1 : 1);
-  await scope.client.from("session_blocks").insert({
+  const nextOrder = session.current_block_order + 1;
+  const { error: blockError } = await scope.client.from("session_blocks").insert({
     family_id: familyId,
     session_id: session.id,
     library_item_id: libraryItemId,
     sort_order: nextOrder,
     status: "active",
   });
-  await scope.update("lesson_sessions", {
+  if (blockError) throw new Error(`activating lesson block failed: ${blockError.message}`);
+  const { error: sessionError } = await scope.update("lesson_sessions", {
     mode: "lesson",
     status: "active",
     current_block_order: nextOrder,
     current_step_id: item.steps[0]!.id,
   }).eq("id", session.id);
+  if (sessionError) throw new Error(`activating lesson block failed: ${sessionError.message}`);
   return item;
 }
 

@@ -76,13 +76,31 @@ export async function startLessonAction(
   }
 }
 
-export async function chooseStartBlockAction(sessionId: string, libraryItemId: string) {
+/**
+ * BUG-016 (live demo): this used to let `chooseStartBlock` throw straight
+ * through the Server Action. `LessonPicker` catches the *action call*
+ * itself, so that alone was already usually fine — but wrapping it here
+ * too, the same way `startLessonAction` does, means a failure here can
+ * never reach the child as a bare unhandled rejection either. The render
+ * that actually showed Next's generic error page happens one step later
+ * (the `/lesson/[sessionId]` page re-rendering after `router.refresh()`),
+ * which is guarded separately by that route's `error.tsx`.
+ */
+export async function chooseStartBlockAction(
+  sessionId: string,
+  libraryItemId: string,
+): Promise<{ status: "ok"; step: Awaited<ReturnType<typeof chooseStartBlock>> } | { status: "error"; message: string }> {
   const { familyId } = await requireLessonAccess();
   UUID.parse(sessionId);
   UUID.parse(libraryItemId);
-  const step = await chooseStartBlock(familyId, sessionId, libraryItemId);
-  revalidatePath(`/lesson/${sessionId}`);
-  return step;
+  try {
+    const step = await chooseStartBlock(familyId, sessionId, libraryItemId);
+    revalidatePath(`/lesson/${sessionId}`);
+    return { status: "ok", step };
+  } catch (e) {
+    console.error(`chooseStartBlockAction failed: ${(e as Error).message}`);
+    return { status: "error", message: uk.common.error };
+  }
 }
 
 const answerSchema = z.object({
