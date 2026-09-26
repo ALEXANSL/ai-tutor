@@ -652,6 +652,47 @@ describe("submitStepAnswer — BUG-019 (objectively correct answers were graded 
     expect(callStructured).not.toHaveBeenCalled();
   });
 
+  it("BUG-021 regression: a single word/name fragment of a longer reference sentence does NOT fast-path to `correct` — it must go to the LLM evaluator", async () => {
+    resetScope();
+    scopeState.tables = baseSessionTables({
+      id: "st1",
+      type: "open",
+      content: { questionUk: "Хто написав «Кобзар»?", expectedAnswerUk: "Тарас Шевченко", rubricUk: "приймати повне ім'я або чіткий опис" },
+      visual: {},
+      source_refs: [],
+    });
+    moderateMessage.mockResolvedValue({ category: "none", severity: "normal", confidence: 0.99, reasonUk: "", layer1Flagged: false, escalated: false });
+    callStructured.mockResolvedValue({ result: { verdict: "partial", explanationUk: "Правильне прізвище, а як звали письменника повністю?" }, model: {}, costUsd: 0, fallbackUsed: false });
+
+    const result = await submitStepAnswer("fam1", "s1", "st1", "idem-1", "text", { text: "Шевченко" }, 4000);
+
+    // Must NOT have been fast-pathed to `correct` before the LLM ever saw it.
+    expect(callStructured).toHaveBeenCalledTimes(1);
+    expect(result.verdict).toBe("partial");
+  });
+
+  it("BUG-022 regression: a multi-part (а/б/в) step answered with ONLY the correct final numbers, no written-out expression, grades `correct` without calling the LLM evaluator", async () => {
+    resetScope();
+    scopeState.tables = baseSessionTables({
+      id: "st1",
+      type: "open",
+      content: {
+        questionUk:
+          "Відстань від Дніпра до Луцька — 800 км. Скільки кілометрів проїхала автівка, якщо подолала: а) 50 % відстані; б) 25 % відстані; в) 75 % відстані? Запиши дію для кожного випадку.",
+        expectedAnswerUk: "а) 800:2=400 км, б) 800:4=200 км, в) 800:4·3=600 км.",
+        rubricUk: "приймати правильні кінцеві числа навіть без розписаної дії (P-H, D-74)",
+      },
+      visual: {},
+      source_refs: [],
+    });
+    moderateMessage.mockResolvedValue({ category: "none", severity: "normal", confidence: 0.99, reasonUk: "", layer1Flagged: false, escalated: false });
+
+    const result = await submitStepAnswer("fam1", "s1", "st1", "idem-1", "text", { text: "400, 200 і 600" }, 5000);
+
+    expect(result.verdict).toBe("correct");
+    expect(callStructured).not.toHaveBeenCalled();
+  });
+
   it("an open-answer reply that does NOT match the reference answer still goes to the LLM evaluator and its verdict is not silently overridden", async () => {
     resetScope();
     scopeState.tables = baseSessionTables({

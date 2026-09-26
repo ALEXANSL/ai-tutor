@@ -254,10 +254,25 @@ function normalizeForSubstanceMatch(raw: string): string {
  * sentence — at most a soft note about the preferred format, never a
  * lower verdict. This check catches the common, unambiguous case (the
  * child's whole answer, once format-only differences are stripped, IS the
- * reference answer or appears in it word-for-word) without ever needing
- * the model to resist over-literal template matching; whatever it can't
- * resolve this way still goes to `answer_evaluation` below, whose prompt
- * was rewritten for the same reason (part 2).
+ * reference answer) without ever needing the model to resist over-literal
+ * template matching; whatever it can't resolve this way still goes to
+ * `answer_evaluation` below, whose prompt was rewritten for the same
+ * reason (part 2).
+ *
+ * BUG-021 fix: the original version of this check also accepted the
+ * child's answer as a *partial* word-run appearing anywhere inside a
+ * longer reference answer ("Тарас" matching inside "Тарас Шевченко",
+ * "сонця" matching inside "Земля обертається навколо Сонця") — crediting a
+ * single guessed/copied word as a full, correct answer with no coverage
+ * threshold at all. The only case where a short answer that ISN'T the
+ * whole reference sentence is still unambiguously safe to fast-path is a
+ * bare number matching the corresponding number inside the reference
+ * ("2" against "Правильна відповідь — 2.") — unlike a word or a name, a
+ * lone number can't be "half a fact" the way a fragment of a sentence can,
+ * which is exactly the BUG-019 case this fast path exists for. Every other
+ * partial/substring match (anything containing a letter) now always goes
+ * to the LLM evaluator below, whose prompt already grades short-but-COMPLETE
+ * answers as `correct` while catching an incomplete fragment as `partial`.
  */
 function matchesExpectedBySubstance(answerText: string, expectedAnswerUk: string): boolean {
   const answer = normalizeForSubstanceMatch(answerText);
@@ -265,11 +280,70 @@ function matchesExpectedBySubstance(answerText: string, expectedAnswerUk: string
   if (!answer || !expected) return false;
   if (answer === expected) return true;
   const answerWords = answer.split(" ");
+  if (!answerWords.every((w) => /^\d+$/.test(w))) return false; // BUG-021: no word/letter fragments past this point
   const expectedWords = expected.split(" ");
   for (let i = 0; i + answerWords.length <= expectedWords.length; i++) {
     if (expectedWords.slice(i, i + answerWords.length).join(" ") === answer) return true;
   }
   return false;
+}
+
+/**
+ * BUG-022 fix: a lesson step with several lettered sub-parts (а/б/в), each
+ * with its own expected numeric result ("а) 800:2=400 км, б) 800:4=200 км,
+ * в) 800:4·3=600 км"), was graded as ONE reference string — so a child who
+ * gave all three correct final numbers ("400, 200 і 600") but didn't write
+ * out the division expression itself never matched it (neither the
+ * word-substance fast path above, nor, per the real production example in
+ * the bug report, the LLM prompt, which read the reference's expressions as
+ * required content rather than optional working-out). Per PO decision
+ * (P-H, D-74): requiring the written-out expression for arithmetic a child
+ * can do in their head is not acceptable — only the final results matter.
+ *
+ * Per D-75 (PO's explicit two-stage clarification): this is Stage 1 only —
+ * the blocking result check — and it deliberately never looks at whether an
+ * expression/method was written at all, let alone whether one shown is
+ * optimal; that's Stage 2, a separate, non-blocking, optional "friendlier
+ * method exists" tip that is out of scope for this fix (deferred, like
+ * BUG-019 deferred the explain-cycle, to a future increment — see US-6.15).
+ *
+ * This recognizes the reference answer's lettered parts, takes each part's
+ * *last* number as that part's expected result (the expression's own
+ * intermediate numbers come first, the result comes last — "800:2=400" ->
+ * 400), and compares them positionally against every number the child's
+ * answer contains, in order — regardless of whether the child also wrote
+ * the expression. It only ever returns `true` (an exact, unambiguous
+ * match); anything it can't confidently parse (fewer than two lettered
+ * parts, a part with no number, a different count of numbers than parts)
+ * falls through to the LLM evaluator as before.
+ */
+function extractExpectedPartResults(expectedAnswerUk: string): number[] | null {
+  const text = expectedAnswerUk.normalize("NFKC").toLocaleLowerCase("uk-UA");
+  const markerRe = /(?:^|[\s,;])(\p{L})\)/gu;
+  const markers = [...text.matchAll(markerRe)];
+  if (markers.length < 2) return null;
+  const numberRe = /\d+(?:[.,]\d+)?/g;
+  const results: number[] = [];
+  for (let i = 0; i < markers.length; i++) {
+    const start = markers[i]!.index! + markers[i]![0].length;
+    const end = i + 1 < markers.length ? markers[i + 1]!.index! : text.length;
+    const partNumbers = [...text.slice(start, end).matchAll(numberRe)];
+    if (partNumbers.length === 0) return null; // can't confidently identify this part's result
+    results.push(Number(partNumbers.at(-1)![0].replace(",", ".")));
+  }
+  return results;
+}
+
+function extractNumbersInOrder(text: string): number[] {
+  return [...text.matchAll(/\d+(?:[.,]\d+)?/g)].map((m) => Number(m[0].replace(",", ".")));
+}
+
+function matchesMultiPartFinalNumbers(answerText: string, expectedAnswerUk: string): boolean {
+  const expectedResults = extractExpectedPartResults(expectedAnswerUk);
+  if (!expectedResults) return false;
+  const answerNumbers = extractNumbersInOrder(answerText);
+  if (answerNumbers.length !== expectedResults.length) return false;
+  return expectedResults.every((n, i) => n === answerNumbers[i]);
 }
 
 /**
@@ -280,6 +354,17 @@ function matchesExpectedBySubstance(answerText: string, expectedAnswerUk: string
  * instead of a sentence, an option letter instead of spelling the option
  * out) as if that were a content mistake. This system prompt is explicit
  * about grading substance only, the way a real teacher would.
+ *
+ * D-75 fix (BUG-022, PO clarification after the fix's first pass): grading
+ * is explicitly two-stage now. Stage 1 (blocking) is the final result only
+ * — including for multi-part (а/б/в) questions that ask to "write the
+ * expression/дію for each case": if every final number is right, the step
+ * is `correct`, full stop, even with zero working shown. Stage 2 (never
+ * blocking) only applies when the child DID show their method: an
+ * inefficient-but-correct method (PO's own example: dividing 800 by 4
+ * directly instead of noticing it halves cleanly twice) must never lower
+ * the verdict or ask for a redo — at most a friendly, optional "до речі,
+ * є ще швидший спосіб…" aside in the explanation, never a requirement.
  */
 const OPEN_ANSWER_EVALUATION_SYSTEM_UK = [
   "Оціни відповідь дитини на відкрите питання уроку: `correct` (правильно по суті),",
@@ -291,9 +376,19 @@ const OPEN_ANSWER_EVALUATION_SYSTEM_UK = [
   "рахується як `correct`, якщо результат по суті вірний — так само, як",
   "розгорнуте речення. НІКОЛИ не знижуй оцінку лише за формат чи довжину",
   "запису (як реальний вчитель — за відсутність повного речення максимум",
-  "легка примітка в поясненні, ніколи не нижчий вердикт). `partial` — тільки",
-  "коли сам РЕЗУЛЬТАТ неповний чи частково вірний по суті. Пояснення — тепле",
-  "й конкретне.",
+  "легка примітка в поясненні, ніколи не нижчий вердикт).",
+  "Двоетапна оцінка (D-75): ЕТАП 1 (блокує вердикт) — лише кінцевий",
+  "результат/число. Якщо крок питає кілька підпунктів (а/б/в) і всі кінцеві",
+  "числа правильні — це `correct`, НАВІТЬ якщо дитина не розписала сам вираз",
+  "чи дію (наприклад «400, 200 і 600» замість «800:2=400, 800:4=200,",
+  "800:4·3=600»); ніколи не вимагай переробити чи дописати дію для",
+  "`correct` — навіть коли умова кроку явно просить «запиши дію». ЕТАП 2",
+  "(ніколи не блокує) — лише якщо дитина сама показала спосіб/дію: якщо він",
+  "правильний, але неоптимальний (наприклад ділить 800 навпіл, а не двічі",
+  "навпіл), не знижуй оцінку й не проси переробити — щонайбільше додай у",
+  "поясненні одну доброзичливу необов'язкову репліку на кшталт «до речі, є",
+  "ще швидший спосіб: ...». `partial` — тільки коли сам РЕЗУЛЬТАТ неповний",
+  "чи частково вірний по суті. Пояснення — тепле й конкретне.",
 ].join(" ");
 
 async function evaluateAnswer(
@@ -317,7 +412,10 @@ async function evaluateAnswer(
   // "open": no exact answer on the device — ask the evaluation role (US-6.2 КП-1).
   const openAnswerText = typeof (answer as { text?: unknown } | null)?.text === "string" ? (answer as { text: string }).text : String(answer ?? "");
   const expectedAnswerUk = String(step.content.expectedAnswerUk ?? "");
-  if (expectedAnswerUk && matchesExpectedBySubstance(openAnswerText, expectedAnswerUk)) {
+  if (
+    expectedAnswerUk &&
+    (matchesExpectedBySubstance(openAnswerText, expectedAnswerUk) || matchesMultiPartFinalNumbers(openAnswerText, expectedAnswerUk))
+  ) {
     return { verdict: "correct", explanation: uk.child.lesson.openAnswerCorrectGeneric };
   }
   try {

@@ -2,7 +2,7 @@
 
 | Поле | Значення |
 |---|---|
-| Статус | **New** |
+| Статус | **Fixed** (разом з BUG-022, гілка `claude/intelligent-carson-6exmc1`) |
 | Серйозність | **Major** — grading-correctness regression risk introduced by the BUG-019 fix (opposite failure mode: false positive `correct` instead of false negative) |
 | Зріз | S3 (педагогічний конвеєр / оцінювання відповідей) |
 | Пов'язано з | `matchesExpectedBySubstance` / `evaluateAnswer` in `app/src/server/lessons/orchestrator.ts` (introduced by the 2026-09-26 BUG-019 fix, commit `1a5dbe5`) |
@@ -44,3 +44,10 @@ Any single word (or short word-run) that happens to occur verbatim inside a long
 
 ## Примітка
 Не блокує мерж поточного фіксу BUG-019/BUG-020 (немає впливу на safety-override BUG-013, немає регресії існуючих тестів), але має бути виправлено до того, як `matchesExpectedBySubstance` набуде більше реального трафіку — інакше можливе накопичення хибних `correct` вердиктів на реальних уроках.
+
+## Виправлення
+`matchesExpectedBySubstance` (`app/src/server/lessons/orchestrator.ts`) тепер пропускає частковий (підрядковий) fast-path ТІЛЬКИ коли відповідь дитини складається виключно з цифр (`/^\d+$/` для кожного "слова" після нормалізації) — рівно той випадок, заради якого фіксувався BUG-019 (гола цифра замість повного речення), і принципово інший клас, ніж слово/фрагмент імені чи факту (BUG-021), який тепер завжди йде до LLM-оцінювача. Повний збіг усієї нормалізованої відповіді з еталоном (`answer === expected`) як і раніше зараховується одразу — це не "фрагмент", а вся відповідь дитини.
+
+Причина: цифра-число не може бути "половиною факту" так, як може бути слово чи ім'я — немає способу вгадати правильне число "наполовину", тоді як "Тарас" з "Тарас Шевченко" чи "сонця" з "Земля обертається навколо Сонця" — це classic partial guesses. Поріг замінили не на "мінімальну частку слів" (як пропонував п.1 завдання), а на чіткіший і надійніший критерій "тільки цифри", бо перший варіант ламав або занадто послаблював уже наявний BUG-019 тест на голу цифру "2" проти триwordного еталону "Правильна відповідь — 2." (де частка становила б лише 1/3).
+
+Регресійний тест: `app/src/server/lessons/orchestrator.test.ts` → "BUG-021 regression: a single word/name fragment of a longer reference sentence does NOT fast-path to `correct`". Існуючі BUG-019 тести (гола цифра, лист-літерний список) і safety-override (BUG-013) тест пройшли без змін.
