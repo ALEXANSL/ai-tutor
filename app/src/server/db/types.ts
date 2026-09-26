@@ -11,6 +11,10 @@ export interface ChildProfileRow {
   tutor_voice_id: string | null;
   persona_updated_at: string | null;
   onboarding_completed_at: string | null;
+  /** Lesson pacing settings (S3, налашт.): US-6.7 КП-1, US-16.4. */
+  lesson_minutes: 30 | 45;
+  idle_hint_s: number;
+  idle_pause_s: number;
 }
 
 export interface TutorNameOption {

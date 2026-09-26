@@ -26,6 +26,25 @@ export async function makeScanPdf(pageCount: number): Promise<Uint8Array> {
   return doc.save();
 }
 
+/**
+ * A "mixed" PDF (D-54): some pages have a real text layer, others are
+ * scans (a drawn rectangle, no text) — e.g. a textbook where a few pages
+ * were photographed instead of typeset.
+ */
+export async function makeMixedPdf(pages: ({ text: string } | { scan: true })[]): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  for (const p of pages) {
+    const page = doc.addPage([595, 842]);
+    if ("scan" in p) {
+      page.drawRectangle({ x: 40, y: 40, width: 500, height: 700, borderWidth: 2 });
+    } else {
+      p.text.split("\n").forEach((line, i) => page.drawText(line, { x: 40, y: 800 - i * 16, size: 11, font }));
+    }
+  }
+  return doc.save();
+}
+
 export interface EpubChapter {
   title: string;
   html: string;

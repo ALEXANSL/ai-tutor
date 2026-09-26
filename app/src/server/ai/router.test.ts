@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { estimateCostUsd, fallbackOf, selectModel } from "./policy";
-import { callStructured, embedTexts, type RouterDeps } from "./router";
+import { callStructured, callVisionStructured, embedTexts, type RouterDeps } from "./router";
 import { BudgetBlockedError, ProviderError, type CallRecord, type ModelRoute } from "./types";
 
 const route = (over: Partial<ModelRoute> = {}): ModelRoute => ({
@@ -107,6 +107,9 @@ function deps(over: Partial<RouterDeps> = {}): RouterDeps & { calls: CallRecord[
       embed: {
         openai: async ({ texts }) => ({ vectors: texts.map(() => [0.1, 0.2]), usage: { inputTokens: 10, outputTokens: 0 } }),
       },
+      vision: {
+        anthropic: async () => ({ data: { ok: true }, usage: { inputTokens: 1000, outputTokens: 100 } }),
+      },
     },
     now: () => (t += 50),
     ...over,
@@ -190,5 +193,13 @@ describe("callStructured / embedTexts (router)", () => {
   it("fails clearly when the role has no route", async () => {
     const d = deps({ loadRoute: async () => null });
     await expect(embedTexts(["a"], ctx, d)).rejects.toThrow(/no model route/);
+  });
+
+  it("calls the vision provider with the documents and records the call under its own role (D-54 ocr_page)", async () => {
+    const d = deps({ loadRoute: async () => route({ role: "ocr_page", primary_provider: "anthropic", primary_model: "claude-sonnet-5", params: {} }) });
+    const documents = [{ mediaType: "application/pdf" as const, data: "QkFTRTY0" }];
+    const res = await callVisionStructured("ocr_page", { system: "s", prompt: "p", schema, documents }, ctx, d);
+    expect(res.result).toEqual({ ok: true });
+    expect(d.calls[0]).toMatchObject({ role: "ocr_page", provider: "anthropic", model: "claude-sonnet-5" });
   });
 });

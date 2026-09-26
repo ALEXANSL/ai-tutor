@@ -1,4 +1,5 @@
 import { registerCoreNavigation } from "@/core/registries/core-navigation";
+import "@/lesson-components"; // side effect: registers built-in interactive components (ADR-020)
 import { registerSchoolModule } from "./school";
 
 /**

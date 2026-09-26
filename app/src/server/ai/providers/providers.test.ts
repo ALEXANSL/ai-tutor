@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { anthropicStructured } from "./anthropic";
-import { openaiEmbed } from "./openai";
+import { anthropicStructured, anthropicVisionStructured } from "./anthropic";
+import { openaiEmbed, openaiStructured } from "./openai";
 import { AiNotConfiguredError, ProviderError } from "../types";
 
 afterEach(() => {
@@ -58,6 +58,52 @@ describe("anthropicStructured (mocked SDK)", () => {
   });
 });
 
+describe("anthropicVisionStructured (mocked SDK, D-54 OCR)", () => {
+  const schema = z.object({ pages: z.array(z.object({ index: z.number(), text: z.string(), unreadable: z.boolean() })) });
+  const usage = { input_tokens: 2000, output_tokens: 400, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+
+  it("puts the PDF document(s) before the text prompt, base64 as given", async () => {
+    const answer = { pages: [{ index: 1, text: "Сторінка 1", unreadable: false }] };
+    const parse = streamOf({ stop_reason: "end_turn", parsed_output: answer, usage });
+    const res = await anthropicVisionStructured(
+      {
+        model: "claude-sonnet-5",
+        system: "sys",
+        prompt: "Розпізнай сторінки",
+        schema,
+        params: { effort: "low" },
+        documents: [{ mediaType: "application/pdf", data: "QkFTRTY0" }],
+      },
+      { messages: { stream: parse } } as never,
+    );
+    expect(res.data).toEqual(answer);
+    const [body] = parse.mock.calls[0]! as unknown as [{ messages: { content: { type: string }[] }[] }];
+    const content = body.messages[0]!.content;
+    expect(content[0]).toMatchObject({ type: "document", source: { type: "base64", media_type: "application/pdf", data: "QkFTRTY0" } });
+    expect(content.at(-1)).toMatchObject({ type: "text", text: "Розпізнай сторінки" });
+  });
+
+  it("sends an image block for a non-PDF document", async () => {
+    const parse = streamOf({ stop_reason: "end_turn", parsed_output: { pages: [] }, usage });
+    await anthropicVisionStructured(
+      { model: "m", system: "", prompt: "p", schema, params: {}, documents: [{ mediaType: "image/png", data: "abc" }] },
+      { messages: { stream: parse } } as never,
+    );
+    const [body] = parse.mock.calls[0]! as unknown as [{ messages: { content: { type: string }[] }[] }];
+    expect(body.messages[0]!.content[0]).toMatchObject({ type: "image", source: { type: "base64", media_type: "image/png" } });
+  });
+
+  it("reuses the same refusal/schema-mismatch handling as text-only calls", async () => {
+    const parse = streamOf({ stop_reason: "refusal", parsed_output: null, usage });
+    await expect(
+      anthropicVisionStructured(
+        { model: "m", system: "", prompt: "", schema, params: {}, documents: [] },
+        { messages: { stream: parse } } as never,
+      ),
+    ).rejects.toMatchObject({ name: "ProviderError", retryable: false });
+  });
+});
+
 describe("openaiEmbed (mocked fetch)", () => {
   it("requests 1536 dimensions and keeps the input order", async () => {
     vi.stubEnv("OPENAI_API_KEY", "test-key-not-real");
@@ -93,5 +139,60 @@ describe("openaiEmbed (mocked fetch)", () => {
   it("is not configured without OPENAI_API_KEY", async () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     await expect(openaiEmbed({ model: "m", texts: ["a"] }, vi.fn())).rejects.toBeInstanceOf(AiNotConfiguredError);
+  });
+});
+
+describe("openaiStructured (mocked fetch, ADR-022: lesson_review, a DIFFERENT provider)", () => {
+  const schema = z.object({ verdict: z.enum(["approved", "revise"]), notes: z.array(z.string()) });
+
+  it("sends a strict JSON schema (additionalProperties: false, all fields required) and parses the result", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-key-not-real");
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          output_text: JSON.stringify({ verdict: "approved", notes: [] }),
+          usage: { input_tokens: 900, output_tokens: 120, input_tokens_details: { cached_tokens: 0 } },
+        }),
+        { status: 200 },
+      ),
+    );
+    const res = await openaiStructured(
+      { model: "gpt-5.6-sol", system: "sys", prompt: "review this", schema, params: { effort: "medium", max_tokens: 4000 } },
+      fetchMock,
+    );
+    expect(res).toEqual({
+      data: { verdict: "approved", notes: [] },
+      usage: { inputTokens: 900, outputTokens: 120, cachedInputTokens: 0 },
+    });
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("https://api.openai.com/v1/responses");
+    const body = JSON.parse(init.body);
+    expect(body).toMatchObject({ model: "gpt-5.6-sol", instructions: "sys", input: "review this" });
+    expect(body.text.format.type).toBe("json_schema");
+    expect(body.text.format.strict).toBe(true);
+    expect(body.text.format.schema.additionalProperties).toBe(false);
+    expect(body.text.format.schema.required).toEqual(Object.keys(body.text.format.schema.properties));
+  });
+
+  it("rejects a response whose JSON does not match the schema (retryable)", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-key-not-real");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify({ verdict: "not-a-verdict" }) }), { status: 200 }));
+    const err = await openaiStructured({ model: "m", system: "", prompt: "", schema, params: {} }, fetchMock).catch((e) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect(err.retryable).toBe(true);
+  });
+
+  it("maps HTTP errors without leaking the key", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-key-not-real");
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 500 }));
+    const err = await openaiStructured({ model: "m", system: "", prompt: "", schema, params: {} }, fetchMock).catch((e) => e);
+    expect(err).toBeInstanceOf(ProviderError);
+    expect(err.retryable).toBe(true);
+    expect(String(err.message)).not.toContain("test-key-not-real");
+  });
+
+  it("is not configured without OPENAI_API_KEY", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "");
+    await expect(openaiStructured({ model: "m", system: "", prompt: "", schema, params: {} }, vi.fn())).rejects.toBeInstanceOf(AiNotConfiguredError);
   });
 });

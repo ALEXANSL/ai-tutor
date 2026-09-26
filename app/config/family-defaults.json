@@ -12,7 +12,7 @@
     "endsOn": "2027-08-31"
   },
   "subjects": [
-    { "code": "math", "nameUk": "Математика", "config": { "icon": "➗" } },
+    { "code": "math", "nameUk": "Математика", "config": { "icon": "➗", "allowed_components": ["drag_sort"] } },
     { "code": "history", "nameUk": "Історія", "config": { "icon": "📜" } },
     { "code": "ukrainian_language", "nameUk": "Українська мова", "config": { "icon": "🔤" } },
     { "code": "ukrainian_literature", "nameUk": "Українська література", "config": { "icon": "📘" } },

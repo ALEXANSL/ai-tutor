@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { makeEpub, makeScanPdf, makeTextPdf } from "../../../tests/fixtures/generate";
+import { makeEpub, makeMixedPdf, makeScanPdf, makeTextPdf } from "../../../tests/fixtures/generate";
 import { decodeEntities, extractEpub, htmlToText } from "./extract-epub";
 import { extractPdf } from "./extract-pdf";
+import { mergeOcrIntoUnits, pagesNeedingOcr } from "./ocr";
 import { chunkUnits, looksLikeScan, meaningfulChars, normalizeText, type ExtractedUnit } from "./text";
 
 describe("PDF extraction (generated fixtures)", () => {
@@ -25,6 +26,35 @@ describe("PDF extraction (generated fixtures)", () => {
     expect(res.pageCount).toBe(5);
     expect(res.charCount).toBe(0);
     expect(looksLikeScan(res.units)).toBe(true);
+  });
+
+  it("finds only the scanned pages of a mixed book, and OCR text fills exactly those pages before chunking (D-54)", async () => {
+    // Standard PDF fonts are Latin-only (see makeTextPdf above) — the fixture
+    // stands in for a page's text layer; the OCR text merged in below is the
+    // real Ukrainian content the model would return for the scanned pages.
+    const bytes = await makeMixedPdf([
+      { text: "Chapter 1. Fractions\nA fraction has a numerator and a denominator." },
+      { scan: true },
+      { text: "Chapter 2. Decimals\nDecimal fractions use a point." },
+      { scan: true },
+    ]);
+    const res = await extractPdf(bytes);
+    const scanPages = pagesNeedingOcr(res.units);
+    expect(scanPages).toEqual([2, 4]);
+
+    const ocrTextByPage = new Map([
+      [2, "Розпізнаний текст сторінки 2 про додавання дробів з однаковим знаменником."],
+      [4, "Розпізнаний текст сторінки 4 про множення десяткових дробів."],
+    ]);
+    const merged = mergeOcrIntoUnits(res.units, ocrTextByPage);
+    // Text-layer pages are untouched, scanned pages now carry the OCR text.
+    expect(merged[0]!.text).toContain("numerator and a denominator");
+    expect(merged[1]!.text).toContain("додавання дробів");
+    expect(merged[2]!.text).toContain("Decimal fractions");
+    expect(merged[3]!.text).toContain("множення десяткових дробів");
+
+    const chunks = chunkUnits(merged);
+    expect(chunks.map((c) => c.page)).toEqual([1, 2, 3, 4]);
   });
 
   it("rejects a file that is not a PDF", async () => {

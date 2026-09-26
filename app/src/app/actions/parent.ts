@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { uk } from "@/i18n/uk";
+import { pinSaveErrorMessage } from "@/lib/pin-errors";
 import { requireParentAccess, requireParentAccount } from "@/server/auth/guards";
 import { setParentPin } from "@/server/auth/parent-mode";
 import { forFamily } from "@/server/db/family-scope";
@@ -56,11 +57,7 @@ export async function markAllNotificationsReadAction(): Promise<void> {
 export async function setPinAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const { familyId } = await requireParentAccount();
   const result = await setParentPin(familyId, String(formData.get("pin") ?? ""), String(formData.get("repeat") ?? ""));
-  if (!result.ok) {
-    const s = uk.parent.settings;
-    const message = result.error === "mismatch" ? s.pinMismatch : result.error === "format" ? s.pinFormat : uk.common.error;
-    return { status: "error", message };
-  }
+  if (!result.ok) return { status: "error", message: pinSaveErrorMessage(result.error) };
   revalidatePath("/parent", "layout");
   return { status: "ok", message: uk.parent.settings.pinSaved };
 }

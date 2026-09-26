@@ -9,7 +9,7 @@ import { listBooks, type BookListItem } from "@/server/books/queries";
 import { forFamily } from "@/server/db/family-scope";
 import { DriveError } from "@/server/drive/google";
 import { getFolderAccessStatus } from "@/server/drive/service";
-import { requestReindex, syncDriveFolder } from "@/server/ingest/pipeline";
+import { confirmBookOcr, requestReindex, syncDriveFolder } from "@/server/ingest/pipeline";
 import { kickJobs } from "@/server/jobs/kick";
 import { searchMaterials, type SearchHit } from "@/server/search/search";
 import type { FormState } from "./state";
@@ -46,6 +46,16 @@ export async function reindexAction(formData: FormData): Promise<void> {
   const id = uuidOf(formData, "materialId");
   if (!id) return;
   await requestReindex(familyId, id);
+  kickJobs();
+  revalidatePath("/parent/books", "layout");
+}
+
+/** "Розпізнати" (D-54): the parent confirms OCR of a large scan before any AI spend. */
+export async function confirmOcrAction(formData: FormData): Promise<void> {
+  const { familyId, ctx } = await requireParentAccess();
+  const id = uuidOf(formData, "materialId");
+  if (!id) return;
+  await confirmBookOcr(familyId, id, ctx.appUserId);
   kickJobs();
   revalidatePath("/parent/books", "layout");
 }

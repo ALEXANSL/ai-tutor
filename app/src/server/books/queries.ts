@@ -16,6 +16,9 @@ export interface BookListItem {
   pageCount: number | null;
   addedAt: string;
   costUsd: number;
+  /** D-54: pages a scan would need to recognise; set only while `status === "scan_awaiting_ocr"`. */
+  ocrPagesTotal: number | null;
+  ocrEstimatedCostUsd: number | null;
 }
 
 export interface SubjectOption {
@@ -37,6 +40,8 @@ interface MaterialDbRow {
   progress: BookListItem["progress"] | null;
   page_count: number | null;
   added_at: string;
+  ocr_pages_total: number | null;
+  ocr_estimated_cost_usd: string | number | null;
 }
 
 async function costsFor(familyId: string, ids: string[]): Promise<Map<string, number>> {
@@ -65,10 +70,12 @@ const toItem = (r: MaterialDbRow, cost: number): BookListItem => ({
   pageCount: r.page_count,
   addedAt: r.added_at,
   costUsd: cost,
+  ocrPagesTotal: r.ocr_pages_total,
+  ocrEstimatedCostUsd: r.ocr_estimated_cost_usd == null ? null : Number(r.ocr_estimated_cost_usd),
 });
 
 const MATERIAL_COLUMNS =
-  "id, name, title, format, kind, subject_id, use_in_lessons, status, status_detail, progress, page_count, added_at";
+  "id, name, title, format, kind, subject_id, use_in_lessons, status, status_detail, progress, page_count, added_at, ocr_pages_total, ocr_estimated_cost_usd";
 
 /** Books from the folder, newest first; books removed from the folder are not listed (US-2.6 KP-6). */
 export async function listBooks(familyId: string): Promise<BookListItem[]> {

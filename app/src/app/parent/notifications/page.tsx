@@ -13,6 +13,8 @@ const ICONS: Record<string, string> = {
   pin_lockout: "🔑",
   budget_state: "💳",
   provider_fallback: "🔁",
+  lesson_block_needs_review: "🧐",
+  lesson_started_with_fallback: "🧩",
 };
 const WITH_CHANGE_BUTTON = new Set(["nickname_changed", "persona_changed", "tutor_name_rejected"]);
 
@@ -32,6 +34,10 @@ function title(n: NotificationRow): string {
       return types.budget_state(p);
     case "provider_fallback":
       return types.provider_fallback(p);
+    case "lesson_block_needs_review":
+      return types.lesson_block_needs_review(p);
+    case "lesson_started_with_fallback":
+      return types.lesson_started_with_fallback(p);
     default:
       return types.unknown;
   }

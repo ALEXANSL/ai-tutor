@@ -2,9 +2,10 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { PDFDocument } from "pdf-lib";
 import { sourceTypes } from "@/core/registries/learning";
-import { callStructured, embedTexts } from "../ai/router";
-import { getBudget } from "../ai/store";
+import { callStructured, callVisionStructured, embedTexts } from "../ai/router";
+import { getBudget, loadPrice, loadRoute } from "../ai/store";
 import { AiNotConfiguredError, BudgetBlockedError, ProviderError } from "../ai/types";
 import { forFamily, type FamilyScope } from "../db/family-scope";
 import { DriveError, downloadFile, listFolderFiles } from "../drive/google";
@@ -12,6 +13,16 @@ import { getDriveAccess } from "../drive/service";
 import { enqueueJob, registerJobHandler, type JobRow } from "../jobs/runner";
 import { EpubError } from "./extract-epub";
 import { sourceExtractors, type SourceFormat } from "./extractors";
+import {
+  batchPages,
+  estimateOcrCostUsd,
+  mergeOcrIntoUnits,
+  needsOcrConfirmation,
+  OCR_BATCH_PAGES,
+  ocrResultSchema,
+  pagesNeedingOcr,
+  type OcrResult,
+} from "./ocr";
 import {
   buildOutline,
   buildStructureSchema,
@@ -22,7 +33,7 @@ import {
   type PageText,
 } from "./structure";
 import { planSync, type KnownMaterial } from "./sync-plan";
-import { chunkUnits, looksLikeScan } from "./text";
+import { chunkUnits, type ExtractedUnit } from "./text";
 
 /**
  * Universal ingest pipeline (docs/02 9.1, ADR-008, ADR-017):
@@ -32,6 +43,7 @@ import { chunkUnits, looksLikeScan } from "./text";
 export const JOB = {
   sync: "drive.sync",
   extract: "ingest.extract",
+  ocr: "ingest.ocr",
   embed: "ingest.embed",
   structure: "ingest.structure",
 } as const;
@@ -208,13 +220,14 @@ interface MaterialRow {
   page_count: number | null;
   grade: number | null;
   curriculum_version: string | null;
+  ocr_confirmed_at: string | null;
 }
 
 async function loadMaterial(scope: FamilyScope, id: string): Promise<MaterialRow | null> {
   const { data } = await scope
     .select(
       "materials",
-      "id, name, title, format, drive_file_id, status, content_hash, kind, kind_manual, subject_id, subject_manual, topics_manual, page_count, grade, curriculum_version",
+      "id, name, title, format, drive_file_id, status, content_hash, kind, kind_manual, subject_id, subject_manual, topics_manual, page_count, grade, curriculum_version, ocr_confirmed_at",
     )
     .eq("id", id)
     .maybeSingle<MaterialRow>();
@@ -226,6 +239,65 @@ async function deferIfBudget(scope: FamilyScope, familyId: string, materialId: s
   if (!budgetBlocks(budget.state)) return false;
   await patchMaterial(scope, materialId, { status: "deferred", status_detail: "budget_deferred" });
   return true;
+}
+
+/** Chunks the merged units, saves them and hands off to `ingest.embed` — the shared tail of a text extraction and an OCR run (D-54). */
+async function finishExtraction(
+  scope: FamilyScope,
+  familyId: string,
+  materialId: string,
+  base: Record<string, unknown>,
+  units: ExtractedUnit[],
+): Promise<void> {
+  await scope.delete("chunks").eq("material_id", materialId);
+  const chunks = chunkUnits(units);
+  if (chunks.length === 0) throw new IngestError("empty", "no text found");
+  for (let i = 0; i < chunks.length; i += 200) {
+    const { error } = await scope.insert(
+      "chunks",
+      chunks.slice(i, i + 200).map((c) => ({ material_id: materialId, ordinal: c.ordinal, page: c.page, locator: c.locator, text: c.text })),
+    );
+    if (error) throw new Error(`chunks insert failed: ${error.message}`);
+  }
+  await patchMaterial(scope, materialId, { ...base, progress: { step: "embed", done: 0, total: chunks.length } });
+  await enqueueStep(familyId, JOB.embed, materialId);
+}
+
+/** Threshold above which a scan waits for the parent's "Розпізнати" (D-54, default 20 pages). */
+async function ocrConfirmThreshold(scope: FamilyScope): Promise<number> {
+  const { data } = await scope.select("parent_settings", "ocr_confirm_above_pages").maybeSingle<{ ocr_confirm_above_pages: number }>();
+  return data?.ocr_confirm_above_pages ?? 20;
+}
+
+/** Estimated USD cost of OCR-ing `pageCount` pages with the family's current `ocr_page` route (D-54, shown before confirmation). */
+export async function estimateOcrCost(familyId: string, pageCount: number): Promise<number> {
+  const route = await loadRoute(familyId, "ocr_page");
+  if (!route) return 0;
+  const price = await loadPrice(route.primary_provider, route.primary_model);
+  return estimateOcrCostUsd(pageCount, price);
+}
+
+/** The parent's "Розпізнати" for a scan over the threshold (D-54): confirms the spend and resumes ingest.extract. */
+export async function confirmBookOcr(familyId: string, materialId: string, confirmedBy: string | null): Promise<void> {
+  const scope = forFamily(familyId);
+  const { error } = await scope
+    .update("materials", { ocr_confirmed_at: new Date().toISOString(), ocr_confirmed_by: confirmedBy, status: "queued", progress: {} })
+    .eq("id", materialId)
+    .eq("status", "scan_awaiting_ocr");
+  if (error) throw new Error(`confirmBookOcr failed: ${error.message}`);
+  await enqueueStep(familyId, JOB.extract, materialId);
+}
+
+/**
+ * QA regression: re-indexing the same unchanged file must not run OCR (or
+ * any extraction) a second time — `runExtract` skips straight to
+ * `ingest.embed` when the downloaded bytes hash to the same
+ * `materials.content_hash` as last time AND chunks from that indexing are
+ * still there (a wiped/never-finished index still needs a real re-extract,
+ * even with a matching hash).
+ */
+export function skipReextraction(hash: string, previousContentHash: string | null, existingChunkCount: number): boolean {
+  return hash === previousContentHash && existingChunkCount > 0;
 }
 
 async function runExtract(job: JobRow): Promise<void> {
@@ -243,7 +315,7 @@ async function runExtract(job: JobRow): Promise<void> {
 
   if (hash === m.content_hash) {
     const { count } = await scope.count("chunks").eq("material_id", materialId);
-    if ((count ?? 0) > 0) {
+    if (skipReextraction(hash, m.content_hash, count ?? 0)) {
       await patchMaterial(scope, materialId, { progress: { step: "embed" } });
       await enqueueStep(familyId, JOB.embed, materialId);
       return;
@@ -266,24 +338,147 @@ async function runExtract(job: JobRow): Promise<void> {
     ...(m.title ? {} : { title: extraction.title }),
   };
 
-  await scope.delete("chunks").eq("material_id", materialId);
-  if (m.format === "pdf" && looksLikeScan(extraction.units)) {
-    // US-2.2 KP-3, D-9: a clear status instead of a silent empty result.
-    await patchMaterial(scope, materialId, { ...base, status: "scan_no_text", status_detail: "scan_no_text", progress: {} });
+  // D-54: pages (or the whole book) without a usable text layer go through OCR
+  // instead of the old blanket "скан без тексту" refusal (US-2.2 KP-3).
+  const scanPages = m.format === "pdf" ? pagesNeedingOcr(extraction.units) : [];
+  if (scanPages.length === 0) {
+    await finishExtraction(scope, familyId, materialId, base, extraction.units);
     return;
   }
-  const chunks = chunkUnits(extraction.units);
-  if (chunks.length === 0) throw new IngestError("empty", "no text found");
 
-  for (let i = 0; i < chunks.length; i += 200) {
-    const { error } = await scope.insert(
-      "chunks",
-      chunks.slice(i, i + 200).map((c) => ({ material_id: materialId, ordinal: c.ordinal, page: c.page, locator: c.locator, text: c.text })),
-    );
-    if (error) throw new Error(`chunks insert failed: ${error.message}`);
+  if (!m.ocr_confirmed_at && needsOcrConfirmation(scanPages.length, await ocrConfirmThreshold(scope))) {
+    const estimate = await estimateOcrCost(familyId, scanPages.length);
+    await patchMaterial(scope, materialId, {
+      ...base,
+      status: "scan_awaiting_ocr",
+      status_detail: null,
+      ocr_pages_total: scanPages.length,
+      ocr_pages_done: 0,
+      ocr_estimated_cost_usd: estimate,
+      progress: {},
+    });
+    return;
   }
-  await patchMaterial(scope, materialId, { ...base, progress: { step: "embed", done: 0, total: chunks.length } });
-  await enqueueStep(familyId, JOB.embed, materialId);
+
+  const { error: pagesErr } = await scope.upsert(
+    "material_ocr_pages",
+    scanPages.map((page) => ({ material_id: materialId, page, status: "pending", text: "" })),
+    "material_id,page",
+  );
+  if (pagesErr) throw new Error(`material_ocr_pages upsert failed: ${pagesErr.message}`);
+  await patchMaterial(scope, materialId, {
+    ...base,
+    status: "indexing",
+    status_detail: null,
+    ocr_pages_total: scanPages.length,
+    progress: { step: "ocr", done: 0, total: scanPages.length },
+  });
+  await enqueueStep(familyId, JOB.ocr, materialId);
+}
+
+// ---------------------------------------------------------------------------
+// ingest.ocr (D-54)
+// ---------------------------------------------------------------------------
+let ocrPromptCache: { system: string; user: string } | null = null;
+function ocrPrompt(): { system: string; user: string } {
+  ocrPromptCache ??= splitPrompt(readFileSync(join(process.cwd(), "prompts", "ocr_page.md"), "utf8"));
+  return ocrPromptCache;
+}
+
+/** Finishes a book after all its scanned pages are recognised (or given up on): merges OCR text with the text layer and hands off to chunking (D-54). */
+async function finalizeAfterOcr(scope: FamilyScope, familyId: string, materialId: string, m: MaterialRow, bytes: Uint8Array): Promise<void> {
+  const hash = createHash("sha256").update(bytes).digest("hex");
+  const extraction = await sourceExtractors.pdf(bytes);
+  const { data: ocrRows } = await scope
+    .select("material_ocr_pages", "page, status, text")
+    .eq("material_id", materialId)
+    .returns<{ page: number; status: string; text: string }[]>();
+  const ocrTextByPage = new Map((ocrRows ?? []).filter((r) => r.status === "done").map((r) => [r.page, r.text]));
+  const merged = mergeOcrIntoUnits(extraction.units, ocrTextByPage);
+  const base = {
+    content_hash: hash,
+    size_bytes: bytes.byteLength,
+    page_count: extraction.pageCount,
+    char_count: merged.reduce((n, u) => n + u.text.length, 0),
+    ...(m.title ? {} : { title: extraction.title }),
+  };
+  try {
+    await finishExtraction(scope, familyId, materialId, base, merged);
+  } catch (e) {
+    if (e instanceof IngestError && e.code === "empty") {
+      // D-54: a scan that could not be recognised at all — a clear status, not a silent failure.
+      await patchMaterial(scope, materialId, { ...base, status: "scan_no_text", status_detail: "scan_unreadable", progress: {} });
+      return;
+    }
+    throw e;
+  }
+}
+
+async function runOcr(job: JobRow, ctx: { deadline: number }): Promise<void | { requeue: true }> {
+  const familyId = job.family_id;
+  const materialId = String(job.payload.materialId);
+  const scope = forFamily(familyId);
+  const m = await loadMaterial(scope, materialId);
+  if (!m || m.status === "removed") return;
+  if (await deferIfBudget(scope, familyId, materialId)) return;
+
+  const { token } = await getDriveAccess(familyId);
+  const bytes = await downloadFile(m.drive_file_id, await token());
+  const pdf = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  const { system, user } = ocrPrompt();
+
+  const { data: pendingRows } = await scope
+    .select("material_ocr_pages", "page")
+    .eq("material_id", materialId)
+    .eq("status", "pending")
+    .order("page")
+    .returns<{ page: number }[]>();
+  const batches = batchPages((pendingRows ?? []).map((r) => r.page), OCR_BATCH_PAGES);
+
+  for (const batch of batches) {
+    if (Date.now() > ctx.deadline - 30_000) return { requeue: true };
+
+    const sub = await PDFDocument.create();
+    const copied = await sub.copyPages(pdf, batch.map((p) => p - 1));
+    copied.forEach((p) => sub.addPage(p));
+    const data = Buffer.from(await sub.save()).toString("base64");
+    const prompt = fillTemplate(user, { page_count: String(batch.length), book_name: m.title ?? m.name });
+
+    let answer: OcrResult;
+    try {
+      const res = await callVisionStructured(
+        "ocr_page",
+        { system, prompt, schema: ocrResultSchema(batch.length), documents: [{ mediaType: "application/pdf", data }] },
+        { familyId, ref: { table: "materials", id: materialId } },
+      );
+      answer = res.result;
+    } catch (e) {
+      if (e instanceof BudgetBlockedError) {
+        await patchMaterial(scope, materialId, { status: "deferred", status_detail: "budget_deferred" });
+        return;
+      }
+      throw e;
+    }
+
+    const byIndex = new Map(answer.pages.map((p) => [p.index, p]));
+    const rows = batch.map((page, i) => {
+      const r = byIndex.get(i + 1);
+      const text = r?.text.trim() ?? "";
+      return { material_id: materialId, page, status: !r || r.unreadable || !text ? "unreadable" : "done", text };
+    });
+    const { error } = await scope.upsert("material_ocr_pages", rows, "material_id,page");
+    if (error) throw new Error(`material_ocr_pages upsert failed: ${error.message}`);
+
+    const [{ count: left }, { count: total }] = await Promise.all([
+      scope.count("material_ocr_pages").eq("material_id", materialId).eq("status", "pending"),
+      scope.count("material_ocr_pages").eq("material_id", materialId),
+    ]);
+    await patchMaterial(scope, materialId, { progress: { step: "ocr", done: (total ?? 0) - (left ?? 0), total } });
+  }
+
+  const { count: leftAfter } = await scope.count("material_ocr_pages").eq("material_id", materialId).eq("status", "pending");
+  if ((leftAfter ?? 0) > 0) return { requeue: true };
+  await finalizeAfterOcr(scope, familyId, materialId, m, bytes);
 }
 
 // ---------------------------------------------------------------------------
@@ -542,6 +737,7 @@ export function registerIngestJobs(): void {
     isRetryable: isRetryableIngestError,
   });
   registerJobHandler(JOB.extract, { ...common, run: runExtract });
+  registerJobHandler(JOB.ocr, { ...common, run: runOcr });
   registerJobHandler(JOB.embed, { ...common, run: runEmbed });
   registerJobHandler(JOB.structure, { ...common, run: runStructure });
 }

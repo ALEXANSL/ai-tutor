@@ -4,8 +4,14 @@ import type { BudgetState, CallContext, ModelPrice, ModelRef, ModelRoute, Usage 
  * Pure routing and cost rules (docs/02 6.2, ADR-012). No I/O — unit-tested.
  */
 
-/** Roles that ignore the budget entirely (NFR-SAFE-13, A-P5). */
-export const BUDGET_EXEMPT_ROLES = new Set(["safety_moderator"]);
+/**
+ * Roles that ignore the budget entirely (NFR-SAFE-13, A-P5). `lesson_review`
+ * joins this set per NFR-COST-12 / US-6.11 КП-4 (D-55, ADR-022): the
+ * independent review itself is never skipped or downgraded to an economy
+ * model by budget mode — only the *revision* call (`lesson_generation`, run
+ * again after a "revise" verdict) may use its route's economy model.
+ */
+export const BUDGET_EXEMPT_ROLES = new Set(["safety_moderator", "lesson_review"]);
 
 export type ModelChoice =
   | { ok: true; model: ModelRef; tier: "primary" | "economy" | "escalation" }

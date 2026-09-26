@@ -1,8 +1,8 @@
 import "server-only";
 import type { z } from "zod";
 import { estimateCostUsd, fallbackOf, selectModel } from "./policy";
-import { anthropicStructured } from "./providers/anthropic";
-import { openaiEmbed } from "./providers/openai";
+import { anthropicStructured, anthropicVisionStructured } from "./providers/anthropic";
+import { openaiEmbed, openaiStructured } from "./providers/openai";
 import * as store from "./store";
 import {
   AiNotConfiguredError,
@@ -16,6 +16,7 @@ import {
   type ModelRoute,
   type RouteParams,
   type Usage,
+  type VisionDocument,
 } from "./types";
 
 /**
@@ -40,6 +41,18 @@ export interface ProviderAdapters {
       usage: Usage;
     }>
   >;
+  /** Structured output with page images/PDF attached (D-54: `ocr_page` role). */
+  vision: Record<
+    string,
+    (req: {
+      model: string;
+      system: string;
+      prompt: string;
+      schema: z.ZodType;
+      params: RouteParams;
+      documents: VisionDocument[];
+    }) => Promise<{ data: unknown; usage: Usage }>
+  >;
 }
 
 export interface RouterDeps {
@@ -59,8 +72,9 @@ export const defaultRouterDeps: RouterDeps = {
   recordCall: store.recordCall,
   notifyFallback: store.notifyFallback,
   providers: {
-    structured: { anthropic: (req) => anthropicStructured(req) },
+    structured: { anthropic: (req) => anthropicStructured(req), openai: (req) => openaiStructured(req) },
     embed: { openai: (req) => openaiEmbed(req) },
+    vision: { anthropic: (req) => anthropicVisionStructured(req) },
   },
   now: () => Date.now(),
 };
@@ -149,6 +163,19 @@ export async function callStructured<S extends z.ZodType>(
 ): Promise<RoutedResult<z.infer<S>>> {
   return routed(role, "structured", ctx, deps, async (model, params) => {
     const { data, usage } = await deps.providers.structured[model.provider]!({ model: model.model, ...req, params });
+    return { value: data as z.infer<S>, usage };
+  });
+}
+
+/** Structured JSON answer from a vision-capable model given page images/PDF (role `ocr_page`, D-54). */
+export async function callVisionStructured<S extends z.ZodType>(
+  role: string,
+  req: { system: string; prompt: string; schema: S; documents: VisionDocument[] },
+  ctx: CallContext,
+  deps: RouterDeps = defaultRouterDeps,
+): Promise<RoutedResult<z.infer<S>>> {
+  return routed(role, "vision", ctx, deps, async (model, params) => {
+    const { data, usage } = await deps.providers.vision[model.provider]!({ model: model.model, ...req, params });
     return { value: data as z.infer<S>, usage };
   });
 }

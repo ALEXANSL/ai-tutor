@@ -42,9 +42,20 @@ export function getAllowlist(): Allowlist {
   };
 }
 
+/**
+ * Why `getPinPepper()` would return null (BUG-005): lets callers log or show
+ * a specific reason instead of a generic "something went wrong". The value
+ * itself is never included.
+ */
+export function pinPepperIssue(): "missing" | "too_short" | null {
+  const pepper = process.env.PIN_PEPPER;
+  if (!pepper || !pepper.trim()) return "missing";
+  return pepper.length >= 16 ? null : "too_short";
+}
+
 export function getPinPepper(): string | null {
   const pepper = process.env.PIN_PEPPER;
-  return pepper && pepper.length >= 16 ? pepper : null;
+  return pinPepperIssue() === null ? (pepper as string) : null;
 }
 
 /** Base URL for OAuth redirects: APP_BASE_URL, else the request origin. */
