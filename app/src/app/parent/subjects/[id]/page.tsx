@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { BulkWarmupPanel } from "@/components/parent/subjects/BulkWarmupPanel";
 import { CurrentTopicPicker } from "@/components/parent/subjects/CurrentTopicPicker";
 import { ForecastPlanPanel } from "@/components/parent/subjects/ForecastPlanPanel";
 import { LibraryCardsList } from "@/components/parent/subjects/LibraryCardsList";
@@ -8,6 +9,7 @@ import { StartLessonButton } from "@/components/parent/subjects/StartLessonButto
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
 import { listLibraryCardsForTopic } from "@/server/lessons/library";
+import { getTopicWarmupStatuses } from "@/server/lessons/warmup";
 import { getSubjectDetail, getSubjectForecastPlan } from "@/server/subjects/queries";
 import { PageTitle, Panel } from "../../ui";
 
@@ -35,6 +37,11 @@ export default async function SubjectDetailPage({ params }: { params: Promise<{ 
   const t = uk.parent.subjects;
   const plan = subject.currentTopicId ? await getSubjectForecastPlan(familyId, id) : null;
   const libraryCards = subject.currentTopicId ? await listLibraryCardsForTopic(familyId, subject.currentTopicId) : [];
+  // US-22.4 (D-108, S33): every topic's current warm-up status, for the
+  // bulk-select panel's badges — computed even before the parent picks
+  // anything, so a topic already warmed up by an automatic trigger shows
+  // "Готово" from the very first render (КП-5).
+  const bulkWarmupStatuses = subject.topics.length > 0 ? await getTopicWarmupStatuses(familyId, subject.topics.map((tp) => tp.id)) : {};
 
   return (
     <>
@@ -63,6 +70,12 @@ export default async function SubjectDetailPage({ params }: { params: Promise<{ 
           ) : (
             <CurrentTopicPicker subjectId={subject.id} topics={subject.topics} currentTopicId={subject.currentTopicId} />
           )}
+        </Panel>
+      )}
+
+      {subject.hasTextbook && subject.topics.length > 0 && (
+        <Panel title={t.bulkWarmup.title}>
+          <BulkWarmupPanel subjectId={subject.id} topics={subject.topics.map((tp) => ({ id: tp.id, title: tp.title }))} initialStatuses={bulkWarmupStatuses} />
         </Panel>
       )}
 

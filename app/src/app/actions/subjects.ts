@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
-import { warmAheadForSubject } from "@/server/lessons/warmup";
+import { ensureActiveLibraryBlock, estimateBulkWarmup, getTopicWarmupStatuses, type TopicWarmStatus, warmAheadForSubject } from "@/server/lessons/warmup";
+import { getSubjectForBulkWarmup } from "@/server/subjects/queries";
 import type { FormState } from "./state";
 
 /**
@@ -216,4 +217,114 @@ export async function setCurrentTopicAction(_prev: FormState, formData: FormData
 
   revalidatePath("/parent/subjects", "layout");
   return { status: "ok", message: uk.parent.subjects.detail.saved };
+}
+
+// ---------------------------------------------------------------------------
+// US-22.4 (D-108, S33): bulk-select topics + one-click overnight warm-up.
+// Called directly from a client component (not bound to a <form>), same
+// pattern as `checkWarmupProgressAction` (`app/actions/lesson.ts`).
+// ---------------------------------------------------------------------------
+
+function parseTopicIds(topicIds: readonly string[]): string[] {
+  return Array.from(new Set(topicIds.filter((id) => UUID.test(id))));
+}
+
+export interface BulkWarmupEstimateResult {
+  status: "ok";
+  selectedCount: number;
+  readyCount: number;
+  neededCount: number;
+  estimatedCostUsd: number;
+  exceedsAwarenessThreshold: boolean;
+  wouldExceedMonthlyLimit: boolean;
+}
+export type BulkWarmupEstimateState = BulkWarmupEstimateResult | { status: "error"; message: string };
+
+/**
+ * US-22.4 КП-2: the pre-confirmation cost estimate shown on the full-screen
+ * overlay — never trusts a client-computed amount, always recomputed here.
+ */
+export async function estimateBulkWarmupAction(subjectId: string, topicIds: string[]): Promise<BulkWarmupEstimateState> {
+  const { familyId } = await requireParentAccess();
+  if (!UUID.test(subjectId)) return { status: "error", message: uk.common.error };
+  const ids = parseTopicIds(topicIds);
+  if (ids.length === 0) return { status: "error", message: uk.parent.subjects.bulkWarmup.pickAtLeastOne };
+
+  const estimate = await estimateBulkWarmup(familyId, ids);
+  return {
+    status: "ok",
+    selectedCount: estimate.selectedCount,
+    readyCount: estimate.readyCount,
+    neededCount: estimate.neededCount,
+    estimatedCostUsd: estimate.estimatedCostUsd,
+    exceedsAwarenessThreshold: estimate.exceedsAwarenessThreshold,
+    wouldExceedMonthlyLimit: estimate.wouldExceedMonthlyLimit,
+  };
+}
+
+export type BulkWarmupConfirmState =
+  | { status: "ok"; queuedCount: number }
+  | { status: "budget_blocked"; message: string }
+  | { status: "error"; message: string };
+
+/**
+ * US-22.4 КП-3 (D-108, 12.28): once the parent has explicitly confirmed the
+ * exact estimated amount, enqueues `library.warm_topic` for every topic that
+ * genuinely still needs one — sequentially (same as `warmAheadForSubject`,
+ * not `Promise.all`), tagged `source: "manual_bulk"` and bypassing ONLY the
+ * daily soft cap (`bypassDailyBudget: true`); `ensureActiveLibraryBlock`'s
+ * own de-dup and the job handler's `LIBRARY_WARM_MAX_CONCURRENT` re-queue
+ * still apply unchanged.
+ *
+ * Re-checks the monthly budget itself (never trusts the estimate the client
+ * is holding, which may be a few seconds stale) and refuses to enqueue
+ * ANYTHING — not a partial run — once the confirmed amount would put the
+ * family at or past 100% of the monthly limit (ADR-012, no exceptions).
+ */
+export async function confirmBulkWarmupAction(subjectId: string, topicIds: string[]): Promise<BulkWarmupConfirmState> {
+  const { familyId } = await requireParentAccess();
+  if (!UUID.test(subjectId)) return { status: "error", message: uk.common.error };
+  const ids = parseTopicIds(topicIds);
+  if (ids.length === 0) return { status: "error", message: uk.parent.subjects.bulkWarmup.pickAtLeastOne };
+
+  const estimate = await estimateBulkWarmup(familyId, ids);
+  if (estimate.wouldExceedMonthlyLimit) {
+    return { status: "budget_blocked", message: uk.parent.subjects.bulkWarmup.confirm.budgetBlocked };
+  }
+
+  const subject = await getSubjectForBulkWarmup(familyId, subjectId, ids);
+  if (!subject) return { status: "error", message: uk.common.error };
+  const topicById = new Map(subject.topics.map((t) => [t.id, t]));
+
+  const neededIds = new Set(estimate.items.filter((i) => i.needsPrep).map((i) => i.topicId));
+  let queuedCount = 0;
+  for (const topicId of ids) {
+    if (!neededIds.has(topicId)) continue;
+    const topic = topicById.get(topicId);
+    if (!topic) continue;
+    try {
+      await ensureActiveLibraryBlock(
+        familyId,
+        { id: subject.id, nameUk: subject.nameUk, config: subject.config },
+        { id: topic.id, title: topic.title, grade: topic.grade },
+        { immediate: false, source: "manual_bulk", bypassDailyBudget: true },
+      );
+      queuedCount++;
+    } catch (e) {
+      console.error(`confirmBulkWarmupAction: ensureActiveLibraryBlock failed for topic ${topicId}: ${(e as Error).message}`);
+    }
+  }
+
+  revalidatePath(`/parent/subjects/${subjectId}`, "page");
+  return { status: "ok", queuedCount };
+}
+
+export type BulkWarmupStatusState = { status: "ok"; statuses: Record<string, TopicWarmStatus> } | { status: "error"; message: string };
+
+/** US-22.4 КП-5: polled by the client to refresh each topic's status badge. */
+export async function getBulkWarmupStatusAction(topicIds: string[]): Promise<BulkWarmupStatusState> {
+  const { familyId } = await requireParentAccess();
+  const ids = parseTopicIds(topicIds);
+  const statuses = await getTopicWarmupStatuses(familyId, ids);
+  return { status: "ok", statuses };
 }

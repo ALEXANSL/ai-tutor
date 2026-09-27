@@ -39,6 +39,11 @@ function makeSelectBuilder(rows: Row[]) {
       filters.push((r) => r[col] === val);
       return builder;
     },
+    in: (col: string, vals: unknown[]) => {
+      const set = new Set(vals);
+      filters.push((r) => set.has(r[col]));
+      return builder;
+    },
     gte: (col: string, val: unknown) => {
       filters.push((r) => Number(r[col]) >= Number(val));
       return builder;
@@ -60,15 +65,30 @@ function makeSelectBuilder(rows: Row[]) {
 
 let subjectsData: Row[] = [];
 let topicsData: Row[] = [];
+let libraryItemsData: Row[] = [];
+let scopeJobsData: Row[] = [];
 
 const scope = {
   count: () => {
     const self = { eq: () => self, then: (res: (v: unknown) => unknown) => Promise.resolve({ count: activeCount }).then(res) };
     return self;
   },
-  select: (table: string) => makeSelectBuilder(table === "subjects" ? subjectsData : table === "topics" ? topicsData : []),
+  select: (table: string) =>
+    makeSelectBuilder(
+      table === "subjects" ? subjectsData : table === "topics" ? topicsData : table === "library_items" ? libraryItemsData : table === "jobs" ? scopeJobsData : [],
+    ),
 };
 vi.mock("@/server/db/family-scope", () => ({ forFamily: () => scope }));
+
+let budgetSpentUsd = 0;
+let budgetLimitUsd = 100;
+vi.mock("@/server/ai/store", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/server/ai/store")>();
+  return {
+    ...actual,
+    getBudget: () => Promise.resolve({ month: "2026-09", state: "normal", spentUsd: budgetSpentUsd, limitUsd: budgetLimitUsd }),
+  };
+});
 
 interface JobRow {
   id: string;
@@ -135,7 +155,8 @@ vi.mock("./generate", () => ({
   loadCandidates: (...a: unknown[]) => loadCandidatesMock(...a),
 }));
 
-const { ensureActiveLibraryBlock, warmAheadForSubject, registerLibraryWarmJobs, warmDedupeKey } = await import("./warmup");
+const { ensureActiveLibraryBlock, warmAheadForSubject, registerLibraryWarmJobs, warmDedupeKey, getTopicWarmupStatuses, estimateBulkWarmup, WARM_TOPIC_COST_USD } =
+  await import("./warmup");
 
 const subject = { id: "subj1", nameUk: "Математика", config: {} };
 const topic = { id: "top1", title: "Дроби", grade: 6 };
@@ -150,6 +171,10 @@ beforeEach(() => {
   otherRunningCount = 0;
   subjectsData = [];
   topicsData = [];
+  libraryItemsData = [];
+  scopeJobsData = [];
+  budgetSpentUsd = 0;
+  budgetLimitUsd = 100;
   kickJobs.mockClear();
   registerJobHandler.mockClear();
   generateOneBlockMock.mockClear();
@@ -338,5 +363,129 @@ describe("registerLibraryWarmJobs — re-checks subjects.active/is_stub before g
     generateOneBlockMock.mockResolvedValue(undefined);
     await runHandler().run(job);
     expect(generateOneBlockMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * US-22.4 (D-108, S33): `ensureActiveLibraryBlock`'s new `bypassDailyBudget`
+ * opt-in and `source` tagging — the bulk manual launch's own already-confirmed
+ * cost estimate replaces the daily soft cap for THAT path only; every other
+ * caller (unchanged `opts`) keeps the daily cap exactly as before.
+ */
+describe("ensureActiveLibraryBlock — manual bulk opt-in (US-22.4, D-108)", () => {
+  it("still defers on the daily cap by default, even with a source set (no bypass)", async () => {
+    warmSpendUsd = 5;
+    const result = await ensureActiveLibraryBlock("fam1", subject, topic, { immediate: true, source: "manual_bulk" });
+    expect(result).toEqual({ status: "deferred_daily_budget" });
+    expect(insertedJobs).toHaveLength(0);
+  });
+
+  it("bypasses the daily cap when bypassDailyBudget is true, tagging the job source: manual_bulk", async () => {
+    warmSpendUsd = 500; // way past the $5/day default — must not matter here
+    const result = await ensureActiveLibraryBlock("fam1", subject, topic, { immediate: false, source: "manual_bulk", bypassDailyBudget: true });
+    expect(result.status).toBe("job_pending");
+    expect(insertedJobs).toHaveLength(1);
+    expect((insertedJobs[0]!.payload as { source: string }).source).toBe("manual_bulk");
+  });
+
+  it("still tags source: auto (default) for every existing caller (warmAheadForSubject, unchanged opts)", async () => {
+    subjectsData = [{ id: "subj1", name_uk: "Математика", config: {}, active: true, is_stub: false }];
+    topicsData = [{ id: "t1", subject_id: "subj1", title: "Тема 1", grade: 6, sort_order: 1, is_current: false }];
+    await warmAheadForSubject("fam1", "subj1");
+    expect(insertedJobs).toHaveLength(1);
+    expect((insertedJobs[0]!.payload as { source: string }).source).toBe("auto");
+  });
+
+  it("still joins/dedupes an existing job the same way regardless of bypassDailyBudget", async () => {
+    existingJob = { id: "job-existing", status: "queued" };
+    const result = await ensureActiveLibraryBlock("fam1", subject, topic, { immediate: false, source: "manual_bulk", bypassDailyBudget: true });
+    expect(result).toEqual({ status: "job_pending", jobId: "job-existing" });
+    expect(insertedJobs).toHaveLength(0);
+  });
+});
+
+/**
+ * US-22.4 КП-5/КП-6 (D-108): `getTopicWarmupStatuses` — the single source of
+ * truth for both the confirm screen's de-dup ($0 for already-handled topics)
+ * and the topic-list status badges, shared between the manual bulk path and
+ * every automatic ADR-023 trigger (same `library_items`/`jobs` facts).
+ */
+describe("getTopicWarmupStatuses (US-22.4 КП-5/КП-6)", () => {
+  it("returns 'ready' for a topic with an active library block, regardless of any job history", async () => {
+    libraryItemsData = [{ topic_id: "t1", kind: "block", status: "active" }];
+    const statuses = await getTopicWarmupStatuses("fam1", ["t1"]);
+    expect(statuses).toEqual({ t1: "ready" });
+  });
+
+  it("maps queued/running/failed jobs to queued/generating/error", async () => {
+    scopeJobsData = [
+      { type: "library.warm_topic", dedupe_key: warmDedupeKey("t1"), status: "queued", created_at: "3" },
+      { type: "library.warm_topic", dedupe_key: warmDedupeKey("t2"), status: "running", created_at: "3" },
+      { type: "library.warm_topic", dedupe_key: warmDedupeKey("t3"), status: "failed", created_at: "3" },
+    ];
+    const statuses = await getTopicWarmupStatuses("fam1", ["t1", "t2", "t3"]);
+    expect(statuses).toEqual({ t1: "queued", t2: "generating", t3: "error" });
+  });
+
+  it("leaves a never-touched topic out of the result entirely (no badge)", async () => {
+    const statuses = await getTopicWarmupStatuses("fam1", ["t1"]);
+    expect(statuses).toEqual({});
+  });
+
+  it("picks the MOST RECENT job per topic when a dedupe_key has more than one row (failed retry then a fresh queue)", async () => {
+    // Deliberately inserted OLDEST-first, to prove the result comes from
+    // sorting by created_at (desc) rather than from array/insertion order.
+    scopeJobsData = [
+      { type: "library.warm_topic", dedupe_key: warmDedupeKey("t1"), status: "failed", created_at: "1" },
+      { type: "library.warm_topic", dedupe_key: warmDedupeKey("t1"), status: "queued", created_at: "2" },
+    ];
+    const statuses = await getTopicWarmupStatuses("fam1", ["t1"]);
+    expect(statuses).toEqual({ t1: "queued" });
+  });
+});
+
+/**
+ * US-22.4 КП-2/КП-3 (D-108): `estimateBulkWarmup` — the exact pre-confirmation
+ * numbers the overlay shows, including the monthly-budget block that has NO
+ * exception (unlike the daily soft cap this slice bypasses elsewhere).
+ */
+describe("estimateBulkWarmup (US-22.4 КП-2/КП-3)", () => {
+  it("excludes already-ready and already-queued/running topics from the cost", async () => {
+    libraryItemsData = [{ topic_id: "t1", kind: "block", status: "active" }];
+    scopeJobsData = [{ type: "library.warm_topic", dedupe_key: warmDedupeKey("t2"), status: "running", created_at: "1" }];
+    const estimate = await estimateBulkWarmup("fam1", ["t1", "t2", "t3", "t4"]);
+    expect(estimate.selectedCount).toBe(4);
+    expect(estimate.readyCount).toBe(2); // t1 (active), t2 (running)
+    expect(estimate.neededCount).toBe(2); // t3, t4
+    expect(estimate.estimatedCostUsd).toBeCloseTo(2 * WARM_TOPIC_COST_USD, 5);
+  });
+
+  it("flags exceedsAwarenessThreshold once the estimate passes $10 (КП-4)", async () => {
+    const ids = Array.from({ length: 31 }, (_, i) => `t${i}`); // 31 × 0.33 ≈ $10.23
+    const estimate = await estimateBulkWarmup("fam1", ids);
+    expect(estimate.exceedsAwarenessThreshold).toBe(true);
+  });
+
+  it("does NOT flag wouldExceedMonthlyLimit while comfortably under the monthly limit", async () => {
+    budgetSpentUsd = 10;
+    budgetLimitUsd = 100;
+    const estimate = await estimateBulkWarmup("fam1", ["t1", "t2"]);
+    expect(estimate.wouldExceedMonthlyLimit).toBe(false);
+  });
+
+  it("flags wouldExceedMonthlyLimit once spent + estimate would reach 100% of the monthly limit (ADR-012, no exceptions)", async () => {
+    budgetSpentUsd = 99.9;
+    budgetLimitUsd = 100;
+    const estimate = await estimateBulkWarmup("fam1", ["t1"]); // + $0.33 => 100.23% >= 100%
+    expect(estimate.wouldExceedMonthlyLimit).toBe(true);
+  });
+
+  it("is unaffected by the daily warm-up soft cap being exhausted — that check belongs to ensureActiveLibraryBlock, not the estimate", async () => {
+    warmSpendUsd = 999; // the DAILY cap — must have zero effect on the estimate or the monthly-limit check
+    budgetSpentUsd = 1;
+    budgetLimitUsd = 100;
+    const estimate = await estimateBulkWarmup("fam1", ["t1", "t2"]);
+    expect(estimate.neededCount).toBe(2);
+    expect(estimate.wouldExceedMonthlyLimit).toBe(false);
   });
 });

@@ -222,6 +222,44 @@ export async function getSubjectForecastPlan(familyId: string, subjectId: string
   return buildForecastPlan(current.id, nodes, edges);
 }
 
+/** US-22.4 (D-108, S33): subject + topic metadata `ensureActiveLibraryBlock` needs. */
+export interface WarmupTopicMeta {
+  id: string;
+  title: string;
+  grade: number | null;
+}
+export interface WarmupSubjectMeta {
+  id: string;
+  nameUk: string;
+  config: Record<string, unknown>;
+  topics: WarmupTopicMeta[];
+}
+
+/**
+ * US-22.4 (D-108): loads exactly what the bulk-warmup confirm action needs to
+ * call `ensureActiveLibraryBlock` for each requested topic — never trusts
+ * anything the client sent beyond the topic ids themselves.
+ */
+export async function getSubjectForBulkWarmup(familyId: string, subjectId: string, topicIds: string[]): Promise<WarmupSubjectMeta | null> {
+  const scope = forFamily(familyId);
+  const { data: subject } = await scope
+    .select("subjects", "id, name_uk, config")
+    .eq("id", subjectId)
+    .maybeSingle<{ id: string; name_uk: string; config: Record<string, unknown> | null }>();
+  if (!subject) return null;
+
+  const uniqueIds = Array.from(new Set(topicIds));
+  const { data: topics } = uniqueIds.length
+    ? await scope
+        .select("topics", "id, title, grade")
+        .eq("subject_id", subjectId)
+        .in("id", uniqueIds)
+        .returns<WarmupTopicMeta[]>()
+    : { data: [] as WarmupTopicMeta[] };
+
+  return { id: subject.id, nameUk: subject.name_uk, config: subject.config ?? {}, topics: topics ?? [] };
+}
+
 /** "Курси → Групи" (US-22.3): a group and how many courses it currently holds. */
 export interface CourseGroupOverviewItem {
   id: string;
