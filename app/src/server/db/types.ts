@@ -83,7 +83,20 @@ export interface SubjectRow {
   active: boolean;
   is_stub: boolean;
   sort_order: number;
-  config: { icon?: string; shortNameUk?: string } & Record<string, unknown>;
+  config: { icon?: string; shortNameUk?: string; requires_diagnostic?: boolean } & Record<string, unknown>;
+  /** E-22 (ADR-030): "school_subject" (the 10 standard + parent-added) or "course" (US-22.2). */
+  kind: "school_subject" | "course";
+  /** Only meaningful for kind='course' (US-22.3) — null for every school subject. */
+  group_id: string | null;
+}
+
+/** A course group (US-22.3, ADR-030): an optional "Group -> Courses" level. */
+export interface CourseGroupRow {
+  id: string;
+  owner_family_id: string;
+  name_uk: string;
+  active: boolean;
+  sort_order: number;
 }
 
 export interface NotificationRow {

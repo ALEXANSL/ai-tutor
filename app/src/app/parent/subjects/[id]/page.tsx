@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { CurrentTopicPicker } from "@/components/parent/subjects/CurrentTopicPicker";
 import { ForecastPlanPanel } from "@/components/parent/subjects/ForecastPlanPanel";
 import { LibraryCardsList } from "@/components/parent/subjects/LibraryCardsList";
+import { RenameSubjectForm } from "@/components/parent/subjects/RenameSubjectForm";
 import { StartLessonButton } from "@/components/parent/subjects/StartLessonButton";
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
@@ -43,6 +44,10 @@ export default async function SubjectDetailPage({ params }: { params: Promise<{ 
         </Link>
         {subject.name}
       </PageTitle>
+
+      <Panel>
+        <RenameSubjectForm subjectId={subject.id} name={subject.name} />
+      </Panel>
 
       {!subject.hasTextbook ? (
         <Panel title={t.noTextbook.title}>

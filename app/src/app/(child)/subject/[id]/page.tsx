@@ -29,7 +29,11 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
   if (!UUID.test(id)) notFound();
   const { ctx } = await requireChild();
   const subject = await getSubjectDetail(ctx.familyId, id);
-  if (!subject || !subject.active) notFound();
+  // VP-52/US-22.3 КП-3: a direct link to a course must 404 the same way an
+  // inactive one does when its group has been turned off — `childVisible`
+  // carries that effective-visibility rule (identical to `active` for a
+  // school subject, which has no group).
+  if (!subject || !subject.childVisible) notFound();
   const t = uk.child.today;
   const ts = uk.child.subject;
 

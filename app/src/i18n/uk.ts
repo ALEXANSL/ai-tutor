@@ -130,6 +130,13 @@ export const uk = {
       subjectsSubtitle: "Скоро тут можна буде обрати, чим зайнятися.",
       soon: "скоро",
       modulesTile: "Ще модулі",
+      // E-22 (US-22.2 КП-5): courses show in their own section with a
+      // "курс" badge, next to the school subjects — a course that is
+      // inactive (or whose group is inactive) is simply absent (VP-52),
+      // never a grey tile.
+      coursesTitle: "Курси",
+      coursesSubtitle: "Тато підготував для тебе окремі курси.",
+      courseBadge: "курс",
     },
     subject: {
       // D-65: the child picks any topic of the textbook, not only the one
@@ -379,6 +386,7 @@ export const uk = {
       directives: "Вказівки й повідомлення",
       budget: "Бюджет і моделі",
       subjects: "Предмети",
+      courses: "Курси",
       books: "Мої книги",
       settings: "Налаштування",
       modulesSoon: "Модулі (скоро)",
@@ -475,6 +483,27 @@ export const uk = {
     subjects: {
       title: "Предмети",
       listDesc: "Оберіть предмет і поточну тему за підручником — система побудує прогноз-план: що перевірити, що зараз, що далі.",
+      // E-22 (US-22.1, ADR-030): add/rename a school subject, and the
+      // active/inactive switch (VP-52: inactive stays a visible grey tile,
+      // unlike a course — see uk.parent.courses below).
+      add: {
+        title: "Додати шкільний предмет",
+        namePlaceholder: "Наприклад, «Інформатика»",
+        submit: "Додати",
+        hint: "Новий предмет одразу видно в переліку, неактивним — додайте матеріал, щоб активувати.",
+        added: "Предмет додано.",
+      },
+      rename: {
+        title: "Перейменувати предмет",
+        submit: "Зберегти назву",
+        saved: "Назву збережено.",
+      },
+      toggleActive: {
+        activate: "Активувати",
+        deactivate: "Вимкнути",
+        activated: "Предмет активовано.",
+        deactivated: "Предмет вимкнено — дитина побачить сіру неактивну плитку.",
+      },
       status: { active: "Активовано", inactive: "Не активовано" },
       currentTopic: "Поточна тема",
       currentTopicNone: "Поточну тему ще не обрано",
@@ -506,6 +535,9 @@ export const uk = {
         topicNotFound: "Оберіть тему зі списку тем цього підручника.",
         pickTopicFirst: "Спершу оберіть тему зі списку.",
         startLessonFailed: "Не вдалося підготувати урок. Спробуйте ще раз за кілька хвилин або перевірте налаштування ШІ.",
+        invalidName: "Введіть назву предмета (від 1 до 120 символів).",
+        duplicateName: "Такий предмет уже є.",
+        notFound: "Предмет не знайдено.",
       },
       library: {
         title: "Бібліотека блоків теми",
@@ -546,6 +578,76 @@ export const uk = {
         currentTitle: "Поточна тема",
         nextTitle: "Наступні теми",
         nextEmpty: "Це остання тема в підручнику — наступних тем не знайдено.",
+      },
+    },
+    // E-22 (US-22.2, ADR-030): a deliberately SEPARATE screen/list from
+    // "Предмети" (US-22.2 КП-1: "окремий, не той самий список") — курси поза
+    // шкільною програмою; active=false fully hides a course from the child
+    // (VP-52), unlike a school subject's grey tile.
+    courses: {
+      title: "Курси",
+      listDesc: "Курси поза шкільною програмою — наприклад, за книгою, яку ви самі підготували. Вимкнений курс повністю зникає з дитячого інтерфейсу (на відміну від предметів).",
+      empty: "Курсів поки немає.",
+      status: { active: "Активовано", inactive: "Вимкнено — приховано від дитини" },
+      groupLabel: "Група",
+      noGroup: "Без групи",
+      open: "Відкрити ▸",
+      groupsLink: "Групи курсів ▸",
+      add: {
+        title: "Додати курс",
+        namePlaceholder: "Наприклад, «Claude Prototyping»",
+        groupLabel: "Група (необов'язково)",
+        noGroupOption: "Без групи",
+        submit: "Додати курс",
+        added: "Курс додано.",
+      },
+      detail: {
+        back: "◂ Курси",
+        renameTitle: "Перейменувати й перегрупувати",
+        submit: "Зберегти",
+        saved: "Збережено.",
+        attachHint: "Щоб додати матеріал курсу — відкрийте книгу в «Мої книги» і оберіть цей курс як предмет.",
+        attachCta: "Перейти в «Мої книги»",
+      },
+      toggleActive: {
+        activate: "Активувати",
+        deactivate: "Вимкнути",
+        activated: "Курс активовано.",
+        deactivated: "Курс вимкнено — дитина його більше не бачить.",
+      },
+      errors: {
+        invalidName: "Введіть назву курсу (від 1 до 120 символів).",
+        duplicateName: "Такий курс уже є.",
+        notFound: "Курс не знайдено.",
+        groupNotFound: "Групу не знайдено.",
+      },
+    },
+    courseGroups: {
+      title: "Групи курсів",
+      listDesc: "Об'єднайте курси в групу (наприклад, «Група ІТ») — тато вимикає всю групу одним перемикачем, або лише окремий курс усередині неї.",
+      empty: "Груп поки немає.",
+      courseCount: (n: number) => `курсів: ${n}`,
+      status: { active: "Активовано", inactive: "Вимкнено — приховано разом з усіма курсами групи" },
+      add: {
+        title: "Додати групу",
+        namePlaceholder: "Наприклад, «Група ІТ»",
+        submit: "Додати групу",
+        added: "Групу додано.",
+      },
+      rename: {
+        submit: "Зберегти назву",
+        saved: "Назву збережено.",
+      },
+      toggleActive: {
+        activate: "Активувати групу",
+        deactivate: "Вимкнути групу",
+        activated: "Групу активовано.",
+        deactivated: "Групу вимкнено — усі її курси приховано від дитини.",
+      },
+      errors: {
+        invalidName: "Введіть назву групи (від 1 до 120 символів).",
+        duplicateName: "Така група вже є.",
+        notFound: "Групу не знайдено.",
       },
     },
     books: {
