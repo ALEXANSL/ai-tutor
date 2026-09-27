@@ -123,6 +123,7 @@ const {
   chooseStartBlock,
   continueAfterBlock,
   getPreviousModuleView,
+  goToPreviousStep,
   pauseLessonSession,
   resumeLessonSession,
   startLessonSession,
@@ -952,6 +953,80 @@ describe("getPreviousModuleView (US-6.16 КП-2, BUG-029)", () => {
     scopeState.tables = { lesson_sessions: { id: "s1", current_block_order: 2 }, session_blocks: [] };
 
     const view = await getPreviousModuleView("fam1", "s1");
+
+    expect(view).toBeNull();
+    expect(loadLibraryItem).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * BUG-029 follow-up (PO): real "⬅️" navigation, not a read-only preview.
+ * Symmetric counterpart to `advanceAfterStep` — moves `current_step_id`
+ * back one step, scoped to the current active block (see `goToPreviousStep`'s
+ * own comment on why a block-boundary crossing is out of scope for now).
+ */
+describe("goToPreviousStep (BUG-029 follow-up: real step-back navigation)", () => {
+  it("moves current_step_id back one step within the active block and returns that step's view", async () => {
+    resetScope();
+    scopeState.tables = {
+      lesson_sessions: { id: "s1", current_block_order: 1, current_step_id: "st2" },
+      session_blocks: [{ session_id: "s1", sort_order: 1, library_item_id: "A" }],
+    };
+    loadLibraryItem.mockResolvedValue({
+      id: "A",
+      title: "Блок A",
+      estimatedMinutes: 7,
+      visibleOutcomeUk: null,
+      steps: [
+        { id: "st1", sortOrder: 0, type: "slide", content: { textUk: "Крок 1" }, visual: {}, sourceRefs: [] },
+        { id: "st2", sortOrder: 1, type: "slide", content: { textUk: "Крок 2" }, visual: {}, sourceRefs: [] },
+        { id: "st3", sortOrder: 2, type: "slide", content: { textUk: "Крок 3" }, visual: {}, sourceRefs: [] },
+      ],
+    });
+
+    const view = await goToPreviousStep("fam1", "s1");
+
+    expect(view).toEqual({
+      stepId: "st1",
+      type: "slide",
+      content: { textUk: "Крок 1" },
+      visual: {},
+      sourceRefs: [],
+      stepNumber: 1,
+      totalSteps: 3,
+    });
+    const update = scopeState.updates.find((u) => u.table === "lesson_sessions");
+    expect(update?.values).toEqual({ current_step_id: "st1" });
+  });
+
+  it("returns null (no write at all) when already at the active block's first step", async () => {
+    resetScope();
+    scopeState.tables = {
+      lesson_sessions: { id: "s1", current_block_order: 1, current_step_id: "st1" },
+      session_blocks: [{ session_id: "s1", sort_order: 1, library_item_id: "A" }],
+    };
+    loadLibraryItem.mockResolvedValue({
+      id: "A",
+      title: "Блок A",
+      estimatedMinutes: 7,
+      visibleOutcomeUk: null,
+      steps: [
+        { id: "st1", sortOrder: 0, type: "slide", content: {}, visual: {}, sourceRefs: [] },
+        { id: "st2", sortOrder: 1, type: "slide", content: {}, visual: {}, sourceRefs: [] },
+      ],
+    });
+
+    const view = await goToPreviousStep("fam1", "s1");
+
+    expect(view).toBeNull();
+    expect(scopeState.updates.find((u) => u.table === "lesson_sessions")).toBeUndefined();
+  });
+
+  it("returns null when the session has no current step (e.g. between blocks)", async () => {
+    resetScope();
+    scopeState.tables = { lesson_sessions: { id: "s1", current_block_order: 1, current_step_id: null } };
+
+    const view = await goToPreviousStep("fam1", "s1");
 
     expect(view).toBeNull();
     expect(loadLibraryItem).not.toHaveBeenCalled();

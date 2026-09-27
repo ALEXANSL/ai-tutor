@@ -15,6 +15,7 @@ import {
   chooseStartBlock,
   continueAfterBlock,
   getPreviousModuleView,
+  goToPreviousStep,
   pauseLessonSession,
   resumeLessonSession,
   setPresentationMode,
@@ -23,6 +24,7 @@ import {
   submitStepAnswer,
   takeLessonBreak,
   tickLessonActivity,
+  type LessonStepView,
   type PreviousModuleView,
   type StartCandidate,
 } from "@/server/lessons/orchestrator";
@@ -317,6 +319,18 @@ export async function getPreviousModuleAction(sessionId: string): Promise<Previo
   const { familyId } = await requireLessonAccess();
   UUID.parse(sessionId);
   return getPreviousModuleView(familyId, sessionId);
+}
+
+/**
+ * BUG-029 (follow-up per PO): real "⬅️" step-back navigation within the
+ * current active block — `null` when already at that block's first step
+ * (the caller then falls back to `getPreviousModuleAction`'s read-only
+ * preview of the earlier, completed block, if any).
+ */
+export async function goToPreviousStepAction(sessionId: string): Promise<LessonStepView | null> {
+  const { familyId } = await requireLessonAccess();
+  UUID.parse(sessionId);
+  return goToPreviousStep(familyId, sessionId);
 }
 
 /**

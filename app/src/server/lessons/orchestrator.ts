@@ -783,6 +783,49 @@ export async function getPreviousModuleView(familyId: string, sessionId: string)
 }
 
 /**
+ * BUG-029 (follow-up per PO): real "⬅️" navigation, not just a read-only
+ * preview — symmetric to the forward move in `advanceAfterStep`. Moves
+ * `current_step_id` back one step WITHIN the current active block only
+ * (scope decision below); the child then sees that step exactly as she
+ * would moving forward and can submit an answer again through the ordinary
+ * `submitStepAnswer` path (no special "re-answer" code needed — it already
+ * appends a new `step_attempts` row with the next `attempt_no` for a
+ * repeated attempt at the same `step_id`, the same mechanism an
+ * `alt_explanation` retry already uses; nothing here overwrites or deletes
+ * the earlier attempt, and nothing here touches `points_earned`, which no
+ * code path writes yet — see docs/bugs/BUG-029 for why that makes a
+ * double-award guard unnecessary for now).
+ *
+ * Scope decision (documented per the PO's item 4 fallback): only steps
+ * already visited in the CURRENT block move this way. `null` at the first
+ * step of the active block even when an earlier block exists — going back
+ * across a block boundary would need to reopen a `session_blocks` row
+ * already marked `done` and could let `continueAfterBlock`/`nextSessionBlock`
+ * pick and append an extra, unwanted block on the way back forward (BUG-009's
+ * "no block repeats" bookkeeping assumes finished blocks stay finished).
+ * `getPreviousModuleView` (read-only, unaffected by this) still covers "what
+ * did the previous, already-completed block look like" at that boundary.
+ */
+export async function goToPreviousStep(familyId: string, sessionId: string): Promise<LessonStepView | null> {
+  const scope = forFamily(familyId);
+  const session = await loadSession(familyId, sessionId);
+  if (!session || !session.current_step_id) return null;
+  const { data: blockRow } = await scope
+    .select("session_blocks", "library_item_id")
+    .eq("session_id", sessionId)
+    .eq("sort_order", session.current_block_order)
+    .maybeSingle<{ library_item_id: string }>();
+  if (!blockRow) return null;
+  const item = await loadLibraryItem(familyId, blockRow.library_item_id);
+  if (!item) return null;
+  const idx = item.steps.findIndex((s) => s.id === session.current_step_id);
+  if (idx <= 0) return null; // already the block's first step — nothing earlier IN this block
+  const prevStep = item.steps[idx - 1]!;
+  await scope.update("lesson_sessions", { current_step_id: prevStep.id }).eq("id", sessionId);
+  return stepView(item, prevStep, idx);
+}
+
+/**
  * US-12.2 КП-1: a client heartbeat (every ~20 s while the lesson is on
  * screen and not idle) accumulates continuous work time; once it reaches the
  * child's `break_after_minutes` (налашт., default 20), the next answer's
