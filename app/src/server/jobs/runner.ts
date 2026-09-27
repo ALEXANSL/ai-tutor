@@ -16,7 +16,7 @@ export interface JobRow {
   max_attempts: number;
 }
 
-export type JobOutcome = void | { requeue: true };
+export type JobOutcome = void | { requeue: true; /** Extra delay before `run_after` (e.g. a concurrency-limit backoff, ADR-023). */ delaySeconds?: number };
 
 export interface JobHandler {
   run(job: JobRow, ctx: { deadline: number }): Promise<JobOutcome>;
@@ -76,9 +76,10 @@ export async function runJobs(opts: { budgetMs?: number; maxJobs?: number } = {}
     try {
       const outcome = await handler.run(job, { deadline });
       if (outcome && "requeue" in outcome) {
+        const runAfter = new Date(Date.now() + (outcome.delaySeconds ?? 0) * 1000);
         await db
           .from("jobs")
-          .update({ status: "queued", attempts: Math.max(0, job.attempts - 1), run_after: new Date().toISOString(), locked_until: null })
+          .update({ status: "queued", attempts: Math.max(0, job.attempts - 1), run_after: runAfter.toISOString(), locked_until: null })
           .eq("id", job.id);
       } else {
         await db.from("jobs").update({ status: "done", locked_until: null, last_error: null }).eq("id", job.id);

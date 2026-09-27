@@ -112,3 +112,31 @@ export function parseServiceAccount(raw: string | null | undefined): GoogleServi
 export function getGoogleServiceAccount(): GoogleServiceAccount | null {
   return parseServiceAccount(getServerSecret("GOOGLE_SERVICE_ACCOUNT_JSON"));
 }
+
+/**
+ * ADR-023 §Частина 1.5: global cap on `library.warm_topic` jobs running at
+ * once (across every concurrent Vercel invocation — enforced by counting
+ * `jobs` rows with `status = 'running'`, not by anything in-process). Default
+ * **2** is a deliberately conservative placeholder: this environment has no
+ * way to read the family's actual Anthropic/OpenAI account tier or RPM limit
+ * (no billing console access, no tier info in env) — `docs/STATUS.md` asks
+ * Alex to check the real per-minute limits in both provider consoles and
+ * raise `LIBRARY_WARM_MAX_CONCURRENT` if they comfortably allow more before
+ * relying on 2 as a long-term value.
+ */
+export function getLibraryWarmMaxConcurrent(): number {
+  const raw = Number(process.env.LIBRARY_WARM_MAX_CONCURRENT);
+  return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 2;
+}
+
+/**
+ * ADR-023 §Частина 1.6 (D-89, PO default accepted): daily soft cap on total
+ * `ai_calls.cost_usd` tagged with a `library.warm_topic` job (`job_id is not
+ * null`) — a guard against the parent marking many topics `is_current` at
+ * once in one sitting, independent of the monthly 80/100/110% budget states
+ * (ADR-012), which still apply to every individual call as usual.
+ */
+export function getLibraryWarmDailyBudgetUsd(): number {
+  const raw = Number(process.env.LIBRARY_WARM_DAILY_BUDGET_USD);
+  return Number.isFinite(raw) && raw > 0 ? raw : 5;
+}

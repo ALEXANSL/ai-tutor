@@ -6,19 +6,24 @@ import { uk } from "@/i18n/uk";
 import { requireLessonAccess } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
 import type { ChildProfileRow } from "@/server/db/types";
-import { askTopicChat } from "@/server/lessons/chat";
+import { askTopicChat, explainStepAgain } from "@/server/lessons/chat";
 import { recordChildFeedback, type ChildFeedbackKind } from "@/server/lessons/generate";
+import { readableTextForStep, synthesizeStepNarration } from "@/server/lessons/narration";
 import {
   acknowledgeSlide,
+  checkWarmupProgress,
   chooseStartBlock,
   continueAfterBlock,
+  getPreviousModuleView,
   pauseLessonSession,
   resumeLessonSession,
+  setPresentationMode,
   skipLessonBreak,
   startLessonSession,
   submitStepAnswer,
   takeLessonBreak,
   tickLessonActivity,
+  type PreviousModuleView,
   type StartCandidate,
 } from "@/server/lessons/orchestrator";
 import type { FormState } from "./state";
@@ -231,4 +236,105 @@ export async function skipLessonBreakAction(sessionId: string): Promise<{ status
   UUID.parse(sessionId);
   await skipLessonBreak(familyId, sessionId);
   return { status: "ok" };
+}
+
+/**
+ * US-6.16 КП-1 ("Пояснити"): the current step, explained differently, posted
+ * into the topic chat (docs/04 §11.4). Not a graded attempt, so `stepId` is
+ * only checked against the session's own current step, like every other
+ * per-step action here.
+ */
+export async function explainStepAction(sessionId: string, stepId: string, subjectId: string, topicId: string) {
+  const { familyId } = await requireLessonAccess();
+  UUID.parse(sessionId);
+  UUID.parse(stepId);
+  UUID.parse(subjectId);
+  UUID.parse(topicId);
+  const scope = forFamily(familyId);
+  const [{ data: session }, { data: stepRow }, { data: subject }, { data: topic }] = await Promise.all([
+    scope.select("lesson_sessions", "current_step_id").eq("id", sessionId).maybeSingle<{ current_step_id: string | null }>(),
+    scope.select("library_steps", "type, content").eq("id", stepId).maybeSingle<{ type: string; content: Record<string, unknown> }>(),
+    scope.select("subjects", "name_uk").eq("id", subjectId).maybeSingle<{ name_uk: string }>(),
+    scope.select("topics", "title").eq("id", topicId).maybeSingle<{ title: string }>(),
+  ]);
+  if (!session || session.current_step_id !== stepId || !stepRow || !subject || !topic) {
+    return { status: "error" as const, message: uk.common.error };
+  }
+  const child = await onlyChild(familyId);
+  const message = await explainStepAgain(
+    familyId,
+    child.id,
+    child.tutor_name ?? "",
+    child.tutor_name_gender,
+    subjectId,
+    subject.name_uk,
+    topicId,
+    topic.title,
+    child.nickname ?? "",
+    readableTextForStep(stepRow),
+    sessionId,
+  );
+  return { status: "ok" as const, message };
+}
+
+const presentationModeSchema = z.enum(["voice", "auto", "text"]);
+
+/** US-6.16 КП-5: the "🔊 Вголос / 🤖 Авто / 🔤 Текстом" switch. */
+export async function setPresentationModeAction(sessionId: string, mode: string): Promise<FormState> {
+  const { familyId } = await requireLessonAccess();
+  UUID.parse(sessionId);
+  await setPresentationMode(familyId, sessionId, presentationModeSchema.parse(mode));
+  revalidatePath(`/lesson/${sessionId}`);
+  return { status: "ok" };
+}
+
+/**
+ * US-6.16 КП-5 (режим «Вголос»): synthesizes narration for the current
+ * step's own text. Never a hard failure for the child — see
+ * `synthesizeStepNarration`'s doc comment.
+ */
+export async function synthesizeNarrationAction(
+  sessionId: string,
+  stepId: string,
+): Promise<{ status: "ok"; audioBase64: string; mimeType: string } | { status: "unavailable" }> {
+  const { familyId } = await requireLessonAccess();
+  UUID.parse(sessionId);
+  UUID.parse(stepId);
+  const scope = forFamily(familyId);
+  const [{ data: session }, { data: stepRow }] = await Promise.all([
+    scope.select("lesson_sessions", "current_step_id").eq("id", sessionId).maybeSingle<{ current_step_id: string | null }>(),
+    scope.select("library_steps", "type, content").eq("id", stepId).maybeSingle<{ type: string; content: Record<string, unknown> }>(),
+  ]);
+  if (!session || session.current_step_id !== stepId || !stepRow) return { status: "unavailable" };
+  const text = readableTextForStep(stepRow);
+  const audio = await synthesizeStepNarration(familyId, sessionId, text);
+  if (!audio) return { status: "unavailable" };
+  return { status: "ok", ...audio };
+}
+
+/** US-6.16 КП-2: read-only preview of the block completed just before the current one. */
+export async function getPreviousModuleAction(sessionId: string): Promise<PreviousModuleView | null> {
+  const { familyId } = await requireLessonAccess();
+  UUID.parse(sessionId);
+  return getPreviousModuleView(familyId, sessionId);
+}
+
+/**
+ * ADR-023 §Частина 1.7: polled by `LibraryWarmProgress` while the session's
+ * `mode === "warming"` (a "cold" topic that had no active library block at
+ * start). Once ready, revalidates the lesson page so the next render picks
+ * up the session's own new `mode` (moved to `choosing` by
+ * `checkWarmupProgress` itself) instead of returning candidates here too.
+ */
+export async function checkWarmupProgressAction(sessionId: string): Promise<{ status: "ok"; ready: boolean; stage: string | null } | { status: "error"; message: string }> {
+  const { familyId } = await requireLessonAccess();
+  UUID.parse(sessionId);
+  try {
+    const progress = await checkWarmupProgress(familyId, sessionId);
+    if (progress.ready) revalidatePath(`/lesson/${sessionId}`);
+    return { status: "ok", ready: progress.ready, stage: progress.stage };
+  } catch (e) {
+    console.error(`checkWarmupProgressAction failed: ${(e as Error).message}`);
+    return { status: "error", message: uk.common.error };
+  }
 }

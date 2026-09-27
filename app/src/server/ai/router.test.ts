@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { estimateCostUsd, fallbackOf, selectModel } from "./policy";
-import { callStructured, callVisionStructured, embedTexts, type RouterDeps } from "./router";
+import { callAudio, callStructured, callVisionStructured, embedTexts, type RouterDeps } from "./router";
 import { BudgetBlockedError, ProviderError, type CallRecord, type ModelRoute } from "./types";
 
 const route = (over: Partial<ModelRoute> = {}): ModelRoute => ({
@@ -110,6 +110,9 @@ function deps(over: Partial<RouterDeps> = {}): RouterDeps & { calls: CallRecord[
       vision: {
         anthropic: async () => ({ data: { ok: true }, usage: { inputTokens: 1000, outputTokens: 100 } }),
       },
+      audio: {
+        openai: async () => ({ data: { audioBase64: "AAAA", mimeType: "audio/mpeg" }, usage: { inputTokens: 0, outputTokens: 0 } }),
+      },
     },
     now: () => (t += 50),
     ...over,
@@ -201,5 +204,14 @@ describe("callStructured / embedTexts (router)", () => {
     const res = await callVisionStructured("ocr_page", { system: "s", prompt: "p", schema, documents }, ctx, d);
     expect(res.result).toEqual({ ok: true });
     expect(d.calls[0]).toMatchObject({ role: "ocr_page", provider: "anthropic", model: "claude-sonnet-5" });
+  });
+
+  it("calls the audio provider and costs the call by character count (US-6.16, ADR-025 passive_narration)", async () => {
+    const d = deps({
+      loadRoute: async () => route({ role: "passive_narration", primary_provider: "openai", primary_model: "gpt-4o-mini-tts", params: {} }),
+    });
+    const res = await callAudio("passive_narration", { text: "абвгд" }, ctx, d);
+    expect(res.result).toEqual({ audioBase64: "AAAA", mimeType: "audio/mpeg" });
+    expect(d.calls[0]).toMatchObject({ role: "passive_narration", provider: "openai", model: "gpt-4o-mini-tts", input_tokens: 5, output_tokens: 0 });
   });
 });

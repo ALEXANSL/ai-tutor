@@ -225,6 +225,38 @@ export const uk = {
       crashBody: "Урок не вдалося відкрити. Спробуй ще раз або повернись на «Сьогодні» — усе, що ти вже зробила, збережено.",
       crashRetry: "Спробувати ще раз",
       crashBackToToday: "← До «Сьогодні»",
+      // US-6.16 (D-80/D-81): lesson-screen navigation rail (docs/04 §11.4).
+      navHome: "🏠 На головну",
+      navSubjectList: "📚 Список уроків предмету",
+      navPrevModule: "⬅️ Попередній модуль",
+      navExplain: "💡 Пояснити",
+      explainSending: "Пояснюю…",
+      explainFailed: "Зараз не вдалося пояснити ще раз — спробуй, будь ласка, ще раз.",
+      // US-6.16 КП-2: read-only preview of the previously completed block.
+      prevModuleTitle: "Попередній блок (перегляд)",
+      prevModuleBody: "Це те, що ти вже пройшла — тут нічого не можна відповідати, лише переглянути.",
+      prevModuleClose: "Закрити й повернутись до уроку",
+      // US-6.16 КП-5, ADR-025: the "🔊 Вголос / 🤖 Авто / 🔤 Текстом" switch (docs/04 §5.2).
+      speechModeCaption: "Озвучка:",
+      speechModeVoice: "Вголос",
+      speechModeAuto: "Авто",
+      speechModeText: "Текстом",
+      audiobookBanner: "Режим «Вголос»: репетитор читає розділ, як аудіокнигу.",
+      textModeBanner: "Зараз говоримо текстом",
+      narrationPause: "⏸ Пауза",
+      narrationReplay: "↺ Повторити",
+      // ADR-023 (D-76): shown on the progress screen while the topic's first
+      // block is still being generated in the background — replaces the old
+      // static "Готуємо урок…" with a staged, honest progress view.
+      warmup: {
+        title: "Готуємо урок…",
+        etaHint: "Зазвичай це триває ≈ 1 хвилину",
+        stagePlanning: "Складаємо план уроку",
+        stageGenerating: "Пишемо урок",
+        stageReviewing: "Перевіряємо якість",
+        stageRevising: "Допрацьовуємо",
+        stageSaving: "Зберігаємо",
+      },
     },
     friend: {
       title: "ШІ-друг",

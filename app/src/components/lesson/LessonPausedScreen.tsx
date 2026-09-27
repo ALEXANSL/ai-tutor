@@ -26,7 +26,7 @@ const REASON_TEXT: Record<string, string> = {
  * (BUG-008 fix): if the pause lasted 24h+, `resumeLessonAction` also returns
  * a short reminder slide, shown once here before the step itself loads.
  */
-export function LessonPausedScreen({ sessionId, reason }: { sessionId: string; reason: string | null }) {
+export function LessonPausedScreen({ sessionId, subjectId, reason }: { sessionId: string; subjectId: string; reason: string | null }) {
   const t = uk.child.lesson;
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -50,9 +50,14 @@ export function LessonPausedScreen({ sessionId, reason }: { sessionId: string; r
     return (
       <div className="flex min-h-[70vh] flex-col items-center justify-center gap-3 px-4 py-8">
         {/* BUG-025 */}
-        <Link href="/today" className="self-center text-sm font-bold text-muted underline">
-          {t.backToToday}
-        </Link>
+        <div className="flex flex-wrap justify-center gap-4">
+          <Link href="/today" className="self-center text-sm font-bold text-muted underline">
+            {t.backToToday}
+          </Link>
+          <Link href={`/subject/${subjectId}`} className="self-center text-sm font-bold text-muted underline">
+            {t.navSubjectList}
+          </Link>
+        </div>
         <ChildCard>
           <p className="mb-2 text-sm font-bold text-muted">{t.reminderTitle}</p>
           <p className="mb-6 whitespace-pre-line text-lg">{reminder}</p>
@@ -69,9 +74,15 @@ export function LessonPausedScreen({ sessionId, reason }: { sessionId: string; r
       {/* BUG-025: every pause screen (including the one reached via the
           "Вийти з уроку" button itself, BUG-020) must still offer a way
           back to "Сьогодні" — not only "Продовжити". */}
-      <Link href="/today" className="self-center text-sm font-bold text-muted underline">
-        {t.backToToday}
-      </Link>
+      <div className="flex flex-wrap justify-center gap-4">
+        <Link href="/today" className="self-center text-sm font-bold text-muted underline">
+          {t.backToToday}
+        </Link>
+        {/* US-6.16 КП-4 */}
+        <Link href={`/subject/${subjectId}`} className="self-center text-sm font-bold text-muted underline">
+          {t.navSubjectList}
+        </Link>
+      </div>
       <ChildCard>
         <p className="mb-6 text-lg font-bold">{REASON_TEXT[reason ?? ""] ?? REASON_TEXT.parent_mode}</p>
         <button type="button" disabled={pending} onClick={resume} className={primaryButton}>

@@ -8,7 +8,9 @@ import { moderateMessage } from "@/server/safety/moderate";
 import { recordSafetyEvent } from "@/server/safety/events";
 import { safetyPreambleGenericUk } from "@/server/safety/preamble";
 import { URGENT_REPLY_UK } from "@/server/safety/urgentReplyUk";
-import { getOrCreateFallbackBlock, getOrGenerateLessonBlocks, loadLibraryItem, nextSessionBlock, type LibraryItemView, type LibraryStepView } from "./generate";
+import { createServiceClient } from "@/server/supabase/clients";
+import { CANDIDATE_TARGET, getOrCreateFallbackBlock, getOrGenerateLessonBlocks, loadCandidates, loadLibraryItem, nextSessionBlock, type LibraryItemView, type LibraryStepView } from "./generate";
+import type { PipelineStage } from "./pipeline";
 import {
   breakDue,
   decideBranch,
@@ -62,6 +64,10 @@ interface SessionRow {
   planned_minutes: number;
   points_earned: number;
   paused_at: string | null;
+  /** US-6.16 КП-5: 'voice' | 'auto' | 'text' — the lesson-screen speech-mode switch. */
+  presentation_mode: string;
+  /** ADR-023: set only while `mode === "warming"` — the `library.warm_topic` job being waited on. */
+  warm_job_id: string | null;
 }
 
 async function loadSession(familyId: string, sessionId: string): Promise<SessionRow | null> {
@@ -87,6 +93,14 @@ export interface StartCandidate {
  * "простий шаблон" (`getOrCreateFallbackBlock`, US-6.11) as its only
  * candidate — instead of throwing and never creating a session at all. The
  * parent gets a notification naming the actual reason.
+ *
+ * ADR-023: a topic with zero active blocks ("cold") no longer generates
+ * inline here — `getOrGenerateLessonBlocks` hands off to a background
+ * `library.warm_topic` job and returns `warmJobId` instead. The session
+ * still gets created (so the child has somewhere to land and a URL to poll),
+ * just in `mode: "warming"` with no candidates yet; `checkWarmupProgress`
+ * below moves it to `choosing` once the job (or the safe fallback template)
+ * produces a block.
  */
 export async function startLessonSession(
   familyId: string,
@@ -94,7 +108,7 @@ export async function startLessonSession(
   subjectId: string,
   topicId: string,
   plannedMinutes: 30 | 45,
-): Promise<{ sessionId: string; candidates: StartCandidate[]; usedFallback: boolean }> {
+): Promise<{ sessionId: string; candidates: StartCandidate[]; usedFallback: boolean; warming: boolean }> {
   const scope = forFamily(familyId);
   const [{ data: subject }, { data: topic }] = await Promise.all([
     scope.select("subjects", "id, name_uk, config").eq("id", subjectId).maybeSingle<SubjectRow>(),
@@ -102,7 +116,7 @@ export async function startLessonSession(
   ]);
   if (!subject || !topic) throw new Error("subject or topic not found");
 
-  const { candidates: generated, failureReasonUk } = await getOrGenerateLessonBlocks(
+  const { candidates: generated, failureReasonUk, warmJobId } = await getOrGenerateLessonBlocks(
     familyId,
     subject.id,
     subject.name_uk,
@@ -111,6 +125,27 @@ export async function startLessonSession(
     topic.title,
     topic.grade,
   );
+
+  if (warmJobId) {
+    const { data: warming, error: warmingError } = await scope.client
+      .from("lesson_sessions")
+      .insert({
+        family_id: familyId,
+        child_profile_id: childProfileId,
+        subject_id: subjectId,
+        topic_id: topicId,
+        mode: "warming",
+        status: "active",
+        planned_minutes: plannedMinutes,
+        candidate_library_item_ids: [],
+        warm_job_id: warmJobId,
+      })
+      .select("id")
+      .single<{ id: string }>();
+    if (warmingError || !warming) throw new Error(`starting a warming lesson session failed: ${warmingError?.message}`);
+    return { sessionId: warming.id, candidates: [], usedFallback: false, warming: true };
+  }
+
   const usedFallback = generated.length === 0;
   const candidates = usedFallback
     ? [await getOrCreateFallbackBlock(familyId, subject.id, topic.id, topic.title, topic.grade)]
@@ -145,7 +180,75 @@ export async function startLessonSession(
     sessionId: session.id,
     candidates: candidates.map((c) => ({ libraryItemId: c.id, title: c.title, estimatedMinutes: c.estimatedMinutes })),
     usedFallback,
+    warming: false,
   };
+}
+
+export interface WarmupProgress {
+  ready: boolean;
+  /** `jobs.payload.stage` while not ready (planning/generating/reviewing/revising/saving). */
+  stage: PipelineStage | null;
+  usedFallback: boolean;
+  candidates: StartCandidate[];
+}
+
+/**
+ * ADR-023 §Частина 1.7/1.2: polled by the child's progress screen
+ * (`LibraryWarmProgress`) while `mode === "warming"`. Moves the session to
+ * `choosing` (real candidates, or the safe fallback template) the moment
+ * either an active block exists or the warm-up job is done trying — never
+ * leaves the child stuck on the progress screen forever.
+ */
+export async function checkWarmupProgress(familyId: string, sessionId: string): Promise<WarmupProgress> {
+  const session = await loadSession(familyId, sessionId);
+  if (!session) throw new Error("session not found");
+  if (session.mode !== "warming") {
+    // Already resolved (e.g. a second poll after the first one moved it on).
+    return { ready: true, stage: null, usedFallback: false, candidates: [] };
+  }
+
+  const scope = forFamily(familyId);
+  return resolveWarmupProgress(familyId, scope, session);
+}
+
+async function resolveWarmupProgress(familyId: string, scope: ReturnType<typeof forFamily>, session: SessionRow): Promise<WarmupProgress> {
+  const activeBlocks = await loadCandidates(scope, session.topic_id, CANDIDATE_TARGET);
+  if (activeBlocks.length > 0) {
+    const candidateIds = activeBlocks.map((b) => b.id);
+    await scope.update("lesson_sessions", { mode: "choosing", candidate_library_item_ids: candidateIds }).eq("id", session.id);
+    return {
+      ready: true,
+      stage: null,
+      usedFallback: false,
+      candidates: activeBlocks.map((b) => ({ libraryItemId: b.id, title: b.title, estimatedMinutes: b.estimated_minutes })),
+    };
+  }
+
+  const db = createServiceClient();
+  const { data: job } = session.warm_job_id
+    ? await db.from("jobs").select("status, payload").eq("id", session.warm_job_id).maybeSingle<{ status: string; payload: { stage?: PipelineStage } }>()
+    : { data: null };
+
+  if (!job || job.status === "failed" || job.status === "done") {
+    const { data: topic } = await scope.select("topics", "id, title, grade").eq("id", session.topic_id).maybeSingle<TopicRow>();
+    const fallback = await getOrCreateFallbackBlock(familyId, session.subject_id, session.topic_id, topic?.title ?? "", topic?.grade ?? null);
+    await scope.update("lesson_sessions", { mode: "choosing", candidate_library_item_ids: [fallback.id] }).eq("id", session.id);
+    if (job?.status === "failed") {
+      await notifyParent(familyId, {
+        type: "lesson_started_with_fallback",
+        severity: "normal",
+        payload: { topicId: session.topic_id, topicTitle: topic?.title ?? "", sessionId: session.id, reason: "фонове прогрівання не завершилось успіхом" },
+      }).catch((e: Error) => console.error(`lesson_started_with_fallback notification failed: ${e.message}`));
+    }
+    return {
+      ready: true,
+      stage: null,
+      usedFallback: true,
+      candidates: [{ libraryItemId: fallback.id, title: fallback.title, estimatedMinutes: fallback.estimatedMinutes }],
+    };
+  }
+
+  return { ready: false, stage: job.payload?.stage ?? "planning", usedFallback: false, candidates: [] };
 }
 
 /**
@@ -617,6 +720,45 @@ export async function acknowledgeSlide(familyId: string, sessionId: string, step
   const session = await loadSession(familyId, sessionId);
   if (!session || session.current_step_id !== stepId) throw new Error("stale step — reload the session");
   return advanceAfterStep(familyId, session);
+}
+
+/** US-6.16 КП-5: the child (or a parent configuring ahead) switches how the lesson is presented. */
+const PRESENTATION_MODES = new Set(["voice", "auto", "text"]);
+export async function setPresentationMode(familyId: string, sessionId: string, mode: string): Promise<void> {
+  if (!PRESENTATION_MODES.has(mode)) throw new Error(`invalid presentation_mode "${mode}"`);
+  await forFamily(familyId).update("lesson_sessions", { presentation_mode: mode }).eq("id", sessionId);
+}
+
+export interface PreviousModuleStepView {
+  type: string;
+  content: Record<string, unknown>;
+}
+
+export interface PreviousModuleView {
+  libraryItemId: string;
+  title: string;
+  steps: PreviousModuleStepView[];
+}
+
+/**
+ * US-6.16 КП-2: the previously completed block of THIS session, shown
+ * read-only (no grading, no AI call, current progress untouched) — the
+ * child's own "library preview" of what she just did, one step back.
+ * `null` when this is the first block (the button is hidden/disabled then).
+ */
+export async function getPreviousModuleView(familyId: string, sessionId: string): Promise<PreviousModuleView | null> {
+  const session = await loadSession(familyId, sessionId);
+  if (!session || session.current_block_order <= 1) return null;
+  const scope = forFamily(familyId);
+  const { data: blockRow } = await scope
+    .select("session_blocks", "library_item_id")
+    .eq("session_id", sessionId)
+    .eq("sort_order", session.current_block_order - 1)
+    .maybeSingle<{ library_item_id: string }>();
+  if (!blockRow) return null;
+  const item = await loadLibraryItem(familyId, blockRow.library_item_id);
+  if (!item) return null;
+  return { libraryItemId: item.id, title: item.title, steps: item.steps.map((s) => ({ type: s.type, content: s.content })) };
 }
 
 /**

@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { getServerSecret } from "../../env";
-import { AiNotConfiguredError, ProviderError, type RouteParams, type Usage } from "../types";
+import { AiNotConfiguredError, ProviderError, type AudioResult, type RouteParams, type Usage } from "../types";
 
 export interface EmbedRequest {
   model: string;
@@ -208,5 +208,60 @@ export async function openaiStructured<S extends z.ZodType>(
       outputTokens: body.usage?.output_tokens ?? 0,
       cachedInputTokens: body.usage?.input_tokens_details?.cached_tokens ?? 0,
     },
+  };
+}
+
+const TTS_ENDPOINT = "https://api.openai.com/v1/audio/speech";
+
+export interface OpenAiTtsRequest {
+  model: string;
+  text: string;
+  voiceId?: string;
+  params: RouteParams;
+}
+
+/**
+ * Passive narration (role `passive_narration`, ADR-025): reads already-
+ * generated step text aloud ("почитай мені параграф") — never the tutor's
+ * own live-voice persona (ADR-006, `tts` role). `gpt-4o-mini-tts` supports a
+ * tone `instructions` string; ADR-025 §Рішення asks for "тепло й спокійно,
+ * як аудіокнига". The endpoint streams raw audio bytes with no usage in the
+ * response — `router.ts`'s `callAudio` fills in `usage.inputTokens` from
+ * `text.length` for the cost estimate (see the S5 seed migration comment on
+ * `model_prices` for why that column is priced per character, not token).
+ */
+export async function openaiTts(req: OpenAiTtsRequest, fetchImpl: typeof fetch = fetch): Promise<{ data: AudioResult; usage: Usage }> {
+  const key = getServerSecret("OPENAI_API_KEY");
+  if (!key) throw new AiNotConfiguredError("OPENAI_API_KEY is not set");
+  if (!req.text.trim()) throw new ProviderError("openai tts: empty text", "openai", null, false);
+
+  let res: Response;
+  try {
+    res = await fetchImpl(TTS_ENDPOINT, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+      body: JSON.stringify({
+        model: req.model,
+        input: req.text,
+        voice: req.voiceId ?? "alloy",
+        instructions: "Читай тепло й спокійно, українською, як аудіокнигу — не як озвучений слайд.",
+        response_format: "mp3",
+      }),
+      signal: AbortSignal.timeout(req.params.timeout_ms ?? 30_000),
+    });
+  } catch (e) {
+    throw new ProviderError(`openai network error: ${(e as Error).name}`, "openai", null, true);
+  }
+  if (!res.ok) {
+    const retryable = res.status === 429 || res.status >= 500;
+    throw new ProviderError(`openai tts error ${res.status}`, "openai", res.status, retryable);
+  }
+  const bytes = Buffer.from(await res.arrayBuffer());
+  return {
+    data: { audioBase64: bytes.toString("base64"), mimeType: "audio/mpeg" },
+    // No usage in this endpoint's response — approximated by the caller
+    // (`callAudio`) from character count; left at 0 here so a direct unit
+    // test of this function alone doesn't imply a false usage number.
+    usage: { inputTokens: 0, outputTokens: 0 },
   };
 }

@@ -23,7 +23,14 @@ function tutorChatPrompt(): { system: string; user: string } {
   return promptCache;
 }
 
+let explainPromptCache: { system: string; user: string } | null = null;
+function explainStepPrompt(): { system: string; user: string } {
+  explainPromptCache ??= splitPrompt(readFileSync(join(process.cwd(), "prompts", "explain_step.md"), "utf8"));
+  return explainPromptCache;
+}
+
 const answerSchema = z.object({ answerUk: z.string().min(1).max(1200) });
+const explainSchema = z.object({ explanationUk: z.string().min(1).max(900) });
 
 interface ChatChunkRow {
   page: number | null;
@@ -147,5 +154,49 @@ export async function askTopicChat(
     .select("id, created_at")
     .single<{ id: string; created_at: string }>();
   if (error || !saved) throw new Error(`saving the chat answer failed: ${error?.message}`);
+  return { id: saved.id, author: "ai", content: answerText, createdAt: saved.created_at };
+}
+
+/**
+ * US-6.16 КП-1 ("Пояснити"): an alternative explanation of the CURRENT lesson
+ * step, published straight into the same topic chat used for questions (docs/
+ * 04 §11.4). Deliberately reuses the light `tutor_chat` quick path (same
+ * role/model as `askTopicChat` above) rather than the heavy
+ * lesson_planning/generation/review pipeline (D-77's "two speed tiers") —
+ * this is not a graded attempt, so no `step_attempts` row and no moderation
+ * of the child's own text is needed (there isn't any; only the AI message is
+ * posted).
+ */
+export async function explainStepAgain(
+  familyId: string,
+  childProfileId: string,
+  tutorName: string,
+  tutorGender: TutorGender,
+  subjectId: string,
+  subjectName: string,
+  topicId: string,
+  topicTitle: string,
+  nickname: string,
+  stepTextUk: string,
+  sessionId?: string,
+): Promise<ChatMessageView> {
+  const scope = forFamily(familyId);
+  const chatId = await getOrCreateChat(familyId, childProfileId, subjectId, topicId);
+
+  const { system, user } = explainStepPrompt();
+  const roleNoun = tutorGender === "m" ? "ШІ-помічник" : "ШІ-помічниця";
+  const system2 = `${safetyPreambleUk(tutorName, roleNoun)}\n\n${fillTemplate(system, { tutor_name: tutorName, subject_name: subjectName, topic_title: topicTitle, nickname })}`;
+  const prompt = fillTemplate(user, { step_text: stepTextUk || "(текст кроку недоступний)" });
+
+  const answerText = await callStructured("tutor_chat", { system: system2, prompt, schema: explainSchema }, { familyId, sessionId })
+    .then((res) => res.result.explanationUk)
+    .catch(() => "Зараз не вдалося пояснити ще раз — спробуй, будь ласка, за хвилинку, або запитай про це в чаті.");
+
+  const { data: saved, error } = await scope.client
+    .from("messages")
+    .insert({ family_id: familyId, chat_id: chatId, session_id: sessionId ?? null, author: "ai", type: "text", content: answerText })
+    .select("id, created_at")
+    .single<{ id: string; created_at: string }>();
+  if (error || !saved) throw new Error(`saving the explanation failed: ${error?.message}`);
   return { id: saved.id, author: "ai", content: answerText, createdAt: saved.created_at };
 }

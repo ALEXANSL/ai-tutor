@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DragSortStep } from "@/lesson-components/drag_sort/DragSortStep";
 import type { DragSortProps } from "@/lesson-components/drag_sort";
@@ -9,14 +9,20 @@ import {
   acknowledgeSlideAction,
   askTopicChatAction,
   continueAfterBlockAction,
+  explainStepAction,
+  getPreviousModuleAction,
   pauseLessonAction,
+  setPresentationModeAction,
   skipLessonBreakAction,
   submitBlockFeedbackAction,
   submitStepAnswerAction,
+  synthesizeNarrationAction,
   takeLessonBreakAction,
   tickLessonActivityAction,
 } from "@/app/actions/lesson";
 import { dequeueAnswer, listQueuedAnswers, resendQueued, submitAnswerOffline, type QueuedAnswer } from "./offlineQueue";
+
+type PresentationMode = "voice" | "auto" | "text";
 
 type AnswerResultView = Awaited<ReturnType<typeof submitStepAnswerAction>>;
 type NextView = AnswerResultView["next"];
@@ -46,6 +52,7 @@ export function LessonRunner({
   step: initialStep,
   idleHintS,
   idlePauseS,
+  presentationMode: initialPresentationMode,
 }: {
   sessionId: string;
   subjectId: string;
@@ -53,6 +60,7 @@ export function LessonRunner({
   step: StepView;
   idleHintS: number;
   idlePauseS: number;
+  presentationMode: PresentationMode;
 }) {
   // BUG-017: `uk.child.lesson` (and, transitively, `sourceRef`/`stepOf`,
   // which are functions) must be imported directly here rather than
@@ -82,6 +90,12 @@ export function LessonRunner({
   // BUG-020: confirm before leaving, so an accidental tap never cuts off a
   // step mid-answer.
   const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
+  // US-6.16: navigation rail + speech-mode switch (docs/04 §5.2, §11.4).
+  const [presentationMode, setPresentationModeState] = useState<PresentationMode>(initialPresentationMode);
+  const [prevModule, setPrevModule] = useState<Awaited<ReturnType<typeof getPreviousModuleAction>>>(null);
+  const [prevModuleBusy, setPrevModuleBusy] = useState(false);
+  const [explainBusy, setExplainBusy] = useState(false);
+  const chatRef = useRef<TopicChatHandle>(null);
   const lastInteractionRef = useRef<number>(0);
   useEffect(() => {
     lastInteractionRef.current = Date.now();
@@ -109,6 +123,57 @@ export function LessonRunner({
       .catch(() => router.push("/today"))
       .finally(() => setBusy(false));
   }, [sessionId, router]);
+
+  // US-6.16 КП-3 ("Повернутись на головну"): same save-and-pause mechanism as
+  // "Вийти з уроку", but no confirmation (the requirement is explicit: a
+  // save that finishes in ≤ 1 s needs none, NFR-PERF-6).
+  const navHome = useCallback(() => {
+    setBusy(true);
+    pauseLessonAction(sessionId, "manual_exit")
+      .then(() => router.push("/today"))
+      .catch(() => router.push("/today"))
+      .finally(() => setBusy(false));
+  }, [sessionId, router]);
+
+  // US-6.16 КП-4 ("Повернутись до списку уроків з предмету").
+  const navSubjectList = useCallback(() => {
+    setBusy(true);
+    pauseLessonAction(sessionId, "manual_exit")
+      .then(() => router.push(`/subject/${subjectId}`))
+      .catch(() => router.push(`/subject/${subjectId}`))
+      .finally(() => setBusy(false));
+  }, [sessionId, subjectId, router]);
+
+  // US-6.16 КП-2 ("Повернутись до попереднього модуля"): read-only preview,
+  // no AI call, current step/progress untouched.
+  const navPrevModule = useCallback(() => {
+    setPrevModuleBusy(true);
+    getPreviousModuleAction(sessionId)
+      .then((view) => setPrevModule(view))
+      .finally(() => setPrevModuleBusy(false));
+  }, [sessionId]);
+
+  // US-6.16 КП-1 ("Пояснити"): the quick tutor_chat path (D-77), not the
+  // heavy planning/generation/review pipeline — posts straight into the chat
+  // panel and opens it, same as the design's "публікує пояснення в чат".
+  const navExplain = useCallback(() => {
+    touch();
+    setExplainBusy(true);
+    explainStepAction(sessionId, step.stepId, subjectId, topicId)
+      .then((res) => {
+        if (res.status === "ok") chatRef.current?.pushAndOpen(res.message.content);
+      })
+      .finally(() => setExplainBusy(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, step.stepId, subjectId, topicId]);
+
+  const changePresentationMode = useCallback(
+    (mode: PresentationMode) => {
+      setPresentationModeState(mode);
+      setPresentationModeAction(sessionId, mode).catch(() => {});
+    },
+    [sessionId],
+  );
 
   // Idle hint / auto-pause (US-16.4).
   useEffect(() => {
@@ -313,7 +378,80 @@ export function LessonRunner({
         </div>
       )}
 
-      <div className="mb-4 flex items-center justify-between gap-2">
+      {/* US-6.16 (docs/04 §5.2, §11.4): speech-mode switch, always visible,
+          text label on every segment (not icon-only) — never lower than the
+          progress row so it reads before the nav rail below it. */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-sm font-bold text-muted">{t.stepOf(step.stepNumber, step.totalSteps)}</span>
+        <div role="group" aria-label={t.speechModeCaption} className="flex items-center gap-1 rounded-full bg-surface-alt p-1">
+          <span className="hidden pl-2 text-xs font-bold text-muted sm:inline">{t.speechModeCaption}</span>
+          {(
+            [
+              ["voice", "🔊", t.speechModeVoice],
+              ["auto", "🤖", t.speechModeAuto],
+              ["text", "🔤", t.speechModeText],
+            ] as const
+          ).map(([mode, icon, label]) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => changePresentationMode(mode)}
+              aria-pressed={presentationMode === mode}
+              className={`min-h-11 rounded-full px-3 text-xs font-extrabold ${presentationMode === mode ? "bg-accent text-white" : "text-muted"}`}
+            >
+              {icon} {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {presentationMode === "voice" && (
+        <div className="mb-3 rounded-2xl border border-accent bg-accent/10 px-4 py-2.5 text-sm font-bold" role="status">
+          🎧 {t.audiobookBanner}
+        </div>
+      )}
+      {presentationMode === "text" && (
+        <div className="mb-3 rounded-2xl bg-surface-alt px-4 py-2.5 text-sm font-bold" role="status">
+          🔤 {t.textModeBanner}
+        </div>
+      )}
+
+      <div className="mb-4 h-2 w-full overflow-hidden rounded-full bg-surface-alt">
+        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${(step.stepNumber / step.totalSteps) * 100}%` }} />
+      </div>
+
+      {/* US-6.16 КП-1…КП-4/КП-7: navigation rail (docs/04 §11.4) — "Перейти"
+          group, then the pre-existing "Безпека" group (BUG-020/026) kept
+          exactly as it was, visually separated. */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <button type="button" onClick={navHome} disabled={busy} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-60">
+          {t.navHome}
+        </button>
+        <button type="button" onClick={navSubjectList} disabled={busy} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-60">
+          {t.navSubjectList}
+        </button>
+        {/* КП-2: hidden on the very first block — nothing to go back to. */}
+        {step.stepNumber >= 1 && (
+          <button
+            type="button"
+            onClick={navPrevModule}
+            disabled={prevModuleBusy}
+            className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-60"
+          >
+            {t.navPrevModule}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={navExplain}
+          disabled={explainBusy}
+          className="min-h-11 rounded-full border-2 border-accent bg-accent/10 px-3.5 text-sm font-bold text-accent disabled:opacity-60"
+        >
+          {explainBusy ? t.explainSending : t.navExplain}
+        </button>
+
+        <span className="flex-1" />
+
         {/* BUG-026: the previous style (`border-line` + `text-muted`) was the
             same visual weight as an inactive/secondary element, so it read
             as unclickable next to the bright red "Тривога" — a contrastier
@@ -322,18 +460,22 @@ export function LessonRunner({
         <button
           type="button"
           onClick={() => setExitConfirmOpen(true)}
-          className="rounded-full border-2 border-text/40 bg-surface-alt px-4 py-2 text-sm font-bold text-text"
+          className="min-h-11 rounded-full border-2 border-text/40 bg-surface-alt px-4 text-sm font-bold text-text"
         >
           {t.exitLesson}
         </button>
-        <span className="text-sm font-bold text-muted">{t.stepOf(step.stepNumber, step.totalSteps)}</span>
-        <button type="button" onClick={alarm} className="rounded-full bg-danger px-4 py-2 text-sm font-bold text-white">
+        <button type="button" onClick={alarm} className="min-h-11 rounded-full bg-danger px-4 text-sm font-bold text-white">
           {t.alarmButton}
         </button>
       </div>
-      <div className="mb-4 h-2 w-full overflow-hidden rounded-full bg-surface-alt">
-        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${(step.stepNumber / step.totalSteps) * 100}%` }} />
-      </div>
+
+      {prevModule && (
+        <PreviousModuleModal view={prevModule} labels={t} onClose={() => setPrevModule(null)} />
+      )}
+
+      {presentationMode === "voice" && (
+        <NarrationPlayer key={step.stepId} sessionId={sessionId} stepId={step.stepId} labels={t} />
+      )}
 
       {exitConfirmOpen && (
         <div className="mb-4 rounded-2xl border border-line bg-surface-alt p-3.5" role="alertdialog" aria-label={t.exitLessonConfirmTitle}>
@@ -394,7 +536,7 @@ export function LessonRunner({
         </div>
       )}
 
-      <TopicChat sessionId={sessionId} subjectId={subjectId} topicId={topicId} labels={t} />
+      <TopicChat ref={chatRef} sessionId={sessionId} subjectId={subjectId} topicId={topicId} labels={t} />
     </div>
   );
 }
@@ -480,11 +622,26 @@ function StepBody({
   return null;
 }
 
-function TopicChat({ sessionId, subjectId, topicId, labels: t }: { sessionId: string; subjectId: string; topicId: string; labels: Labels }) {
+export interface TopicChatHandle {
+  /** US-6.16 КП-1: "Пояснити" publishes straight into this chat and opens it. */
+  pushAndOpen(content: string): void;
+}
+
+const TopicChat = forwardRef<TopicChatHandle, { sessionId: string; subjectId: string; topicId: string; labels: Labels }>(function TopicChat(
+  { sessionId, subjectId, topicId, labels: t },
+  ref,
+) {
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<{ author: string; content: string }[]>([]);
   const [pending, setPending] = useState(false);
+
+  useImperativeHandle(ref, () => ({
+    pushAndOpen(content: string) {
+      setMessages((prev) => [...prev, { author: "ai", content }]);
+      setOpen(true);
+    },
+  }));
 
   async function send() {
     const q = question.trim();
@@ -527,6 +684,74 @@ function TopicChat({ sessionId, subjectId, topicId, labels: t }: { sessionId: st
           </div>
         </div>
       )}
+    </div>
+  );
+});
+
+/** US-6.16 КП-2: read-only preview of the previously completed block — no grading, no AI call. */
+function PreviousModuleModal({
+  view,
+  labels: t,
+  onClose,
+}: {
+  view: { title: string; steps: { type: string; content: Record<string, unknown> }[] };
+  labels: Labels;
+  onClose: () => void;
+}) {
+  return (
+    <div className="mb-4 rounded-[22px] border-2 border-dashed border-secondary bg-surface p-4.5" role="dialog" aria-label={t.prevModuleTitle}>
+      <p className="mb-1 text-sm font-extrabold text-secondary">{t.prevModuleTitle}</p>
+      <p className="mb-3 text-xs text-muted">{t.prevModuleBody}</p>
+      <h3 className="mb-2 text-lg font-extrabold">{view.title}</h3>
+      <div className="flex max-h-72 flex-col gap-3 overflow-y-auto">
+        {view.steps.map((s, i) => (
+          <div key={i} className="rounded-2xl bg-surface-alt p-3 text-sm">
+            {!!s.content.textUk && <p className="whitespace-pre-line">{String(s.content.textUk)}</p>}
+            {!!s.content.questionUk && <p className="font-bold">{String(s.content.questionUk)}</p>}
+          </div>
+        ))}
+      </div>
+      <button type="button" onClick={onClose} className="mt-3 inline-flex min-h-11 items-center justify-center rounded-2xl bg-primary px-5 text-sm font-bold text-white">
+        {t.prevModuleClose}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * US-6.16 КП-5 (режим «Вголос», ADR-025): fetches and autoplays narration for
+ * the current step; failure/unavailable is silent (docs/04 §5) — the step's
+ * own text is already on screen either way.
+ */
+function NarrationPlayer({ sessionId, stepId, labels: t }: { sessionId: string; stepId: string; labels: Labels }) {
+  // The parent renders this with `key={step.stepId}` (a fresh mount, and so
+  // a fresh `useState`/`useEffect`, per step) — no in-place reset is needed
+  // here for a step change.
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    synthesizeNarrationAction(sessionId, stepId).then((res) => {
+      if (cancelled) return;
+      if (res.status === "ok") setAudioUrl(`data:${res.mimeType};base64,${res.audioBase64}`);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, stepId]);
+
+  if (!audioUrl) return null;
+  return (
+    <div className="mb-4 flex items-center gap-2">
+      <audio ref={audioRef} src={audioUrl} autoPlay controls className="h-10 flex-1" />
+      <button
+        type="button"
+        onClick={() => audioRef.current?.play()}
+        className="min-h-11 rounded-full border-2 border-line bg-surface px-3 text-sm font-bold"
+      >
+        {t.narrationReplay}
+      </button>
     </div>
   );
 }

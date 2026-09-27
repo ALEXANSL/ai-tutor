@@ -2,10 +2,10 @@
 
 | Поле | Значення |
 |---|---|
-| Версія | 0.3 (рішення Алекса щодо витрат прийнято 2026-09-25 — розд. 5; **стартовий сценарій MVP — «Економ»**; перевірка «безкоштовної української озвучки ElevenLabs» — розд. 2.2.1; **0.4 — образ репетитора (голоси, аватар, анімація): розд. 0, 1.5 Д, 1.10, 3.9, 4.1, 6**; **0.5 (2026-09-26, рішення PO D-55) — вартість педагогічного конвеєра (планування + незалежна рецензія): розд. 0, 3.2а, 3.5; ADR-022**; **0.6 (2026-09-26, рішення PO D-76/D-77/D-78) — вартість фонового прогрівання бібліотеки (найгірший випадок «весь підручник одразу» ≈ $8–12 одноразово) і швидкого інтерактивного шару (`step_reinforcement`, «поясни задачу №N») — розд. 3.2б, 3.2в; ADR-023**) |
-| Дата | 2026-09-26 |
+| Версія | 0.3 (рішення Алекса щодо витрат прийнято 2026-09-25 — розд. 5; **стартовий сценарій MVP — «Економ»**; перевірка «безкоштовної української озвучки ElevenLabs» — розд. 2.2.1; **0.4 — образ репетитора (голоси, аватар, анімація): розд. 0, 1.5 Д, 1.10, 3.9, 4.1, 6**; **0.5 (2026-09-26, рішення PO D-55) — вартість педагогічного конвеєра (планування + незалежна рецензія): розд. 0, 3.2а, 3.5; ADR-022**; **0.6 (2026-09-26, рішення PO D-76/D-77/D-78) — вартість фонового прогрівання бібліотеки (найгірший випадок «весь підручник одразу» ≈ $8–12 одноразово) і швидкого інтерактивного шару (`step_reinforcement`, «поясни задачу №N») — розд. 3.2б, 3.2в; ADR-023**; **0.7 (2026-09-27, технічна оцінка за запитом PO) — порівняння цін пасивного TTS у OpenAI/Gemini проти ElevenLabs (розд. 2.2.2, ADR-025); одноразова вартість вітальної заставки Gemini Veo (розд. 2.4); дослідницька довідка PCI DSS/Google Pay/Apple Pay без витрат зараз (ADR-026)**) |
+| Дата | 2026-09-27 |
 | Автор | `architect` |
-| Дата перевірки цін | **2026-09-25** (джерела — розд. 6) |
+| Дата перевірки цін | **2026-09-25**, доповнено **2026-09-27** (TTS OpenAI/Gemini, Veo) — джерела розд. 6 |
 | Пов'язані | `docs/02-architecture.md`, `docs/adr/` |
 
 > **Позначки в цьому документі**
@@ -251,6 +251,22 @@
 **Де Free може знадобитися:** лише розробнику для перших технічних проб **на синтетичних текстах** (без голосу й даних доньки) до оформлення Creator. Спайк S13 із записами доньки — тільки на платному тарифі.
 **Обмеження перевірки:** прямий доступ до сторінок `elevenlabs.io` із середовища архітектора заблоковано проксі; висновки — за результатами пошуку по офіційних сторінках (розд. 6). Якщо Алекс бачив конкретну сторінку чи лист з іншими умовами — надішліть посилання, перевіримо саме його.
 
+#### 2.2.2. Пасивна озвучка (TTS) у вже підключених провайдерів — перевірено 2026-09-27 (запит PO, ADR-025)
+
+| Провайдер | Модель | Ціна | ≈ $/1000 символів | Українська підтверджена офіційно |
+|---|---|---|---|---|
+| OpenAI | `tts-1` | $15/1M символів | **$0,015** | Ні (заявлено 50+ мов, голоси «оптимізовані під англійську») |
+| OpenAI | `tts-1-hd` | $30/1M символів | $0,03 | те саме |
+| OpenAI | `gpt-4o-mini-tts` (керована інтонацією) | $0,60/1M вхід (текст) + $12/1M вихід (аудіотокени) | **≈ $0,02–0,04** (оцінка, точна конверсія символи→аудіотокени залежить від темпу мовлення — уточнити на реальному тексті) | Ні |
+| Google Gemini | `gemini-3.8-flash-tts` | $1/1M вхід + $9/1M вихід (аудіотокени) | **≈ $0,015–0,02** (оцінка) | **Так** — офіційно в списку 130+ підтримуваних мов |
+| Google Gemini | `gemini-3.8-flash-lite-tts` | $1/1M вхід + $6/1M вихід | ≈ $0,012–0,016 | Так (100+ мов) |
+| Anthropic Claude | — | **Немає TTS-ендпойнту в API** — голос лише в застосунку-підписці й сам працює через ElevenLabs | — | — |
+| (довідково) ElevenLabs Multilingual v2/v3 | поточне рішення | $0,10/1000 симв. (Flash — $0,05) | $0,10 (0,05) | Так, перевірено на слух (розд. 1.10) |
+
+**Висновок:** для функції «почитай мені параграф» / читання розділу (`docs/02` розд. 5.5, 7.4a) OpenAI й Gemini — **у 3–7 разів дешевші** за ElevenLabs і **обидва вже оплачені й підключені** (жодного нового акаунта чи рахунку не потрібно — розд. 1.8, 1.9). Рекомендація — `gpt-4o-mini-tts` як основний (керованість тону) або `gemini-3.8-flash-tts` (офіційно підтверджена українська); обидва — на прослуховування зразка перед увімкненням дитині, як і для голосів ElevenLabs (розд. 1.10 крок 4). Це **не** замінює й не скасовує підписку ElevenLabs Creator (розд. 1.10) — голос репетитора (жива розмова й «його» озвучка) лишається окремим рішенням; нова роль `passive_narration` — додаткова, не альтернатива.
+
+**Вплив на кошторис:** нова, окрема, дуже мала стаття — читання розділу кілька разів на тиждень ≈ **$1–3/міс**, з запасом ліміту $100 «Економу» (розд. 0); не змінює жодну з наведених вище сум для «Економ»/«Базовий»/«Комфорт», бо це нова функція, не заміна наявної.
+
 ### 2.3. Інфраструктура й сервіси
 
 | Сервіс | Тариф | Ціна | Ліміти, важливі для нас |
@@ -262,6 +278,19 @@
 | alerts.in.ua API | за токеном | $0 (припущення: некомерційне використання) | мінімальний інтервал однакових запитів ~5 с |
 | Google Cloud (Drive API, OAuth) | — | $0 | Drive API безкоштовний |
 | Домен (опційно) | — | ≈ $10–15/рік | не потрібен для MVP (адреса `*.vercel.app`) |
+
+### 2.4. Відео-генерація (Gemini Veo) — вітальна заставка D-63, перевірено 2026-09-27
+
+| Якість | Ціна за секунду | Ціна за 5–8-с кліп |
+|---|---|---|
+| 720p Lite, без звуку | ≈ $0,03–0,04/с | ≈ **$0,15–0,30** |
+| 1080p Lite, зі звуком | ≈ $0,08/с | ≈ $0,40–0,64 |
+| 1080p Fast, зі звуком | ≈ $0,12/с | ≈ $0,60–0,96 |
+| 1080p Standard, зі звуком | ≈ $0,40/с | ≈ $2,00–3,20 |
+
+**Рекомендація для заставки** (розд. 14.5 `docs/02`): 720p Lite без звуку + окрема озвучка диктора (розд. 2.2.2) ≈ **$0,25–0,50 за одну заставку**. Той самий білінг-акаунт Gemini (розд. 1.9) — нового акаунта не потрібно. **Одноразова** вартість (генерується рідко, не щомісяця): для 6 предметів 6 класу з 1–2 спробами на предмет — **≈ $3–10 одноразово**, не входить у щомісячний ліміт $100 як регулярна стаття (аналогічно найгіршому випадку прогріву бібліотеки, розд. 3.2б).
+
+Теоретична відео-вставка (D-62, всередині уроку, повторювана на кожну тему) — **свідомо не оцінюється** в цьому документі (розд. 14.5 `docs/02`): вартість і рецензійний конвеєр для неї — окреме рішення, якщо PO повернеться до ідеї.
 
 ---
 
@@ -569,6 +598,8 @@ Supabase Free (1 ГБ файлів) **не вміщує** бібліотеку +
 | 13 | **Багаторічність 6→11 клас** (горизонт 7 років) | Закладається мінімум: навчальний рік і клас у даних, перенесення карти знань, щомісячний експорт даних на Drive | **$0/міс**, ≈ 1,5 дня розробки; майстер переходу в 7 клас — до вересня 2027 (≈ 2–3 дні); `docs/02` розд. 14.4; ADR-021 |
 | 14 | **Професійні відеоуроки** | Ідея пізньої фази, без зобов'язань; лише точка розширення | Постачальник і ціни не обрано; окреме рішення **[$]**; ADR-016 |
 | 15 | **Педагогічний конвеєр** (D-55, 2026-09-26): планування + незалежна рецензія іншим провайдером перед показом дитині; книги з Drive — лише база програми | **Прийнято**: +≈$8/міс у «Економі» (новий урок $2,74→$3,50); повтори без змін; бюджет $100 витримує | розд. 3.2а, 3.5, 5.1; `docs/02` розд. 7.3, 7.7; ADR-022 |
+| 16 | **Пасивна озвучка «почитай мені параграф»** (2026-09-27, технічна оцінка) | OpenAI/Gemini TTS — у 3–7 разів дешевше за ElevenLabs, вже підключені ключі; +≈$1–3/міс; **рішення за PO** — чи запускати цю функцію в MVP і чи достатньо голосу диктора без підсвітки тексту | розд. 2.2.2; `docs/02` розд. 5.5, 7.4a; ADR-025 |
+| 17 | **Вітальна заставка** (D-63, 2026-09-27, технічна оцінка) | Gemini Veo, ≈ $3–10 одноразово на всі предмети; **рішення за PO** — чи потрібна вже в MVP | розд. 2.4; `docs/02` розд. 14.5 |
 
 ### 5.1. Підсумок місячних витрат після рішень (будні, 22 навчальні дні, «ШІ-друг» 10 хв/день; враховано D-55)
 
@@ -595,6 +626,9 @@ Supabase Free (1 ГБ файлів) **не вміщує** бібліотеку +
 - Модерація зображень аватара (2026-09-25; **у MVP не використовується** за рішенням PO — довідково на випадок комерціалізації, ADR-018): [OpenAI Moderation guide (зображення, безкоштовно)](https://developers.openai.com/api/docs/guides/moderation), [omni-moderation model](https://developers.openai.com/api/docs/models/omni-moderation-latest), [Cloud Vision pricing (SafeSearch, 1 000/міс безкоштовно)](https://cloud.google.com/vision/pricing), [MediaPipe Face Detector for Web](https://ai.google.dev/edge/mediapipe/solutions/vision/face_detector/web_js)
 - Говорящий аватар, Фаза 2 (огляди цін, пошук 2026-09-25; звірити з постачальниками перед рішенням): [Real-Time Talking Avatar Providers — prices, September 2026 (Akapulu)](https://blog.akapulu.com/p/real-time-avatar-api-pricing-index/), [How much does a realtime AI avatar API cost in 2026?](https://realtimeavatar.ai/blog/realtime-ai-avatar-api-pricing), [HeyGen API pricing / LiveAvatar](https://realtimeavatar.ai/blog/heygen-api-pricing-explained), [Anam pricing](https://anam.ai/pricing), [Spatius — cost per minute](https://www.spatius.ai/blog/compare-pricing-leading-ai-avatar-services-2026/), [TalkingHead (відкрита JS-бібліотека, губи за таймінгами TTS)](https://github.com/met4citizen/talkinghead)
 - Переоцінка голосу (2026-09-26, доповнення до D-55, ADR-006): [OpenAI Realtime API Pricing 2026 (HackerNoon)](https://hackernoon.com/openai-realtime-api-pricing-in-2026-real-world-data-from-4000-measured-sessions), [Introducing gpt-realtime and Realtime API updates](https://openai.com/index/introducing-gpt-realtime/), [Advancing voice intelligence with new models in the API](https://openai.com/index/advancing-voice-intelligence-with-new-models-in-the-api/), [Gemini Live API overview](https://ai.google.dev/gemini-api/docs/live-api), [Gemini Live API capabilities](https://ai.google.dev/gemini-api/docs/live-api/capabilities), [Gemini 2.5 Flash Live API (Google Cloud docs, voices/languages)](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/2-5-flash-live-api), [Anthropic updates Claude voice mode (TechCrunch, 2026-07-23 — voice mode runs on ElevenLabs TTS pipeline, не нативна модель, лише в застосунку для передплатників)](https://techcrunch.com/2026/07/23/anthropic-updates-claude-voice-mode-with-more-capable-models/), [Use voice mode (Claude Help Center)](https://support.claude.com/en/articles/11101966-use-voice-mode)
+- Пасивний TTS (перевірено 2026-09-27, ADR-025): [OpenAI Pricing | API](https://developers.openai.com/api/docs/pricing), [GPT-4o-Mini-TTS model](https://developers.openai.com/api/docs/models/gpt-4o-mini-tts), [Text to speech guide](https://developers.openai.com/api/docs/guides/text-to-speech), [Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing), [Gemini 3.8 Flash TTS](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash-tts), [Text-to-speech generation (TTS) | Gemini API](https://ai.google.dev/gemini-api/docs/speech-generation)
+- Відео-генерація (перевірено 2026-09-27, D-63): [Video generation in the Gemini API](https://ai.google.dev/gemini-api/docs/video), [How much does Veo 3 cost? (CometAPI)](https://www.cometapi.com/how-much-does-veo-3-cost-all-you-need-to-know/)
+- Білінг без PCI DSS (дослідницька довідка, ADR-026, перевірено 2026-09-27): [Stripe: Payment security and compliance in RFPs](https://stripe.com/guides/payments-security-and-compliance), [Stripe: PCI Compliance & Tokenization](https://stripe.com/resources/more/pci-compliance-tokenization), [Stripe: What is PCI DSS compliance?](https://stripe.com/guides/pci-compliance)
 - Supabase: [Pricing & Fees](https://supabase.com/pricing), [Edge Functions limits](https://supabase.com/docs/guides/functions/limits), [Cron](https://supabase.com/docs/guides/cron), [pg_net](https://supabase.com/docs/guides/database/extensions/pg_net), [pgvector](https://supabase.com/docs/guides/database/extensions/pgvector)
 - Vercel: [Functions duration](https://vercel.com/docs/functions/configuring-functions/duration), [Cron usage & pricing](https://vercel.com/docs/cron-jobs/usage-and-pricing), [AI Gateway fallbacks](https://vercel.com/docs/ai-gateway/models-and-providers/model-fallbacks)
 - Resend: [Account quotas and limits](https://resend.com/docs/knowledge-base/account-quotas-and-limits), [New Free Tier](https://resend.com/blog/new-free-tier)
