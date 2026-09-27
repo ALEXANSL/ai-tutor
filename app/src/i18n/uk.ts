@@ -35,6 +35,21 @@ function safetyModeUk(mode?: string): string {
   return SAFETY_MODE_UK[mode ?? ""] ?? mode ?? "?";
 }
 
+/**
+ * Standard Slavic three-way plural form for a count `n`, given the word's
+ * "one" (1, 21, 31…), "few" (2-4, 22-24…) and "many" (0, 5-20, 25-30…) forms.
+ * Shared so any new count-based Ukrainian string picks the right form
+ * instead of a naive `n === 1 ? singular : plural` (BUG: "сторінок" was
+ * used for n=2..4, where "сторінки" is correct).
+ */
+function ukPlural(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+}
+
 export const uk = {
   app: {
     name: "ШІ-Репетитор",
@@ -847,7 +862,7 @@ export const uk = {
         driveName: "Файл у папці",
         saveTopic: "Зберегти тему",
         ocrUnreadable: "Розпізнано не повністю",
-        ocrUnreadableValue: (n: number) => `${n} ${n === 1 ? "сторінку" : "сторінок"} не вдалося розпізнати — можливо, скан нечіткий.`,
+        ocrUnreadableValue: (n: number) => `${n} ${ukPlural(n, "сторінку", "сторінки", "сторінок")} не вдалося розпізнати — можливо, скан нечіткий.`,
       },
     },
     settings: {
