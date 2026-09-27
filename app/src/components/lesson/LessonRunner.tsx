@@ -403,6 +403,7 @@ export function LessonRunner({
         visibleOutcomeUk={blockComplete.visibleOutcomeUk}
         labels={t}
         busy={busy}
+        onExit={exitLesson}
         onContinue={() => {
           setBusy(true);
           continueAfterBlockAction(sessionId)
@@ -881,6 +882,7 @@ function BlockCompleteScreen({
   labels: t,
   busy,
   onContinue,
+  onExit,
 }: {
   libraryItemId: string;
   visibleOutcomeUk: string | null;
@@ -889,8 +891,27 @@ function BlockCompleteScreen({
    * demand) — shown as a busy label + disabled button, never silence. */
   busy: boolean;
   onContinue: () => void;
+  /** BUG-034: same `exitLesson` flow used elsewhere in this file
+   * (`pauseLessonAction(sessionId, "manual_exit")` → `router.push("/today")`).
+   * Always available, even while `busy` — this screen must never be a dead
+   * end with no way off it. Deliberately does not wait for `onContinue`'s
+   * in-flight promise. */
+  onExit: () => void;
 }) {
   const [feedbackSent, setFeedbackSent] = useState<"interesting" | "normal" | "boring" | null>(null);
+  // BUG-034: a real on-demand generation (planning → up to 3 passes of
+  // generating/reviewing) can take 1-5 minutes — after ~15s of waiting,
+  // swap the neutral busy label for a friendlier explanation so the child
+  // does not conclude the app is stuck.
+  const [slowWait, setSlowWait] = useState(false);
+  useEffect(() => {
+    if (!busy) {
+      setSlowWait(false);
+      return;
+    }
+    const id = setTimeout(() => setSlowWait(true), 15_000);
+    return () => clearTimeout(id);
+  }, [busy]);
 
   function sendFeedback(kind: "interesting" | "normal" | "boring") {
     setFeedbackSent(kind);
@@ -920,14 +941,31 @@ function BlockCompleteScreen({
           </div>
         )}
 
-        <button
-          type="button"
-          onClick={onContinue}
-          disabled={busy}
-          className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-primary px-5 text-base font-bold text-white disabled:opacity-60"
-        >
-          {busy ? t.blockContinueBusy : t.blockContinue}
-        </button>
+        {busy && slowWait && (
+          <p className="mb-3 text-sm font-semibold text-muted" role="status">
+            {t.blockContinueSlowHint}
+          </p>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={onContinue}
+            disabled={busy}
+            className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-primary px-5 text-base font-bold text-white disabled:opacity-60"
+          >
+            {busy ? t.blockContinueBusy : t.blockContinue}
+          </button>
+          {/* BUG-034: always enabled — not gated by `busy` — so the child is
+           * never stuck on this screen with no way off it. */}
+          <button
+            type="button"
+            onClick={onExit}
+            className="inline-flex min-h-12 items-center justify-center rounded-2xl border-2 border-line bg-bg px-5 text-base font-bold"
+          >
+            {t.exitLesson}
+          </button>
+        </div>
       </div>
     </div>
   );

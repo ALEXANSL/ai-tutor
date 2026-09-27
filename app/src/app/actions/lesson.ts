@@ -340,13 +340,15 @@ export async function goToPreviousStepAction(sessionId: string): Promise<LessonS
  * up the session's own new `mode` (moved to `choosing` by
  * `checkWarmupProgress` itself) instead of returning candidates here too.
  */
-export async function checkWarmupProgressAction(sessionId: string): Promise<{ status: "ok"; ready: boolean; stage: string | null } | { status: "error"; message: string }> {
+export async function checkWarmupProgressAction(
+  sessionId: string,
+): Promise<{ status: "ok"; ready: boolean; stage: string | null; reviewPass: number | null } | { status: "error"; message: string }> {
   const { familyId } = await requireLessonAccess();
   UUID.parse(sessionId);
   try {
     const progress = await checkWarmupProgress(familyId, sessionId);
     if (progress.ready) revalidatePath(`/lesson/${sessionId}`);
-    return { status: "ok", ready: progress.ready, stage: progress.stage };
+    return { status: "ok", ready: progress.ready, stage: progress.stage, reviewPass: progress.reviewPass };
   } catch (e) {
     console.error(`checkWarmupProgressAction failed: ${(e as Error).message}`);
     return { status: "error", message: uk.common.error };

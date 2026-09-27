@@ -203,6 +203,10 @@ export const uk = {
       // feedback at all, so the click "did nothing" from the child's side
       // while it was actually still working.
       blockContinueBusy: "Готуємо наступний крок…",
+      // BUG-034: shown once the wait above has lasted ~15s+ — the child sees
+      // the exit button right below it too, so a long wait never looks like
+      // a dead end.
+      blockContinueSlowHint: "Урок готує ще цікавіші завдання, це може зайняти хвилину-дві ⏳ Можеш почекати або вийти й повернутися пізніше.",
       feedbackPrompt: "Як тобі цей блок?",
       feedbackInteresting: "Цікаво 🤩",
       feedbackNormal: "Нормально 🙂",
@@ -259,12 +263,24 @@ export const uk = {
       // static "Готуємо урок…" with a staged, honest progress view.
       warmup: {
         title: "Готуємо урок…",
-        etaHint: "Зазвичай це триває ≈ 1 хвилину",
+        // BUG-035: the old fixed "~1 хвилину" promise didn't match a real
+        // wait, which can legitimately take several genuine AI-call passes
+        // (planning + up to 3× generate/review) — a realistic range instead
+        // of one confident number that turns out wrong.
+        etaHint: "Зазвичай це триває 1-3 хвилини, іноді трохи довше",
         stagePlanning: "Складаємо план уроку",
         stageGenerating: "Пишемо урок",
         stageReviewing: "Перевіряємо якість",
         stageRevising: "Допрацьовуємо",
         stageSaving: "Зберігаємо",
+        // BUG-035: shown instead of the bare stage label once we know which
+        // generate→review pass is running, so 2-3 repeats of
+        // "Перевіряємо якість"/"Допрацьовуємо" read as a bounded, expected
+        // quality check, not as the screen looping/being stuck.
+        stagePassLabel: (pass: number, total: number) => `Перевірка ${pass} з ${total}`,
+        // BUG-035: shown after ~90s — reassures without touching the
+        // pipeline's own timing/retry logic.
+        slowWaitHint: "Ще трохи — перевіряємо, щоб урок був якісним 💛",
       },
     },
     friend: {

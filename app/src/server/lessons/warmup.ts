@@ -56,6 +56,9 @@ interface WarmJobPayload {
   /** Module is fixed to "school" for every MVP subject today (docs/02 §14.1). */
   moduleCode: "school";
   stage: PipelineStage;
+  /** BUG-035: current generate→review pass (1-based), when `stage` is
+   * "generating"/"revising"/"reviewing"; `null`/absent otherwise. */
+  reviewPass?: number | null;
 }
 
 /**
@@ -205,8 +208,11 @@ export function registerLibraryWarmJobs(): void {
       const already = await loadCandidates(scope, payload.topicId, 1);
       if (already.length > 0) return;
 
-      const setStage = async (stage: PipelineStage) => {
-        await db.from("jobs").update({ payload: { ...job.payload, stage } }).eq("id", job.id);
+      // BUG-035: also persists which generate→review pass is current, so
+      // the child's progress screen can show "Перевірка 2 з 3" instead of
+      // just repeating "Перевіряємо якість" and looking like it looped.
+      const setStage = async (stage: PipelineStage, reviewPass?: number) => {
+        await db.from("jobs").update({ payload: { ...job.payload, stage, reviewPass: reviewPass ?? null } }).eq("id", job.id);
       };
 
       try {
