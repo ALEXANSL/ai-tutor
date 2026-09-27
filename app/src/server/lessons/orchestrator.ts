@@ -846,7 +846,7 @@ export async function submitStepAnswer(
   const { data: existing } = await scope
     .select("step_attempts", "*")
     .eq("idempotency_key", idempotencyKey)
-    .maybeSingle<{ verdict: Verdict; remediation: RemediationCache | null }>();
+    .maybeSingle<{ verdict: Verdict; remediation: RemediationCache | null; moderation_forced_urgent: boolean }>();
   const { data: stepRow } = await scope
     .select("library_steps", "id, type, content, visual, source_refs")
     .eq("id", stepId)
@@ -876,14 +876,23 @@ export async function submitStepAnswer(
   const openText = step.type === "open" && typeof (answer as { text?: unknown } | null)?.text === "string" ? (answer as { text: string }).text : null;
   const moderationPromise = !existing && openText ? moderateMessage({ familyId, sessionId, mode: "lesson", message: openText }) : null;
 
-  let { verdict, explanation } = existing ? { verdict: existing.verdict, explanation: "" } : await evaluateAnswer(familyId, sessionId, evalStep, channel, answer);
+  // BUG-038 fix: on an idempotent replay, reproduce whatever this
+  // submission's FIRST (non-replay) processing decided — including BUG-013's
+  // safety override — instead of defaulting to a blank explanation.
+  // Moderation is still never re-run on replay (that's intentional, see
+  // `moderationPromise` below); `moderation_forced_urgent` is the stored fact
+  // that lets replay skip re-running it while still showing the same
+  // URGENT_REPLY_UK the child saw the first time.
+  let { verdict, explanation } = existing
+    ? { verdict: existing.verdict, explanation: existing.moderation_forced_urgent ? URGENT_REPLY_UK : "" }
+    : await evaluateAnswer(familyId, sessionId, evalStep, channel, answer);
 
   // ADR-028 §5/КП-6: whenever moderation forces the deterministic go-to-dad
   // reply, the remediation cycle (starting OR finishing) must never run —
   // "без винятків", exactly like every other safety-override case. This is
   // the ONLY guard the whole feature adds around BUG-013's existing code
   // below, which is otherwise untouched.
-  let moderationForcedUrgent = false;
+  let moderationForcedUrgent = existing ? existing.moderation_forced_urgent : false;
 
   if (moderationPromise) {
     const moderation = await moderationPromise;
@@ -921,6 +930,7 @@ export async function submitStepAnswer(
       guess_flag: guessFlag,
       latency_ms: latencyMs,
       idempotency_key: idempotencyKey,
+      moderation_forced_urgent: moderationForcedUrgent,
     });
     if (insErr && insErr.code !== "23505") throw new Error(`saving the answer failed: ${insErr.message}`);
   }

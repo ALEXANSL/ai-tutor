@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { URGENT_REPLY_UK } from "@/server/safety/urgentReplyUk";
 
 /**
  * Orchestrator regression tests for BUG-008 (resume reminder wiring) and
@@ -372,6 +373,56 @@ describe("submitStepAnswer + moderation (NFR-SAFE-4, US-12.1 КП-2) — BUG-013
 
     expect(result.explanation).toBe("Гарна спроба, продовжуй!");
     expect(result.verdict).toBe("correct");
+  });
+
+  /**
+   * BUG-038 (critical, safety): the offline queue (`flushQueue`) exists
+   * exactly for "connection drops right after the child sends something" —
+   * and retries the SAME submission with the SAME `idempotencyKey`.
+   * `submitStepAnswer`'s `existing` (idempotent-replay) branch intentionally
+   * never re-runs moderation (no double AI call/charge) — but it must still
+   * reproduce whatever the FIRST processing decided, including BUG-013's
+   * safety override, instead of silently dropping it into a blank
+   * explanation. This seeds `step_attempts` with exactly the row the first
+   * call's own insert would have written (captured via `clientFromOverride`,
+   * not hand-authored), so the replay path is exercised against real
+   * persisted state, not an assumption about the fix's own storage shape.
+   */
+  it("BUG-038: an idempotent replay of an 'urgent' answer ALSO gets the deterministic go-to-dad reply, not a blank explanation", async () => {
+    resetScope();
+    scopeState.tables = baseTables();
+    let insertedRow: FakeRow | null = null as FakeRow | null;
+    clientFromOverride = (table: string) => ({
+      insert: (row: unknown) => {
+        if (table === "step_attempts") insertedRow = row as FakeRow;
+        return { select: () => ({ single: () => Promise.resolve({ data: { id: "row1" }, error: null }) }) };
+      },
+    });
+    moderateMessage.mockResolvedValue({ category: "self_harm", severity: "urgent", confidence: 0.95, reasonUk: "x", layer1Flagged: true, escalated: false });
+    callStructured.mockResolvedValue({ result: { verdict: "partial", explanationUk: "Гарна спроба, продовжуй!" }, model: {}, costUsd: 0, fallbackUsed: false });
+    loadLibraryItem.mockResolvedValue({ id: "A", title: "Блок A", estimatedMinutes: 7, visibleOutcomeUk: null, steps: [{ id: "st1", sortOrder: 0, type: "open", content: openStep.content, visual: {}, sourceRefs: [] }, { id: "st2", sortOrder: 1, type: "slide", content: {}, visual: {}, sourceRefs: [] }] });
+
+    const first = await submitStepAnswer("fam1", "s1", "st1", "idem-urgent-1", "text", { text: "я хочу собі зашкодити" }, 4000);
+    expect(first.explanation).toBe(URGENT_REPLY_UK);
+    expect(first.verdict).toBe("partial");
+    // The fix: the FIRST (non-replay) processing must persist the override
+    // fact on the row it inserts, so a later replay can read it back.
+    expect(insertedRow?.moderation_forced_urgent).toBe(true);
+
+    // Simulate the offline queue's retry: the row above is now really
+    // persisted (same idempotency_key); moderation must NOT be re-run.
+    scopeState.tables.step_attempts = [insertedRow!];
+    moderateMessage.mockClear();
+    clientFromOverride = null;
+
+    const second = await submitStepAnswer("fam1", "s1", "st1", "idem-urgent-1", "text", { text: "я хочу собі зашкодити" }, 4000);
+
+    // The bug: both calls must return the SAME safety response — not just
+    // the first (verdict is correctly preserved from the DB either way;
+    // `explanation` was the part BUG-038 found silently going blank).
+    expect(second.explanation).toBe(URGENT_REPLY_UK);
+    expect(second.verdict).toBe("partial");
+    expect(moderateMessage).not.toHaveBeenCalled();
   });
 });
 
