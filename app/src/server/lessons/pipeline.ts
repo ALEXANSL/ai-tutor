@@ -174,7 +174,7 @@ function knownProblemsForPrompt(knownProblems: KnownProblem[]): string {
  * stays) rather than trusted on the model's word. Never throws: a lookup
  * failure degrades to "drop every citation" rather than blocking the block.
  */
-async function verifyProblemNumbers(scope: FamilyScope, block: LessonBlockGenerated): Promise<LessonBlockGenerated> {
+export async function verifyProblemNumbers(scope: FamilyScope, block: LessonBlockGenerated): Promise<LessonBlockGenerated> {
   const cited = block.steps.flatMap((s) => s.sourceRefs).filter((r) => r.problemNumber != null);
   if (cited.length === 0) return block;
   const materialIds = [...new Set(cited.map((r) => r.materialId))];

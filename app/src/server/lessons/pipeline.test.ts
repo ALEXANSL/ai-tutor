@@ -13,7 +13,7 @@ import type { LessonBlockGenerated, LessonPlan, ReviewOutput } from "./schema";
 const callStructured = vi.fn();
 vi.mock("@/server/ai/router", () => ({ callStructured: (...args: unknown[]) => callStructured(...args) }));
 
-const { runPedagogicalPipeline, ReviewerUnavailableError } = await import("./pipeline");
+const { runPedagogicalPipeline, ReviewerUnavailableError, verifyProblemNumbers } = await import("./pipeline");
 
 function plan(over: Partial<LessonPlan> = {}): LessonPlan {
   return {
@@ -204,5 +204,47 @@ describe("runPedagogicalPipeline stage hooks (ADR-023 §Частина 1.6/1.7 �
   it("never breaks when hooks are omitted (plain, non-job pipeline run)", async () => {
     mockRoleQueue({ lesson_planning: [plan()], lesson_generation: [block()], lesson_review: [review()] });
     await expect(runPedagogicalPipeline(baseInput)).resolves.toMatchObject({ status: "active" });
+  });
+});
+
+/**
+ * BUG-041: `verifyProblemNumbers` is the anti-hallucination guard (ADR-029
+ * §1) that nulls out a step's `sourceRefs[].problemNumber` unless it exactly
+ * matches a `material_problems` row — direct unit tests, exercising the
+ * DB-lookup/nulling branch itself, rather than only fixtures that skip it.
+ */
+describe("verifyProblemNumbers (ADR-029 §1, BUG-041)", () => {
+  /** A minimal fake of the `scope.select(...).in(...).returns()` chain `verifyProblemNumbers` actually calls. */
+  function scopeWithMaterialProblems(rows: { material_id: string; page: number; number: string }[]) {
+    return {
+      select: () => ({
+        in: () => ({
+          returns: async () => ({ data: rows }),
+        }),
+      }),
+    } as never;
+  }
+
+  it("nulls a problemNumber that has no matching material_problems row", async () => {
+    const scope = scopeWithMaterialProblems([{ material_id: "m1", page: 42, number: "117" }]);
+    const b = block({
+      steps: [{ type: "slide", textUk: "...", sourceRefs: [{ materialId: "m1", materialTitle: "Math", page: 42, problemNumber: "999" }] }],
+    });
+    const out = await verifyProblemNumbers(scope, b);
+    expect(out.steps[0]!.sourceRefs[0]!.problemNumber).toBeNull();
+  });
+
+  it("keeps a problemNumber that exactly matches a material_problems row (material+page+number)", async () => {
+    const scope = scopeWithMaterialProblems([{ material_id: "m1", page: 42, number: "117" }]);
+    const b = block({
+      steps: [{ type: "slide", textUk: "...", sourceRefs: [{ materialId: "m1", materialTitle: "Math", page: 42, problemNumber: "117" }] }],
+    });
+    const out = await verifyProblemNumbers(scope, b);
+    expect(out.steps[0]!.sourceRefs[0]!.problemNumber).toBe("117");
+  });
+
+  it("is a no-op (and never queries the DB) when no sourceRef cites a problemNumber", async () => {
+    const out = await verifyProblemNumbers(fakeScope, block());
+    expect(out).toEqual(block());
   });
 });

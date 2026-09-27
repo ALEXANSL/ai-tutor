@@ -2,7 +2,7 @@
 
 | Поле | Значення |
 |---|---|
-| Статус | **Open — блокує мерж US-2.8/US-8.7** (знайдено QA) |
+| Статус | **Fixed** — три виклики US-8.7 (`startHomeworkProblem`, `continueHomeworkAttempt`/`homeworkFallbackSolution`) тепер додають `safetyPreambleUk(tutorName, roleNoun)` перед системним промптом, точно за тим самим патерном, що вже був у `askTopicChat`/`explainStepAgain` цього файлу (`tutorGender` протягнуто через `homeworkProblemFlow`/`startHomeworkProblem`/`continueHomeworkAttempt`/`homeworkFallbackSolution`, оскільки ці промпти, на відміну від `step_reinforcement` у `orchestrator.ts`, самі підставляють справжнє ім'я репетитора, а не залишають `{{tutor_name}}`-плейсхолдер для generic-преамбули). Додано 3 регресійні тести в `homework.test.ts`, що перевіряють наявність преамбули в системному промпті кожного з трьох викликів (method/attempt_feedback/fallback). `npm run typecheck`, `npm test`, `npm run build` — усі проходять. |
 | Серйозність | **Major (безпека)** |
 | Пов'язано з | `app/src/server/lessons/chat.ts` (`startHomeworkProblem`, `continueHomeworkAttempt`, `homeworkFallbackSolution`), `app/prompts/homework_method.md`/`homework_attempt.md`/`homework_fallback.md` |
 

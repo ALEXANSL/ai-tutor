@@ -198,6 +198,64 @@ describe("askTopicChat + homework-problem dialog (US-8.7, ADR-029 §4)", () => {
     expect(saved!.meta).toMatchObject({ kind: "homework_problem", problemNumber: "117", stage: "method", attemptNo: 0 });
   });
 
+  it("BUG-040: the 'method' call's system prompt carries the safety preamble (never a secret from dad, no name/address, urgent -> go to dad)", async () => {
+    db.material_problems = [{ material_id: "m1", page: 42, topic_id: "top1", number: "117" }];
+    db.materials = [{ id: "m1", title: "Математика 5", name: "math5.pdf" }];
+    db.chunks = [{ material_id: "m1", page: 42, text: "117. Розв'яжи рівняння 2x + 3 = 7." }];
+    callStructured.mockResolvedValueOnce({ result: { methodUk: "Метод: перенеси доданки." }, model: {}, costUsd: 0 });
+
+    await askTopicChat("fam1", "child1", "Зірочка", "Ліра", "f", "subj1", "Математика", "top1", "Дроби", "поясни задачу №117");
+
+    const system = (callStructured.mock.calls[0]![1] as { system: string }).system;
+    expect(system).toMatch(/ПРАВИЛА БЕЗПЕКИ/);
+    expect(system).toMatch(/НІКОЛИ не обіцяєш зберегти секрет від тата/);
+  });
+
+  it("BUG-040: the 'attempt_feedback' call's system prompt also carries the safety preamble", async () => {
+    db.material_problems = [{ material_id: "m1", page: 42, topic_id: "top1", number: "117" }];
+    db.materials = [{ id: "m1", title: "Математика 5", name: "math5.pdf" }];
+    db.chunks = [{ material_id: "m1", page: 42, text: "117. Розв'яжи рівняння 2x + 3 = 7." }];
+    callStructured.mockResolvedValueOnce({ result: { methodUk: "Метод: перенеси доданки." }, model: {}, costUsd: 0 });
+    await askTopicChat("fam1", "child1", "Зірочка", "Ліра", "f", "subj1", "Математика", "top1", "Дроби", "поясни задачу №117");
+
+    callStructured.mockResolvedValueOnce({
+      result: { messageKind: "attempt", verdict: "incorrect_or_partial", explanationUk: "Не так — перевір знак." },
+      model: {},
+      costUsd: 0,
+    });
+    await askTopicChat("fam1", "child1", "Зірочка", "Ліра", "f", "subj1", "Математика", "top1", "Дроби", "x = 5");
+
+    const system = (callStructured.mock.calls[1]![1] as { system: string }).system;
+    expect(system).toMatch(/ПРАВИЛА БЕЗПЕКИ/);
+  });
+
+  it("BUG-040: the 'fallback' (full-solution) call's system prompt also carries the safety preamble", async () => {
+    db.material_problems = [{ material_id: "m1", page: 42, topic_id: "top1", number: "117" }];
+    db.materials = [{ id: "m1", title: "Математика 5", name: "math5.pdf" }];
+    db.chunks = [{ material_id: "m1", page: 42, text: "117. Розв'яжи рівняння 2x + 3 = 7." }];
+    callStructured.mockResolvedValueOnce({ result: { methodUk: "Метод: перенеси доданки." }, model: {}, costUsd: 0 });
+    await askTopicChat("fam1", "child1", "Зірочка", "Ліра", "f", "subj1", "Математика", "top1", "Дроби", "поясни задачу №117");
+
+    callStructured.mockResolvedValueOnce({
+      result: { messageKind: "attempt", verdict: "incorrect_or_partial", explanationUk: "Не так." },
+      model: {},
+      costUsd: 0,
+    });
+    await askTopicChat("fam1", "child1", "Зірочка", "Ліра", "f", "subj1", "Математика", "top1", "Дроби", "x = 5");
+
+    callStructured.mockResolvedValueOnce({
+      result: { messageKind: "attempt", verdict: "incorrect_or_partial", explanationUk: "Досі не так." },
+      model: {},
+      costUsd: 0,
+    });
+    callStructured.mockResolvedValueOnce({ result: { solutionUk: "Повний розв'язок: x = 2." }, model: {}, costUsd: 0 });
+    await askTopicChat("fam1", "child1", "Зірочка", "Ліра", "f", "subj1", "Математика", "top1", "Дроби", "x = 6");
+
+    const fallbackCallIndex = callStructured.mock.calls.length - 1;
+    const system = (callStructured.mock.calls[fallbackCallIndex]![1] as { system: string }).system;
+    expect(system).toMatch(/ПРАВИЛА БЕЗПЕКИ/);
+  });
+
   it("КП-3/ВП-38: two wrong attempts in a row after the method reach the full-solution fallback, never sooner", async () => {
     db.material_problems = [{ material_id: "m1", page: 42, topic_id: "top1", number: "117" }];
     db.materials = [{ id: "m1", title: "Математика 5", name: "math5.pdf" }];

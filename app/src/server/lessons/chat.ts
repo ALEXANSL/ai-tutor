@@ -7,11 +7,11 @@ import { callStructured } from "@/server/ai/router";
 import { forFamily, type FamilyScope } from "@/server/db/family-scope";
 import { fillTemplate, splitPrompt } from "@/server/ingest/structure";
 import { safetyPreambleUk } from "@/server/safety/preamble";
+import type { TutorGender } from "@/i18n/uk";
 import { moderateMessage } from "@/server/safety/moderate";
 import type { ModerationResult } from "@/server/safety/classify";
 import { recordSafetyEvent } from "@/server/safety/events";
 import { URGENT_REPLY_UK } from "@/server/safety/urgentReplyUk";
-import type { TutorGender } from "@/i18n/uk";
 
 /**
  * Topic chat (US-8.1, 8.2): one chat per subject+topic per child; answers
@@ -281,6 +281,7 @@ async function startHomeworkProblem(
   subjectId: string,
   topicId: string,
   tutorName: string,
+  tutorGender: TutorGender,
   requested: ProblemRequest,
   moderation: Promise<ModerationResult>,
   sessionId: string | undefined,
@@ -322,7 +323,8 @@ async function startHomeworkProblem(
     page: String(ref.page),
     problem_text: problemText || "(текст задачі недоступний)",
   });
-  const system2 = fillTemplate(system, { tutor_name: tutorName });
+  const roleNoun = tutorGender === "m" ? "ШІ-помічник" : "ШІ-помічниця";
+  const system2 = `${safetyPreambleUk(tutorName, roleNoun)}\n\n${fillTemplate(system, { tutor_name: tutorName })}`;
   const methodUk = await callStructured(
     "step_reinforcement",
     { system: system2, prompt, schema: homeworkMethodSchema },
@@ -347,6 +349,7 @@ async function homeworkFallbackSolution(
   familyId: string,
   sessionId: string | undefined,
   tutorName: string,
+  tutorGender: TutorGender,
   meta: HomeworkMeta,
   problemText: string,
   methodText: string,
@@ -358,7 +361,8 @@ async function homeworkFallbackSolution(
     problem_text: problemText || "(текст задачі недоступний)",
     method: methodText || "(метод недоступний)",
   });
-  const system2 = fillTemplate(system, { tutor_name: tutorName });
+  const roleNoun = tutorGender === "m" ? "ШІ-помічник" : "ШІ-помічниця";
+  const system2 = `${safetyPreambleUk(tutorName, roleNoun)}\n\n${fillTemplate(system, { tutor_name: tutorName })}`;
   return callStructured(
     "step_reinforcement",
     { system: system2, prompt, schema: homeworkFallbackSchema },
@@ -381,6 +385,7 @@ async function continueHomeworkAttempt(
   chatId: string,
   childProfileId: string,
   tutorName: string,
+  tutorGender: TutorGender,
   active: { id: string; meta: HomeworkMeta },
   cleanQuestion: string,
   moderation: Promise<ModerationResult>,
@@ -412,7 +417,8 @@ async function continueHomeworkAttempt(
     method: methodText || "(метод недоступний)",
     child_message: cleanQuestion,
   });
-  const system2 = fillTemplate(system, { tutor_name: tutorName });
+  const roleNoun = tutorGender === "m" ? "ШІ-помічник" : "ШІ-помічниця";
+  const system2 = `${safetyPreambleUk(tutorName, roleNoun)}\n\n${fillTemplate(system, { tutor_name: tutorName })}`;
   const outcome = await callStructured(
     "step_reinforcement",
     { system: system2, prompt, schema: homeworkAttemptSchema },
@@ -435,7 +441,7 @@ async function continueHomeworkAttempt(
     }
     // ВП-38 / US-8.7 КП-4: attempts exhausted — the full solution, as the
     // LAST step of the dialog, never the first.
-    const solutionUk = await homeworkFallbackSolution(familyId, sessionId, tutorName, meta, problemText, methodText);
+    const solutionUk = await homeworkFallbackSolution(familyId, sessionId, tutorName, tutorGender, meta, problemText, methodText);
     return saveHomeworkMessage(scope, familyId, chatId, sessionId, solutionUk, { ...meta, stage: "fallback", attemptNo });
   }
   // "give_me_answer_request" (КП-5) / "other": neither the stage nor the
@@ -456,6 +462,7 @@ async function homeworkProblemFlow(
   subjectId: string,
   topicId: string,
   tutorName: string,
+  tutorGender: TutorGender,
   cleanQuestion: string,
   moderation: Promise<ModerationResult>,
   sessionId: string | undefined,
@@ -464,16 +471,16 @@ async function homeworkProblemFlow(
   if (requested) {
     const existing = await findHomeworkByProblemNumber(scope, chatId, requested.number);
     if (existing && (existing.meta.stage === "method" || existing.meta.stage === "attempt_feedback")) {
-      return continueHomeworkAttempt(scope, familyId, chatId, childProfileId, tutorName, existing, cleanQuestion, moderation, sessionId);
+      return continueHomeworkAttempt(scope, familyId, chatId, childProfileId, tutorName, tutorGender, existing, cleanQuestion, moderation, sessionId);
     }
     // No cycle yet for this exact number, or an earlier one already ended
     // ("solved"/"fallback") — either way an explicit "№N" always (re)starts
     // that number's own cycle fresh.
-    return startHomeworkProblem(scope, familyId, chatId, childProfileId, subjectId, topicId, tutorName, requested, moderation, sessionId);
+    return startHomeworkProblem(scope, familyId, chatId, childProfileId, subjectId, topicId, tutorName, tutorGender, requested, moderation, sessionId);
   }
   const active = await findActiveHomeworkCycle(scope, chatId);
   if (!active) return null;
-  return continueHomeworkAttempt(scope, familyId, chatId, childProfileId, tutorName, active, cleanQuestion, moderation, sessionId);
+  return continueHomeworkAttempt(scope, familyId, chatId, childProfileId, tutorName, tutorGender, active, cleanQuestion, moderation, sessionId);
 }
 
 export async function listChatMessages(familyId: string, childProfileId: string, subjectId: string, topicId: string): Promise<{ chatId: string; messages: ChatMessageView[] }> {
@@ -515,7 +522,7 @@ export async function askTopicChat(
   // over the plain Q&A path below — same chat, same message box (ADR-028
   // §3's "без нового виду чату"), dispatched purely from this chat's own
   // `messages.meta` history, never a new table.
-  const homework = await homeworkProblemFlow(scope, familyId, chatId, childProfileId, subjectId, topicId, tutorName, cleanQuestion, moderation, sessionId);
+  const homework = await homeworkProblemFlow(scope, familyId, chatId, childProfileId, subjectId, topicId, tutorName, tutorGender, cleanQuestion, moderation, sessionId);
   if (homework) return homework;
 
   const { data: chunkRows } = await scope.client

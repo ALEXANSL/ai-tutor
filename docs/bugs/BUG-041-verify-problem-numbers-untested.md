@@ -2,7 +2,7 @@
 
 | Поле | Значення |
 |---|---|
-| Статус | **Open — блокує мерж US-2.8/US-8.7** (знайдено QA) |
+| Статус | **Fixed** — `verifyProblemNumbers` експортовано з `pipeline.ts` і покрито прямими юніт-тестами в `pipeline.test.ts` (варіант (а) із завдання): fake `scope.select().in().returns()` повертає реальний `material_problems`-рядок, і тест перевіряє (1) незбіжний `problemNumber` обнуляється, (2) точно збіжний (`material_id`+`page`+`number`) — зберігається, (3) степ без жодного `problemNumber` узагалі не звертається до БД (`fakeScope`, як і раніше). Стара фікстура `fakeScope`/`baseInput` не чіпалась. `npm run typecheck`, `npm test`, `npm run build` — усі проходять. |
 | Серйозність | **Major (цілісність тестування безпеко-критичної функції)** |
 | Пов'язано з | `app/src/server/lessons/pipeline.ts` (`verifyProblemNumbers`), `app/src/server/lessons/pipeline.test.ts` |
 
