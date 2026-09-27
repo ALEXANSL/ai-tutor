@@ -245,6 +245,18 @@ export const uk = {
       textModeBanner: "Зараз говоримо текстом",
       narrationPause: "⏸ Пауза",
       narrationReplay: "↺ Повторити",
+      // ADR-023 (D-76): shown on the progress screen while the topic's first
+      // block is still being generated in the background — replaces the old
+      // static "Готуємо урок…" with a staged, honest progress view.
+      warmup: {
+        title: "Готуємо урок…",
+        etaHint: "Зазвичай це триває ≈ 1 хвилину",
+        stagePlanning: "Складаємо план уроку",
+        stageGenerating: "Пишемо урок",
+        stageReviewing: "Перевіряємо якість",
+        stageRevising: "Допрацьовуємо",
+        stageSaving: "Зберігаємо",
+      },
     },
     friend: {
       title: "ШІ-друг",

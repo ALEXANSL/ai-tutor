@@ -228,6 +228,23 @@ describe("startLessonSession — BUG-011: US-6.11 requires a 'safe simplified te
     expect(notifyParent).not.toHaveBeenCalled();
   });
 
+  it("ADR-023: starts a 'warming' session (no fallback, no candidates yet) when the topic is cold and a background job was kicked off", async () => {
+    resetScope();
+    scopeState.tables = {
+      subjects: { id: "subj1", name_uk: "Математика", config: {} },
+      topics: { id: "top1", title: "Дроби", grade: 6 },
+    };
+    getOrGenerateLessonBlocks.mockResolvedValue({ candidates: [], failureReasonUk: null, warmJobId: "job-1" });
+
+    const result = await startLessonSession("fam1", "child1", "subj1", "top1", 30);
+
+    expect(result.warming).toBe(true);
+    expect(result.candidates).toEqual([]);
+    expect(result.usedFallback).toBe(false);
+    expect(getOrCreateFallbackBlock).not.toHaveBeenCalled();
+    expect(notifyParent).not.toHaveBeenCalled();
+  });
+
   it("ends the lesson after the current block when time is already up, without even asking for a next block", async () => {
     resetScope();
     scopeState.tables = {

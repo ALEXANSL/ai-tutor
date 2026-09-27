@@ -162,3 +162,36 @@ describe("runPedagogicalPipeline (ADR-022)", () => {
     await expect(runPedagogicalPipeline(baseInput)).rejects.toThrow("рецензент недоступний: не налаштовано OPENAI_API_KEY");
   });
 });
+
+describe("runPedagogicalPipeline stage hooks (ADR-023 §Частина 1.6/1.7 — the child's progress screen)", () => {
+  it("reports planning -> generating -> reviewing, in order, on a first-try approval", async () => {
+    mockRoleQueue({ lesson_planning: [plan()], lesson_generation: [block()], lesson_review: [review()] });
+    const stages: string[] = [];
+    await runPedagogicalPipeline(baseInput, { onStage: async (s) => void stages.push(s) });
+    expect(stages).toEqual(["planning", "generating", "reviewing"]);
+  });
+
+  it("reports 'revising' (not 'generating' again) before the second generation call after a 'revise' verdict", async () => {
+    mockRoleQueue({
+      lesson_planning: [plan()],
+      lesson_generation: [block({ titleUk: "Спроба 1" }), block({ titleUk: "Спроба 2" })],
+      lesson_review: [review({ verdict: "revise", notes: ["бракує гачка"] }), review({ verdict: "approved" })],
+    });
+    const stages: string[] = [];
+    await runPedagogicalPipeline(baseInput, { onStage: async (s) => void stages.push(s) });
+    expect(stages).toEqual(["planning", "generating", "reviewing", "revising", "reviewing"]);
+  });
+
+  it("tags every callStructured call with the job id when running from a background job", async () => {
+    mockRoleQueue({ lesson_planning: [plan()], lesson_generation: [block()], lesson_review: [review()] });
+    await runPedagogicalPipeline(baseInput, { jobId: "job-1", onStage: async () => {} });
+    for (const call of callStructured.mock.calls) {
+      expect((call[2] as { jobId?: string }).jobId).toBe("job-1");
+    }
+  });
+
+  it("never breaks when hooks are omitted (plain, non-job pipeline run)", async () => {
+    mockRoleQueue({ lesson_planning: [plan()], lesson_generation: [block()], lesson_review: [review()] });
+    await expect(runPedagogicalPipeline(baseInput)).resolves.toMatchObject({ status: "active" });
+  });
+});

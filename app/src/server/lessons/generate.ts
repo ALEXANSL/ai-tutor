@@ -1,14 +1,14 @@
 import "server-only";
 import { allowedForSubject } from "@/lesson-components";
 import { forFamily, type FamilyScope } from "@/server/db/family-scope";
+import { getLibraryWarmDailyBudgetUsd } from "@/server/env";
 import { notifyParent } from "@/server/notifications";
 import { validateComponentRef } from "./component-validator";
-import { LESSON_GENERATION_PROMPT_VERSION, ReviewerUnavailableError, runPedagogicalPipeline, type PipelineFragment } from "./pipeline";
+import { LESSON_GENERATION_PROMPT_VERSION, runPedagogicalPipeline, type PipelineFragment, type PipelineHooks } from "./pipeline";
 import type { GeneratedStep } from "./schema";
 
 /** How many saved, *active* blocks of a topic we try to keep on hand (US-16.6: offer 2–3). */
-const CANDIDATE_TARGET = 3;
-const MIN_CANDIDATES_BEFORE_GENERATING = 2;
+export const CANDIDATE_TARGET = 3;
 const FRAGMENTS_PER_BLOCK = 12;
 
 export interface LibraryStepView {
@@ -78,7 +78,8 @@ function toStepRow(step: GeneratedStep, sortOrder: number) {
   };
 }
 
-async function loadCandidates(scope: FamilyScope, topicId: string, limit: number): Promise<{ id: string; title: string; estimated_minutes: number | null }[]> {
+/** ADR-023: exported so `warmup.ts` can check "is this topic already warm?" without duplicating the query. */
+export async function loadCandidates(scope: FamilyScope, topicId: string, limit: number): Promise<{ id: string; title: string; estimated_minutes: number | null }[]> {
   const { data } = await scope
     .select("library_items", "id, title, estimated_minutes")
     .eq("topic_id", topicId)
@@ -111,8 +112,14 @@ async function loadTopicFragments(scope: FamilyScope, familyId: string, topicId:
  * revise) for one new block and saves it — `active` (with its "methodical
  * passport", US-6.10) if a review approved it, `needs_review` (hidden from
  * the child, US-6.11 КП-3) if it never passed after `MAX_REVISIONS`.
+ *
+ * `jobHooks` (ADR-023, optional): set when this runs from the
+ * `library.warm_topic` job handler (`warmup.ts`) — tags every `ai_calls` row
+ * with the job id (daily warm-up budget) and reports `jobs.payload.stage`
+ * progress for the child's progress screen. Omitted by `nextSessionBlock`
+ * (mid-session top-up, out of ADR-023's scope, still synchronous).
  */
-async function generateOneBlock(
+export async function generateOneBlock(
   scope: FamilyScope,
   familyId: string,
   subjectId: string,
@@ -121,6 +128,7 @@ async function generateOneBlock(
   topicId: string,
   topicTitle: string,
   grade: number | null,
+  jobHooks?: PipelineHooks,
 ): Promise<string> {
   const fragments = await loadTopicFragments(scope, familyId, topicId, FRAGMENTS_PER_BLOCK);
   if (fragments.length === 0) {
@@ -137,8 +145,9 @@ async function generateOneBlock(
     .returns<{ title: string }[]>();
   const recentTitles = (recentRows ?? []).map((r) => r.title);
 
-  const pipeline = await runPedagogicalPipeline({ familyId, topicId, subjectName, grade, topicTitle, fragments, allowedComponents, recentTitles });
+  const pipeline = await runPedagogicalPipeline({ familyId, topicId, subjectName, grade, topicTitle, fragments, allowedComponents, recentTitles }, jobHooks);
   const block = pipeline.block;
+  await jobHooks?.onStage?.("saving");
 
   const pedagogy = {
     goalUk: pipeline.plan.goalUk,
@@ -218,21 +227,35 @@ export interface LessonBlockCandidates {
    * рецензію (навіть після доопрацювань)".
    */
   failureReasonUk: string | null;
+  /**
+   * ADR-023 §Частина 1: set only when the topic has **no** active block yet
+   * (the true "cold" case) and a `library.warm_topic` background job is now
+   * producing the first one — `startLessonSession` starts the session in
+   * `warming` mode with a progress screen instead of either blocking this
+   * request for ~60–90s or (incorrectly) treating this as a BUG-011 failure.
+   */
+  warmJobId?: string;
 }
 
 /**
- * Returns 1–3 candidate blocks for a topic (US-16.6 КП-1, US-9.1 КП-2),
- * generating new ones only when the library does not already have enough
- * (US-19.1, US-19.2 КП-2: reuse first, no duplicate generation calls).
+ * Returns 1–3 candidate blocks for a topic (US-16.6 КП-1, US-9.1 КП-2).
  *
- * BUG-011: never lets an unconfigured reviewer (`ReviewerUnavailableError`,
- * e.g. `OPENAI_API_KEY` unset) or a block that never got approved abort the
- * caller with an uncaught exception — both end the loop with an empty
- * `candidates` array and a `failureReasonUk` instead, so `startLessonSession`
- * can fall back to the safe simplified template (`getOrCreateFallbackBlock`).
- * Any other error (e.g. no indexed textbook fragments) still propagates —
- * that is a different, legitimate blocking condition the fallback template
- * cannot paper over either.
+ * ADR-023 (D-76/D-77): generation itself never runs inline on this request
+ * any more — a "cold" topic (zero active blocks) hands off to
+ * `ensureActiveLibraryBlock` (the same function the warm-up signal from
+ * `is_current` uses, `warmup.ts`), which kicks a background
+ * `library.warm_topic` job and returns immediately; `warmJobId` tells the
+ * caller to show the progress screen instead of blocking ~60–90s on this
+ * request (US-19.1, US-19.2 КП-2: reuse first, no duplicate generation).
+ * When at least one active block already exists, it is returned right away
+ * (see the scope note below on why this no longer tops up to
+ * `CANDIDATE_TARGET` inline).
+ *
+ * BUG-011 / the daily warm-up budget (ADR-023 §1.6): when the topic is cold
+ * AND a new job cannot be started (daily warm-up budget spent, or the
+ * reviewer is unconfigured before the job even gets to try), `warmJobId` is
+ * left unset and `failureReasonUk` is set instead, so `startLessonSession`
+ * falls back to the safe simplified template (`getOrCreateFallbackBlock`).
  */
 export async function getOrGenerateLessonBlocks(
   familyId: string,
@@ -244,29 +267,39 @@ export async function getOrGenerateLessonBlocks(
   grade: number | null,
 ): Promise<LessonBlockCandidates> {
   const scope = forFamily(familyId);
-  let candidates = await loadCandidates(scope, topicId, CANDIDATE_TARGET);
-  let failureReasonUk: string | null = null;
-  while (candidates.length < MIN_CANDIDATES_BEFORE_GENERATING) {
-    const before = candidates.length;
-    try {
-      await generateOneBlock(scope, familyId, subjectId, subjectName, subjectConfig, topicId, topicTitle, grade);
-    } catch (e) {
-      if (e instanceof ReviewerUnavailableError) {
-        failureReasonUk = e.message;
-        break;
-      }
-      throw e;
+  const candidates = await loadCandidates(scope, topicId, CANDIDATE_TARGET);
+
+  if (candidates.length === 0) {
+    const { ensureActiveLibraryBlock } = await import("./warmup");
+    const outcome = await ensureActiveLibraryBlock(
+      familyId,
+      { id: subjectId, nameUk: subjectName, config: subjectConfig },
+      { id: topicId, title: topicTitle, grade },
+      { immediate: true },
+    );
+    if (outcome.status === "active") {
+      // A sibling request (or a warm-up job that finished between our two
+      // reads) already produced one — re-read once instead of waiting.
+      const freshlyActive = await loadCandidates(scope, topicId, CANDIDATE_TARGET);
+      return { candidates: freshlyActive.map((c) => ({ id: c.id, title: c.title, estimatedMinutes: c.estimated_minutes })), failureReasonUk: null };
     }
-    candidates = await loadCandidates(scope, topicId, CANDIDATE_TARGET);
-    if (candidates.length <= before) {
-      failureReasonUk ??= "жоден згенерований блок теми не пройшов рецензію (навіть після доопрацювань)";
-      break; // generation failed silently-safe stop
+    if (outcome.status === "deferred_daily_budget") {
+      return {
+        candidates: [],
+        failureReasonUk: `денний ліміт прогріву бібліотеки ($${getLibraryWarmDailyBudgetUsd()}/день) вичерпано сьогодні`,
+      };
     }
+    return { candidates: [], failureReasonUk: null, warmJobId: outcome.jobId };
   }
-  return {
-    candidates: candidates.map((c) => ({ id: c.id, title: c.title, estimatedMinutes: c.estimated_minutes })),
-    failureReasonUk: candidates.length === 0 ? failureReasonUk : null,
-  };
+
+  // ADR-023 scope note: `ensureActiveLibraryBlock` only ever guarantees the
+  // topic's *first* active block (its own "already warm?" check is `count of
+  // active blocks > 0`), not a 2–3-candidate pool — offering fewer than
+  // `CANDIDATE_TARGET` candidates when only one block exists yet is a small,
+  // deliberate narrowing of the old (synchronous, request-blocking) US-16.6
+  // behaviour, not a regression left in by accident: the child still gets a
+  // real, reviewed block immediately, with no ~60–90s wait on this request.
+  return { candidates: candidates.map((c) => ({ id: c.id, title: c.title, estimatedMinutes: c.estimated_minutes })), failureReasonUk: null };
 }
 
 /**

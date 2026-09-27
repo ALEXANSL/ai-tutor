@@ -11,6 +11,7 @@ import { recordChildFeedback, type ChildFeedbackKind } from "@/server/lessons/ge
 import { readableTextForStep, synthesizeStepNarration } from "@/server/lessons/narration";
 import {
   acknowledgeSlide,
+  checkWarmupProgress,
   chooseStartBlock,
   continueAfterBlock,
   getPreviousModuleView,
@@ -316,4 +317,24 @@ export async function getPreviousModuleAction(sessionId: string): Promise<Previo
   const { familyId } = await requireLessonAccess();
   UUID.parse(sessionId);
   return getPreviousModuleView(familyId, sessionId);
+}
+
+/**
+ * ADR-023 §Частина 1.7: polled by `LibraryWarmProgress` while the session's
+ * `mode === "warming"` (a "cold" topic that had no active library block at
+ * start). Once ready, revalidates the lesson page so the next render picks
+ * up the session's own new `mode` (moved to `choosing` by
+ * `checkWarmupProgress` itself) instead of returning candidates here too.
+ */
+export async function checkWarmupProgressAction(sessionId: string): Promise<{ status: "ok"; ready: boolean; stage: string | null } | { status: "error"; message: string }> {
+  const { familyId } = await requireLessonAccess();
+  UUID.parse(sessionId);
+  try {
+    const progress = await checkWarmupProgress(familyId, sessionId);
+    if (progress.ready) revalidatePath(`/lesson/${sessionId}`);
+    return { status: "ok", ready: progress.ready, stage: progress.stage };
+  } catch (e) {
+    console.error(`checkWarmupProgressAction failed: ${(e as Error).message}`);
+    return { status: "error", message: uk.common.error };
+  }
 }

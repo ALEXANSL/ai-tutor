@@ -24,6 +24,23 @@ export const LESSON_GENERATION_PROMPT_VERSION = "lesson_generation.v2"; // v2: h
 export const LESSON_REVIEW_PROMPT_VERSION = "lesson_review.v1";
 export const MAX_REVISIONS = 2;
 
+/** ADR-023 §Частина 1.6: the child-facing progress stages, in order. */
+export type PipelineStage = "planning" | "generating" | "reviewing" | "revising" | "saving";
+
+/**
+ * ADR-023 §Частина 1.2/1.6: optional hooks used only when this pipeline runs
+ * from a `library.warm_topic` background job — `jobId` tags every
+ * `ai_calls` row this run makes (daily warm-up budget, `ai_calls.job_id`),
+ * `onStage` updates `jobs.payload.stage` so the child's progress screen has
+ * something better to show than a static "Готуємо урок…" (D-76). Both
+ * fields are optional: a run started outside a job (e.g. `nextSessionBlock`,
+ * mid-session — out of ADR-023's scope, unchanged) simply omits them.
+ */
+export interface PipelineHooks {
+  jobId?: string;
+  onStage?(stage: PipelineStage): Promise<void>;
+}
+
 let planPromptCache: { system: string; user: string } | null = null;
 function lessonPlanningPrompt(): { system: string; user: string } {
   planPromptCache ??= splitPrompt(readFileSync(join(process.cwd(), "prompts", "lesson_planning.md"), "utf8"));
@@ -127,6 +144,7 @@ async function generateDraft(
   input: PipelineInput,
   plan: LessonPlan,
   revisionNotesUk: string[] | null,
+  jobId: string | undefined,
 ): Promise<{ block: LessonBlockGenerated; call: PipelineCallLog }> {
   const schema = buildLessonBlockSchema(input.allowedComponents);
   const { system, user } = lessonGenerationPrompt();
@@ -147,7 +165,7 @@ async function generateDraft(
     revision_notes: revisionNotesUk?.length ? revisionNotesUk.map((n) => `- ${n}`).join("\n") : "(це перша спроба — попередніх зауважень немає)",
   });
   const system2 = `${safetyPreambleGenericUk()}\n\n${system}`;
-  const res = await callStructured("lesson_generation", { system: system2, prompt, schema }, { familyId: input.familyId, ref: { table: "topics", id: input.topicId } });
+  const res = await callStructured("lesson_generation", { system: system2, prompt, schema }, { familyId: input.familyId, ref: { table: "topics", id: input.topicId }, jobId });
   return { block: res.result, call: { role: "lesson_generation", provider: res.model.provider, model: res.model.model, costUsd: res.costUsd } };
 }
 
@@ -155,6 +173,7 @@ async function reviewDraft(
   input: PipelineInput,
   plan: LessonPlan,
   block: LessonBlockGenerated,
+  jobId: string | undefined,
 ): Promise<{ review: ReviewOutput; call: PipelineCallLog }> {
   const { system, user } = lessonReviewPrompt();
   const prompt = fillTemplate(user, {
@@ -167,7 +186,7 @@ async function reviewDraft(
     recent_titles: input.recentTitles.length ? input.recentTitles.map((t) => `- ${t}`).join("\n") : "(це перший блок теми)",
     rubric: Object.entries(REVIEW_CRITERION_LABELS_UK).map(([k, v]) => `- ${k}: ${v}`).join("\n"),
   });
-  const res = await callStructured("lesson_review", { system, prompt, schema: reviewSchema }, { familyId: input.familyId, ref: { table: "topics", id: input.topicId } });
+  const res = await callStructured("lesson_review", { system, prompt, schema: reviewSchema }, { familyId: input.familyId, ref: { table: "topics", id: input.topicId }, jobId });
   return { review: res.result, call: { role: "lesson_review", provider: res.model.provider, model: res.model.model, costUsd: res.costUsd } };
 }
 
@@ -200,9 +219,11 @@ function enforcedVerdict(review: ReviewOutput): ReviewOutput {
   return review;
 }
 
-export async function runPedagogicalPipeline(input: PipelineInput): Promise<PipelineResult> {
+export async function runPedagogicalPipeline(input: PipelineInput, hooks: PipelineHooks = {}): Promise<PipelineResult> {
   const calls: PipelineCallLog[] = [];
+  const jobId = hooks.jobId;
 
+  await hooks.onStage?.("planning");
   const { system: planSys, user: planUser } = lessonPlanningPrompt();
   const planPrompt = fillTemplate(planUser, {
     subject_name: input.subjectName,
@@ -212,7 +233,7 @@ export async function runPedagogicalPipeline(input: PipelineInput): Promise<Pipe
     techniques_catalog: pedagogyCatalogForPrompt(),
     recent_titles: input.recentTitles.length ? input.recentTitles.map((t) => `- ${t}`).join("\n") : "(це перший блок теми)",
   });
-  const planRes = await callStructured("lesson_planning", { system: planSys, prompt: planPrompt, schema: planSchema }, { familyId: input.familyId, ref: { table: "topics", id: input.topicId } });
+  const planRes = await callStructured("lesson_planning", { system: planSys, prompt: planPrompt, schema: planSchema }, { familyId: input.familyId, ref: { table: "topics", id: input.topicId }, jobId });
   calls.push({ role: "lesson_planning", provider: planRes.model.provider, model: planRes.model.model, costUsd: planRes.costUsd });
   const plan = planRes.result;
 
@@ -223,14 +244,16 @@ export async function runPedagogicalPipeline(input: PipelineInput): Promise<Pipe
   let status: PipelineResult["status"] = "needs_review";
 
   for (let iteration = 1; iteration <= MAX_REVISIONS + 1; iteration++) {
-    const draft = await generateDraft(input, plan, revisionNotes);
+    await hooks.onStage?.(iteration === 1 ? "generating" : "revising");
+    const draft = await generateDraft(input, plan, revisionNotes, jobId);
     calls.push(draft.call);
     block = draft.block;
     generationModel = draft.call.model;
 
+    await hooks.onStage?.("reviewing");
     let reviewed: { review: ReviewOutput; call: PipelineCallLog };
     try {
-      reviewed = await reviewDraft(input, plan, block);
+      reviewed = await reviewDraft(input, plan, block, jobId);
     } catch (e) {
       // BUG-011: no fallback provider exists for `lesson_review` — surface a
       // clear, translated reason instead of leaving `AiNotConfiguredError`

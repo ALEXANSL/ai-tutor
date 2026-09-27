@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
+import { ensureActiveLibraryBlock } from "@/server/lessons/warmup";
 import type { FormState } from "./state";
 
 /**
@@ -49,6 +50,25 @@ export async function setCurrentTopicAction(_prev: FormState, formData: FormData
   });
   if (error) {
     return { status: "error", message: RPC_ERROR_MESSAGE[error.code ?? ""] ?? uk.common.error };
+  }
+
+  // ADR-023 §Частина 1.1 (D-76): the parent's own "positive" signal warms the
+  // topic's first library block in the background — can wait a few seconds
+  // (not `immediate`, no `kickJobs()` here), the next `pg_cron` tick within a
+  // minute picks it up. Never blocks or fails this action either way (a
+  // failure here — e.g. the daily warm-up budget already spent — is not the
+  // parent's problem right now; the child's own "cold" open still covers it).
+  const [{ data: subject }, { data: topic }] = await Promise.all([
+    scope.select("subjects", "id, name_uk, config").eq("id", subjectId).maybeSingle<{ id: string; name_uk: string; config: Record<string, unknown> }>(),
+    scope.select("topics", "id, title, grade").eq("id", topicId).maybeSingle<{ id: string; title: string; grade: number | null }>(),
+  ]);
+  if (subject && topic) {
+    ensureActiveLibraryBlock(
+      familyId,
+      { id: subject.id, nameUk: subject.name_uk, config: subject.config },
+      { id: topic.id, title: topic.title, grade: topic.grade },
+      { immediate: false },
+    ).catch((e: Error) => console.error(`library warm-up on is_current failed: ${e.message}`));
   }
 
   revalidatePath("/parent/subjects", "layout");
