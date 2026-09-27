@@ -46,7 +46,7 @@ export function BookSettingsForm({
         <label htmlFor="book-kind" className={label}>
           {t.kind}
         </label>
-        <select id="book-kind" name="kind" defaultValue={kind} className={input}>
+        <select key={kind} id="book-kind" name="kind" defaultValue={kind} className={input}>
           {kinds.map((k) => (
             <option key={k.key} value={k.key}>
               {k.icon} {k.title}
@@ -58,7 +58,7 @@ export function BookSettingsForm({
         <label htmlFor="book-subject" className={label}>
           {t.subject}
         </label>
-        <select id="book-subject" name="subjectId" defaultValue={subjectId ?? ""} className={input}>
+        <select key={subjectId ?? ""} id="book-subject" name="subjectId" defaultValue={subjectId ?? ""} className={input}>
           <option value="">{uk.parent.books.noSubject}</option>
           {subjects.map((s) => (
             <option key={s.id} value={s.id}>
