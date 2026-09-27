@@ -1,5 +1,5 @@
 import "server-only";
-import { allowedForSubject } from "@/lesson-components";
+import { allowedForSubject, getLessonComponent } from "@/lesson-components";
 import { forFamily, type FamilyScope } from "@/server/db/family-scope";
 import { getLibraryWarmDailyBudgetUsd } from "@/server/env";
 import { notifyParent } from "@/server/notifications";
@@ -50,7 +50,17 @@ function toStepRow(step: GeneratedStep, sortOrder: number) {
     return {
       sort_order: sortOrder,
       type: "choice",
-      content: { questionUk: step.questionUk, options: step.options, correctOptionId: step.correctOptionId, explanationUk: step.explanationUk },
+      // ADR-028 §1: `options[].misconceptionUk` and `remediation.retryVariants`
+      // pass through as-is when the model provided them — both optional, so
+      // an older-shaped output (or the model simply omitting them) still
+      // produces a perfectly normal step (ВП-37).
+      content: {
+        questionUk: step.questionUk,
+        options: step.options,
+        correctOptionId: step.correctOptionId,
+        explanationUk: step.explanationUk,
+        ...(step.remediation ? { remediation: step.remediation } : {}),
+      },
       visual: {},
       source_refs: sourceRefs,
     };
@@ -59,7 +69,12 @@ function toStepRow(step: GeneratedStep, sortOrder: number) {
     return {
       sort_order: sortOrder,
       type: "open",
-      content: { questionUk: step.questionUk, expectedAnswerUk: step.expectedAnswerUk, rubricUk: step.rubricUk },
+      content: {
+        questionUk: step.questionUk,
+        expectedAnswerUk: step.expectedAnswerUk,
+        rubricUk: step.rubricUk,
+        ...(step.remediation ? { remediation: step.remediation } : {}),
+      },
       visual: {},
       source_refs: sourceRefs,
     };
@@ -69,11 +84,24 @@ function toStepRow(step: GeneratedStep, sortOrder: number) {
   if (!validated.ok) {
     return { sort_order: sortOrder, type: validated.fallback.type, content: validated.fallback.content, visual: {}, source_refs: sourceRefs };
   }
+  // ADR-028 §1: `hasRetry` is a plain fact about the component the model
+  // never gets to choose — it's true iff the registered component
+  // implements `regenerate()` (today: `drag_sort` only) — not a model
+  // output. A component with no `regenerate()` gets no flag at all, which
+  // `stepHasRemediationContent` (orchestrator.ts) reads exactly like an
+  // absent `remediation` field on any older, pre-ADR-028 saved step.
+  const componentDef = getLessonComponent(validated.component);
   return {
     sort_order: sortOrder,
     type: "interactive",
     content: {},
-    visual: { component: validated.component, v: validated.v, props: validated.props, fallback_text: step.fallbackTextUk },
+    visual: {
+      component: validated.component,
+      v: validated.v,
+      props: validated.props,
+      fallback_text: step.fallbackTextUk,
+      ...(componentDef?.regenerate ? { remediation: { hasRetry: true } } : {}),
+    },
     source_refs: sourceRefs,
   };
 }

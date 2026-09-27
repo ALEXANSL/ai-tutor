@@ -62,12 +62,39 @@ export function evaluateDragSort(props: DragSortProps, answer: DragSortAnswer) {
   return { correct: allCorrect, detail };
 }
 
+/**
+ * ADR-028 §1 (US-6.15 remediation): a tiny deterministic string hash ->
+ * seeded shuffle, so the SAME `seed` always reorders items/slots the same
+ * way (idempotent across a page reload, ADR-028 §2) while a different seed
+ * (a different attempt) reliably looks different from the original —
+ * without ever calling a model. Items/slots/`answer` stay the same set (the
+ * skill and its correct mapping are unchanged); only their on-screen order
+ * changes, which is enough to make "the exact same card in the exact same
+ * spot" not the giveaway it would otherwise be on a second try.
+ */
+function seededShuffle<T>(arr: T[], seed: string): T[] {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (Math.imul(h, 31) + seed.charCodeAt(i)) | 0;
+  const out = arr.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    h = (Math.imul(h, 1103515245) + 12345) | 0;
+    const j = Math.abs(h) % (i + 1);
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
+
+export function regenerateDragSort(props: DragSortProps, seed: string): DragSortProps {
+  return { ...props, items: seededShuffle(props.items, `${seed}:items`), slots: seededShuffle(props.slots, `${seed}:slots`) };
+}
+
 registerLessonComponent<DragSortProps, DragSortAnswer>({
   key: "drag_sort",
   v: DRAG_SORT_V,
   propsSchema: dragSortPropsSchema,
   validateSemantics: validateDragSortSemantics,
   evaluate: evaluateDragSort,
+  regenerate: regenerateDragSort,
   describe(props, verdict) {
     const n = props.items.length;
     if (!verdict) return `Крок «Перетягни й співстав»: ${props.instructionUk} (${n} карток).`;

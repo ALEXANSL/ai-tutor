@@ -55,6 +55,7 @@ export function LessonRunner({
   idlePauseS,
   presentationMode: initialPresentationMode,
   currentBlockOrder: initialCurrentBlockOrder,
+  remediation: initialRemediation,
 }: {
   sessionId: string;
   subjectId: string;
@@ -71,6 +72,14 @@ export function LessonRunner({
    * keep compiling; defaults to 1 ("no previous block yet") when omitted.
    */
   currentBlockOrder?: number;
+  /**
+   * ADR-028/US-6.15: set when `step` (above) already IS a swapped-in
+   * remediation retry variant — reconstructed server-side from
+   * `step_attempts` on every reload/resume, since `current_step_id` never
+   * records "mid-remediation" itself. Shown as the same inline banner
+   * `applyAnswerResult` shows right after a first wrong attempt.
+   */
+  remediation?: { explanationUk: string } | null;
 }) {
   // BUG-017: `uk.child.lesson` (and, transitively, `sourceRef`/`stepOf`,
   // which are functions) must be imported directly here rather than
@@ -88,6 +97,14 @@ export function LessonRunner({
   const [stepStartedAt, setStepStartedAt] = useState(() => Date.now());
   const [feedback, setFeedback] = useState<{ correct: boolean; text: string } | null>(null);
   const [formatOffer, setFormatOffer] = useState(false);
+  // ADR-028/US-6.15: the "explain -> reinforce" cycle's own inline banner —
+  // set right after a first wrong attempt (or reconstructed on load/resume
+  // via the `remediation` prop), cleared once that retry is answered.
+  const [remediationBanner, setRemediationBanner] = useState<string | null>(initialRemediation?.explanationUk ?? null);
+  // ADR-028/US-6.15 КП-3: the cycle's reinforcement attempt also failed —
+  // shows the soft answer-reveal with an explicit "Далі", instead of
+  // silently jumping to the already-computed `next` step.
+  const [pendingFallback, setPendingFallback] = useState<{ textUk: string; next: NextView } | null>(null);
   const [showIdleHint, setShowIdleHint] = useState(false);
   const [offline, setOffline] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -316,7 +333,9 @@ export function LessonRunner({
       setFormatOffer(false);
       setOpenAnswer("");
       setQueuedAnswer(null);
+      setRemediationBanner(null);
     } else if (next.kind === "block_complete") {
+      setRemediationBanner(null);
       setBlockComplete({ libraryItemId: next.libraryItemId, visibleOutcomeUk: next.visibleOutcomeUk });
     } else if (next.kind === "lesson_complete") {
       router.refresh();
@@ -325,6 +344,24 @@ export function LessonRunner({
   }
 
   function applyAnswerResult(result: AnswerResultView) {
+    // ADR-028/US-6.15: a wrong first attempt on a step with remediation
+    // content — swap the step's own content/visual in place (same stepId,
+    // `goToNext` is never called: nothing "advances", this stays the
+    // current step) and show the concrete explanation banner instead of
+    // the ordinary correct/incorrect line, so the child sees exactly ONE
+    // clear message about her actual mistake, not two overlapping ones.
+    if (result.remediation) {
+      setFeedback(null);
+      setRemediationBanner(result.remediation.explanationUk);
+      setStep(result.remediation.retryStep as StepView);
+      setStepStartedAt(Date.now());
+      setOpenAnswer("");
+      setQueuedAnswer(null);
+      if (result.formatChangeSuggested) setFormatOffer(true);
+      return;
+    }
+    setRemediationBanner(null);
+
     // BUG-019: `partial` and `incorrect` used to share the same "Майже!"
     // text, which is exactly why a genuinely wrong answer read the same as
     // a real "close, try again" — this made a evaluator bug (BUG-019) look
@@ -333,6 +370,16 @@ export function LessonRunner({
     const headline = result.verdict === "correct" ? t.correct : result.verdict === "partial" ? t.almost : t.incorrect;
     setFeedback({ correct: result.verdict === "correct", text: `${headline}${result.explanation ? ` — ${result.explanation}` : ""}` });
     if (result.formatChangeSuggested) setFormatOffer(true);
+
+    // ADR-028/US-6.15 КП-3: the cycle's one reinforcement attempt also
+    // failed — `next` is already the following step/block (the server
+    // always advances on a 2nd consecutive miss), but the child sees the
+    // soft answer-reveal first and taps "Далі" herself rather than being
+    // silently moved on.
+    if (result.fallback) {
+      setPendingFallback({ textUk: result.fallback.textUk, next: result.next });
+      return;
+    }
     if (result.next.kind !== "retry_step") goToNext(result.next);
   }
 
@@ -420,6 +467,28 @@ export function LessonRunner({
             .finally(() => setBusy(false));
         }}
       />
+    );
+  }
+
+  if (pendingFallback) {
+    return (
+      <div className="px-6 pt-4">
+        <div className="rounded-[22px] border-2 border-secondary bg-secondary/10 p-4.5" role="status">
+          <p className="mb-2 text-sm font-extrabold text-secondary">{t.remediationFallbackTitle}</p>
+          <p className="mb-4 whitespace-pre-line text-lg">{pendingFallback.textUk}</p>
+          <button
+            type="button"
+            onClick={() => {
+              const next = pendingFallback.next;
+              setPendingFallback(null);
+              goToNext(next);
+            }}
+            className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-primary px-5 text-base font-bold text-white"
+          >
+            {t.nextStep}
+          </button>
+        </div>
+      </div>
     );
   }
 
@@ -574,6 +643,17 @@ export function LessonRunner({
               {t.exitLessonConfirmNo}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* ADR-028/US-6.15: rendered INLINE, in the step's own place — not a
+          modal — so the nav rail above and everything else on this screen
+          stays exactly as usable as on any ordinary step. */}
+      {remediationBanner && (
+        <div className="mb-4 rounded-2xl border-2 border-accent bg-accent/10 p-3.5" role="status">
+          <p className="text-sm font-extrabold text-accent">{t.remediationExplainTitle}</p>
+          <p className="mt-1 text-base">{remediationBanner}</p>
+          <p className="mt-2 text-sm font-semibold text-muted">{t.remediationRetryHint}</p>
         </div>
       )}
 

@@ -143,3 +143,20 @@ export function getLibraryWarmDailyBudgetUsd(): number {
   const raw = Number(process.env.LIBRARY_WARM_DAILY_BUDGET_USD);
   return Number.isFinite(raw) && raw > 0 ? raw : 5;
 }
+
+/**
+ * ADR-023 §Частина 3 (D-103): a separate cap from `LIBRARY_WARM_MAX_CONCURRENT`
+ * — that one limits how many warm-up jobs run *concurrently*, this one limits
+ * how many topics a single "warm ahead" event (a fresh textbook's topics just
+ * indexed, a subject just activated, or the child opening the next topic in
+ * sequence) is allowed to enqueue at once. Without it, one indexing event for
+ * a textbook with dozens of topics could enqueue jobs for all of them before
+ * the daily budget check (`warmSpendTodayUsd`) ever sees the cost of the
+ * first ones (it only counts calls that already happened, not queued work).
+ * Default **3** — an architect hypothesis (docs/adr/023 §Частина 3), easy to
+ * change via env without a migration; revisit after a few weeks of real use.
+ */
+export function getLibraryWarmLookaheadTopics(): number {
+  const raw = Number(process.env.LIBRARY_WARM_LOOKAHEAD_TOPICS);
+  return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 3;
+}

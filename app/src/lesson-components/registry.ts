@@ -30,6 +30,17 @@ export interface LessonComponentDefinition<P = unknown, A = unknown> {
   evaluate(props: P, answer: A): LessonComponentVerdict;
   /** Short text for the voice agent / technical log, never raw JSON (ADR-020 §2). */
   describe(props: P, verdict?: LessonComponentVerdict): string;
+  /**
+   * ADR-028 (US-6.15 remediation, §1): deterministic, seed-based new `props`
+   * for the ONE reinforcement retry after a wrong first attempt — no AI
+   * call, same skill, different surface details (ВП-36). `seed` is stable
+   * per (session, step, attempt) so a page reload shows the exact same
+   * retry, not a different one each time (idempotency, ADR-028 §2).
+   * Optional: a component with no `regenerate` simply has no remediation
+   * retry — `visual.remediation.hasRetry` only ever means something when
+   * this is implemented (today: `drag_sort` only).
+   */
+  regenerate?(props: P, seed: string): P;
   /** 5–10 lines fed to the `lesson_generation` prompt: when to use it, limits, example. */
   promptDoc: string;
   /** Plain choice/text step shown instead, if generation or validation fails (US-6.8 KP-1). */

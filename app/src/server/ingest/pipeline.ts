@@ -11,6 +11,7 @@ import { forFamily, type FamilyScope } from "../db/family-scope";
 import { DriveError, downloadFile, listFolderFiles, type DriveFile } from "../drive/google";
 import { getConfiguredDriveFolders, getDriveToken } from "../drive/service";
 import { enqueueJob, registerJobHandler, type JobRow } from "../jobs/runner";
+import { warmAheadForSubject } from "../lessons/warmup";
 import { EpubError } from "./extract-epub";
 import { sourceExtractors, type SourceFormat } from "./extractors";
 import {
@@ -769,6 +770,18 @@ async function runStructure(job: JobRow): Promise<void> {
     indexed_at: new Date().toISOString(),
     progress: {},
   });
+
+  // ADR-023 §Частина 3.1 (D-103): the parent's own act of indexing a textbook
+  // for an already-active, non-stub subject is itself the "positive" signal
+  // — no separate manual `is_current` click should be required per topic
+  // before the server starts getting lessons ready. `warmAheadForSubject`
+  // re-checks `subjects.active`/`is_stub` itself; never blocks or fails the
+  // ingest job either way.
+  if (strategy === "textbook" && subjectId) {
+    await warmAheadForSubject(familyId, subjectId).catch((e: Error) =>
+      console.error(`warm-ahead after ingest.structure failed: ${e.message}`),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -23,7 +23,7 @@ export const maxDuration = 300;
 export default async function LessonPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params;
   const { familyId } = await requireLessonAccess();
-  const { session, step } = await getLessonView(familyId, sessionId);
+  const { session, step, remediation } = await getLessonView(familyId, sessionId);
 
   // ADR-023 (D-76): a "cold" topic (zero active blocks at start) lands here
   // with no candidates yet — a `library.warm_topic` job is producing the
@@ -78,6 +78,7 @@ export default async function LessonPage({ params }: { params: Promise<{ session
         idlePauseS={child?.idle_pause_s ?? 180}
         presentationMode={session.presentation_mode as "voice" | "auto" | "text"}
         currentBlockOrder={session.current_block_order}
+        remediation={remediation}
       />
     </div>
   );

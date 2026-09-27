@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateDragSort, validateDragSortSemantics, type DragSortProps } from "./index";
+import { evaluateDragSort, regenerateDragSort, validateDragSortSemantics, type DragSortProps } from "./index";
 
 const pairsProps: DragSortProps = {
   variant: "pairs",
@@ -92,5 +92,49 @@ describe("validateDragSortSemantics (ADR-020 §3b)", () => {
 
   it("accepts a well-formed pairs description", () => {
     expect(validateDragSortSemantics(pairsProps)).toBeNull();
+  });
+});
+
+describe("regenerateDragSort (ADR-028 §1: US-6.15 remediation retry, no AI call)", () => {
+  const bigger: DragSortProps = {
+    variant: "pairs",
+    instructionUk: pairsProps.instructionUk,
+    items: [
+      { id: "a", labelUk: "1/2" },
+      { id: "b", labelUk: "1/4" },
+      { id: "c", labelUk: "3/4" },
+      { id: "d", labelUk: "1/8" },
+    ],
+    slots: [
+      { id: "s1", labelUk: "0,5" },
+      { id: "s2", labelUk: "0,25" },
+      { id: "s3", labelUk: "0,75" },
+      { id: "s4", labelUk: "0,125" },
+    ],
+    answer: { a: "s1", b: "s2", c: "s3", d: "s4" },
+  };
+
+  it("keeps the exact same items/slots/answer (same skill, same correct mapping) — only their on-screen order changes", () => {
+    const retry = regenerateDragSort(bigger, "session1:step1:2");
+    expect(new Set(retry.items.map((i) => i.id))).toEqual(new Set(bigger.items.map((i) => i.id)));
+    expect(new Set(retry.slots.map((s) => s.id))).toEqual(new Set(bigger.slots.map((s) => s.id)));
+    expect(retry.answer).toEqual(bigger.answer);
+    // Every item's own label travels with its id (not reshuffled independently).
+    for (const item of retry.items) {
+      expect(bigger.items.find((i) => i.id === item.id)?.labelUk).toBe(item.labelUk);
+    }
+    expect(validateDragSortSemantics(retry)).toBeNull();
+  });
+
+  it("is deterministic: the SAME seed always produces the SAME order (idempotent across a page reload, ADR-028 §2)", () => {
+    const retry1 = regenerateDragSort(bigger, "session1:step1:2");
+    const retry2 = regenerateDragSort(bigger, "session1:step1:2");
+    expect(retry1.items.map((i) => i.id)).toEqual(retry2.items.map((i) => i.id));
+    expect(retry1.slots.map((s) => s.id)).toEqual(retry2.slots.map((s) => s.id));
+  });
+
+  it("a DIFFERENT seed reliably reorders (not the same order as the original) — the retry doesn't look identical", () => {
+    const retry = regenerateDragSort(bigger, "session1:step1:2");
+    expect(retry.items.map((i) => i.id)).not.toEqual(bigger.items.map((i) => i.id));
   });
 });
