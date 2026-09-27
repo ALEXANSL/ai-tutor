@@ -1,23 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireParentAccess } from "@/server/auth/guards";
 import { DriveError } from "@/server/drive/google";
-import { MAX_UPLOAD_BYTES, uploadBookFromBrowser } from "@/server/drive/upload";
-import { ingestUploadedMaterial } from "@/server/ingest/pipeline";
-import { kickJobs } from "@/server/jobs/kick";
+import { initResumableUpload, MAX_UPLOAD_BYTES } from "@/server/drive/upload";
 
 /**
- * "Завантажити файл" (ADR-024 §6, US-2.7 КП-5): streams the request body
- * straight into a Drive resumable upload — never buffering the whole file
- * in this function's memory (BUG-003's fix, reversed) — then inserts the
- * `materials` row and kicks the ingest queue immediately, since the Drive
- * `files.create` response already carries everything the pipeline needs.
- *
- * Must run on the Node runtime (not Edge): streaming a `ReadableStream` as a
- * `fetch` request body needs `duplex: "half"`, which only Node's `undici`
- * honours the way this route depends on.
+ * "Завантажити файл" (ADR-024 §6, BUG-033): opens a Google Drive resumable
+ * upload session and hands the browser its short-lived session URI — a
+ * metadata-only request/response, never any file bytes, so it can never hit
+ * Vercel's ~4.5 MB request-body limit (BUG-033's root cause). The browser
+ * then `PUT`s the file straight to that URI itself (see
+ * `UploadBookButton.tsx`); this route never sees the file at all.
  */
-export const runtime = "nodejs";
-export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
 /** Server-only error codes → the specific parent-facing text lives in `uk.parent.books.upload` (BUG-005 pattern). */
@@ -32,37 +25,33 @@ function errorCodeOf(e: unknown): UploadErrorCode {
   return "failed";
 }
 
+interface InitUploadBody {
+  fileName?: unknown;
+  mimeType?: unknown;
+  size?: unknown;
+}
+
 export async function POST(request: NextRequest) {
   const { familyId } = await requireParentAccess();
-  if (!request.body) return NextResponse.json({ error: "failed" satisfies UploadErrorCode }, { status: 400 });
+  const body = (await request.json().catch(() => null)) as InitUploadBody | null;
+  const fileName = typeof body?.fileName === "string" ? body.fileName : "book";
+  const mimeType = typeof body?.mimeType === "string" ? body.mimeType : "application/octet-stream";
+  const declaredSize = typeof body?.size === "number" && Number.isFinite(body.size) ? body.size : null;
 
-  const fileNameHeader = request.headers.get("x-file-name");
-  const fileName = fileNameHeader ? decodeURIComponent(fileNameHeader) : "book";
-  const mimeType = request.headers.get("content-type") || "application/octet-stream";
-  const declaredSizeHeader = request.headers.get("content-length");
-  const declaredSize = declaredSizeHeader ? Number(declaredSizeHeader) : null;
-
-  // Cheap early rejection before touching Drive at all, on top of the
-  // streamed byte count enforced below (a lying/missing header must not
-  // let an oversized file slip through, same reasoning as BUG-003).
-  if (declaredSize != null && Number.isFinite(declaredSize) && declaredSize > MAX_UPLOAD_BYTES) {
+  // Cheap early rejection before touching Drive at all — a lying/missing
+  // size must not let an oversized file slip past client-side feedback (the
+  // real, server-enforced check happens again in `confirmUpload` once Drive
+  // reports the actual uploaded size).
+  if (declaredSize != null && declaredSize > MAX_UPLOAD_BYTES) {
     return NextResponse.json({ error: "too_large" satisfies UploadErrorCode }, { status: 413 });
   }
 
   try {
-    const file = await uploadBookFromBrowser({
-      familyId,
-      body: request.body,
-      fileName,
-      mimeType,
-      declaredSize: Number.isFinite(declaredSize) ? declaredSize : null,
-    });
-    const { status } = await ingestUploadedMaterial(familyId, file);
-    if (status === "queued") kickJobs();
-    return NextResponse.json({ ok: true, status });
+    const session = await initResumableUpload({ familyId, fileName, mimeType, declaredSize });
+    return NextResponse.json({ ok: true, sessionUrl: session.sessionUrl });
   } catch (e) {
     const code = errorCodeOf(e);
-    if (code === "failed") console.error(`book upload failed: ${(e as Error).name}: ${(e as Error).message}`);
+    if (code === "failed") console.error(`book upload session failed: ${(e as Error).name}: ${(e as Error).message}`);
     const status =
       code === "too_large" ? 413 : code === "unsupported_type" ? 415 : code === "not_configured" ? 503 : 500;
     return NextResponse.json({ error: code }, { status });
