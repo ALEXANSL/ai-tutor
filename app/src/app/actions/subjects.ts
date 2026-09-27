@@ -109,6 +109,7 @@ export async function addCourseAction(_prev: FormState, formData: FormData): Pro
   const { error } = await scope.client.rpc("add_course", { p_family_id: familyId, p_name_uk: name, p_group_id: groupId });
   if (error) return { status: "error", message: rpcErrorMessage(uk.parent.courses.errors, error.code) };
   revalidatePath("/parent/courses", "layout");
+  revalidatePath("/parent/courses/groups", "layout");
   return { status: "ok", message: uk.parent.courses.add.added };
 }
 
@@ -122,6 +123,7 @@ export async function updateCourseAction(_prev: FormState, formData: FormData): 
   const { error } = await scope.client.rpc("update_course", { p_family_id: familyId, p_subject_id: subjectId, p_name_uk: name, p_group_id: groupId });
   if (error) return { status: "error", message: rpcErrorMessage(uk.parent.courses.errors, error.code) };
   revalidatePath("/parent/courses", "layout");
+  revalidatePath("/parent/courses/groups", "layout");
   return { status: "ok", message: uk.parent.courses.detail.saved };
 }
 
@@ -146,6 +148,7 @@ export async function addCourseGroupAction(_prev: FormState, formData: FormData)
   const { error } = await scope.client.rpc("add_course_group", { p_family_id: familyId, p_name_uk: name });
   if (error) return { status: "error", message: rpcErrorMessage(uk.parent.courseGroups.errors, error.code) };
   revalidatePath("/parent/courses/groups", "layout");
+  revalidatePath("/parent/courses", "layout");
   return { status: "ok", message: uk.parent.courseGroups.add.added };
 }
 
@@ -158,6 +161,7 @@ export async function renameCourseGroupAction(_prev: FormState, formData: FormDa
   const { error } = await scope.client.rpc("rename_course_group", { p_family_id: familyId, p_group_id: groupId, p_name_uk: name });
   if (error) return { status: "error", message: rpcErrorMessage(uk.parent.courseGroups.errors, error.code) };
   revalidatePath("/parent/courses/groups", "layout");
+  revalidatePath("/parent/courses", "layout");
   return { status: "ok", message: uk.parent.courseGroups.rename.saved };
 }
 
@@ -170,6 +174,7 @@ export async function toggleCourseGroupActiveAction(_prev: FormState, formData: 
   const { error } = await scope.client.rpc("set_course_group_active", { p_family_id: familyId, p_group_id: groupId, p_active: active });
   if (error) return { status: "error", message: rpcErrorMessage(uk.parent.courseGroups.errors, error.code) };
   revalidatePath("/parent/courses/groups", "layout");
+  revalidatePath("/parent/courses", "layout");
   return { status: "ok", message: active ? uk.parent.courseGroups.toggleActive.activated : uk.parent.courseGroups.toggleActive.deactivated };
 }
 
