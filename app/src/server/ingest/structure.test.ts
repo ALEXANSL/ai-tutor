@@ -8,6 +8,7 @@ import {
   isHeadingLike,
   mergeByTitle,
   narrowestContaining,
+  narrowestTitleFor,
   normalizeSections,
   splitPrompt,
 } from "./structure";
@@ -141,5 +142,22 @@ describe("narrowestContaining", () => {
     expect(narrowestContaining(6, items)).toBe("section");
     expect(narrowestContaining(40, items)).toBeNull();
     expect(narrowestContaining(null, items)).toBeNull();
+  });
+});
+
+describe("narrowestTitleFor (D-106)", () => {
+  const items = [
+    { id: "section", title: "Розділ 1", page_from: 5, page_to: 29 },
+    { id: "topic", title: "Дроби", page_from: 12, page_to: 18 },
+  ];
+
+  it("returns the narrowest range's title when the page falls inside one", () => {
+    expect(narrowestTitleFor(14, items)).toBe("Дроби");
+    expect(narrowestTitleFor(6, items)).toBe("Розділ 1");
+  });
+
+  it("falls back to null when the page is outside every indexed range", () => {
+    expect(narrowestTitleFor(40, items)).toBeNull();
+    expect(narrowestTitleFor(null, items)).toBeNull();
   });
 });

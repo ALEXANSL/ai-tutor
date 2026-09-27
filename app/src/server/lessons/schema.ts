@@ -19,6 +19,10 @@ export interface SourceRefOut {
   materialId: string;
   materialTitle: string;
   page: number | null;
+  /** D-106: the narrowest section/topic title containing `page`, filled in
+   * by `generate.ts` from already-indexed `material_sections`/`topics` after
+   * the model answers — never asked of the model itself (no new AI call). */
+  sectionTitle?: string | null;
 }
 export interface SlideStepOut {
   type: "slide";

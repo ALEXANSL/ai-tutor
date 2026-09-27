@@ -182,7 +182,12 @@ export const uk = {
       summaryBody: "Гарна робота сьогодні.",
       moreLesson: "Ще урок",
       backToToday: "← До «Сьогодні»",
-      sourceRef: (title: string, page: number | null) => (page ? `${title}, стор. ${page}` : title),
+      // D-106: adds the section/topic title (when the cited page falls
+      // within one) between the material title and the page number.
+      sourceRef: (title: string, page: number | null, sectionTitle?: string | null) => {
+        const withSection = sectionTitle ? `${title}, розд. «${sectionTitle}»` : title;
+        return page ? `${withSection}, стор. ${page}` : withSection;
+      },
       chatTitle: "Запитати репетитора",
       chatPlaceholder: "Напиши своє питання про цю тему…",
       chatSend: "Надіслати",

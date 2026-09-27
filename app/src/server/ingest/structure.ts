@@ -181,3 +181,23 @@ export function narrowestContaining(page: number | null, items: Ranged[]): strin
   }
   return best?.id ?? null;
 }
+
+export interface TitledRange extends Ranged {
+  title: string;
+}
+
+/**
+ * D-106: the single closest title to show next to a lesson step's page
+ * citation — the narrowest of a material's sections/topics whose page range
+ * contains the page. Topics and sections can be passed in the same list
+ * (e.g. `assign_chunk_structure`'s SQL twin picks each independently, but a
+ * textbook topic's range is always inside its parent section's, so
+ * `narrowestContaining` naturally prefers the topic without any extra
+ * bookkeeping here). Returns `null` when the page falls outside every
+ * indexed range (untitled front matter, a page past the last section, …) —
+ * callers fall back to showing the page alone.
+ */
+export function narrowestTitleFor(page: number | null, items: TitledRange[]): string | null {
+  const id = narrowestContaining(page, items);
+  return id == null ? null : (items.find((it) => it.id === id)?.title ?? null);
+}
