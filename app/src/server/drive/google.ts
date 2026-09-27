@@ -14,7 +14,7 @@ export class DriveError extends Error {
   constructor(
     message: string,
     readonly status: number | null,
-    readonly code: "not_configured" | "not_found" | "forbidden" | "too_large" | "http" | "network",
+    readonly code: "not_configured" | "not_found" | "forbidden" | "too_large" | "http" | "network" | "unsupported_type",
   ) {
     super(message);
     this.name = "DriveError";

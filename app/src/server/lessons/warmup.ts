@@ -140,10 +140,12 @@ export async function ensureActiveLibraryBlock(
       payload,
       dedupe_key: dedupeKey,
       run_after: new Date().toISOString(),
-      // A generous ceiling: transient provider errors get many backoff
-      // attempts (`backoffSeconds`, capped at 30 min) rather than giving up
-      // after the default 5 and leaving the topic permanently un-warmed.
-      max_attempts: 30,
+      // BUG-032: 30 violated `jobs`'s own `max_attempts between 1 and 20`
+      // check constraint (S1, 20260926100000) on every insert, so every
+      // warm-up attempt failed outright and surfaced to the parent as the
+      // generic "check AI settings" error — 20 is the schema's own ceiling,
+      // still generous next to the default 5.
+      max_attempts: 20,
     })
     .select("id")
     .single<{ id: string }>();

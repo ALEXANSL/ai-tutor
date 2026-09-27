@@ -469,7 +469,7 @@ function matchesMultiPartFinalNumbers(answerText: string, expectedAnswerUk: stri
  * the verdict or ask for a redo — at most a friendly, optional "до речі,
  * є ще швидший спосіб…" aside in the explanation, never a requirement.
  */
-const OPEN_ANSWER_EVALUATION_SYSTEM_UK = [
+export const OPEN_ANSWER_EVALUATION_SYSTEM_UK = [
   "Оціни відповідь дитини на відкрите питання уроку: `correct` (правильно по суті),",
   "`partial` (частково правильно/неповно) або `incorrect` (неправильно по суті).",
   "«Еталон» — це ОРІЄНТОВНА правильна відповідь для довідки, а НЕ шаблон, який",
@@ -492,6 +492,27 @@ const OPEN_ANSWER_EVALUATION_SYSTEM_UK = [
   "поясненні одну доброзичливу необов'язкову репліку на кшталт «до речі, є",
   "ще швидший спосіб: ...». `partial` — тільки коли сам РЕЗУЛЬТАТ неповний",
   "чи частково вірний по суті. Пояснення — тепле й конкретне.",
+  "D-93 (BUG-030): те саме поширюється на ТВОРЧІ/ВІДКРИТІ завдання з",
+  "кількома очікуваними елементами розуміння (наприклад, мінітаблиця з",
+  "кількох прикладів, у кожного своє пояснення) — не лише на прості числові",
+  "підпункти а/б/в. Якщо дитина правильно охопила ВСІ ОСНОВНІ очікувані",
+  "елементи (наприклад, кожен приклад із мінітаблиці — з власною, творчою і",
+  "по суті коректною інтерпретацією), а пропустила лише ОДИН",
+  "другорядний/пояснювальний нюанс (наприклад, метапояснення, ЧОМУ саме",
+  "один з елементів математично особливий) — вердикт `correct`, НІКОЛИ",
+  "`partial`, і НІКОЛИ тон «Майже! Спробуй ще раз» чи вимога переробити для",
+  "відповіді, яка вже по суті правильна. Пропущений нюанс подай як окрему,",
+  "доброзичливу, НЕ блокуючу пропозицію в кінці пояснення (на кшталт «А ще",
+  "можеш подумати, чому...» чи «До речі, а знаєш, чому...») — так само, як",
+  "ЕТАП 2 вище, а не як умову для нової спроби. Де це природно, сформулюй",
+  "таку необов'язкову пропозицію у форматі вибору з варіантів (наприклад",
+  "«це (а)... (б)... чи (в)...?»), а не як вимогу дописати ще вільний",
+  "текст — дитині простіше й приємніше обрати варіант, ніж формулювати",
+  "нове пояснення з нуля. `partial` для творчого завдання лишається лише",
+  "тоді, коли дитина справді пропустила чи переплутала один з ОСНОВНИХ",
+  "очікуваних елементів (наприклад, дала два приклади замість трьох, чи не",
+  "дала жодного пояснення до жодного з них), а не за відсутність одного",
+  "другорядного пояснювального нюансу.",
 ].join(" ");
 
 async function evaluateAnswer(
@@ -759,6 +780,49 @@ export async function getPreviousModuleView(familyId: string, sessionId: string)
   const item = await loadLibraryItem(familyId, blockRow.library_item_id);
   if (!item) return null;
   return { libraryItemId: item.id, title: item.title, steps: item.steps.map((s) => ({ type: s.type, content: s.content })) };
+}
+
+/**
+ * BUG-029 (follow-up per PO): real "⬅️" navigation, not just a read-only
+ * preview — symmetric to the forward move in `advanceAfterStep`. Moves
+ * `current_step_id` back one step WITHIN the current active block only
+ * (scope decision below); the child then sees that step exactly as she
+ * would moving forward and can submit an answer again through the ordinary
+ * `submitStepAnswer` path (no special "re-answer" code needed — it already
+ * appends a new `step_attempts` row with the next `attempt_no` for a
+ * repeated attempt at the same `step_id`, the same mechanism an
+ * `alt_explanation` retry already uses; nothing here overwrites or deletes
+ * the earlier attempt, and nothing here touches `points_earned`, which no
+ * code path writes yet — see docs/bugs/BUG-029 for why that makes a
+ * double-award guard unnecessary for now).
+ *
+ * Scope decision (documented per the PO's item 4 fallback): only steps
+ * already visited in the CURRENT block move this way. `null` at the first
+ * step of the active block even when an earlier block exists — going back
+ * across a block boundary would need to reopen a `session_blocks` row
+ * already marked `done` and could let `continueAfterBlock`/`nextSessionBlock`
+ * pick and append an extra, unwanted block on the way back forward (BUG-009's
+ * "no block repeats" bookkeeping assumes finished blocks stay finished).
+ * `getPreviousModuleView` (read-only, unaffected by this) still covers "what
+ * did the previous, already-completed block look like" at that boundary.
+ */
+export async function goToPreviousStep(familyId: string, sessionId: string): Promise<LessonStepView | null> {
+  const scope = forFamily(familyId);
+  const session = await loadSession(familyId, sessionId);
+  if (!session || !session.current_step_id) return null;
+  const { data: blockRow } = await scope
+    .select("session_blocks", "library_item_id")
+    .eq("session_id", sessionId)
+    .eq("sort_order", session.current_block_order)
+    .maybeSingle<{ library_item_id: string }>();
+  if (!blockRow) return null;
+  const item = await loadLibraryItem(familyId, blockRow.library_item_id);
+  if (!item) return null;
+  const idx = item.steps.findIndex((s) => s.id === session.current_step_id);
+  if (idx <= 0) return null; // already the block's first step — nothing earlier IN this block
+  const prevStep = item.steps[idx - 1]!;
+  await scope.update("lesson_sessions", { current_step_id: prevStep.id }).eq("id", sessionId);
+  return stepView(item, prevStep, idx);
 }
 
 /**

@@ -1,18 +1,24 @@
 import { uk } from "@/i18n/uk";
 import { CheckFolderButton } from "./CheckFolderButton";
+import { UploadBookButton } from "./UploadBookButton";
 
 /**
- * Quick action "Додати книгу" (US-2.7 KP-4, PM-20): (1) open the Drive folder —
- * the link is resolved on the server by /parent/books/drive, it never appears in
- * the page; (2) hint; (3) "Я додав — перевірити папку".
+ * Quick action "Додати книгу" (US-2.7 KP-4, PM-20; ADR-024): (1) "Завантажити
+ * файл" — streams straight into Drive and indexes right away, the default,
+ * convenient path (≤ 50 MB); (2) open the Drive folder — the link is
+ * resolved on the server by /parent/books/drive, it never appears in the
+ * page — for larger scans; (3) hint; (4) "Я додав — перевірити папку".
  */
-export function AddBookPanel({ driveConfigured }: { driveConfigured: boolean }) {
+export function AddBookPanel({ driveConfigured, uploadEnabled }: { driveConfigured: boolean; uploadEnabled: boolean }) {
   const t = uk.parent.books.add;
   return (
     <section id="addBook" className="mb-4 rounded-2xl border border-p-line bg-p-surface px-5 py-4.5">
       <h2 className="mb-1 text-[15px] font-semibold">{t.title}</h2>
       <p className="mb-3.5 text-xs text-p-muted">{t.steps}</p>
       <ol className="flex flex-col gap-3">
+        <li>
+          <UploadBookButton enabled={uploadEnabled} />
+        </li>
         <li>
           {driveConfigured ? (
             <a

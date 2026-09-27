@@ -3,7 +3,7 @@ import { AddBookPanel } from "@/components/parent/books/AddBookPanel";
 import { FolderAccessBanner } from "@/components/parent/books/FolderAccessBanner";
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
-import { getFolderAccessStatus, isDriveConfigured } from "@/server/drive/service";
+import { getFolderAccessStatus, isDriveConfigured, isUploadsFolderConfigured } from "@/server/drive/service";
 import { PageTitle } from "../../ui";
 
 export const maxDuration = 300;
@@ -11,7 +11,11 @@ export const maxDuration = 300;
 /** Short panel opened by "➕ Додати книгу" on the dashboard (US-2.7 KP-4). */
 export default async function AddBookPage() {
   const { familyId } = await requireParentAccess();
-  const [access, driveConfigured] = await Promise.all([getFolderAccessStatus(familyId), isDriveConfigured(familyId)]);
+  const [access, driveConfigured, uploadEnabled] = await Promise.all([
+    getFolderAccessStatus(familyId),
+    isDriveConfigured(familyId),
+    isUploadsFolderConfigured(familyId),
+  ]);
   const t = uk.parent.books;
   return (
     <>
@@ -25,7 +29,7 @@ export default async function AddBookPage() {
         {t.add.title}
       </PageTitle>
       <FolderAccessBanner status={access} />
-      <AddBookPanel driveConfigured={driveConfigured} />
+      <AddBookPanel driveConfigured={driveConfigured} uploadEnabled={uploadEnabled} />
     </>
   );
 }

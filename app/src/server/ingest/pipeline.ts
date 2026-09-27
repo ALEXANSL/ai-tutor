@@ -8,8 +8,8 @@ import { callStructured, callVisionStructured, embedTexts } from "../ai/router";
 import { getBudget, loadPrice, loadRoute } from "../ai/store";
 import { AiNotConfiguredError, BudgetBlockedError, ProviderError } from "../ai/types";
 import { forFamily, type FamilyScope } from "../db/family-scope";
-import { DriveError, downloadFile, listFolderFiles } from "../drive/google";
-import { getDriveAccess } from "../drive/service";
+import { DriveError, downloadFile, listFolderFiles, type DriveFile } from "../drive/google";
+import { getConfiguredDriveFolders, getDriveToken } from "../drive/service";
 import { enqueueJob, registerJobHandler, type JobRow } from "../jobs/runner";
 import { EpubError } from "./extract-epub";
 import { sourceExtractors, type SourceFormat } from "./extractors";
@@ -118,8 +118,21 @@ export interface SyncSummary {
 
 export async function syncDriveFolder(familyId: string): Promise<SyncSummary> {
   const scope = forFamily(familyId);
-  const { folderId, token } = await getDriveAccess(familyId);
-  const { files, skipped } = await listFolderFiles(folderId, await token());
+  const folders = await getConfiguredDriveFolders(familyId);
+  if (!folders.length) throw new DriveError("no Drive folder is configured", null, "not_configured");
+  const token = await getDriveToken();
+  const accessToken = await token();
+  // ADR-024 (docs/02 10.3): the same conveyor scans BOTH the manually-shared
+  // materials folder and, once configured, the app-owned "Мої книги" uploads
+  // folder — merged (de-duplicated by id) into one file list.
+  const byId = new Map<string, DriveFile & { format: "pdf" | "epub" }>();
+  let skipped = 0;
+  for (const folder of folders) {
+    const res = await listFolderFiles(folder.folderId, accessToken);
+    skipped += res.skipped;
+    for (const f of res.files) byId.set(f.id, f);
+  }
+  const files = [...byId.values()];
   const { data: known, error } = await scope
     .select("materials", "id, drive_file_id, name, drive_md5, drive_modified_time, status, status_detail")
     .returns<KnownMaterial[]>();
@@ -199,6 +212,52 @@ export async function requestReindex(familyId: string, materialId: string): Prom
   });
   if (status === "queued") await enqueueStep(familyId, JOB.extract, materialId);
   return status;
+}
+
+export interface UploadedBookFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  format: "pdf" | "epub";
+  size: number | null;
+  modifiedTime: string | null;
+  md5Checksum: string | null;
+}
+
+/**
+ * Inserts the `materials` row for a book the parent just uploaded from the
+ * browser (ADR-024 §5, US-2.7 КП-5): the server already has
+ * `drive_file_id`/`name`/`mime`/`format` from the Drive `files.create`
+ * response, so indexing is queued immediately — no wait for the next manual
+ * "Перевірити папку" or the daily `pg_cron` sync.
+ */
+export async function ingestUploadedMaterial(
+  familyId: string,
+  file: UploadedBookFile,
+): Promise<{ materialId: string; status: "queued" | "deferred" }> {
+  const scope = forFamily(familyId);
+  const budget = await getBudget(familyId);
+  const status = budgetBlocks(budget.state) ? "deferred" : "queued";
+  const { data, error } = await scope.client
+    .from("materials")
+    .insert({
+      owner_family_id: familyId,
+      drive_file_id: file.id,
+      name: file.name,
+      mime: file.mimeType,
+      format: file.format,
+      drive_md5: file.md5Checksum,
+      drive_modified_time: file.modifiedTime,
+      size_bytes: file.size,
+      status,
+      status_detail: status === "deferred" ? "budget_deferred" : null,
+      progress: {},
+    })
+    .select("id")
+    .single<{ id: string }>();
+  if (error) throw new Error(`materials insert failed: ${error.message}`);
+  if (status === "queued") await enqueueStep(familyId, JOB.extract, data.id);
+  return { materialId: data.id, status };
 }
 
 // ---------------------------------------------------------------------------
@@ -309,7 +368,7 @@ async function runExtract(job: JobRow): Promise<void> {
   if (await deferIfBudget(scope, familyId, materialId)) return;
 
   await patchMaterial(scope, materialId, { status: "indexing", status_detail: null, progress: { step: "download" } });
-  const { token } = await getDriveAccess(familyId);
+  const token = await getDriveToken();
   const bytes = await downloadFile(m.drive_file_id, await token());
   const hash = createHash("sha256").update(bytes).digest("hex");
 
@@ -422,7 +481,7 @@ async function runOcr(job: JobRow, ctx: { deadline: number }): Promise<void | { 
   if (!m || m.status === "removed") return;
   if (await deferIfBudget(scope, familyId, materialId)) return;
 
-  const { token } = await getDriveAccess(familyId);
+  const token = await getDriveToken();
   const bytes = await downloadFile(m.drive_file_id, await token());
   const pdf = await PDFDocument.load(bytes, { ignoreEncryption: true });
   const { system, user } = ocrPrompt();

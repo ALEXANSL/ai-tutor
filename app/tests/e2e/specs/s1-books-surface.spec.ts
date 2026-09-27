@@ -31,3 +31,28 @@ test.describe("Background tick endpoint (ADR-015)", () => {
     expect((await request.get("/api/jobs/tick?sync=1", { headers: { authorization: "e2e-cron-secret-placeholder" } })).status()).toBe(401);
   });
 });
+
+/** ADR-024: the OAuth connector and the streaming upload endpoint are parent-only, same as every "Мої книги" screen. */
+test.describe("Google Drive upload connector without a session (NFR-PRIV-4, ADR-024)", () => {
+  test("/api/google/drive/connect sends the visitor to the login screen", async ({ request }) => {
+    const res = await request.get("/api/google/drive/connect", { maxRedirects: 0 });
+    expect([303, 307, 308]).toContain(res.status());
+    expect(res.headers()["location"] ?? "").toMatch(/\/login/);
+  });
+
+  test("/api/google/drive/callback sends the visitor to the login screen", async ({ request }) => {
+    const res = await request.get("/api/google/drive/callback?code=x&state=y", { maxRedirects: 0 });
+    expect([303, 307, 308]).toContain(res.status());
+    expect(res.headers()["location"] ?? "").toMatch(/\/login/);
+  });
+
+  test("POST /api/parent/books/upload sends the visitor to the login screen (no session, no secret leaked)", async ({ request }) => {
+    const res = await request.post("/api/parent/books/upload", {
+      maxRedirects: 0,
+      headers: { "content-type": "application/pdf", "x-file-name": "book.pdf" },
+      data: Buffer.from("not a real pdf"),
+    });
+    expect([303, 307, 308]).toContain(res.status());
+    expect(res.headers()["location"] ?? "").toMatch(/\/login/);
+  });
+});

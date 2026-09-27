@@ -11,6 +11,7 @@ import {
   continueAfterBlockAction,
   explainStepAction,
   getPreviousModuleAction,
+  goToPreviousStepAction,
   pauseLessonAction,
   setPresentationModeAction,
   skipLessonBreakAction,
@@ -53,6 +54,7 @@ export function LessonRunner({
   idleHintS,
   idlePauseS,
   presentationMode: initialPresentationMode,
+  currentBlockOrder: initialCurrentBlockOrder,
 }: {
   sessionId: string;
   subjectId: string;
@@ -61,6 +63,14 @@ export function LessonRunner({
   idleHintS: number;
   idlePauseS: number;
   presentationMode: PresentationMode;
+  /**
+   * BUG-029: 1-based position of the session's active block
+   * (`lesson_sessions.current_block_order`), used only to show/hide "⬅️
+   * Попередній модуль" (КП-2 has no previous block until this is >= 2).
+   * Optional so existing tests/callers that don't care about that button
+   * keep compiling; defaults to 1 ("no previous block yet") when omitted.
+   */
+  currentBlockOrder?: number;
 }) {
   // BUG-017: `uk.child.lesson` (and, transitively, `sourceRef`/`stepOf`,
   // which are functions) must be imported directly here rather than
@@ -94,6 +104,15 @@ export function LessonRunner({
   const [presentationMode, setPresentationModeState] = useState<PresentationMode>(initialPresentationMode);
   const [prevModule, setPrevModule] = useState<Awaited<ReturnType<typeof getPreviousModuleAction>>>(null);
   const [prevModuleBusy, setPrevModuleBusy] = useState(false);
+  // BUG-029: shown when a click resolves to `null` (no previous block yet)
+  // instead of leaving the child staring at a button that visibly did nothing.
+  const [prevModuleEmpty, setPrevModuleEmpty] = useState(false);
+  // BUG-029: block transitions (`continueAfterBlockAction`, below) happen
+  // entirely client-side via `setStep` — the server-rendered
+  // `currentBlockOrder` prop is only ever the value from the *initial* page
+  // load, so it is tracked here and bumped locally each time a new block
+  // starts, rather than read directly on every render.
+  const [blockOrder, setBlockOrder] = useState(initialCurrentBlockOrder ?? 1);
   const [explainBusy, setExplainBusy] = useState(false);
   const chatRef = useRef<TopicChatHandle>(null);
   const lastInteractionRef = useRef<number>(0);
@@ -144,14 +163,51 @@ export function LessonRunner({
       .finally(() => setBusy(false));
   }, [sessionId, subjectId, router]);
 
-  // US-6.16 КП-2 ("Повернутись до попереднього модуля"): read-only preview,
-  // no AI call, current step/progress untouched.
+  // US-6.16 КП-2 / BUG-029 (PO follow-up): "⬅️ Попередній модуль" is REAL
+  // navigation, not only a read-only preview — the PO's own words: "маю
+  // мати можливість навігації в рамках уроку, а не вийти і почати
+  // спочатку". Two cases:
+  //  - `step.stepNumber > 1` (not the active block's first step): moves
+  //    `current_step_id` back one step in THIS block (`goToPreviousStep`,
+  //    symmetric to the ordinary forward move) — she sees that step exactly
+  //    as moving forward would show it and can answer it again (a new
+  //    `step_attempts` row, same mechanism an `alt_explanation` retry
+  //    already uses; nothing is overwritten, nothing double-awards points —
+  //    no code path writes `points_earned` yet).
+  //  - the block's first step: nothing earlier IN this block to navigate
+  //    to (going back across a block boundary is out of scope, see
+  //    `goToPreviousStep`'s own comment) — falls back to the earlier,
+  //    read-only preview of the immediately preceding completed block
+  //    (`getPreviousModuleAction`), or the "нічого немає" message at the
+  //    very first block of the lesson (BUG-029 item 1).
   const navPrevModule = useCallback(() => {
     setPrevModuleBusy(true);
+    setPrevModuleEmpty(false);
+    if (step.stepNumber > 1) {
+      goToPreviousStepAction(sessionId)
+        .then((prevStep) => {
+          if (prevStep) {
+            touch();
+            goToNext({ kind: "advance", step: prevStep });
+          } else {
+            // Race (e.g. the block finished between render and click) —
+            // degrade to the same read-only boundary flow as below.
+            getPreviousModuleAction(sessionId).then((view) => (view ? setPrevModule(view) : setPrevModuleEmpty(true)));
+          }
+        })
+        .finally(() => setPrevModuleBusy(false));
+      return;
+    }
     getPreviousModuleAction(sessionId)
-      .then((view) => setPrevModule(view))
+      .then((view) => {
+        if (view) setPrevModule(view);
+        // BUG-029: `null` (no earlier block either) used to render nothing —
+        // the button looked broken. Show the friendly explanation instead.
+        else setPrevModuleEmpty(true);
+      })
       .finally(() => setPrevModuleBusy(false));
-  }, [sessionId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, step.stepNumber]);
 
   // US-6.16 КП-1 ("Пояснити"): the quick tutor_chat path (D-77), not the
   // heavy planning/generation/review pipeline — posts straight into the chat
@@ -346,11 +402,17 @@ export function LessonRunner({
         libraryItemId={blockComplete.libraryItemId}
         visibleOutcomeUk={blockComplete.visibleOutcomeUk}
         labels={t}
+        busy={busy}
         onContinue={() => {
           setBusy(true);
           continueAfterBlockAction(sessionId)
             .then((next) => {
               setBlockComplete(null);
+              // BUG-029: this is the one place a *new* block actually
+              // starts (client-side, no page reload) — bump the counter
+              // that drives "⬅️ Попередній модуль"'s visibility here, not on
+              // every ordinary step-to-step `goToNext`.
+              if (next.kind === "advance") setBlockOrder((o) => o + 1);
               goToNext(next);
             })
             .catch(() => router.refresh())
@@ -430,8 +492,15 @@ export function LessonRunner({
         <button type="button" onClick={navSubjectList} disabled={busy} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-60">
           {t.navSubjectList}
         </button>
-        {/* КП-2: hidden on the very first block — nothing to go back to. */}
-        {step.stepNumber >= 1 && (
+        {/* Hidden only at the very first step of the very first block —
+            nothing at all to go back to. BUG-029: the original condition
+            here (`step.stepNumber >= 1`) is the step-within-the-current-
+            block index, always >= 1 for any step in any block — the button
+            was never actually hidden. `step.stepNumber > 1` covers "an
+            earlier step in this block" (real back-navigation);
+            `blockOrder > 1` covers "an earlier, completed block exists"
+            (read-only preview fallback, see `navPrevModule`). */}
+        {(step.stepNumber > 1 || blockOrder > 1) && (
           <button
             type="button"
             onClick={navPrevModule}
@@ -471,6 +540,21 @@ export function LessonRunner({
 
       {prevModule && (
         <PreviousModuleModal view={prevModule} labels={t} onClose={() => setPrevModule(null)} />
+      )}
+
+      {/* BUG-029: friendly feedback for the `null` ("no previous block yet")
+          case — replaces what used to be silent nothing. */}
+      {prevModuleEmpty && (
+        <div className="mb-4 rounded-[22px] border-2 border-dashed border-secondary bg-surface p-4.5" role="status">
+          <p className="mb-3 text-sm font-bold text-secondary">{t.prevModuleNone}</p>
+          <button
+            type="button"
+            onClick={() => setPrevModuleEmpty(false)}
+            className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-primary px-5 text-sm font-bold text-white"
+          >
+            {t.prevModuleClose}
+          </button>
+        </div>
       )}
 
       {presentationMode === "voice" && (
@@ -795,11 +879,15 @@ function BlockCompleteScreen({
   libraryItemId,
   visibleOutcomeUk,
   labels: t,
+  busy,
   onContinue,
 }: {
   libraryItemId: string;
   visibleOutcomeUk: string | null;
   labels: Labels;
+  /** BUG-031: `onContinue` can take a while (may generate the next block on
+   * demand) — shown as a busy label + disabled button, never silence. */
+  busy: boolean;
   onContinue: () => void;
 }) {
   const [feedbackSent, setFeedbackSent] = useState<"interesting" | "normal" | "boring" | null>(null);
@@ -832,8 +920,13 @@ function BlockCompleteScreen({
           </div>
         )}
 
-        <button type="button" onClick={onContinue} className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-primary px-5 text-base font-bold text-white">
-          {t.blockContinue}
+        <button
+          type="button"
+          onClick={onContinue}
+          disabled={busy}
+          className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-primary px-5 text-base font-bold text-white disabled:opacity-60"
+        >
+          {busy ? t.blockContinueBusy : t.blockContinue}
         </button>
       </div>
     </div>

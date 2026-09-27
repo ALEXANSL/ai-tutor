@@ -119,7 +119,17 @@ vi.mock("@/server/safety/moderate", () => ({ moderateMessage: (...a: unknown[]) 
 const recordSafetyEvent = vi.fn().mockResolvedValue({ flagged: false, urgent: false, eventId: null });
 vi.mock("@/server/safety/events", () => ({ recordSafetyEvent: (...a: unknown[]) => recordSafetyEvent(...a) }));
 
-const { chooseStartBlock, continueAfterBlock, pauseLessonSession, resumeLessonSession, startLessonSession, submitStepAnswer } = await import("./orchestrator");
+const {
+  chooseStartBlock,
+  continueAfterBlock,
+  getPreviousModuleView,
+  goToPreviousStep,
+  pauseLessonSession,
+  resumeLessonSession,
+  startLessonSession,
+  submitStepAnswer,
+  OPEN_ANSWER_EVALUATION_SYSTEM_UK,
+} = await import("./orchestrator");
 
 function resetScope() {
   scopeState.tables = {};
@@ -729,6 +739,133 @@ describe("submitStepAnswer — BUG-019 (objectively correct answers were graded 
   });
 });
 
+describe("submitStepAnswer — BUG-030 (D-93: creative/open answers with several expected elements graded 'partial' for missing one secondary nuance)", () => {
+  /**
+   * Real example from Alex (BUG-030): a creative mini-table step (write one
+   * positive number, one negative number and zero, each with its own
+   * real-world meaning, plus why zero is mathematically special) — the
+   * child gave three correct, creative interpretations (a debt, a
+   * temperature, "0 minutes left in class") but never spelled out the
+   * separate meta-explanation of *why* zero is special. The evaluator
+   * replied "Майже! Спробуй ще раз", which is exactly the demotivating,
+   * over-strict verdict D-75/D-93 forbid once the *main* expected elements
+   * are covered — missing only one secondary/explanatory nuance must never
+   * outrank an otherwise-correct, substantively right answer.
+   *
+   * This kind of multi-element creative answer cannot be caught by the
+   * deterministic fast paths above (`matchesExpectedBySubstance` /
+   * `matchesMultiPartFinalNumbers` are for short, close-to-reference
+   * numeric/word answers) — it always reaches the LLM evaluator, so what
+   * this locks down is (1) the system prompt actually carries the D-93
+   * instruction telling the model to grade this `correct`, not `partial`,
+   * and to offer the missing nuance as a friendly, non-blocking,
+   * optionally multiple-choice-style suggestion, and (2) that
+   * `submitStepAnswer` passes the evaluator's `correct` verdict and its
+   * suggestion-style explanation through unchanged, rather than coercing
+   * or blocking it.
+   */
+  function baseSessionTables(stepRow: FakeRow) {
+    loadLibraryItem.mockResolvedValue({
+      id: "A",
+      title: "Блок A",
+      estimatedMinutes: 7,
+      visibleOutcomeUk: "Готово!",
+      steps: [{ id: stepRow.id as string, sortOrder: 0, type: stepRow.type as string, content: stepRow.content, visual: stepRow.visual, sourceRefs: [] }],
+    });
+    return {
+      lesson_sessions: { id: "s1", current_step_id: "st1", current_block_order: 1, subject_id: "subj1", topic_id: "top1", child_profile_id: "child1" },
+      library_steps: stepRow,
+      step_attempts: [],
+      session_blocks: [{ session_id: "s1", sort_order: 1, library_item_id: "A" }],
+    };
+  }
+
+  const zeroTableStep = {
+    id: "st1",
+    type: "open",
+    content: {
+      questionUk:
+        "Склади свою мінітаблицю з трьох рядків: одне додатне число, одне від'ємне і 0. Біля кожного напиши, що воно означає (температура, висота над рівнем моря чи гроші/борг), і чому 0 особливий.",
+      expectedAnswerUk: "Наприклад: +12°C — тепло, -6 грн — борг, 0 — межа між додатними і від'ємними числами, ані те, ані те.",
+      rubricUk: "приймати будь-які творчі, по суті коректні приклади для кожного з трьох чисел",
+    },
+    visual: {},
+    source_refs: [],
+  };
+
+  it("carries the D-93 instruction in the system prompt: main elements covered + one missing secondary nuance must grade `correct`, offered as a friendly, non-blocking, optionally multiple-choice suggestion", () => {
+    expect(OPEN_ANSWER_EVALUATION_SYSTEM_UK).toMatch(/D-93/);
+    expect(OPEN_ANSWER_EVALUATION_SYSTEM_UK).toMatch(/`correct`, НІКОЛИ/);
+    expect(OPEN_ANSWER_EVALUATION_SYSTEM_UK).toMatch(/Майже! Спробуй ще раз/);
+    expect(OPEN_ANSWER_EVALUATION_SYSTEM_UK).toMatch(/варіантів/);
+  });
+
+  it("the exact BUG-030 example — three creative, correct examples but no explicit meta-explanation of why zero is special — grades `correct` when the evaluator follows the (fixed) prompt, and the friendly suggestion is passed through untouched", async () => {
+    resetScope();
+    scopeState.tables = baseSessionTables(zeroTableStep);
+    moderateMessage.mockResolvedValue({ category: "none", severity: "normal", confidence: 0.99, reasonUk: "", layer1Flagged: false, escalated: false });
+    callStructured.mockResolvedValue({
+      result: {
+        verdict: "correct",
+        explanationUk:
+          "Чудово! Борг, тепло і «0 хвилин до дзвінка» — усі три приклади правильні й творчі. А ще можеш подумати: чому 0 особливий — це (а) додатне число, (б) від'ємне число, чи (в) ні те, ні те?",
+      },
+      model: {},
+      costUsd: 0,
+      fallbackUsed: false,
+    });
+
+    const result = await submitStepAnswer(
+      "fam1",
+      "s1",
+      "st1",
+      "idem-1",
+      "text",
+      { text: "- 6 грн - борг\n12 С - 12 градусів тепла\n0 хвилин до кінця уроку - ура дзвінок, урок закінчився" },
+      8000,
+    );
+
+    expect(callStructured).toHaveBeenCalledTimes(1);
+    expect(result.verdict).toBe("correct");
+    expect(result.explanation).not.toMatch(/Майже/);
+    expect(result.explanation).toMatch(/варіантів|варіант|\(а\)/i);
+  });
+
+  it("a genuinely incomplete answer (missing two of the three main elements) still goes to the LLM and is NOT force-graded `correct` — D-93 does not weaken grading of real mistakes", async () => {
+    resetScope();
+    scopeState.tables = baseSessionTables(zeroTableStep);
+    moderateMessage.mockResolvedValue({ category: "none", severity: "normal", confidence: 0.99, reasonUk: "", layer1Flagged: false, escalated: false });
+    callStructured.mockResolvedValue({
+      result: { verdict: "partial", explanationUk: "Гарний початок! Додатне число є, а тепер додай ще й від'ємне число, і 0." },
+      model: {},
+      costUsd: 0,
+      fallbackUsed: false,
+    });
+
+    const result = await submitStepAnswer("fam1", "s1", "st1", "idem-1", "text", { text: "12 С - 12 градусів тепла" }, 4000);
+
+    expect(callStructured).toHaveBeenCalledTimes(1);
+    expect(result.verdict).toBe("partial");
+  });
+
+  it("an empty open answer still goes through the normal (non-fast-pathed) path and is NOT force-graded `correct`", async () => {
+    resetScope();
+    scopeState.tables = baseSessionTables(zeroTableStep);
+    moderateMessage.mockResolvedValue({ category: "none", severity: "normal", confidence: 0.99, reasonUk: "", layer1Flagged: false, escalated: false });
+    callStructured.mockResolvedValue({
+      result: { verdict: "incorrect", explanationUk: "Схоже, відповідь порожня — спробуй написати свою мінітаблицю." },
+      model: {},
+      costUsd: 0,
+      fallbackUsed: false,
+    });
+
+    const result = await submitStepAnswer("fam1", "s1", "st1", "idem-1", "text", { text: "" }, 1000);
+
+    expect(callStructured).toHaveBeenCalledTimes(1);
+    expect(result.verdict).toBe("incorrect");
+  });
+});
+
 describe("pauseLessonSession — BUG-020 ('Вийти з уроку' preserves resume state, same as any other pause)", () => {
   it("an explicit exit (manual_exit) pauses the session without ever touching current_step_id — the exact step it was on stays resumable", async () => {
     resetScope();
@@ -765,5 +902,133 @@ describe("pauseLessonSession — BUG-020 ('Вийти з уроку' preserves r
 
     expect(result.step?.stepId).toBe("st1");
     expect(result.reminder).toBeNull();
+  });
+});
+
+/**
+ * BUG-029 item 2: traces the REAL >=2-block path end to end
+ * (`activateBlock` -> `session_blocks.sort_order` -> `getPreviousModuleView`)
+ * rather than only reading the code, per the bug's own instruction. This
+ * reproduces `activateBlock`'s actual writes (`sort_order: current_block_
+ * order + 1`, then `current_block_order` bumped to that same value — see
+ * `orchestrator.ts`) so the fixture is not just "whatever makes the assertion
+ * pass".
+ */
+describe("getPreviousModuleView (US-6.16 КП-2, BUG-029)", () => {
+  it("on the session's 2nd block (current_block_order: 2), returns the 1st block's (sort_order: 1) content read-only", async () => {
+    resetScope();
+    scopeState.tables = {
+      lesson_sessions: { id: "s1", current_block_order: 2 },
+      session_blocks: [
+        { session_id: "s1", sort_order: 1, library_item_id: "A" },
+        { session_id: "s1", sort_order: 2, library_item_id: "B" },
+      ],
+    };
+    loadLibraryItem.mockResolvedValue({
+      id: "A",
+      title: "Блок A",
+      estimatedMinutes: 7,
+      visibleOutcomeUk: null,
+      steps: [{ id: "st1", sortOrder: 0, type: "slide", content: { textUk: "Текст блоку A" }, visual: {}, sourceRefs: [] }],
+    });
+
+    const view = await getPreviousModuleView("fam1", "s1");
+
+    expect(loadLibraryItem).toHaveBeenCalledWith("fam1", "A");
+    expect(view).toEqual({ libraryItemId: "A", title: "Блок A", steps: [{ type: "slide", content: { textUk: "Текст блоку A" } }] });
+  });
+
+  it("on the session's 1st block (current_block_order: 1), returns null without querying session_blocks at all", async () => {
+    resetScope();
+    scopeState.tables = { lesson_sessions: { id: "s1", current_block_order: 1 } };
+
+    const view = await getPreviousModuleView("fam1", "s1");
+
+    expect(view).toBeNull();
+    expect(loadLibraryItem).not.toHaveBeenCalled();
+  });
+
+  it("returns null (not a throw) if the expected session_blocks row is somehow missing", async () => {
+    resetScope();
+    scopeState.tables = { lesson_sessions: { id: "s1", current_block_order: 2 }, session_blocks: [] };
+
+    const view = await getPreviousModuleView("fam1", "s1");
+
+    expect(view).toBeNull();
+    expect(loadLibraryItem).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * BUG-029 follow-up (PO): real "⬅️" navigation, not a read-only preview.
+ * Symmetric counterpart to `advanceAfterStep` — moves `current_step_id`
+ * back one step, scoped to the current active block (see `goToPreviousStep`'s
+ * own comment on why a block-boundary crossing is out of scope for now).
+ */
+describe("goToPreviousStep (BUG-029 follow-up: real step-back navigation)", () => {
+  it("moves current_step_id back one step within the active block and returns that step's view", async () => {
+    resetScope();
+    scopeState.tables = {
+      lesson_sessions: { id: "s1", current_block_order: 1, current_step_id: "st2" },
+      session_blocks: [{ session_id: "s1", sort_order: 1, library_item_id: "A" }],
+    };
+    loadLibraryItem.mockResolvedValue({
+      id: "A",
+      title: "Блок A",
+      estimatedMinutes: 7,
+      visibleOutcomeUk: null,
+      steps: [
+        { id: "st1", sortOrder: 0, type: "slide", content: { textUk: "Крок 1" }, visual: {}, sourceRefs: [] },
+        { id: "st2", sortOrder: 1, type: "slide", content: { textUk: "Крок 2" }, visual: {}, sourceRefs: [] },
+        { id: "st3", sortOrder: 2, type: "slide", content: { textUk: "Крок 3" }, visual: {}, sourceRefs: [] },
+      ],
+    });
+
+    const view = await goToPreviousStep("fam1", "s1");
+
+    expect(view).toEqual({
+      stepId: "st1",
+      type: "slide",
+      content: { textUk: "Крок 1" },
+      visual: {},
+      sourceRefs: [],
+      stepNumber: 1,
+      totalSteps: 3,
+    });
+    const update = scopeState.updates.find((u) => u.table === "lesson_sessions");
+    expect(update?.values).toEqual({ current_step_id: "st1" });
+  });
+
+  it("returns null (no write at all) when already at the active block's first step", async () => {
+    resetScope();
+    scopeState.tables = {
+      lesson_sessions: { id: "s1", current_block_order: 1, current_step_id: "st1" },
+      session_blocks: [{ session_id: "s1", sort_order: 1, library_item_id: "A" }],
+    };
+    loadLibraryItem.mockResolvedValue({
+      id: "A",
+      title: "Блок A",
+      estimatedMinutes: 7,
+      visibleOutcomeUk: null,
+      steps: [
+        { id: "st1", sortOrder: 0, type: "slide", content: {}, visual: {}, sourceRefs: [] },
+        { id: "st2", sortOrder: 1, type: "slide", content: {}, visual: {}, sourceRefs: [] },
+      ],
+    });
+
+    const view = await goToPreviousStep("fam1", "s1");
+
+    expect(view).toBeNull();
+    expect(scopeState.updates.find((u) => u.table === "lesson_sessions")).toBeUndefined();
+  });
+
+  it("returns null when the session has no current step (e.g. between blocks)", async () => {
+    resetScope();
+    scopeState.tables = { lesson_sessions: { id: "s1", current_block_order: 1, current_step_id: null } };
+
+    const view = await goToPreviousStep("fam1", "s1");
+
+    expect(view).toBeNull();
+    expect(loadLibraryItem).not.toHaveBeenCalled();
   });
 });
