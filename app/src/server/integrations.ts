@@ -9,6 +9,7 @@ import "server-only";
 export type IntegrationKind =
   | "drive_materials_folder"
   | "drive_archive_folder"
+  | "drive_uploads_folder"
   | "alert_email"
   | "telegram_bot"
   | "air_alerts";
@@ -16,6 +17,9 @@ export type IntegrationKind =
 const ENV_BY_KIND: Record<IntegrationKind, string> = {
   drive_materials_folder: "GOOGLE_DRIVE_FOLDER_ID",
   drive_archive_folder: "GOOGLE_DRIVE_ARCHIVE_FOLDER_ID",
+  // ADR-024: the parent pastes this in once, after the "Мої книги" folder is
+  // auto-created and auto-shared by the OAuth connector (drive/oauth.ts).
+  drive_uploads_folder: "GOOGLE_DRIVE_UPLOADS_FOLDER_ID",
   alert_email: "ALERT_EMAIL_TO",
   telegram_bot: "TELEGRAM_BOT_TOKEN",
   air_alerts: "ALERTS_IN_UA_TOKEN",

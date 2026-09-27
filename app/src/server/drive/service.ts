@@ -5,19 +5,52 @@ import { getFamilyIntegration } from "../integrations";
 import { DriveError, getAccessToken, isValidDriveId } from "./google";
 import { checkFolderPublicAccess, type FolderAccess } from "./public-access";
 
-/** Drive configuration of a family: folder id (env via the integrations seam) + service account. */
-export async function getDriveAccess(familyId: string): Promise<{ folderId: string; token: () => Promise<string> }> {
-  const folderId = await getFamilyIntegration(familyId, "drive_materials_folder");
+/**
+ * The service-account token alone, with no folder-id requirement: downloading
+ * a known `drive_file_id` (indexing steps) never needs a folder id, only a
+ * configured service account — a book uploaded into the "Мої книги" folder
+ * (ADR-024) must download the same way even before the materials folder
+ * itself is configured.
+ */
+export async function getDriveToken(): Promise<() => Promise<string>> {
   const sa = getGoogleServiceAccount();
-  if (!isValidDriveId(folderId) || !sa) {
-    throw new DriveError("Drive folder or service account is not configured", null, "not_configured");
-  }
-  return { folderId, token: () => getAccessToken(sa) };
+  if (!sa) throw new DriveError("Google service account is not configured", null, "not_configured");
+  return () => getAccessToken(sa);
 }
 
 export async function isDriveConfigured(familyId: string): Promise<boolean> {
   const folderId = await getFamilyIntegration(familyId, "drive_materials_folder");
   return isValidDriveId(folderId) && getGoogleServiceAccount() !== null;
+}
+
+/** Service account e-mail (ADR-024 §3): shared with the parent's uploads folder via `permissions.create`. */
+export function getServiceAccountEmail(): string | null {
+  return getGoogleServiceAccount()?.clientEmail ?? null;
+}
+
+/**
+ * Every folder the materials-indexing service account is configured to scan
+ * (docs/02 10.3): the manually-shared materials folder, and — once the
+ * parent has pasted its id after connecting Google Drive (ADR-024) — the
+ * app-owned, auto-shared "Мої книги" uploads folder. Both are scanned the
+ * same way by `syncDriveFolder`; nothing else in the ingest pipeline changes.
+ */
+export async function getConfiguredDriveFolders(
+  familyId: string,
+): Promise<{ kind: "materials" | "uploads"; folderId: string }[]> {
+  const [materials, uploads] = await Promise.all([
+    getFamilyIntegration(familyId, "drive_materials_folder"),
+    getFamilyIntegration(familyId, "drive_uploads_folder"),
+  ]);
+  const out: { kind: "materials" | "uploads"; folderId: string }[] = [];
+  if (isValidDriveId(materials)) out.push({ kind: "materials", folderId: materials });
+  if (isValidDriveId(uploads)) out.push({ kind: "uploads", folderId: uploads });
+  return out;
+}
+
+export async function isUploadsFolderConfigured(familyId: string): Promise<boolean> {
+  const folderId = await getFamilyIntegration(familyId, "drive_uploads_folder");
+  return isValidDriveId(folderId);
 }
 
 /** Link to the folder, built on the server for the parent only (US-2.7 KP-4, NFR-PRIV-8). */

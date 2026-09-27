@@ -72,6 +72,9 @@ export function getServerSecret(
     | "GOOGLE_API_KEY"
     | "GOOGLE_SERVICE_ACCOUNT_JSON"
     | "CRON_SECRET"
+    // ADR-024: shared OAuth `drive.file` connector (book upload + future D-67 archive).
+    | "GOOGLE_OAUTH_CLIENT_ID"
+    | "GOOGLE_OAUTH_CLIENT_SECRET"
     // S4 (ADR-010): urgent e-mail (Resend) + Telegram bot.
     | "RESEND_API_KEY"
     | "ALERT_EMAIL_TO"

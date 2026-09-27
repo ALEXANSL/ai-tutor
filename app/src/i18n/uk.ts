@@ -198,6 +198,11 @@ export const uk = {
       // US-6.13: block summary (visible outcome + optional feedback).
       blockDoneTitle: "Блок завершено!",
       blockContinue: "Далі",
+      // BUG-031: `continueAfterBlockAction` can take a while (it may need to
+      // generate the next block on demand) — this used to give NO visual
+      // feedback at all, so the click "did nothing" from the child's side
+      // while it was actually still working.
+      blockContinueBusy: "Готуємо наступний крок…",
       feedbackPrompt: "Як тобі цей блок?",
       feedbackInteresting: "Цікаво 🤩",
       feedbackNormal: "Нормально 🙂",
@@ -582,9 +587,18 @@ export const uk = {
         failed: "Не вдалося проіндексувати. Спробуйте «Переіндексувати».",
       } as Record<string, string>,
       chapterFallback: (n: number) => `Розділ ${n}`,
+      upload: {
+        button: "Завантажити файл",
+        uploading: "Завантажується…",
+        done: "Готово! Книга додана і вже індексується.",
+        tooLarge: "Файл завеликий: максимум 50 МБ для прямого завантаження з браузера. Покладіть файл у папку Google Drive вручну (кнопка «Відкрити папку в Google Drive» нижче) — там такого обмеження немає.",
+        unsupportedType: "Підтримуються лише файли PDF або EPUB.",
+        notConfigured: "Пряме завантаження ще не підключено: спершу підключіть Google Drive в Налаштуваннях.",
+        failed: "Не вдалося завантажити файл. Спробуйте ще раз або скористайтеся папкою Google Drive нижче.",
+      },
       add: {
         title: "Додати книгу",
-        steps: "Три кроки: відкрийте папку → покладіть файл → натисніть «Я додав — перевірити папку».",
+        steps: "Найпростіше — «Завантажити файл» нижче (до 50 МБ). Для великих сканів: відкрийте папку → покладіть файл → натисніть «Я додав — перевірити папку».",
         openDrive: "☁️ Відкрити папку в Google Drive",
         driveMissing: "Папку Google Drive ще не підключено в налаштуваннях застосунку.",
         hint: "Текстовий PDF або EPUB, легально придбаний або з офіційного джерела. Скани (фото сторінок) не підтримуються.",
@@ -683,6 +697,25 @@ export const uk = {
         unlinked: "Telegram відв'язано.",
         test: "📨 Надіслати тестове термінове сповіщення",
         testSent: "Тестове сповіщення надіслано (позначка «ТЕСТ») — перевірте пошту і Telegram.",
+      },
+      // ADR-024: shared OAuth `drive.file` connector (book upload; later also the media archive).
+      drive: {
+        title: "Google Drive",
+        onlyOwnAccount: "Підключити Google Drive можна лише увійшовши своїм Google-акаунтом (не з режиму тата на планшеті).",
+        help: "Один дозвіл — і застосунок сам створює свою окрему папку «ШІ-Репетитор — Мої книги» для завантажених книг; до решти вашого Google Диска доступу не отримує.",
+        notConnected: "Google Drive: не підключено",
+        connected: (at: string | null) => `Google Drive: підключено${at ? ` (${at})` : ""}`,
+        connect: "🔗 Підключити Google Drive",
+        justConnected: "Google Drive підключено.",
+        folderCreated: "Папку «ШІ-Репетитор — Мої книги» створено й відкрито для індексації.",
+        // `pasteHint` and the `not_configured` error name an exact env var —
+        // BUG-005 pattern, kept server-only in `lib/drive-connect-messages.ts`
+        // instead, passed to the panel already resolved.
+        errors: {
+          denied: "Google Drive не підключено: дозвіл не надано.",
+          state: "Не вдалося підтвердити запит (застарілий або невірний). Спробуйте підключити ще раз.",
+          failed: "Не вдалося підключити Google Drive. Спробуйте ще раз.",
+        } as Record<string, string>,
       },
     },
     placeholder: {

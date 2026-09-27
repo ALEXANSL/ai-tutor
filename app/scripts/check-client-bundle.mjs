@@ -17,11 +17,13 @@ const SECRET_VARS = [
   "SUPABASE_SERVICE_ROLE_KEY",
   "ALLOWLIST_PARENT_EMAILS",
   "ALLOWLIST_CHILD_EMAILS",
+  "GOOGLE_OAUTH_CLIENT_ID",
   "GOOGLE_OAUTH_CLIENT_SECRET",
   "GOOGLE_SERVICE_ACCOUNT_JSON",
   "GOOGLE_API_KEY",
   "GOOGLE_DRIVE_FOLDER_ID",
   "GOOGLE_DRIVE_ARCHIVE_FOLDER_ID",
+  "GOOGLE_DRIVE_UPLOADS_FOLDER_ID",
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
   "GOOGLE_GENERATIVE_AI_API_KEY",
@@ -46,6 +48,9 @@ const SERVER_ONLY_MARKERS = [
   "buildServiceAccountAssertion",
   "api.openai.com",
   "drive.readonly",
+  // ADR-024: the OAuth `drive.file` connector + streaming book upload.
+  "set_drive_refresh_token",
+  "drive.file",
 ];
 
 const env = { ...process.env };
