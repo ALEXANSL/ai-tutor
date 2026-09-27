@@ -1,6 +1,6 @@
 import "server-only";
 import { forFamily } from "@/server/db/family-scope";
-import { getLibraryWarmDailyBudgetUsd, getLibraryWarmMaxConcurrent } from "@/server/env";
+import { getLibraryWarmDailyBudgetUsd, getLibraryWarmLookaheadTopics, getLibraryWarmMaxConcurrent } from "@/server/env";
 import { registerJobHandler, type JobRow } from "@/server/jobs/runner";
 import { kickJobs } from "@/server/jobs/kick";
 import { createServiceClient } from "@/server/supabase/clients";
@@ -173,6 +173,95 @@ export async function ensureActiveLibraryBlock(
   return { status: "job_pending", jobId: inserted.id };
 }
 
+interface WarmAheadSubjectRow {
+  id: string;
+  name_uk: string;
+  config: Record<string, unknown>;
+  active: boolean;
+  is_stub: boolean;
+}
+interface WarmAheadTopicRow {
+  id: string;
+  title: string;
+  grade: number | null;
+  sort_order: number;
+}
+
+/**
+ * "Прогрів наперед" (ADR-023 §Частина 3, D-103): the parent's action (a
+ * freshly-indexed textbook's topics, activating a subject, or the child
+ * opening the next topic in sequence) is itself a strong enough signal that
+ * a subject's material is about to be studied — no separate manual
+ * "positive" `is_current` click should be required per topic for the server
+ * to start getting ready.
+ *
+ * Finds the **anchor** — `opts.anchorTopicId` when the caller already knows
+ * which topic to start from (§Частина 3.3 — `startLessonSession` anchors on
+ * the topic the child just opened, not necessarily the subject's
+ * `is_current` one); otherwise the subject's `is_current` topic if it has
+ * one; otherwise the first topic by `sort_order` (a subject with no
+ * `is_current` topic yet, e.g. right after indexing its first textbook,
+ * §Частина 3.1/3.2) — then warms up to `LIBRARY_WARM_LOOKAHEAD_TOPICS`
+ * topics (default 3) starting at the anchor (inclusive), in `sort_order`,
+ * one at a time (not `Promise.all` — `ensureActiveLibraryBlock`'s own
+ * dedup/daily-budget checks are per-call, so doing this sequentially keeps
+ * their behaviour meaningful call to call).
+ *
+ * Never throws — a per-topic failure (e.g. the daily warm-up budget runs out
+ * partway through the lookahead window) is logged and does not stop the rest
+ * of the loop or bubble up to whichever trigger called this (same
+ * fire-and-forget pattern already used by `setCurrentTopicAction`).
+ */
+export async function warmAheadForSubject(familyId: string, subjectId: string, opts: { anchorTopicId?: string } = {}): Promise<void> {
+  const scope = forFamily(familyId);
+  const { data: subject } = await scope
+    .select("subjects", "id, name_uk, config, active, is_stub")
+    .eq("id", subjectId)
+    .maybeSingle<WarmAheadSubjectRow>();
+  // §Частина 3.1: only for a subject that is active and not a stub — a stub
+  // subject (US-3.4) never calls AI, and an inactive one has no lessons to
+  // get ready for yet.
+  if (!subject || !subject.active || subject.is_stub) return;
+
+  let anchorSortOrder: number | null = null;
+  if (opts.anchorTopicId) {
+    const { data: anchorTopic } = await scope
+      .select("topics", "sort_order")
+      .eq("id", opts.anchorTopicId)
+      .maybeSingle<{ sort_order: number }>();
+    anchorSortOrder = anchorTopic?.sort_order ?? null;
+  }
+  if (anchorSortOrder === null) {
+    const { data: currentTopic } = await scope
+      .select("topics", "sort_order")
+      .eq("subject_id", subjectId)
+      .eq("is_current", true)
+      .maybeSingle<{ sort_order: number }>();
+    anchorSortOrder = currentTopic?.sort_order ?? null;
+  }
+
+  let query = scope
+    .select("topics", "id, title, grade, sort_order")
+    .eq("subject_id", subjectId)
+    .order("sort_order", { ascending: true })
+    .limit(getLibraryWarmLookaheadTopics());
+  if (anchorSortOrder !== null) query = query.gte("sort_order", anchorSortOrder);
+  const { data: topics } = await query.returns<WarmAheadTopicRow[]>();
+
+  for (const topic of topics ?? []) {
+    try {
+      await ensureActiveLibraryBlock(
+        familyId,
+        { id: subject.id, nameUk: subject.name_uk, config: subject.config },
+        { id: topic.id, title: topic.title, grade: topic.grade },
+        { immediate: false },
+      );
+    } catch (e) {
+      console.error(`warmAheadForSubject: ensureActiveLibraryBlock failed for topic ${topic.id}: ${(e as Error).message}`);
+    }
+  }
+}
+
 /**
  * Registers the `library.warm_topic` job handler. Called from
  * `ensureJobHandlers()` (`jobs/kick.ts`), same composition-root pattern as
@@ -207,6 +296,19 @@ export function registerLibraryWarmJobs(): void {
       const scope = forFamily(job.family_id);
       const already = await loadCandidates(scope, payload.topicId, 1);
       if (already.length > 0) return;
+
+      // ADR-023 §Частина 3 (D-103): re-check `subjects.active`/`is_stub`
+      // right before actually spending money, not just at enqueue time — a
+      // job created by one of the new "за фактом дії дорослого" triggers can
+      // sit queued for a while (concurrency cap, daily budget), and the
+      // parent may deactivate the subject (or it may turn out to be a stub)
+      // in the meantime. A small, cheap extra select, same pattern as the
+      // "already active" check just above.
+      const { data: subjectNow } = await scope
+        .select("subjects", "active, is_stub")
+        .eq("id", payload.subjectId)
+        .maybeSingle<{ active: boolean; is_stub: boolean }>();
+      if (!subjectNow || !subjectNow.active || subjectNow.is_stub) return;
 
       // BUG-035: also persists which generate→review pass is current, so
       // the child's progress screen can show "Перевірка 2 з 3" instead of

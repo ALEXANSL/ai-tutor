@@ -11,6 +11,7 @@ import { URGENT_REPLY_UK } from "@/server/safety/urgentReplyUk";
 import { createServiceClient } from "@/server/supabase/clients";
 import { CANDIDATE_TARGET, getOrCreateFallbackBlock, getOrGenerateLessonBlocks, loadCandidates, loadLibraryItem, nextSessionBlock, type LibraryItemView, type LibraryStepView } from "./generate";
 import type { PipelineStage } from "./pipeline";
+import { warmAheadForSubject } from "./warmup";
 import {
   breakDue,
   decideBranch,
@@ -115,6 +116,16 @@ export async function startLessonSession(
     scope.select("topics", "id, title, grade").eq("id", topicId).maybeSingle<TopicRow>(),
   ]);
   if (!subject || !topic) throw new Error("subject or topic not found");
+
+  // ADR-023 §Частина 3.3 (D-103): the child's own progression through the
+  // topics of a subject is itself a trigger — opening topic X here warms up
+  // the next few topics in sequence (anchored on X, not necessarily the
+  // subject's `is_current` one), so a normal linear progression never hits a
+  // cold topic. Fire-and-forget: never blocks or fails starting *this*
+  // session either way.
+  warmAheadForSubject(familyId, subjectId, { anchorTopicId: topicId }).catch((e: Error) =>
+    console.error(`library warm-ahead on session start failed: ${e.message}`),
+  );
 
   const { candidates: generated, failureReasonUk, warmJobId } = await getOrGenerateLessonBlocks(
     familyId,

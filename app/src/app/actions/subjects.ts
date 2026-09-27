@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
-import { ensureActiveLibraryBlock } from "@/server/lessons/warmup";
+import { warmAheadForSubject } from "@/server/lessons/warmup";
 import type { FormState } from "./state";
 
 /**
@@ -52,24 +52,16 @@ export async function setCurrentTopicAction(_prev: FormState, formData: FormData
     return { status: "error", message: RPC_ERROR_MESSAGE[error.code ?? ""] ?? uk.common.error };
   }
 
-  // ADR-023 §Частина 1.1 (D-76): the parent's own "positive" signal warms the
-  // topic's first library block in the background — can wait a few seconds
-  // (not `immediate`, no `kickJobs()` here), the next `pg_cron` tick within a
-  // minute picks it up. Never blocks or fails this action either way (a
-  // failure here — e.g. the daily warm-up budget already spent — is not the
-  // parent's problem right now; the child's own "cold" open still covers it).
-  const [{ data: subject }, { data: topic }] = await Promise.all([
-    scope.select("subjects", "id, name_uk, config").eq("id", subjectId).maybeSingle<{ id: string; name_uk: string; config: Record<string, unknown> }>(),
-    scope.select("topics", "id, title, grade").eq("id", topicId).maybeSingle<{ id: string; title: string; grade: number | null }>(),
-  ]);
-  if (subject && topic) {
-    ensureActiveLibraryBlock(
-      familyId,
-      { id: subject.id, nameUk: subject.name_uk, config: subject.config },
-      { id: topic.id, title: topic.title, grade: topic.grade },
-      { immediate: false },
-    ).catch((e: Error) => console.error(`library warm-up on is_current failed: ${e.message}`));
-  }
+  // ADR-023 §Частина 1.1/§Частина 3.2 (D-76/D-103): the parent's own
+  // "positive" signal warms up not just the one marked topic, but a
+  // look-ahead of the next few topics of the subject's programme (anchored
+  // on the topic just marked `is_current`, since `set_current_topic` above
+  // already set it) — can wait a few seconds (not `immediate`), the next
+  // `pg_cron` tick within a minute picks each one up. Never blocks or fails
+  // this action either way (a failure here — e.g. the daily warm-up budget
+  // already spent partway through the look-ahead — is not the parent's
+  // problem right now; the child's own "cold" open still covers it).
+  warmAheadForSubject(familyId, subjectId).catch((e: Error) => console.error(`library warm-ahead on is_current failed: ${e.message}`));
 
   revalidatePath("/parent/subjects", "layout");
   return { status: "ok", message: uk.parent.subjects.detail.saved };
