@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { checkWarmupProgressAction } from "@/app/actions/lesson";
@@ -45,7 +46,7 @@ const MAX_REVIEW_PASSES = 3;
 // this long, add a reassuring note (without touching the pipeline itself).
 const SLOW_WAIT_MS = 90_000;
 
-export function LibraryWarmProgress({ sessionId }: { sessionId: string }) {
+export function LibraryWarmProgress({ sessionId, subjectId }: { sessionId: string; subjectId: string }) {
   const router = useRouter();
   const [stage, setStage] = useState<Stage>("planning");
   const [reviewPass, setReviewPass] = useState<number | null>(null);
@@ -102,7 +103,19 @@ export function LibraryWarmProgress({ sessionId }: { sessionId: string }) {
   const activeIndex = Math.max(0, STAGE_ORDER.indexOf(stage));
 
   return (
-    <div className="flex min-h-[70vh] items-center justify-center px-4 py-10">
+    <div className="flex min-h-[70vh] flex-col items-center justify-center gap-3 px-4 py-10">
+      {/* Nav review (2026-09-27), finding #2: this screen — the child's first
+          "холодний старт" wait, easily 1-3+ minutes — had no way back besides
+          the browser's own back button, same class of dead-end BUG-025 fixed
+          on `LessonPicker`/`LessonPausedScreen`. Same two links, same pattern. */}
+      <div className="flex flex-wrap justify-center gap-4">
+        <Link href="/today" className="self-center text-sm font-bold text-muted underline">
+          {uk.child.lesson.backToToday}
+        </Link>
+        <Link href={`/subject/${subjectId}`} className="self-center text-sm font-bold text-muted underline">
+          {uk.child.lesson.navSubjectList}
+        </Link>
+      </div>
       <ChildCard>
         <div className="mb-4 text-5xl" aria-hidden>
           ✨
