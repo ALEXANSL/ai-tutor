@@ -29,19 +29,19 @@ const step = {
 describe("BUG-025: /today link present on every lesson screen state", () => {
   it("LessonPicker (mode: choosing)", () => {
     const html = renderToStaticMarkup(
-      <LessonPicker sessionId="s1" candidates={[{ id: "c1", title: "Блок 1", estimatedMinutes: 10 }]} />,
+      <LessonPicker sessionId="s1" subjectId="subj-1" candidates={[{ id: "c1", title: "Блок 1", estimatedMinutes: 10 }]} />,
     );
     expect(html).toContain('href="/today"');
   });
 
   it("LessonPausedScreen (status: paused)", () => {
-    const html = renderToStaticMarkup(<LessonPausedScreen sessionId="s1" reason="manual_exit" />);
+    const html = renderToStaticMarkup(<LessonPausedScreen sessionId="s1" subjectId="subj-1" reason="manual_exit" />);
     expect(html).toContain('href="/today"');
   });
 
   it("LessonRunner (active step)", () => {
     const html = renderToStaticMarkup(
-      <LessonRunner sessionId="s1" subjectId="subj-1" topicId="top-1" step={step} idleHintS={60} idlePauseS={180} />,
+      <LessonRunner sessionId="s1" subjectId="subj-1" topicId="top-1" step={step} idleHintS={60} idlePauseS={180} presentationMode="auto" />,
     );
     // BUG-020 already covers this state: "Вийти з уроку" pauses and sends
     // the child to "/today" (via `router.push`, not a plain `<a>`), so the

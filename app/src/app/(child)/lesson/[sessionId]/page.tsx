@@ -28,7 +28,7 @@ export default async function LessonPage({ params }: { params: Promise<{ session
     const candidates = await loadLibraryItemTitles(familyId, session.candidate_library_item_ids);
     return (
       <div className="pb-10">
-        <LessonPicker sessionId={sessionId} candidates={candidates} />
+        <LessonPicker sessionId={sessionId} subjectId={session.subject_id} candidates={candidates} />
       </div>
     );
   }
@@ -36,7 +36,7 @@ export default async function LessonPage({ params }: { params: Promise<{ session
   if (session.status === "paused") {
     return (
       <div className="pb-10">
-        <LessonPausedScreen sessionId={sessionId} reason={session.pause_reason} />
+        <LessonPausedScreen sessionId={sessionId} subjectId={session.subject_id} reason={session.pause_reason} />
       </div>
     );
   }
@@ -63,6 +63,7 @@ export default async function LessonPage({ params }: { params: Promise<{ session
         step={step}
         idleHintS={child?.idle_hint_s ?? 60}
         idlePauseS={child?.idle_pause_s ?? 180}
+        presentationMode={session.presentation_mode as "voice" | "auto" | "text"}
       />
     </div>
   );

@@ -39,6 +39,13 @@ export interface VisionDocument {
   data: string;
 }
 
+/** Synthesized speech audio (role `passive_narration`, ADR-025). */
+export interface AudioResult {
+  /** Base64-encoded audio bytes, no `data:` prefix. */
+  audioBase64: string;
+  mimeType: string;
+}
+
 export interface Usage {
   inputTokens: number;
   outputTokens: number;
@@ -64,6 +71,13 @@ export interface CallContext {
   escalate?: boolean;
   /** A session started below 100 % finishes on normal models (US-11.5 KP-5). */
   sessionStartedBeforeBudget?: boolean;
+  /**
+   * ADR-023 §Частина 1.5: set only for calls made from a `library.warm_topic`
+   * background job — tags the resulting `ai_calls` row so its cost counts
+   * toward the daily warm-up budget (`getLibraryWarmDailyBudgetUsd()`),
+   * separate from the family's regular monthly spend tracking (ADR-012).
+   */
+  jobId?: string;
 }
 
 export interface CallRecord {
@@ -80,6 +94,8 @@ export interface CallRecord {
   ref_table?: string;
   ref_id?: string;
   session_id?: string;
+  /** ADR-023 §Частина 1.5: set for calls made from a `library.warm_topic` job. */
+  job_id?: string;
   error?: string;
 }
 

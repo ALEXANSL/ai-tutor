@@ -62,6 +62,8 @@ interface SessionRow {
   planned_minutes: number;
   points_earned: number;
   paused_at: string | null;
+  /** US-6.16 КП-5: 'voice' | 'auto' | 'text' — the lesson-screen speech-mode switch. */
+  presentation_mode: string;
 }
 
 async function loadSession(familyId: string, sessionId: string): Promise<SessionRow | null> {
@@ -617,6 +619,45 @@ export async function acknowledgeSlide(familyId: string, sessionId: string, step
   const session = await loadSession(familyId, sessionId);
   if (!session || session.current_step_id !== stepId) throw new Error("stale step — reload the session");
   return advanceAfterStep(familyId, session);
+}
+
+/** US-6.16 КП-5: the child (or a parent configuring ahead) switches how the lesson is presented. */
+const PRESENTATION_MODES = new Set(["voice", "auto", "text"]);
+export async function setPresentationMode(familyId: string, sessionId: string, mode: string): Promise<void> {
+  if (!PRESENTATION_MODES.has(mode)) throw new Error(`invalid presentation_mode "${mode}"`);
+  await forFamily(familyId).update("lesson_sessions", { presentation_mode: mode }).eq("id", sessionId);
+}
+
+export interface PreviousModuleStepView {
+  type: string;
+  content: Record<string, unknown>;
+}
+
+export interface PreviousModuleView {
+  libraryItemId: string;
+  title: string;
+  steps: PreviousModuleStepView[];
+}
+
+/**
+ * US-6.16 КП-2: the previously completed block of THIS session, shown
+ * read-only (no grading, no AI call, current progress untouched) — the
+ * child's own "library preview" of what she just did, one step back.
+ * `null` when this is the first block (the button is hidden/disabled then).
+ */
+export async function getPreviousModuleView(familyId: string, sessionId: string): Promise<PreviousModuleView | null> {
+  const session = await loadSession(familyId, sessionId);
+  if (!session || session.current_block_order <= 1) return null;
+  const scope = forFamily(familyId);
+  const { data: blockRow } = await scope
+    .select("session_blocks", "library_item_id")
+    .eq("session_id", sessionId)
+    .eq("sort_order", session.current_block_order - 1)
+    .maybeSingle<{ library_item_id: string }>();
+  if (!blockRow) return null;
+  const item = await loadLibraryItem(familyId, blockRow.library_item_id);
+  if (!item) return null;
+  return { libraryItemId: item.id, title: item.title, steps: item.steps.map((s) => ({ type: s.type, content: s.content })) };
 }
 
 /**

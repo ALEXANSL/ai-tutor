@@ -2,12 +2,13 @@ import "server-only";
 import type { z } from "zod";
 import { estimateCostUsd, fallbackOf, selectModel } from "./policy";
 import { anthropicStructured, anthropicVisionStructured } from "./providers/anthropic";
-import { openaiEmbed, openaiStructured } from "./providers/openai";
+import { openaiEmbed, openaiStructured, openaiTts } from "./providers/openai";
 import * as store from "./store";
 import {
   AiNotConfiguredError,
   BudgetBlockedError,
   ProviderError,
+  type AudioResult,
   type BudgetState,
   type CallContext,
   type CallRecord,
@@ -53,6 +54,11 @@ export interface ProviderAdapters {
       documents: VisionDocument[];
     }) => Promise<{ data: unknown; usage: Usage }>
   >;
+  /** Text-to-speech (role `passive_narration`, ADR-025) — not the tutor's live voice (ADR-006). */
+  audio: Record<
+    string,
+    (req: { model: string; text: string; voiceId?: string; params: RouteParams }) => Promise<{ data: AudioResult; usage: Usage }>
+  >;
 }
 
 export interface RouterDeps {
@@ -75,6 +81,11 @@ export const defaultRouterDeps: RouterDeps = {
     structured: { anthropic: (req) => anthropicStructured(req), openai: (req) => openaiStructured(req) },
     embed: { openai: (req) => openaiEmbed(req) },
     vision: { anthropic: (req) => anthropicVisionStructured(req) },
+    // No `gemini` adapter yet (ADR-025's alternative/fallback provider) — the
+    // `passive_narration` route's fallback stays inert until one is added
+    // (documented in the seed migration), same caveat pattern already used
+    // elsewhere for an unconfirmed reserve provider.
+    audio: { openai: (req) => openaiTts(req) },
   },
   now: () => Date.now(),
 };
@@ -111,6 +122,9 @@ async function routed<T>(
       fallback_used: fallbackUsed,
       ...(ctx.ref ? { ref_table: ctx.ref.table, ref_id: ctx.ref.id } : {}),
       ...(ctx.sessionId ? { session_id: ctx.sessionId } : {}),
+      // ADR-023 §Частина 1.5: tags this call as belonging to a
+      // `library.warm_topic` background job, for the daily warm-up budget.
+      ...(ctx.jobId ? { job_id: ctx.jobId } : {}),
     };
     try {
       const { value, usage } = await run(model, route.params);
@@ -177,6 +191,28 @@ export async function callVisionStructured<S extends z.ZodType>(
   return routed(role, "vision", ctx, deps, async (model, params) => {
     const { data, usage } = await deps.providers.vision[model.provider]!({ model: model.model, ...req, params });
     return { value: data as z.infer<S>, usage };
+  });
+}
+
+/**
+ * Passive narration audio for already-generated text (role `passive_narration`,
+ * ADR-025 — reads a step's own text aloud, not the tutor's live voice). The
+ * `/v1/audio/speech` endpoint has no token usage in its response, so the cost
+ * estimate treats `text.length` (characters) as `inputTokens` against a price
+ * row priced per-million-characters (see the S5 seed migration comment).
+ */
+export async function callAudio(
+  role: string,
+  req: { text: string; voiceId?: string },
+  ctx: CallContext,
+  deps: RouterDeps = defaultRouterDeps,
+): Promise<RoutedResult<AudioResult>> {
+  return routed(role, "audio", ctx, deps, async (model, params) => {
+    const { data } = await deps.providers.audio[model.provider]!({ model: model.model, ...req, params });
+    // The TTS endpoint reports no per-call usage (see providers/openai.ts's
+    // `openaiTts`) — character count stands in for `inputTokens` against the
+    // per-million-character price row seeded for this role (S5 migration).
+    return { value: data, usage: { inputTokens: req.text.length, outputTokens: 0 } };
   });
 }
 
