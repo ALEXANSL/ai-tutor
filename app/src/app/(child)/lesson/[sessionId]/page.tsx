@@ -32,7 +32,7 @@ export default async function LessonPage({ params }: { params: Promise<{ session
   if (session.mode === "warming") {
     return (
       <div className="pb-10">
-        <LibraryWarmProgress sessionId={sessionId} />
+        <LibraryWarmProgress sessionId={sessionId} subjectId={session.subject_id} />
       </div>
     );
   }
