@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { LessonComponentDefinition } from "@/lesson-components/registry";
 import { callStructured } from "@/server/ai/router";
 import { AiNotConfiguredError } from "@/server/ai/types";
+import type { FamilyScope } from "@/server/db/family-scope";
 import { fillTemplate, splitPrompt } from "@/server/ingest/structure";
 import { safetyPreambleGenericUk } from "@/server/safety/preamble";
 import { pedagogyCatalogForPrompt, REVIEW_CRITERION_LABELS_UK } from "./pedagogy";
@@ -75,6 +76,13 @@ export interface PipelineFragment {
   text: string;
 }
 
+/** ADR-029 (US-2.8): one already-indexed textbook problem number on one of the block's fragment pages. */
+export interface KnownProblem {
+  materialId: string;
+  page: number;
+  number: string;
+}
+
 export interface PipelineInput {
   familyId: string;
   topicId: string;
@@ -85,6 +93,14 @@ export interface PipelineInput {
   allowedComponents: LessonComponentDefinition<never, never>[];
   /** Titles of blocks already saved for this topic — review checks against repeating the same pattern (US-6.11 КП-1 "різноманітність"). */
   recentTitles: string[];
+  /** ADR-029 (US-2.8): known problem numbers on the fragments' pages — the
+   * model may cite `sourceRefs[].problemNumber` ONLY from this list; the
+   * server double-checks every citation against `material_problems` anyway
+   * (`verifyProblemNumbers` below) regardless of what the prompt says. */
+  knownProblems: KnownProblem[];
+  /** DB access for the post-generation `material_problems` double-check
+   * (right after `lesson_generation`, before `lesson_review` — ADR-029 §1). */
+  scope: FamilyScope;
 }
 
 export interface PipelineCallLog {
@@ -131,6 +147,63 @@ function techniquesForPrompt(plan: LessonPlan): string {
   return plan.techniques.map((t) => `- ${t.key}: ${t.whyUk}`).join("\n");
 }
 
+/** ADR-029 (US-2.8): groups known problem numbers by page for the `lesson_generation` prompt (`{{known_problems}}`). */
+function knownProblemsForPrompt(knownProblems: KnownProblem[]): string {
+  if (knownProblems.length === 0) return "(немає розпізнаних номерів вправ на цих сторінках)";
+  const byPage = new Map<string, string[]>();
+  for (const p of knownProblems) {
+    const key = `${p.materialId}:${p.page}`;
+    const list = byPage.get(key) ?? [];
+    list.push(p.number);
+    byPage.set(key, list);
+  }
+  return [...byPage.entries()]
+    .map(([key, numbers]) => {
+      const [materialId, page] = key.split(":");
+      return `[materialId=${materialId}, стор. ${page}] № ${numbers.join(", ")}`;
+    })
+    .join("\n");
+}
+
+/**
+ * ADR-029 §1 (US-2.8, defense in depth alongside the prompt constraint,
+ * NFR-LANG-3): every `sourceRef.problemNumber` the model returned is
+ * re-checked against `material_problems` (exact `material_id`+`page`+
+ * `number` match) right after `lesson_generation`, before `lesson_review` —
+ * a citation with no matching row is silently nulled out (the page itself
+ * stays) rather than trusted on the model's word. Never throws: a lookup
+ * failure degrades to "drop every citation" rather than blocking the block.
+ */
+async function verifyProblemNumbers(scope: FamilyScope, block: LessonBlockGenerated): Promise<LessonBlockGenerated> {
+  const cited = block.steps.flatMap((s) => s.sourceRefs).filter((r) => r.problemNumber != null);
+  if (cited.length === 0) return block;
+  const materialIds = [...new Set(cited.map((r) => r.materialId))];
+  let rows: { material_id: string; page: number; number: string }[] = [];
+  try {
+    const { data } = await scope
+      .select("material_problems", "material_id, page, number")
+      .in("material_id", materialIds)
+      .returns<{ material_id: string; page: number; number: string }[]>();
+    rows = data ?? [];
+  } catch (e) {
+    console.warn(`[lesson_generation] material_problems lookup failed, discarding all cited problemNumbers: ${(e as Error).message}`);
+  }
+  const valid = new Set(rows.map((r) => `${r.material_id}:${r.page}:${r.number.trim().toLowerCase()}`));
+  return {
+    ...block,
+    steps: block.steps.map((s) => ({
+      ...s,
+      sourceRefs: s.sourceRefs.map((r) => {
+        if (r.problemNumber == null) return r;
+        const key = `${r.materialId}:${r.page}:${r.problemNumber.trim().toLowerCase()}`;
+        if (valid.has(key)) return r;
+        console.warn(`[lesson_generation] discarded a problemNumber the model cited with no matching material_problems row: material=${r.materialId} page=${r.page} number=${r.problemNumber}`);
+        return { ...r, problemNumber: null };
+      }),
+    })),
+  } as LessonBlockGenerated;
+}
+
 function stepSummaryUk(step: GeneratedStep, i: number): string {
   if (step.type === "slide") return `${i + 1}. [slide] ${step.textUk}${step.exampleUk ? ` (приклад: ${step.exampleUk})` : ""}`;
   if (step.type === "choice") return `${i + 1}. [choice] ${step.questionUk} — варіанти: ${step.options.map((o) => o.textUk).join(" / ")}; правильна: ${step.correctOptionId}; пояснення: ${step.explanationUk}`;
@@ -165,6 +238,7 @@ async function generateDraft(
       ? input.allowedComponents.map((d) => `- ${d.key}: ${d.promptDoc}`).join("\n")
       : "(немає — не використовуй жодного інтерактивного компонента)",
     fragments: fragmentsForPrompt(input.fragments),
+    known_problems: knownProblemsForPrompt(input.knownProblems),
     plan_goal: plan.goalUk,
     plan_hook: plan.hookUk,
     plan_outcome: plan.visibleOutcomeUk,
@@ -256,7 +330,10 @@ export async function runPedagogicalPipeline(input: PipelineInput, hooks: Pipeli
     await hooks.onStage?.(iteration === 1 ? "generating" : "revising", iteration);
     const draft = await generateDraft(input, plan, revisionNotes, jobId);
     calls.push(draft.call);
-    block = draft.block;
+    // ADR-029 §1: the DB double-check runs BEFORE `lesson_review` sees the
+    // block, so the reviewer (and the saved block) only ever sees a
+    // problemNumber that genuinely exists in `material_problems`.
+    block = await verifyProblemNumbers(input.scope, draft.block);
     generationModel = draft.call.model;
 
     await hooks.onStage?.("reviewing", iteration);

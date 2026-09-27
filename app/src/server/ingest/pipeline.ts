@@ -29,6 +29,7 @@ import {
   buildStructureSchema,
   fillTemplate,
   mergeByTitle,
+  normalizeProblems,
   normalizeSections,
   splitPrompt,
   type PageText,
@@ -756,6 +757,22 @@ async function runStructure(job: JobRow): Promise<void> {
       await scope.upsert("material_topic_links", links.map((topic_id) => ({ material_id: materialId, topic_id, source: "ai" })), "material_id,topic_id");
     }
   }
+
+  // ADR-029 (US-2.8): problem numbers recognized by this SAME call — full
+  // delete+insert per material (no manual-correction UI, no external FK on
+  // `material_problems.id` — ADR-029 §2/Альтернативи, unlike sections/topics
+  // this never needs `mergeByTitle`-style identity-preservation).
+  await scope.delete("material_problems").eq("material_id", materialId);
+  const problems = normalizeProblems(answer, strategy, m.page_count ?? pages.size);
+  if (problems.length) {
+    const { error: probErr } = await scope.insert(
+      "material_problems",
+      problems.map((p) => ({ material_id: materialId, number: p.number, page: p.page })),
+    );
+    if (probErr) throw new Error(`material_problems insert failed: ${probErr.message}`);
+  }
+  const { error: assignProbErr } = await scope.client.rpc("assign_problem_structure", { p_family_id: familyId, p_material_id: materialId });
+  if (assignProbErr) throw new Error(`assign_problem_structure failed: ${assignProbErr.message}`);
 
   const { error: assignErr } = await scope.client.rpc("assign_chunk_structure", { p_family_id: familyId, p_material_id: materialId });
   if (assignErr) throw new Error(`assign_chunk_structure failed: ${assignErr.message}`);

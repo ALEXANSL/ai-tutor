@@ -68,6 +68,15 @@ function mockRoleQueue(queues: Record<string, unknown[]>) {
   });
 }
 
+// ADR-029: `verifyProblemNumbers` only ever touches `scope` when a step
+// actually cites a `problemNumber` — every fixture below leaves `sourceRefs`
+// with no `problemNumber`, so this fake never needs to answer a real query.
+const fakeScope = {
+  select: () => {
+    throw new Error("scope.select should not be called when no sourceRef cites a problemNumber");
+  },
+} as never;
+
 const baseInput = {
   familyId: "fam1",
   topicId: "topic1",
@@ -77,6 +86,8 @@ const baseInput = {
   fragments: [{ materialId: "m1", materialTitle: "Підручник математики", materialKind: "textbook", page: 12, text: "Дріб — це..." }],
   allowedComponents: [],
   recentTitles: [],
+  knownProblems: [],
+  scope: fakeScope,
 };
 
 describe("runPedagogicalPipeline (ADR-022)", () => {

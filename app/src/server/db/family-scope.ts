@@ -14,6 +14,7 @@ const FAMILY_COLUMN: Record<string, string> = {
   topics: "owner_family_id",
   topic_dependencies: "owner_family_id",
   material_topic_links: "owner_family_id",
+  material_problems: "owner_family_id",
   chunks: "owner_family_id",
   material_ocr_pages: "owner_family_id",
   library_items: "owner_family_id",

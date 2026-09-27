@@ -25,6 +25,11 @@ export function buildStructureSchema(kinds: string[], subjectCodes: string[]) {
     ),
     dependencies: z.array(z.object({ topic: z.string(), depends_on: z.string() })),
     related_topics: z.array(z.string()),
+    // ADR-029 (US-2.8): numbered textbook exercises/problems, recognized as
+    // part of this SAME one-per-book call (no separate AI call, КП-3) — a
+    // top-level array (not nested in sections/topics: problem numbering and
+    // section boundaries are different axes, per the ADR).
+    problems: z.array(z.object({ number: z.string().min(1).max(12), page: z.number().int().nullable() })).max(500),
   });
 }
 
@@ -130,6 +135,34 @@ export function normalizeSections(answer: Pick<StructureAnswer, "sections">, str
     }))
     .filter((s) => s.title);
   return fillRanges(sections, pageCount).map((s) => ({ ...s, topics: fillRanges(s.topics, s.page_to) }));
+}
+
+/**
+ * ADR-029 §1 (US-2.8): cleans the model's `problems` answer the same way
+ * `normalizeSections` cleans `sections` — gated on `strategy === "textbook"`
+ * (MVP scope, see the ADR's Альтернативи) and NEVER inventing a number: an
+ * empty/unparseable number, an out-of-range or missing page, or a number
+ * containing whitespace (a sure sign the model merged unrelated text) is
+ * silently dropped rather than guessed at (КП-2). Dedupes by
+ * `page:number.toLowerCase()` so the same exercise mentioned twice in the
+ * outline (e.g. both in a table of contents and on its own page) becomes one
+ * row, keeping the first-seen display casing.
+ */
+export function normalizeProblems(
+  answer: Pick<StructureAnswer, "problems">,
+  strategy: StructureStrategyKey,
+  pageCount: number,
+): { number: string; page: number }[] {
+  if (strategy !== "textbook") return [];
+  const seen = new Map<string, { number: string; page: number }>();
+  for (const p of answer.problems) {
+    const number = p.number.trim().slice(0, 12);
+    const page = clampPage(p.page, pageCount);
+    if (!number || page == null || /\s/.test(number)) continue;
+    const key = `${page}:${number.toLowerCase()}`;
+    if (!seen.has(key)) seen.set(key, { number, page });
+  }
+  return [...seen.values()];
 }
 
 export const titleKey = (t: string) =>

@@ -5,7 +5,7 @@ import { getLibraryWarmDailyBudgetUsd } from "@/server/env";
 import { narrowestTitleFor, type TitledRange } from "@/server/ingest/structure";
 import { notifyParent } from "@/server/notifications";
 import { validateComponentRef } from "./component-validator";
-import { LESSON_GENERATION_PROMPT_VERSION, runPedagogicalPipeline, type PipelineFragment, type PipelineHooks } from "./pipeline";
+import { LESSON_GENERATION_PROMPT_VERSION, runPedagogicalPipeline, type KnownProblem, type PipelineFragment, type PipelineHooks } from "./pipeline";
 import type { GeneratedStep } from "./schema";
 
 /** How many saved, *active* blocks of a topic we try to keep on hand (US-16.6: offer 2–3). */
@@ -20,6 +20,10 @@ export interface SourceRefView {
    * `null`/absent when the page falls outside every indexed range (or the
    * row predates this field) — always fall back to the page alone. */
   sectionTitle?: string | null;
+  /** ADR-029 (US-2.8): the exact textbook problem this step's example/exercise
+   * is drawn from, when the model cited one and it survived the server's
+   * `material_problems` double-check (`pipeline.ts`'s `verifyProblemNumbers`). */
+  problemNumber?: string | null;
 }
 export interface LibraryStepView {
   id: string;
@@ -165,6 +169,28 @@ export async function loadCandidates(scope: FamilyScope, topicId: string, limit:
   return data ?? [];
 }
 
+/**
+ * ADR-029 (US-2.8): the known problem numbers on exactly the pages these
+ * fragments cite — a pure data lookup against already-indexed
+ * `material_problems` (S1/ADR-029), never a new AI call. Restricting to the
+ * fragments' own `{materialId, page}` pairs (rather than every problem of
+ * the material) keeps the `lesson_generation` prompt's known-numbers list
+ * short and matched to what the model can actually see.
+ */
+async function loadKnownProblems(scope: FamilyScope, fragments: PipelineFragment[]): Promise<KnownProblem[]> {
+  const pairs = fragments.filter((f): f is PipelineFragment & { page: number } => f.page != null).map((f) => ({ materialId: f.materialId, page: f.page }));
+  const materialIds = [...new Set(pairs.map((p) => p.materialId))];
+  if (materialIds.length === 0) return [];
+  const wanted = new Set(pairs.map((p) => `${p.materialId}:${p.page}`));
+  const { data } = await scope
+    .select("material_problems", "material_id, page, number")
+    .in("material_id", materialIds)
+    .returns<{ material_id: string; page: number; number: string }[]>();
+  return (data ?? [])
+    .filter((r) => wanted.has(`${r.material_id}:${r.page}`))
+    .map((r) => ({ materialId: r.material_id, page: r.page, number: r.number }));
+}
+
 /** Shared by `generateOneBlock` and the BUG-011 safe fallback template. */
 async function loadTopicFragments(scope: FamilyScope, familyId: string, topicId: string, limit: number): Promise<PipelineFragment[]> {
   const { data: chunkRows } = await scope.client
@@ -218,8 +244,12 @@ export async function generateOneBlock(
     .limit(5)
     .returns<{ title: string }[]>();
   const recentTitles = (recentRows ?? []).map((r) => r.title);
+  const knownProblems = await loadKnownProblems(scope, fragments);
 
-  const pipeline = await runPedagogicalPipeline({ familyId, topicId, subjectName, grade, topicTitle, fragments, allowedComponents, recentTitles }, jobHooks);
+  const pipeline = await runPedagogicalPipeline(
+    { familyId, topicId, subjectName, grade, topicTitle, fragments, allowedComponents, recentTitles, knownProblems, scope },
+    jobHooks,
+  );
   const block = pipeline.block;
   await jobHooks?.onStage?.("saving");
 
