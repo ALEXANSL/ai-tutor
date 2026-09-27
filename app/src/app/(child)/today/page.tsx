@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { childTiles, sortedNav } from "@/core/registries/navigation";
+import { sourceTypes } from "@/core/registries/learning";
 import { uk } from "@/i18n/uk";
 import { registerAll } from "@/modules";
 import { requireChild } from "@/server/auth/guards";
 import type { CourseGroupRow, SubjectRow } from "@/server/db/types";
+import { listUnlinkedMaterials } from "@/server/materials/other";
 import { createUserClient } from "@/server/supabase/clients";
 
 registerAll();
@@ -22,15 +24,16 @@ const tileBase = "flex min-h-24 flex-col items-center justify-center rounded-2xl
  * group is inactive, is simply absent from the array, never a grey tile.
  */
 export default async function TodayPage() {
-  const { profile } = await requireChild();
+  const { ctx, profile } = await requireChild();
   const supabase = await createUserClient();
-  const [{ data: subjects }, { data: groups }] = await Promise.all([
+  const [{ data: subjects }, { data: groups }, otherMaterials] = await Promise.all([
     supabase
       .from("subjects")
       .select("id, code, name_uk, active, is_stub, sort_order, config, kind, group_id")
       .order("sort_order")
       .returns<SubjectRow[]>(),
     supabase.from("course_groups").select("id, owner_family_id, name_uk, active, sort_order").returns<CourseGroupRow[]>(),
+    listUnlinkedMaterials(ctx.familyId),
   ]);
   const groupById = new Map((groups ?? []).map((g) => [g.id, g]));
   const schoolSubjects = (subjects ?? []).filter((s) => s.kind === "school_subject");
@@ -135,6 +138,25 @@ export default async function TodayPage() {
                 ))}
               </div>
             </>
+          )}
+
+          {/* E-23 (US-23.1, D-105, ВП-56 "б"): collapsed/less-prominent block below the
+              main sections — not shown at all when empty (КП-7). */}
+          {otherMaterials.length > 0 && (
+            <details className="mt-5 rounded-2xl border border-line bg-surface-alt p-3.5">
+              <summary className="cursor-pointer text-sm font-bold">{t.otherTitle}</summary>
+              <p className="mt-1.5 mb-3 text-xs text-muted">{t.otherSubtitle}</p>
+              <div className="grid grid-cols-2 gap-2.5 min-[1200px]:grid-cols-3">
+                {otherMaterials.map((m) => (
+                  <Link key={m.id} href={`/material/${m.id}`} className={`${tileBase} border-secondary`}>
+                    <span className="mb-1.5 block text-2xl" aria-hidden="true">
+                      {sourceTypes.get(m.kind)?.icon ?? "📄"}
+                    </span>
+                    <b className="block text-[13px]">{m.title ?? m.name}</b>
+                  </Link>
+                ))}
+              </div>
+            </details>
           )}
         </aside>
       </main>

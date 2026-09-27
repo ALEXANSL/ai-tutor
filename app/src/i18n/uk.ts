@@ -137,6 +137,10 @@ export const uk = {
       coursesTitle: "Курси",
       coursesSubtitle: "Тато підготував для тебе окремі курси.",
       courseBadge: "курс",
+      // E-23 (US-23.1, D-105): collapsed, less-prominent block below the
+      // main sections (ВП-56 — "б", PO: «Згоден, поки так»).
+      otherTitle: "📄 Інше",
+      otherSubtitle: "Книги й матеріали, які тато додав окремо.",
     },
     subject: {
       // D-65: the child picks any topic of the textbook, not only the one
@@ -145,6 +149,18 @@ export const uk = {
       topicsSubtitle: "Обери тему, з якої почнемо:",
       priorityBadge: "Пріоритет",
       pages: (from: number, to: number) => (from === to ? `стор. ${from}` : `стор. ${from}–${to}`),
+    },
+    // E-23 (US-23.1, D-105): reading + chat screen for one "Інше" material.
+    material: {
+      back: "← До «Сьогодні»",
+      prev: "← Назад",
+      next: "Далі →",
+      pageOf: (k: number, n: number) => `Сторінка ${k} з ${n}`,
+      pageLabel: (page: number | null) => (page ? `стор. ${page}` : ""),
+      empty: "Цю книгу ще не проіндексовано.",
+      chatTitle: "Запитати про цю книгу",
+      chatPlaceholder: "Напиши своє питання про цю книгу…",
+      chatSend: "Надіслати",
     },
     soon: {
       creative: "Скоро тут будуть творчі завдання з відео-інструкціями",
