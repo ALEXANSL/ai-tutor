@@ -3,7 +3,7 @@ import { childTiles, sortedNav } from "@/core/registries/navigation";
 import { uk } from "@/i18n/uk";
 import { registerAll } from "@/modules";
 import { requireChild } from "@/server/auth/guards";
-import type { SubjectRow } from "@/server/db/types";
+import type { CourseGroupRow, SubjectRow } from "@/server/db/types";
 import { createUserClient } from "@/server/supabase/clients";
 
 registerAll();
@@ -14,15 +14,33 @@ const tileBase = "flex min-h-24 flex-col items-center justify-center rounded-2xl
  * "Today" (mockup 02): greeting by nickname, empty plan for now, subject
  * tiles from data (8 MVP subjects inactive until their slices, 2 stubs with a
  * "coming soon" screen — US-3.4) and the inactive modules tile (US-11.8 KP-3).
+ *
+ * E-22 (US-22.2 КП-5, ADR-030, VP-52): since kind was added to `subjects`,
+ * the list splits into school subjects (unchanged grey-tile behaviour below)
+ * and a new "Курси" section that only ever renders a course passing
+ * `active && (!group_id || group.active)` — an inactive course, or one whose
+ * group is inactive, is simply absent from the array, never a grey tile.
  */
 export default async function TodayPage() {
   const { profile } = await requireChild();
   const supabase = await createUserClient();
-  const { data: subjects } = await supabase
-    .from("subjects")
-    .select("id, code, name_uk, active, is_stub, sort_order, config")
-    .order("sort_order")
-    .returns<SubjectRow[]>();
+  const [{ data: subjects }, { data: groups }] = await Promise.all([
+    supabase
+      .from("subjects")
+      .select("id, code, name_uk, active, is_stub, sort_order, config, kind, group_id")
+      .order("sort_order")
+      .returns<SubjectRow[]>(),
+    supabase.from("course_groups").select("id, owner_family_id, name_uk, active, sort_order").returns<CourseGroupRow[]>(),
+  ]);
+  const groupById = new Map((groups ?? []).map((g) => [g.id, g]));
+  const schoolSubjects = (subjects ?? []).filter((s) => s.kind === "school_subject");
+  const courses = (subjects ?? [])
+    .filter((s) => s.kind === "course")
+    .filter((s) => {
+      const group = s.group_id ? groupById.get(s.group_id) : null;
+      const groupOk = !s.group_id || (group?.active ?? false);
+      return s.active && groupOk;
+    });
   const t = uk.child.today;
 
   return (
@@ -56,7 +74,7 @@ export default async function TodayPage() {
           <h2 className="mb-1 text-lg font-bold">{t.subjectsTitle}</h2>
           <p className="mb-3.5 text-sm text-muted">{t.subjectsSubtitle}</p>
           <div className="grid grid-cols-2 gap-2.5 min-[1200px]:grid-cols-3">
-            {(subjects ?? []).map((s) => {
+            {schoolSubjects.map((s) => {
               const label = (
                 <>
                   <span className="mb-1.5 block text-2xl" aria-hidden="true">
@@ -98,6 +116,26 @@ export default async function TodayPage() {
               </div>
             ))}
           </div>
+
+          {courses.length > 0 && (
+            <>
+              <h2 className="mt-5 mb-1 text-lg font-bold">{t.coursesTitle}</h2>
+              <p className="mb-3.5 text-sm text-muted">{t.coursesSubtitle}</p>
+              <div className="grid grid-cols-2 gap-2.5 min-[1200px]:grid-cols-3">
+                {courses.map((c) => (
+                  <Link key={c.id} href={`/subject/${c.id}`} className={`${tileBase} relative border-secondary`}>
+                    <span className="absolute top-1.5 right-1.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold text-primary">
+                      {t.courseBadge}
+                    </span>
+                    <span className="mb-1.5 block text-2xl" aria-hidden="true">
+                      {c.config.icon ?? "🧩"}
+                    </span>
+                    <b className="block text-[13px]">{c.config.shortNameUk ?? c.name_uk}</b>
+                  </Link>
+                ))}
+              </div>
+            </>
+          )}
         </aside>
       </main>
     </div>
