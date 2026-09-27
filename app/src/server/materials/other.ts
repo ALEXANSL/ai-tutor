@@ -69,6 +69,16 @@ export interface OtherMaterialDetail {
   title: string | null;
   kind: string;
   chunks: OtherMaterialChunkView[];
+  /**
+   * BUG report (D-105 follow-up): a scanned book can be `status = 'ready'`
+   * overall while some of its pages failed OCR (`material_ocr_pages.status =
+   * 'unreadable'`) — those pages produce no chunk at all (`chunkUnits` drops
+   * empty text), so the material looks fully indexed in "Мої книги"/"Інше"
+   * but the reader silently skips pages. Surfaced here so the reader can
+   * show a honest "some pages could not be recognised" note instead of
+   * looking broken.
+   */
+  partiallyIndexed: boolean;
 }
 
 /**
@@ -97,13 +107,14 @@ export async function getOtherMaterialDetail(familyId: string, materialId: strin
   const { data: link } = await scope.select("material_topic_links", "material_id").eq("material_id", materialId).limit(1).maybeSingle<{ material_id: string }>();
   if (link) return null;
 
-  const [{ data: chunks }, { data: sections }] = await Promise.all([
+  const [{ data: chunks }, { data: sections }, { count: unreadableCount }] = await Promise.all([
     scope
       .select("chunks", "id, section_id, page, text")
       .eq("material_id", materialId)
       .order("ordinal")
       .returns<{ id: string; section_id: string | null; page: number | null; text: string }[]>(),
     scope.select("material_sections", "id, title").eq("material_id", materialId).returns<{ id: string; title: string }[]>(),
+    scope.count("material_ocr_pages").eq("material_id", materialId).eq("status", "unreadable"),
   ]);
   const sectionTitleById = new Map((sections ?? []).map((s) => [s.id, s.title]));
 
@@ -112,11 +123,16 @@ export async function getOtherMaterialDetail(familyId: string, materialId: strin
     name: material.name,
     title: material.title,
     kind: material.kind,
-    chunks: (chunks ?? []).map((c) => ({
-      id: c.id,
-      sectionTitle: c.section_id ? (sectionTitleById.get(c.section_id) ?? null) : null,
-      page: c.page,
-      text: c.text,
-    })),
+    // Defensive: `chunkUnits` already drops empty-text units, but never
+    // render a blank-looking page if one ever slips through.
+    chunks: (chunks ?? [])
+      .filter((c) => c.text.trim().length > 0)
+      .map((c) => ({
+        id: c.id,
+        sectionTitle: c.section_id ? (sectionTitleById.get(c.section_id) ?? null) : null,
+        page: c.page,
+        text: c.text,
+      })),
+    partiallyIndexed: (unreadableCount ?? 0) > 0,
   };
 }

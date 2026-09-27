@@ -161,6 +161,10 @@ export const uk = {
       chatTitle: "Запитати про цю книгу",
       chatPlaceholder: "Напиши своє питання про цю книгу…",
       chatSend: "Надіслати",
+      jumpLabel: "Перейти до…",
+      jumpToSection: (title: string) => title,
+      jumpToPage: (page: number) => `Стор. ${page}`,
+      partiallyIndexed: "Деякі сторінки цієї книги не вдалося розпізнати — у тексті можуть бути пропуски.",
     },
     soon: {
       creative: "Скоро тут будуть творчі завдання з відео-інструкціями",
@@ -842,6 +846,8 @@ export const uk = {
         indexedAt: "Проіндексовано",
         driveName: "Файл у папці",
         saveTopic: "Зберегти тему",
+        ocrUnreadable: "Розпізнано не повністю",
+        ocrUnreadableValue: (n: number) => `${n} ${n === 1 ? "сторінку" : "сторінок"} не вдалося розпізнати — можливо, скан нечіткий.`,
       },
     },
     settings: {
