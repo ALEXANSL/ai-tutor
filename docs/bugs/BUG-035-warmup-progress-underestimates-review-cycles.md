@@ -2,7 +2,7 @@
 
 | Поле | Значення |
 |---|---|
-| Статус | **Open** |
+| Статус | **Fixed** |
 | Серйозність | Major (UX) — не ламає функціонал, але виглядає як баг і демотивує/лякає дитину/батька |
 | Пов'язано з | `app/src/components/lesson/LibraryWarmProgress.tsx`, `app/src/server/lessons/pipeline.ts` (`MAX_REVISIONS`), `app/src/server/lessons/warmup.ts` |
 
@@ -33,3 +33,12 @@ status=done, attempts=1, last_error=null
 
 ## Примітка
 Окремо: `runner.ts`'s retryable-failure path (рядки ~87-99) досі не робить `console.error` при кожній повторній спробі job — лише пише в `jobs.last_error`. Хоча в ЦЬОМУ конкретному випадку retry не траплявся, цей пробіл лишається реальним систематичним недоліком спостережуваності (майбутній retry-баг буде так само невидимий у Vercel-логах). Варто додати `console.error` і на retryable-гілку (не тільки на `onGiveUp`) — окремим дрібним фіксом, за нагоди, не обов'язково в цій ітерації.
+
+## Виправлення (developer)
+
+1. `LibraryWarmProgress.tsx`: прибрано обіцянку «~1 хвилину» — тепер `etaHint` = «Зазвичай це триває 1-3 хвилини, іноді трохи довше».
+2. Проведено (не пропущено — виявилось не надто глибоким): `PipelineHooks.onStage` (`pipeline.ts`) тепер приймає другий, опціональний аргумент `reviewPass` (номер поточного проходу generate→review, 1-based, з `iteration` циклу ревізій) на стадіях "generating"/"revising"/"reviewing". `warmup.ts`'s `setStage` пише його в `jobs.payload.reviewPass`; `WarmupProgress`/`checkWarmupProgressAction` прокидають його до клієнта. `LibraryWarmProgress` показує «Перевірка X з 3» (`stagePassLabel`, `uk.ts`) замість голого повтору «Перевіряємо якість»/«Допрацьовуємо», щойно `reviewPass` відомий.
+3. Після 90 секунд очікування показується додаткове заспокійливе повідомлення `slowWaitHint` («Ще трохи — перевіряємо, щоб урок був якісним 💛»), без зміни логіки конвеєра.
+4. `MAX_REVISIONS`/сам цикл ревізій у `pipeline.ts` не чіпались — лише додано (без зміни поведінки) експортовану константу `MAX_REVIEW_PASSES = MAX_REVISIONS + 1` для UI-лейблів.
+5. Додатково зроблено дрібний фікс з примітки вище: `runner.ts`'s retryable-failure гілка тепер також робить `console.error` (раніше — лише `onGiveUp`).
+6. `npm run typecheck`, `npm test` (658 passed), `npm run build` — усі пройшли.

@@ -188,6 +188,10 @@ export interface WarmupProgress {
   ready: boolean;
   /** `jobs.payload.stage` while not ready (planning/generating/reviewing/revising/saving). */
   stage: PipelineStage | null;
+  /** BUG-035: `jobs.payload.reviewPass` while not ready — the current
+   * generate→review pass (1-based), or `null` on stages that have no pass
+   * number (planning/saving). */
+  reviewPass: number | null;
   usedFallback: boolean;
   candidates: StartCandidate[];
 }
@@ -204,7 +208,7 @@ export async function checkWarmupProgress(familyId: string, sessionId: string): 
   if (!session) throw new Error("session not found");
   if (session.mode !== "warming") {
     // Already resolved (e.g. a second poll after the first one moved it on).
-    return { ready: true, stage: null, usedFallback: false, candidates: [] };
+    return { ready: true, stage: null, reviewPass: null, usedFallback: false, candidates: [] };
   }
 
   const scope = forFamily(familyId);
@@ -219,6 +223,7 @@ async function resolveWarmupProgress(familyId: string, scope: ReturnType<typeof 
     return {
       ready: true,
       stage: null,
+      reviewPass: null,
       usedFallback: false,
       candidates: activeBlocks.map((b) => ({ libraryItemId: b.id, title: b.title, estimatedMinutes: b.estimated_minutes })),
     };
@@ -226,7 +231,11 @@ async function resolveWarmupProgress(familyId: string, scope: ReturnType<typeof 
 
   const db = createServiceClient();
   const { data: job } = session.warm_job_id
-    ? await db.from("jobs").select("status, payload").eq("id", session.warm_job_id).maybeSingle<{ status: string; payload: { stage?: PipelineStage } }>()
+    ? await db
+        .from("jobs")
+        .select("status, payload")
+        .eq("id", session.warm_job_id)
+        .maybeSingle<{ status: string; payload: { stage?: PipelineStage; reviewPass?: number | null } }>()
     : { data: null };
 
   if (!job || job.status === "failed" || job.status === "done") {
@@ -243,12 +252,19 @@ async function resolveWarmupProgress(familyId: string, scope: ReturnType<typeof 
     return {
       ready: true,
       stage: null,
+      reviewPass: null,
       usedFallback: true,
       candidates: [{ libraryItemId: fallback.id, title: fallback.title, estimatedMinutes: fallback.estimatedMinutes }],
     };
   }
 
-  return { ready: false, stage: job.payload?.stage ?? "planning", usedFallback: false, candidates: [] };
+  return {
+    ready: false,
+    stage: job.payload?.stage ?? "planning",
+    reviewPass: job.payload?.reviewPass ?? null,
+    usedFallback: false,
+    candidates: [],
+  };
 }
 
 /**

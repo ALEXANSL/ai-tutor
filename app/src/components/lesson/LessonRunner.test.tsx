@@ -16,14 +16,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * on the first block (`currentBlockOrder` <= 1, the default), shown once a
  * `continueAfterBlockAction` resolves to a new block ("advance").
  */
+const routerPush = vi.fn();
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: () => {}, push: () => {}, replace: () => {} }),
+  useRouter: () => ({ refresh: () => {}, push: (...a: unknown[]) => routerPush(...a), replace: () => {} }),
 }));
 
 const getPreviousModuleAction = vi.fn();
 const goToPreviousStepAction = vi.fn();
 const continueAfterBlockAction = vi.fn();
 const submitStepAnswerAction = vi.fn();
+const pauseLessonAction = vi.fn().mockResolvedValue(undefined);
 vi.mock("@/app/actions/lesson", () => ({
   acknowledgeSlideAction: vi.fn(),
   askTopicChatAction: vi.fn(),
@@ -31,7 +33,7 @@ vi.mock("@/app/actions/lesson", () => ({
   explainStepAction: vi.fn().mockResolvedValue({ status: "error" }),
   getPreviousModuleAction: (...a: unknown[]) => getPreviousModuleAction(...a),
   goToPreviousStepAction: (...a: unknown[]) => goToPreviousStepAction(...a),
-  pauseLessonAction: vi.fn().mockResolvedValue(undefined),
+  pauseLessonAction: (...a: unknown[]) => pauseLessonAction(...a),
   setPresentationModeAction: vi.fn().mockResolvedValue(undefined),
   skipLessonBreakAction: vi.fn(),
   submitBlockFeedbackAction: vi.fn(),
@@ -75,6 +77,9 @@ afterEach(() => {
   goToPreviousStepAction.mockReset();
   continueAfterBlockAction.mockReset();
   submitStepAnswerAction.mockReset();
+  pauseLessonAction.mockClear();
+  pauseLessonAction.mockResolvedValue(undefined);
+  routerPush.mockClear();
 });
 
 function renderRunner(currentBlockOrder?: number, activeStep: TestStep = step) {
@@ -264,5 +269,71 @@ describe("BUG-031: «Далі» on the block-complete screen actually advances t
     expect(el.textContent).not.toContain("Блок завершено!");
     expect(el.textContent).not.toContain("Готуємо наступний крок…");
     expect(el.textContent).toContain("Новий блок, крок 1");
+  });
+});
+
+/**
+ * BUG-034: the block-complete screen used to have exactly one control —
+ * "Далі" — which went `disabled` while `continueAfterBlockAction` was
+ * in flight (BUG-031), leaving no way off the screen at all for the 1-5
+ * minutes a real on-demand generation can take. "Вийти з уроку" must be
+ * present and clickable the whole time, and must navigate away WITHOUT
+ * waiting for that in-flight promise to ever resolve.
+ */
+describe("BUG-034: «Вийти з уроку» on the block-complete screen always works, even mid-generation", () => {
+  const choiceStep = {
+    stepId: "step-1",
+    type: "choice",
+    content: { questionUk: "2 + 2 = ?", options: [{ id: "a", textUk: "4" }] },
+    visual: {},
+    sourceRefs: [],
+    stepNumber: 1,
+    totalSteps: 1,
+  };
+
+  it("stays clickable and navigates to /today while «Далі» is still busy/disabled", async () => {
+    submitStepAnswerAction.mockResolvedValue({
+      verdict: "correct",
+      explanation: "",
+      formatChangeSuggested: false,
+      next: { kind: "block_complete", libraryItemId: "item-1", visibleOutcomeUk: null },
+    });
+    const el = renderRunner(1, choiceStep);
+
+    await act(async () => {
+      findButtonByText(el, "4")!.click();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(el.textContent).toContain("Блок завершено!");
+
+    // A deferred, never-resolved-in-this-test promise reproduces the real
+    // multi-minute on-demand generation deterministically.
+    continueAfterBlockAction.mockReturnValue(new Promise(() => {}));
+    const continueButton = findButtonByText(el, "Далі")!;
+    await act(async () => {
+      continueButton.click();
+      await Promise.resolve();
+    });
+
+    // "Далі" is now busy/disabled (BUG-031) — the exit link must still be
+    // there and enabled regardless.
+    expect(findButtonByText(el, "Далі")).toBeNull();
+    const exitButton = findButtonByText(el, "Вийти з уроку");
+    expect(exitButton).not.toBeNull();
+    expect(exitButton!.disabled).toBe(false);
+
+    await act(async () => {
+      exitButton!.click();
+      // Deliberately not awaiting/resolving `continueAfterBlockAction`'s
+      // promise at all — the exit must not wait on it.
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(pauseLessonAction).toHaveBeenCalledWith("s1", "manual_exit");
+    expect(routerPush).toHaveBeenCalledWith("/today");
   });
 });

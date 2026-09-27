@@ -88,6 +88,13 @@ export async function runJobs(opts: { budgetMs?: number; maxJobs?: number } = {}
       const message = (e as Error)?.message?.slice(0, 500) ?? "error";
       const retryable = handler.isRetryable ? handler.isRetryable(e) : true;
       if (retryable && job.attempts < job.max_attempts) {
+        // BUG-035 (noted, not the bug itself): this branch used to only
+        // write `jobs.last_error`, never `console.error` — a retryable
+        // failure was invisible in server logs until every attempt was
+        // exhausted (`onGiveUp`, below, already logs). Log it here too so a
+        // future retry storm is diagnosable from logs, not just from a
+        // `public.jobs` query.
+        console.error(`job ${job.id} (${job.type}) failed, will retry: ${message}`);
         await db
           .from("jobs")
           .update({

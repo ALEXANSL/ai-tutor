@@ -23,9 +23,20 @@ type Stage = (typeof STAGE_ORDER)[number];
  * so this ADR's work does not collide with the parallel US-6.16 navigation
  * slice editing those files.
  */
+// BUG-035: total generate→review passes possible (first pass + up to 2
+// revisions) — mirrors `MAX_REVIEW_PASSES` in `pipeline.ts` (server-only, so
+// not importable directly from this client component; kept in sync by hand,
+// same as `STAGE_ORDER` already is with `PipelineStage`).
+const MAX_REVIEW_PASSES = 3;
+// A real wait can run 3+ AI-call passes and take several minutes — after
+// this long, add a reassuring note (without touching the pipeline itself).
+const SLOW_WAIT_MS = 90_000;
+
 export function LibraryWarmProgress({ sessionId }: { sessionId: string }) {
   const router = useRouter();
   const [stage, setStage] = useState<Stage>("planning");
+  const [reviewPass, setReviewPass] = useState<number | null>(null);
+  const [slowWait, setSlowWait] = useState(false);
   const cancelledRef = useRef(false);
 
   useEffect(() => {
@@ -43,6 +54,7 @@ export function LibraryWarmProgress({ sessionId }: { sessionId: string }) {
         if (result.stage && (STAGE_ORDER as readonly string[]).includes(result.stage)) {
           setStage(result.stage as Stage);
         }
+        setReviewPass(result.reviewPass ?? null);
       }
       timer = setTimeout(poll, POLL_MS);
     }
@@ -56,12 +68,21 @@ export function LibraryWarmProgress({ sessionId }: { sessionId: string }) {
     };
   }, [sessionId, router]);
 
+  useEffect(() => {
+    const id = setTimeout(() => setSlowWait(true), SLOW_WAIT_MS);
+    return () => clearTimeout(id);
+  }, []);
+
   const t = uk.child.lesson.warmup;
+  // BUG-035: "Перевірка X з N" on the passes that actually have a pass
+  // number, instead of just repeating the bare stage label — makes the
+  // repeated generating/reviewing/revising loop read as a bounded,
+  // step-by-step quality check rather than the app looping/being stuck.
   const stageLabels: Record<Stage, string> = {
     planning: t.stagePlanning,
-    generating: t.stageGenerating,
-    reviewing: t.stageReviewing,
-    revising: t.stageRevising,
+    generating: reviewPass ? t.stagePassLabel(reviewPass, MAX_REVIEW_PASSES) : t.stageGenerating,
+    reviewing: reviewPass ? t.stagePassLabel(reviewPass, MAX_REVIEW_PASSES) : t.stageReviewing,
+    revising: reviewPass ? t.stagePassLabel(reviewPass, MAX_REVIEW_PASSES) : t.stageRevising,
     saving: t.stageSaving,
   };
   const activeIndex = Math.max(0, STAGE_ORDER.indexOf(stage));
@@ -87,6 +108,11 @@ export function LibraryWarmProgress({ sessionId }: { sessionId: string }) {
             </li>
           ))}
         </ol>
+        {slowWait && (
+          <p className="mt-4 text-sm text-text-muted" role="status">
+            {t.slowWaitHint}
+          </p>
+        )}
       </ChildCard>
     </div>
   );

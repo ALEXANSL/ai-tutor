@@ -2,7 +2,7 @@
 
 | Поле | Значення |
 |---|---|
-| Статус | **Open** |
+| Статус | **Fixed** |
 | Серйозність | **Critical** — дитина залишається сам на сам з екраном, який виглядає зламаним, без жодної дії |
 | Пов'язано з | `app/src/components/lesson/LessonRunner.tsx` (`BlockCompleteScreen`, рядки ~878-934), `continueAfterBlockAction` → `app/src/server/lessons/orchestrator.ts` (`continueAfterBlock` → `nextSessionBlock` → генерація блоку на льоту) |
 | Пов'язано з | BUG-031 (busy-стан кнопки — цей баг є прямим продовженням: тест BUG-031 перевіряв лише швидкий deferred-then-resolved сценарій, не реально довгу/зависаючу генерацію) |
@@ -34,3 +34,11 @@ from public.jobs where type = 'library.warm_topic' order by updated_at desc limi
 2. Якщо очікування (`busy`) триває понад ~15 секунд, показати дружнє повідомлення для дитини замість голого «Готуємо наступний крок…» (текст додати в `app/src/i18n/uk.ts`).
 3. Тест: розширити `LessonRunner.test.tsx` (де вже є тест BUG-031 з відкладеним промісом) — перевірити, що кнопка/посилання виходу присутня й клікабельна, поки `onContinue`-проміс ще не вирішився (не чекаючи на нього), і веде на `/today`.
 4. Прогнати `npm run typecheck`, `npm test`, `npm run build` перед комітом.
+
+## Виправлення (developer)
+
+1. `BlockCompleteScreen` (`LessonRunner.tsx`) тепер отримує проп `onExit`, переданий з `LessonRunner` як уже наявний `exitLesson` (`pauseLessonAction(sessionId, "manual_exit")` → `router.push("/today")`, без підтвердження). Кнопка «Вийти з уроку» рендериться поряд із «Далі», **не залежить від `busy`** (ніколи не `disabled`) і не чекає на проміс `onContinue`/`continueAfterBlockAction` — клік одразу запускає власний, окремий виклик `pauseLessonAction`, і навігація на `/today` відбувається незалежно від того, чи встиг вирішитись раніше запущений `continueAfterBlockAction` (сесія на бекенді вже в стані `paused`, наступний вхід підхопить її коректно).
+2. Додано `blockContinueSlowHint` (`app/src/i18n/uk.ts`) — якщо `busy` триває ≥15 секунд (`setTimeout` усередині `BlockCompleteScreen`), під кнопкою з'являється дружнє пояснення замість самого лише «Готуємо наступний крок…» на кнопці.
+3. Пункт 3 із завдання ("той самий покроковий індикатор, що й `LibraryWarmProgress`") — не робився в цій ітерації, лишається поза обсягом (синхронний виклик, не job-черга); екран так і показує лише busy-лейбл + дружнє пояснення після 15с, без покрокового індикатора.
+4. Тест: `LessonRunner.test.tsx`, новий блок `describe("BUG-034: ...")` — деферить `continueAfterBlockAction` назавжди (`new Promise(() => {})`), клікає «Вийти з уроку» поки «Далі» ще `disabled`/busy, і перевіряє `pauseLessonAction("s1", "manual_exit")` + `router.push("/today")` — без очікування вирішення того промісу.
+5. `npm run typecheck`, `npm test` (658 passed), `npm run build` — усі пройшли.

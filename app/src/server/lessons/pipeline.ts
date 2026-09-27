@@ -23,6 +23,10 @@ export const LESSON_PLAN_PROMPT_VERSION = "lesson_planning.v1";
 export const LESSON_GENERATION_PROMPT_VERSION = "lesson_generation.v2"; // v2: hook/outcome/techniques + plan input (D-55)
 export const LESSON_REVIEW_PROMPT_VERSION = "lesson_review.v1";
 export const MAX_REVISIONS = 2;
+/** Total generate→review passes possible (first pass + up to `MAX_REVISIONS`
+ * revisions) — used to show the child an honest "Перевірка X з N" counter
+ * (BUG-035) instead of a bare, repeating stage label. */
+export const MAX_REVIEW_PASSES = MAX_REVISIONS + 1;
 
 /** ADR-023 §Частина 1.6: the child-facing progress stages, in order. */
 export type PipelineStage = "planning" | "generating" | "reviewing" | "revising" | "saving";
@@ -35,10 +39,15 @@ export type PipelineStage = "planning" | "generating" | "reviewing" | "revising"
  * something better to show than a static "Готуємо урок…" (D-76). Both
  * fields are optional: a run started outside a job (e.g. `nextSessionBlock`,
  * mid-session — out of ADR-023's scope, unchanged) simply omits them.
+ *
+ * `onStage`'s second argument (BUG-035) is the current generate→review pass
+ * number (1-based, out of `MAX_REVIEW_PASSES`), passed on "generating",
+ * "revising" and "reviewing" — omitted on "planning"/"saving", which have no
+ * pass number.
  */
 export interface PipelineHooks {
   jobId?: string;
-  onStage?(stage: PipelineStage): Promise<void>;
+  onStage?(stage: PipelineStage, reviewPass?: number): Promise<void>;
 }
 
 let planPromptCache: { system: string; user: string } | null = null;
@@ -244,13 +253,13 @@ export async function runPedagogicalPipeline(input: PipelineInput, hooks: Pipeli
   let status: PipelineResult["status"] = "needs_review";
 
   for (let iteration = 1; iteration <= MAX_REVISIONS + 1; iteration++) {
-    await hooks.onStage?.(iteration === 1 ? "generating" : "revising");
+    await hooks.onStage?.(iteration === 1 ? "generating" : "revising", iteration);
     const draft = await generateDraft(input, plan, revisionNotes, jobId);
     calls.push(draft.call);
     block = draft.block;
     generationModel = draft.call.model;
 
-    await hooks.onStage?.("reviewing");
+    await hooks.onStage?.("reviewing", iteration);
     let reviewed: { review: ReviewOutput; call: PipelineCallLog };
     try {
       reviewed = await reviewDraft(input, plan, block, jobId);
