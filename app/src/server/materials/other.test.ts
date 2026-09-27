@@ -35,6 +35,9 @@ function chain(table: string, result: unknown, calls: Call[]) {
     limit: () => self,
     maybeSingle: () => Promise.resolve({ data: Array.isArray(result) ? (result[0] ?? null) : result }),
     returns: () => Promise.resolve({ data: result }),
+    // `count()` queries are awaited directly (no `.returns()`), so the chain
+    // itself must be thenable, resolving to `{ count }`.
+    then: (resolve: (v: { count: number }) => void) => resolve({ count: typeof result === "number" ? result : 0 }),
   };
   return self;
 }
@@ -51,6 +54,7 @@ function makeScope(materialsResult: unknown, linksResult: unknown, calls: Call[]
       if (table === "material_topic_links") return chain(table, linksResult, calls);
       return chain(table, [], calls);
     },
+    count: (table: string) => chain(table, 0, calls),
   };
 }
 
@@ -102,10 +106,38 @@ describe("getOtherMaterialDetail (US-23.1 КП-2, КП-3, КП-6)", () => {
         if (table === "material_sections") return chain(table, [{ id: "s1", title: "Розділ 1" }], calls);
         return chain(table, [], calls);
       },
+      count: (table: string) => chain(table, 0, calls),
     };
     const detail = await getOtherMaterialDetail("fam1", "m1");
 
     expect(detail?.chunks).toEqual([{ id: "c1", sectionTitle: "Розділ 1", page: 12, text: "Розділ 1 текст" }]);
+    expect(detail?.partiallyIndexed).toBe(false);
+  });
+
+  it("BUG report follow-up: drops empty/whitespace-only chunks defensively and flags partiallyIndexed when some scanned pages failed OCR", async () => {
+    const calls: Call[] = [];
+    scope = {
+      select: (table: string) => {
+        if (table === "materials") return chain(table, readyMaterial, calls);
+        if (table === "material_topic_links") return chain(table, null, calls);
+        if (table === "chunks")
+          return chain(
+            table,
+            [
+              { id: "c1", section_id: null, page: 1, text: "Текст першої сторінки" },
+              { id: "c2", section_id: null, page: 2, text: "   " },
+            ],
+            calls,
+          );
+        if (table === "material_sections") return chain(table, [], calls);
+        return chain(table, [], calls);
+      },
+      count: (table: string) => chain(table, table === "material_ocr_pages" ? 3 : 0, calls),
+    };
+    const detail = await getOtherMaterialDetail("fam1", "m1");
+
+    expect(detail?.chunks).toEqual([{ id: "c1", sectionTitle: null, page: 1, text: "Текст першої сторінки" }]);
+    expect(detail?.partiallyIndexed).toBe(true);
   });
 
   it("КП-2/КП-6: a material that has since been linked to a topic, attached to a subject, or is textbook/not-ready/toggled-off -> null (404 for the caller)", async () => {
@@ -116,21 +148,25 @@ describe("getOtherMaterialDetail (US-23.1 КП-2, КП-3, КП-6)", () => {
         if (table === "material_topic_links") return chain(table, { material_id: "m1" }, calls); // now linked
         return chain(table, [], calls);
       },
+      count: (table: string) => chain(table, 0, calls),
     };
     expect(await getOtherMaterialDetail("fam1", "m1")).toBeNull();
 
     scope = {
       select: (table: string) => chain(table, table === "materials" ? { ...readyMaterial, kind: "textbook" } : null, calls),
+      count: (table: string) => chain(table, 0, calls),
     };
     expect(await getOtherMaterialDetail("fam1", "m1")).toBeNull();
 
     scope = {
       select: (table: string) => chain(table, table === "materials" ? { ...readyMaterial, use_in_lessons: false } : null, calls),
+      count: (table: string) => chain(table, 0, calls),
     };
     expect(await getOtherMaterialDetail("fam1", "m1")).toBeNull();
 
     scope = {
       select: (table: string) => chain(table, table === "materials" ? { ...readyMaterial, subject_id: "subj1" } : null, calls),
+      count: (table: string) => chain(table, 0, calls),
     };
     expect(await getOtherMaterialDetail("fam1", "m1")).toBeNull();
   });

@@ -23,5 +23,13 @@ export default async function ChildMaterialPage({ params }: { params: Promise<{ 
   const materialTitle = detail.title ?? detail.name;
   const { messages } = await listMaterialChatMessages(ctx.familyId, profile.id, detail.id);
 
-  return <MaterialReadScreen materialId={detail.id} materialTitle={materialTitle} chunks={detail.chunks} initialMessages={messages} />;
+  return (
+    <MaterialReadScreen
+      materialId={detail.id}
+      materialTitle={materialTitle}
+      chunks={detail.chunks}
+      initialMessages={messages}
+      partiallyIndexed={detail.partiallyIndexed}
+    />
+  );
 }

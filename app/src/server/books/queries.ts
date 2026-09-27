@@ -21,6 +21,32 @@ export interface BookListItem {
   ocrEstimatedCostUsd: number | null;
 }
 
+export interface BookDetail extends BookListItem {
+  provenance: string | null;
+  grade: number | null;
+  indexedAt: string | null;
+  kindManual: boolean;
+  subjectManual: boolean;
+  topicsManual: boolean;
+  sections: {
+    id: string;
+    title: string;
+    pageFrom: number | null;
+    pageTo: number | null;
+    topics: { id: string; title: string; pageFrom: number | null; pageTo: number | null; manual: boolean }[];
+  }[];
+  linkedTopicIds: string[];
+  /**
+   * BUG report follow-up (D-105): a scan can end up `status = 'ready'` while
+   * some of its pages failed OCR (`material_ocr_pages.status = 'unreadable'`)
+   * — those pages are silently missing from `chunks` (no blank page, just a
+   * gap), which can look like "not really indexed" even though the status
+   * badge says ready. 0 when the book was never scanned or every page was
+   * recognised.
+   */
+  ocrUnreadableCount: number;
+}
+
 export interface SubjectOption {
   id: string;
   code: string;
@@ -99,23 +125,6 @@ export async function listSubjects(familyId: string): Promise<SubjectOption[]> {
   return (data ?? []).map((s) => ({ id: s.id, code: s.code, name: s.name_uk }));
 }
 
-export interface BookDetail extends BookListItem {
-  provenance: string | null;
-  grade: number | null;
-  indexedAt: string | null;
-  kindManual: boolean;
-  subjectManual: boolean;
-  topicsManual: boolean;
-  sections: {
-    id: string;
-    title: string;
-    pageFrom: number | null;
-    pageTo: number | null;
-    topics: { id: string; title: string; pageFrom: number | null; pageTo: number | null; manual: boolean }[];
-  }[];
-  linkedTopicIds: string[];
-}
-
 export async function getBook(familyId: string, id: string): Promise<BookDetail | null> {
   const scope = forFamily(familyId);
   const { data: m } = await scope
@@ -132,7 +141,7 @@ export async function getBook(familyId: string, id: string): Promise<BookDetail 
       }
     >();
   if (!m) return null;
-  const [{ data: sections }, { data: topics }, { data: links }, costs] = await Promise.all([
+  const [{ data: sections }, { data: topics }, { data: links }, costs, { count: ocrUnreadableCount }] = await Promise.all([
     scope
       .select("material_sections", "id, title, page_from, page_to, sort_order")
       .eq("material_id", id)
@@ -147,6 +156,7 @@ export async function getBook(familyId: string, id: string): Promise<BookDetail 
       >(),
     scope.select("material_topic_links", "topic_id").eq("material_id", id).returns<{ topic_id: string }[]>(),
     costsFor(familyId, [id]),
+    scope.count("material_ocr_pages").eq("material_id", id).eq("status", "unreadable"),
   ]);
   const topicList = topics ?? [];
   const mapTopic = (t: (typeof topicList)[number]) => ({
@@ -175,6 +185,7 @@ export async function getBook(familyId: string, id: string): Promise<BookDetail 
     topicsManual: m.topics_manual,
     sections: sectionList,
     linkedTopicIds: (links ?? []).map((l) => l.topic_id),
+    ocrUnreadableCount: ocrUnreadableCount ?? 0,
   };
 }
 

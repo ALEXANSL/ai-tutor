@@ -70,6 +70,7 @@ export default async function BookPage({ params }: { params: Promise<{ id: strin
               [d.grade, book.grade ? String(book.grade) : "—"],
               [d.cost, book.costUsd > 0 ? t.cost(book.costUsd.toFixed(3)) : "—"],
               [d.indexedAt, book.indexedAt ? dateFmt.format(new Date(book.indexedAt)) : "—"],
+              ...(book.ocrUnreadableCount > 0 ? [[d.ocrUnreadable, d.ocrUnreadableValue(book.ocrUnreadableCount)]] : []),
             ].map(([k, v]) => (
               <div key={k} className="flex justify-between gap-3 border-b border-p-line py-2.5 last:border-b-0">
                 <dt className="text-p-muted">{k}</dt>
