@@ -32,7 +32,7 @@ test.describe("Background tick endpoint (ADR-015)", () => {
   });
 });
 
-/** ADR-024: the OAuth connector and the streaming upload endpoint are parent-only, same as every "Мої книги" screen. */
+/** ADR-024/BUG-033: the OAuth connector and both resumable-upload endpoints (open session / confirm) are parent-only, same as every "Мої книги" screen. */
 test.describe("Google Drive upload connector without a session (NFR-PRIV-4, ADR-024)", () => {
   test("/api/google/drive/connect sends the visitor to the login screen", async ({ request }) => {
     const res = await request.get("/api/google/drive/connect", { maxRedirects: 0 });
@@ -46,11 +46,21 @@ test.describe("Google Drive upload connector without a session (NFR-PRIV-4, ADR-
     expect(res.headers()["location"] ?? "").toMatch(/\/login/);
   });
 
-  test("POST /api/parent/books/upload sends the visitor to the login screen (no session, no secret leaked)", async ({ request }) => {
+  test("POST /api/parent/books/upload (open a resumable session) sends the visitor to the login screen (no session, no secret leaked)", async ({ request }) => {
     const res = await request.post("/api/parent/books/upload", {
       maxRedirects: 0,
-      headers: { "content-type": "application/pdf", "x-file-name": "book.pdf" },
-      data: Buffer.from("not a real pdf"),
+      headers: { "content-type": "application/json" },
+      data: { fileName: "book.pdf", mimeType: "application/pdf", size: 1234 },
+    });
+    expect([303, 307, 308]).toContain(res.status());
+    expect(res.headers()["location"] ?? "").toMatch(/\/login/);
+  });
+
+  test("POST /api/parent/books/upload/complete sends the visitor to the login screen (no session, no secret leaked)", async ({ request }) => {
+    const res = await request.post("/api/parent/books/upload/complete", {
+      maxRedirects: 0,
+      headers: { "content-type": "application/json" },
+      data: { driveFileId: "NotARealDriveFileId0123" },
     });
     expect([303, 307, 308]).toContain(res.status());
     expect(res.headers()["location"] ?? "").toMatch(/\/login/);

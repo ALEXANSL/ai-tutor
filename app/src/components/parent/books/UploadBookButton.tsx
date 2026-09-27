@@ -8,11 +8,17 @@ import { MAX_UPLOAD_BYTES } from "@/lib/upload-limits";
 type UploadErrorCode = "too_large" | "unsupported_type" | "not_configured" | "failed";
 
 /**
- * "Завантажити файл" (ADR-024, US-2.7 КП-5): sends the raw file straight as
- * the request body (no multipart/FormData) so the browser streams it from
- * disk instead of loading it into JS memory first, matching the server's
- * own streaming upload. Practical limit ≈ 50 MB — checked client-side first
- * for instant feedback, and always enforced again on the server.
+ * "Завантажити файл" (ADR-024, BUG-033): the file bytes never go through our
+ * server — Vercel Serverless Functions reject any request body over ~4.5 MB
+ * at the platform level, well under the app's 50 MB product limit, so
+ * streaming the file to our own API route (the previous approach) could
+ * never actually work. Instead:
+ *   1. ask our server (JSON only, no file) to open a Google Drive resumable
+ *      upload session and hand back its short-lived session URI;
+ *   2. `PUT` the file straight to that URI, browser → googleapis.com
+ *      directly, which is what bypasses Vercel's limit;
+ *   3. tell our server (JSON only, just the resulting Drive file id) that
+ *      the upload is done, so it can queue indexing as before.
  */
 export function UploadBookButton({ enabled }: { enabled: boolean }) {
   const t = uk.parent.books.upload;
@@ -27,16 +33,38 @@ export function UploadBookButton({ enabled }: { enabled: boolean }) {
     }
     setState({ status: "pending" });
     try {
-      const res = await fetch("/api/parent/books/upload", {
+      const initRes = await fetch("/api/parent/books/upload", {
         method: "POST",
-        headers: {
-          "content-type": file.type || "application/octet-stream",
-          "x-file-name": encodeURIComponent(file.name),
-        },
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ fileName: file.name, mimeType: file.type || "application/octet-stream", size: file.size }),
+      });
+      if (!initRes.ok) {
+        const body = (await initRes.json().catch(() => null)) as { error?: UploadErrorCode } | null;
+        setState({ status: "error", message: messageFor(body?.error) });
+        return;
+      }
+      const { sessionUrl } = (await initRes.json()) as { sessionUrl: string };
+
+      // Direct browser → Google Drive PUT: never touches our server, so
+      // Vercel's request-body limit does not apply here.
+      const putRes = await fetch(sessionUrl, {
+        method: "PUT",
+        headers: { "content-type": file.type || "application/octet-stream" },
         body: file,
       });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: UploadErrorCode } | null;
+      if (!putRes.ok) {
+        setState({ status: "error", message: putRes.status === 413 ? t.tooLarge : t.failed });
+        return;
+      }
+      const uploaded = (await putRes.json()) as { id: string };
+
+      const completeRes = await fetch("/api/parent/books/upload/complete", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ driveFileId: uploaded.id }),
+      });
+      if (!completeRes.ok) {
+        const body = (await completeRes.json().catch(() => null)) as { error?: UploadErrorCode } | null;
         setState({ status: "error", message: messageFor(body?.error) });
         return;
       }

@@ -1,7 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DriveError } from "./google";
-import { boundedUploadStream, MAX_UPLOAD_BYTES, sanitizeFileName, uploadBookFromBrowser } from "./upload";
+import { confirmUpload, initResumableUpload, MAX_UPLOAD_BYTES, sanitizeFileName } from "./upload";
 
+// `getUserAccessToken` reads the family's refresh token through
+// `createServiceClient().rpc(...)` (Supabase) — mocked here so these tests
+// exercise only the Drive HTTP calls this module is responsible for,
+// without needing a real Supabase connection.
+vi.mock("../supabase/clients", () => ({
+  createServiceClient: () => ({
+    rpc: async () => ({ data: "refresh-token-123", error: null }),
+  }),
+}));
 const ORIGINAL = {
   clientId: process.env.GOOGLE_OAUTH_CLIENT_ID,
   clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET,
@@ -28,76 +37,18 @@ describe("sanitizeFileName", () => {
 });
 
 /**
- * BUG-003, mirrored for the opposite direction (browser → server → Drive):
- * the request body must never be buffered whole before the size check.
+ * BUG-033: the fix for the 413/platform-body-limit bug is that no file bytes
+ * ever pass through `initResumableUpload` — it is a metadata-only POST to
+ * Drive's resumable-session endpoint. These tests assert exactly that: the
+ * options object never carries a body/stream, and validation rejects a bad
+ * request before any Drive call happens at all.
  */
-describe("boundedUploadStream — aborts a streamed upload once MAX_UPLOAD_BYTES is exceeded, without buffering the whole file", () => {
-  it("passes small chunks through untouched", async () => {
-    const chunks = [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5])];
-    let i = 0;
-    const input = new ReadableStream<Uint8Array>({
-      pull(controller) {
-        if (i < chunks.length) controller.enqueue(chunks[i++]!);
-        else controller.close();
-      },
-    });
-    const { stream, tooLarge } = boundedUploadStream(input, MAX_UPLOAD_BYTES);
-    const reader = stream.getReader();
-    const out: Uint8Array[] = [];
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      out.push(value);
-    }
-    expect(out).toEqual(chunks);
-    expect(tooLarge()).toBe(false);
-  });
-
-  it("errors the stream and cancels the reader as soon as the byte count crosses the limit", async () => {
-    const chunkSize = 10 * 1024 * 1024; // "10 MB" chunks — only byteLength is real, no data allocated.
-    let reads = 0;
-    let cancelled = false;
-    const input = {
-      getReader: () => ({
-        read: vi.fn(async () => {
-          reads += 1;
-          return { done: false, value: { byteLength: chunkSize } };
-        }),
-        cancel: vi.fn(async () => {
-          cancelled = true;
-        }),
-      }),
-    } as unknown as ReadableStream<Uint8Array>;
-
-    const { stream, tooLarge } = boundedUploadStream(input, MAX_UPLOAD_BYTES);
-    const reader = stream.getReader();
-    await expect(async () => {
-      for (;;) {
-        const { done } = await reader.read();
-        if (done) break;
-      }
-    }).rejects.toThrow();
-    expect(tooLarge()).toBe(true);
-    expect(cancelled).toBe(true);
-    expect(reads).toBeLessThanOrEqual(Math.ceil(MAX_UPLOAD_BYTES / chunkSize) + 1);
-  });
-});
-
-function emptyBody(): ReadableStream<Uint8Array> {
-  return new ReadableStream({
-    start(controller) {
-      controller.close();
-    },
-  });
-}
-
-describe("uploadBookFromBrowser — validation before any Drive call", () => {
+describe("initResumableUpload — validation before any Drive call", () => {
   it("rejects an unsupported file type without ever calling fetch", async () => {
     const fetchImpl = vi.fn();
     await expect(
-      uploadBookFromBrowser({
+      initResumableUpload({
         familyId: "f1",
-        body: emptyBody(),
         fileName: "notes.docx",
         mimeType: "application/msword",
         declaredSize: 100,
@@ -110,9 +61,8 @@ describe("uploadBookFromBrowser — validation before any Drive call", () => {
   it("rejects a declared size over the limit without calling fetch", async () => {
     const fetchImpl = vi.fn();
     await expect(
-      uploadBookFromBrowser({
+      initResumableUpload({
         familyId: "f1",
-        body: emptyBody(),
         fileName: "book.pdf",
         mimeType: "application/pdf",
         declaredSize: MAX_UPLOAD_BYTES + 1,
@@ -126,9 +76,8 @@ describe("uploadBookFromBrowser — validation before any Drive call", () => {
     delete process.env.GOOGLE_DRIVE_UPLOADS_FOLDER_ID;
     const fetchImpl = vi.fn();
     await expect(
-      uploadBookFromBrowser({
+      initResumableUpload({
         familyId: "f1",
-        body: emptyBody(),
         fileName: "book.pdf",
         mimeType: "application/pdf",
         declaredSize: 100,
@@ -144,15 +93,115 @@ describe("uploadBookFromBrowser — validation before any Drive call", () => {
     delete process.env.GOOGLE_OAUTH_CLIENT_SECRET;
     const fetchImpl = vi.fn();
     await expect(
-      uploadBookFromBrowser({
+      initResumableUpload({
         familyId: "f1",
-        body: emptyBody(),
         fileName: "book.pdf",
         mimeType: "application/pdf",
         declaredSize: 100,
         fetchImpl: fetchImpl as never,
       }),
     ).rejects.toMatchObject({ code: "not_configured" });
+  });
+
+  it("returns the Drive-provided session URI from the Location header, sending only JSON metadata (no file bytes)", async () => {
+    process.env.GOOGLE_DRIVE_UPLOADS_FOLDER_ID = "UploadsFolderPlaceholder01";
+    process.env.GOOGLE_OAUTH_CLIENT_ID = "client-id";
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET = "client-secret";
+    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("oauth2.googleapis.com")) {
+        return new Response(JSON.stringify({ access_token: "tok", expires_in: 3600 }), { status: 200 });
+      }
+      void init;
+      return new Response(null, { status: 200, headers: { location: "https://googleapis.com/upload/session/abc" } });
+    });
+    const session = await initResumableUpload({
+      familyId: "f1",
+      fileName: "book.pdf",
+      mimeType: "application/pdf",
+      declaredSize: 100,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(session.sessionUrl).toBe("https://googleapis.com/upload/session/abc");
+    // The Drive-session-open call must carry only JSON metadata, never a stream/binary body.
+    const driveCall = fetchImpl.mock.calls.find(([url]) => String(url).includes("/upload/drive/v3/files"));
+    expect(driveCall).toBeDefined();
+    const [, init] = driveCall as [string, RequestInit];
+    expect(typeof init.body).toBe("string");
+    expect(JSON.parse(init.body as string)).toMatchObject({ name: "book.pdf", parents: ["UploadsFolderPlaceholder01"] });
+  });
+});
+
+describe("confirmUpload — re-fetches metadata from Drive, never trusts the client", () => {
+  function fetchImplFor(fileMeta: Record<string, unknown>) {
+    return vi.fn(async (url: string) => {
+      if (String(url).includes("oauth2.googleapis.com")) {
+        return new Response(JSON.stringify({ access_token: "tok", expires_in: 3600 }), { status: 200 });
+      }
+      return new Response(JSON.stringify(fileMeta), { status: 200 });
+    });
+  }
+
+  it("rejects a file that is not in the family's uploads folder (confused-deputy guard)", async () => {
+    process.env.GOOGLE_DRIVE_UPLOADS_FOLDER_ID = "UploadsFolderPlaceholder01";
+    process.env.GOOGLE_OAUTH_CLIENT_ID = "client-id";
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET = "client-secret";
+    const fetchImpl = fetchImplFor({
+      id: "UploadedFile0001234",
+      name: "book.pdf",
+      mimeType: "application/pdf",
+      parents: ["SomeOtherFolder"],
+    });
+    await expect(
+      confirmUpload({ familyId: "f1", driveFileId: "UploadedFile0001234", fetchImpl: fetchImpl as unknown as typeof fetch }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+  });
+
+  it("rejects an unsupported file type reported by Drive", async () => {
+    process.env.GOOGLE_DRIVE_UPLOADS_FOLDER_ID = "UploadsFolderPlaceholder01";
+    process.env.GOOGLE_OAUTH_CLIENT_ID = "client-id";
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET = "client-secret";
+    const fetchImpl = fetchImplFor({
+      id: "UploadedFile0001234",
+      name: "notes.docx",
+      mimeType: "application/msword",
+      parents: ["UploadsFolderPlaceholder01"],
+    });
+    await expect(
+      confirmUpload({ familyId: "f1", driveFileId: "UploadedFile0001234", fetchImpl: fetchImpl as unknown as typeof fetch }),
+    ).rejects.toMatchObject({ code: "unsupported_type" });
+  });
+
+  it("rejects a file whose real (Drive-reported) size is over the product limit, even though the platform allows more", async () => {
+    process.env.GOOGLE_DRIVE_UPLOADS_FOLDER_ID = "UploadsFolderPlaceholder01";
+    process.env.GOOGLE_OAUTH_CLIENT_ID = "client-id";
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET = "client-secret";
+    const fetchImpl = fetchImplFor({
+      id: "UploadedFile0001234",
+      name: "book.pdf",
+      mimeType: "application/pdf",
+      parents: ["UploadsFolderPlaceholder01"],
+      size: String(MAX_UPLOAD_BYTES + 1),
+    });
+    await expect(
+      confirmUpload({ familyId: "f1", driveFileId: "UploadedFile0001234", fetchImpl: fetchImpl as unknown as typeof fetch }),
+    ).rejects.toMatchObject({ code: "too_large" });
+  });
+
+  it("returns the uploaded file's metadata once it passes every check", async () => {
+    process.env.GOOGLE_DRIVE_UPLOADS_FOLDER_ID = "UploadsFolderPlaceholder01";
+    process.env.GOOGLE_OAUTH_CLIENT_ID = "client-id";
+    process.env.GOOGLE_OAUTH_CLIENT_SECRET = "client-secret";
+    const fetchImpl = fetchImplFor({
+      id: "UploadedFile0001234",
+      name: "book.pdf",
+      mimeType: "application/pdf",
+      parents: ["UploadsFolderPlaceholder01"],
+      size: "1234",
+      modifiedTime: "2026-09-27T00:00:00Z",
+      md5Checksum: "abc",
+    });
+    const file = await confirmUpload({ familyId: "f1", driveFileId: "UploadedFile0001234", fetchImpl: fetchImpl as unknown as typeof fetch });
+    expect(file).toMatchObject({ id: "UploadedFile0001234", name: "book.pdf", format: "pdf", size: 1234 });
   });
 });
 
