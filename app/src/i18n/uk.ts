@@ -236,6 +236,10 @@ export const uk = {
       prevModuleTitle: "Попередній блок (перегляд)",
       prevModuleBody: "Це те, що ти вже пройшла — тут нічого не можна відповідати, лише переглянути.",
       prevModuleClose: "Закрити й повернутись до уроку",
+      // BUG-029: `getPreviousModuleAction` returns `null` when there is no
+      // earlier block yet (e.g. the very first block of a lesson) — shown
+      // instead of the modal so the button never looks like it "does nothing".
+      prevModuleNone: "Це перший блок уроку — попереднього поки немає.",
       // US-6.16 КП-5, ADR-025: the "🔊 Вголос / 🤖 Авто / 🔤 Текстом" switch (docs/04 §5.2).
       speechModeCaption: "Озвучка:",
       speechModeVoice: "Вголос",

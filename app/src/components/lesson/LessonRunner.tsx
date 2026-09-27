@@ -53,6 +53,7 @@ export function LessonRunner({
   idleHintS,
   idlePauseS,
   presentationMode: initialPresentationMode,
+  currentBlockOrder: initialCurrentBlockOrder,
 }: {
   sessionId: string;
   subjectId: string;
@@ -61,6 +62,14 @@ export function LessonRunner({
   idleHintS: number;
   idlePauseS: number;
   presentationMode: PresentationMode;
+  /**
+   * BUG-029: 1-based position of the session's active block
+   * (`lesson_sessions.current_block_order`), used only to show/hide "⬅️
+   * Попередній модуль" (КП-2 has no previous block until this is >= 2).
+   * Optional so existing tests/callers that don't care about that button
+   * keep compiling; defaults to 1 ("no previous block yet") when omitted.
+   */
+  currentBlockOrder?: number;
 }) {
   // BUG-017: `uk.child.lesson` (and, transitively, `sourceRef`/`stepOf`,
   // which are functions) must be imported directly here rather than
@@ -94,6 +103,15 @@ export function LessonRunner({
   const [presentationMode, setPresentationModeState] = useState<PresentationMode>(initialPresentationMode);
   const [prevModule, setPrevModule] = useState<Awaited<ReturnType<typeof getPreviousModuleAction>>>(null);
   const [prevModuleBusy, setPrevModuleBusy] = useState(false);
+  // BUG-029: shown when a click resolves to `null` (no previous block yet)
+  // instead of leaving the child staring at a button that visibly did nothing.
+  const [prevModuleEmpty, setPrevModuleEmpty] = useState(false);
+  // BUG-029: block transitions (`continueAfterBlockAction`, below) happen
+  // entirely client-side via `setStep` — the server-rendered
+  // `currentBlockOrder` prop is only ever the value from the *initial* page
+  // load, so it is tracked here and bumped locally each time a new block
+  // starts, rather than read directly on every render.
+  const [blockOrder, setBlockOrder] = useState(initialCurrentBlockOrder ?? 1);
   const [explainBusy, setExplainBusy] = useState(false);
   const chatRef = useRef<TopicChatHandle>(null);
   const lastInteractionRef = useRef<number>(0);
@@ -148,8 +166,14 @@ export function LessonRunner({
   // no AI call, current step/progress untouched.
   const navPrevModule = useCallback(() => {
     setPrevModuleBusy(true);
+    setPrevModuleEmpty(false);
     getPreviousModuleAction(sessionId)
-      .then((view) => setPrevModule(view))
+      .then((view) => {
+        if (view) setPrevModule(view);
+        // BUG-029: `null` (no previous block yet) used to render nothing —
+        // the button looked broken. Show the friendly explanation instead.
+        else setPrevModuleEmpty(true);
+      })
       .finally(() => setPrevModuleBusy(false));
   }, [sessionId]);
 
@@ -351,6 +375,11 @@ export function LessonRunner({
           continueAfterBlockAction(sessionId)
             .then((next) => {
               setBlockComplete(null);
+              // BUG-029: this is the one place a *new* block actually
+              // starts (client-side, no page reload) — bump the counter
+              // that drives "⬅️ Попередній модуль"'s visibility here, not on
+              // every ordinary step-to-step `goToNext`.
+              if (next.kind === "advance") setBlockOrder((o) => o + 1);
               goToNext(next);
             })
             .catch(() => router.refresh())
@@ -430,8 +459,11 @@ export function LessonRunner({
         <button type="button" onClick={navSubjectList} disabled={busy} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-60">
           {t.navSubjectList}
         </button>
-        {/* КП-2: hidden on the very first block — nothing to go back to. */}
-        {step.stepNumber >= 1 && (
+        {/* КП-2: hidden on the very first block — nothing to go back to.
+            BUG-029: this used to read `step.stepNumber >= 1`, which is the
+            step-within-the-current-block index (always >= 1 for any step,
+            in any block) — the button was never actually hidden. */}
+        {blockOrder > 1 && (
           <button
             type="button"
             onClick={navPrevModule}
@@ -471,6 +503,21 @@ export function LessonRunner({
 
       {prevModule && (
         <PreviousModuleModal view={prevModule} labels={t} onClose={() => setPrevModule(null)} />
+      )}
+
+      {/* BUG-029: friendly feedback for the `null` ("no previous block yet")
+          case — replaces what used to be silent nothing. */}
+      {prevModuleEmpty && (
+        <div className="mb-4 rounded-[22px] border-2 border-dashed border-secondary bg-surface p-4.5" role="status">
+          <p className="mb-3 text-sm font-bold text-secondary">{t.prevModuleNone}</p>
+          <button
+            type="button"
+            onClick={() => setPrevModuleEmpty(false)}
+            className="inline-flex min-h-11 items-center justify-center rounded-2xl bg-primary px-5 text-sm font-bold text-white"
+          >
+            {t.prevModuleClose}
+          </button>
+        </div>
       )}
 
       {presentationMode === "voice" && (

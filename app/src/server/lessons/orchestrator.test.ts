@@ -119,7 +119,8 @@ vi.mock("@/server/safety/moderate", () => ({ moderateMessage: (...a: unknown[]) 
 const recordSafetyEvent = vi.fn().mockResolvedValue({ flagged: false, urgent: false, eventId: null });
 vi.mock("@/server/safety/events", () => ({ recordSafetyEvent: (...a: unknown[]) => recordSafetyEvent(...a) }));
 
-const { chooseStartBlock, continueAfterBlock, pauseLessonSession, resumeLessonSession, startLessonSession, submitStepAnswer } = await import("./orchestrator");
+const { chooseStartBlock, continueAfterBlock, getPreviousModuleView, pauseLessonSession, resumeLessonSession, startLessonSession, submitStepAnswer } =
+  await import("./orchestrator");
 
 function resetScope() {
   scopeState.tables = {};
@@ -765,5 +766,59 @@ describe("pauseLessonSession — BUG-020 ('Вийти з уроку' preserves r
 
     expect(result.step?.stepId).toBe("st1");
     expect(result.reminder).toBeNull();
+  });
+});
+
+/**
+ * BUG-029 item 2: traces the REAL >=2-block path end to end
+ * (`activateBlock` -> `session_blocks.sort_order` -> `getPreviousModuleView`)
+ * rather than only reading the code, per the bug's own instruction. This
+ * reproduces `activateBlock`'s actual writes (`sort_order: current_block_
+ * order + 1`, then `current_block_order` bumped to that same value — see
+ * `orchestrator.ts`) so the fixture is not just "whatever makes the assertion
+ * pass".
+ */
+describe("getPreviousModuleView (US-6.16 КП-2, BUG-029)", () => {
+  it("on the session's 2nd block (current_block_order: 2), returns the 1st block's (sort_order: 1) content read-only", async () => {
+    resetScope();
+    scopeState.tables = {
+      lesson_sessions: { id: "s1", current_block_order: 2 },
+      session_blocks: [
+        { session_id: "s1", sort_order: 1, library_item_id: "A" },
+        { session_id: "s1", sort_order: 2, library_item_id: "B" },
+      ],
+    };
+    loadLibraryItem.mockResolvedValue({
+      id: "A",
+      title: "Блок A",
+      estimatedMinutes: 7,
+      visibleOutcomeUk: null,
+      steps: [{ id: "st1", sortOrder: 0, type: "slide", content: { textUk: "Текст блоку A" }, visual: {}, sourceRefs: [] }],
+    });
+
+    const view = await getPreviousModuleView("fam1", "s1");
+
+    expect(loadLibraryItem).toHaveBeenCalledWith("fam1", "A");
+    expect(view).toEqual({ libraryItemId: "A", title: "Блок A", steps: [{ type: "slide", content: { textUk: "Текст блоку A" } }] });
+  });
+
+  it("on the session's 1st block (current_block_order: 1), returns null without querying session_blocks at all", async () => {
+    resetScope();
+    scopeState.tables = { lesson_sessions: { id: "s1", current_block_order: 1 } };
+
+    const view = await getPreviousModuleView("fam1", "s1");
+
+    expect(view).toBeNull();
+    expect(loadLibraryItem).not.toHaveBeenCalled();
+  });
+
+  it("returns null (not a throw) if the expected session_blocks row is somehow missing", async () => {
+    resetScope();
+    scopeState.tables = { lesson_sessions: { id: "s1", current_block_order: 2 }, session_blocks: [] };
+
+    const view = await getPreviousModuleView("fam1", "s1");
+
+    expect(view).toBeNull();
+    expect(loadLibraryItem).not.toHaveBeenCalled();
   });
 });

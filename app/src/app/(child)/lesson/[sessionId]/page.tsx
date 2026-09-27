@@ -77,6 +77,7 @@ export default async function LessonPage({ params }: { params: Promise<{ session
         idleHintS={child?.idle_hint_s ?? 60}
         idlePauseS={child?.idle_pause_s ?? 180}
         presentationMode={session.presentation_mode as "voice" | "auto" | "text"}
+        currentBlockOrder={session.current_block_order}
       />
     </div>
   );
