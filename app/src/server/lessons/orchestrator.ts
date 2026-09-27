@@ -337,21 +337,43 @@ function stepView(item: LibraryItemView, step: LibraryStepView, stepNumber: numb
 export async function getLessonView(
   familyId: string,
   sessionId: string,
-): Promise<{ session: SessionRow; step: LessonStepView | null }> {
+): Promise<{ session: SessionRow; step: LessonStepView | null; remediation: { explanationUk: string } | null }> {
   const session = await loadSession(familyId, sessionId);
   if (!session) throw new Error("session not found");
-  if (!session.current_step_id) return { session, step: null };
-  const { data: blockRow } = await forFamily(familyId)
+  if (!session.current_step_id) return { session, step: null, remediation: null };
+  const scope = forFamily(familyId);
+  const { data: blockRow } = await scope
     .select("session_blocks", "library_item_id")
     .eq("session_id", sessionId)
     .eq("sort_order", session.current_block_order)
     .maybeSingle<{ library_item_id: string }>();
-  if (!blockRow) return { session, step: null };
+  if (!blockRow) return { session, step: null, remediation: null };
   const item = await loadLibraryItem(familyId, blockRow.library_item_id);
-  if (!item) return { session, step: null };
+  if (!item) return { session, step: null, remediation: null };
   const idx = item.steps.findIndex((s) => s.id === session.current_step_id);
-  if (idx < 0) return { session, step: null };
-  return { session, step: stepView(item, item.steps[idx]!, idx + 1) };
+  if (idx < 0) return { session, step: null, remediation: null };
+  const libStep = item.steps[idx]!;
+
+  // ADR-028 §2: reconstruct "are we mid-remediation" from `step_attempts`
+  // alone on every reload/resume (`current_step_id` never records it) —
+  // the exact same predicate `submitStepAnswer` computes.
+  const { data: attemptRows } = await scope
+    .select("step_attempts", "verdict, attempt_no, remediation")
+    .eq("session_id", sessionId)
+    .eq("step_id", libStep.id)
+    .order("attempt_no")
+    .returns<{ verdict: Verdict; attempt_no: number; remediation: RemediationCache | null }[]>();
+  const attempts = attemptRows ?? [];
+  const cache = isRemediationRetryAttempt(attempts) ? attempts[0]!.remediation : null;
+  if (cache) {
+    const effective = effectiveStepForRemediation(libStep, cache);
+    return {
+      session,
+      step: { stepId: libStep.id, type: libStep.type, content: effective.content, visual: effective.visual, sourceRefs: libStep.sourceRefs, stepNumber: idx + 1, totalSteps: item.steps.length },
+      remediation: { explanationUk: cache.explanationUk },
+    };
+  }
+  return { session, step: stepView(item, libStep, idx + 1), remediation: null };
 }
 
 const evalVerdictSchema = z.object({ verdict: z.enum(["correct", "partial", "incorrect"]), explanationUk: z.string().min(1).max(300) });
@@ -542,6 +564,197 @@ export const OPEN_ANSWER_EVALUATION_SYSTEM_UK = [
   "другорядного пояснювального нюансу.",
 ].join(" ");
 
+/**
+ * ADR-028 §2 (US-6.15): cached, on `step_attempts.remediation`, only for the
+ * attempt that STARTS the "explain -> reinforce" cycle (attempt 1,
+ * non-correct, step has remediation content) — makes the cycle idempotent
+ * across a reload/resume (and for `open` steps, avoids ever calling the
+ * live model twice for the same wrong attempt).
+ */
+export interface RemediationCache {
+  explanationUk: string;
+  /** Index into `content.remediation.retryVariants` — always 0 in the MVP
+   * (ВП-35: exactly one cycle), kept as an index rather than a hard-coded 0
+   * so a future multi-pass-through-the-library rotation (out of this ADR's
+   * scope) has somewhere to write a different value without a new column. */
+  retryVariantIndex: number;
+  source: "cached" | "live";
+  /** `interactive` steps only: the deterministically regenerated `props`
+   * for the retry — cached (not just recomputed from `seed` again) so a
+   * reload shows literally the same retry, not a fresh call to `regenerate`
+   * that *should* be identical but is never assumed to be. */
+  retryProps?: Record<string, unknown>;
+}
+
+/**
+ * ADR-028 §1: does this step carry remediation content at all? A step
+ * generated before this ADR (or an interactive component with no
+ * `regenerate()`) has none — the caller degrades to today's plain
+ * `alt_explanation` retry, unchanged (ВП-37).
+ */
+function stepHasRemediationContent(step: LibraryStepView): boolean {
+  if (step.type === "choice") {
+    const options = (step.content.options as { misconceptionUk?: string }[] | undefined) ?? [];
+    const variants = (step.content.remediation as { retryVariants?: unknown[] } | undefined)?.retryVariants ?? [];
+    return variants.length > 0 && options.some((o) => !!o.misconceptionUk);
+  }
+  if (step.type === "open") {
+    const variants = (step.content.remediation as { retryVariants?: unknown[] } | undefined)?.retryVariants ?? [];
+    return variants.length > 0;
+  }
+  if (step.type === "interactive") {
+    const hasRetry = !!(step.visual.remediation as { hasRetry?: boolean } | undefined)?.hasRetry;
+    const def = getLessonComponent(step.visual.component as string);
+    return hasRetry && !!def?.regenerate;
+  }
+  return false;
+}
+
+/**
+ * ADR-028 §2: the SAME predicate `decideBranch` already uses to count
+ * consecutive failures — "is this the 2nd attempt of a still-active,
+ * 1-cycle remediation loop" is read directly off `step_attempts`, not a new
+ * field (docs/adr/028… §2: "remediationActive(session, step) :=
+ * count(step_attempts)==1 AND that attempt's verdict != correct").
+ */
+function isRemediationRetryAttempt(priorAttemptsOnStep: { verdict: Verdict }[]): boolean {
+  return priorAttemptsOnStep.length === 1 && priorAttemptsOnStep[0]!.verdict !== "correct";
+}
+
+/** Swaps in the cached retry variant/props for evaluating (or displaying) attempt 2 of a remediation cycle. */
+function effectiveStepForRemediation(step: LibraryStepView, cache: RemediationCache): LibraryStepView {
+  if (step.type === "choice" || step.type === "open") {
+    const variants = (step.content.remediation as { retryVariants?: Record<string, unknown>[] } | undefined)?.retryVariants ?? [];
+    const variant = variants[cache.retryVariantIndex];
+    return variant ? { ...step, content: variant } : step;
+  }
+  if (step.type === "interactive" && cache.retryProps) {
+    return { ...step, visual: { ...step.visual, props: cache.retryProps } };
+  }
+  return step;
+}
+
+/** Where a step sits in its block right now — needed to build the `retryStep` view returned inline (same stepId, ADR-028 §4). */
+async function currentStepPosition(familyId: string, session: SessionRow, stepId: string): Promise<{ stepNumber: number; totalSteps: number } | null> {
+  const scope = forFamily(familyId);
+  const { data: blockRow } = await scope
+    .select("session_blocks", "library_item_id")
+    .eq("session_id", session.id)
+    .eq("sort_order", session.current_block_order)
+    .maybeSingle<{ library_item_id: string }>();
+  if (!blockRow) return null;
+  const item = await loadLibraryItem(familyId, blockRow.library_item_id);
+  if (!item) return null;
+  const idx = item.steps.findIndex((s) => s.id === stepId);
+  return idx < 0 ? null : { stepNumber: idx + 1, totalSteps: item.steps.length };
+}
+
+const remediationExplanationSchema = z.object({ explanationUk: z.string().min(1).max(300) });
+
+/**
+ * ADR-028 §5 (D-77/78, ADR-023 Part 2 speed tier): "step_reinforcement"
+ * (Sonnet 5, scaffolded by ADR-023/S27) — the ONLY case in this whole cycle
+ * that needs a genuinely live call: an `open` step's wrong free-text answer
+ * can't be pre-cached (КП-1 needs the concrete reason for THIS answer, not
+ * a template). One call, no synchronous `lesson_review` in this path.
+ */
+export const REMEDIATION_EXPLANATION_SYSTEM_UK =
+  "Поясни дитині ОДНИМ-двома реченнями, у чому саме конкретна помилка в її відповіді на це питання уроку — " +
+  "тепло, доброзичливо, без осуду і без загальних фраз на кшталт «спробуй ще раз» чи «майже» — назви ЩО САМЕ " +
+  "не так (яке правило застосовано невірно, яка частина відповіді розходиться з очікуваною).";
+
+async function liveOpenRemediationExplanation(
+  familyId: string,
+  sessionId: string,
+  step: LibraryStepView,
+  childAnswerText: string,
+): Promise<string | null> {
+  try {
+    const res = await callStructured(
+      "step_reinforcement",
+      {
+        system: `${safetyPreambleGenericUk()}\n\n${REMEDIATION_EXPLANATION_SYSTEM_UK}`,
+        prompt: `Питання: ${step.content.questionUk}\nЕталон (орієнтовно): ${step.content.expectedAnswerUk}\nРубрика: ${step.content.rubricUk}\nВідповідь дитини: ${childAnswerText}`,
+        schema: remediationExplanationSchema,
+      },
+      { familyId, sessionId },
+    );
+    return res.result.explanationUk;
+  } catch {
+    // Never blocks the lesson: the caller degrades to no remediation swap —
+    // same as an older step with no remediation content at all (ВП-37).
+    return null;
+  }
+}
+
+/**
+ * ADR-028 §2: builds the remediation package for the attempt that STARTS
+ * the cycle (first non-correct attempt at a step carrying remediation
+ * content). `choice`/`interactive` are zero-AI-call (cached/deterministic,
+ * D-77/78); `open` makes exactly the one live call above. Returns `null`
+ * when the step has no usable remediation content for the answer actually
+ * given — the caller falls back to today's plain retry (ВП-37), never
+ * throws or blocks the lesson.
+ */
+async function buildRemediation(
+  familyId: string,
+  sessionId: string,
+  step: LibraryStepView,
+  answer: unknown,
+): Promise<{ cache: RemediationCache; explanationUk: string } | null> {
+  if (step.type === "choice") {
+    const chosenOptionId = (answer as { optionId?: string } | null)?.optionId ?? null;
+    const options = (step.content.options as { id: string; misconceptionUk?: string }[] | undefined) ?? [];
+    const variants = (step.content.remediation as { retryVariants?: unknown[] } | undefined)?.retryVariants ?? [];
+    const chosen = options.find((o) => o.id === chosenOptionId);
+    if (!chosen?.misconceptionUk || variants.length === 0) return null;
+    return { cache: { explanationUk: chosen.misconceptionUk, retryVariantIndex: 0, source: "cached" }, explanationUk: chosen.misconceptionUk };
+  }
+  if (step.type === "open") {
+    const variants = (step.content.remediation as { retryVariants?: unknown[] } | undefined)?.retryVariants ?? [];
+    if (variants.length === 0) return null;
+    const openText = typeof (answer as { text?: unknown } | null)?.text === "string" ? (answer as { text: string }).text : String(answer ?? "");
+    const explanationUk = await liveOpenRemediationExplanation(familyId, sessionId, step, openText);
+    if (!explanationUk) return null;
+    return { cache: { explanationUk, retryVariantIndex: 0, source: "live" }, explanationUk };
+  }
+  if (step.type === "interactive") {
+    const hasRetry = !!(step.visual.remediation as { hasRetry?: boolean } | undefined)?.hasRetry;
+    const def = getLessonComponent(step.visual.component as string);
+    if (!hasRetry || !def?.regenerate) return null;
+    const verdict = def.evaluate(step.visual.props as never, answer as never);
+    const explanationUk = def.describe(step.visual.props as never, verdict);
+    const seed = `${sessionId}:${step.id}:2`;
+    const retryProps = def.regenerate(step.visual.props as never, seed) as Record<string, unknown>;
+    return { cache: { explanationUk, retryVariantIndex: 0, source: "cached", retryProps }, explanationUk };
+  }
+  return null;
+}
+
+/**
+ * ADR-028 §2 КП-3: the soft fallback answer-reveal shown once the cycle's
+ * one reinforcement attempt has ALSO failed — assembled with zero AI calls
+ * from fields the ORIGINAL step already carries (never the retry variant).
+ */
+function buildFallbackText(step: LibraryStepView): string | null {
+  if (step.type === "choice") {
+    const options = (step.content.options as { id: string; textUk: string }[] | undefined) ?? [];
+    const correct = options.find((o) => o.id === step.content.correctOptionId);
+    if (!correct) return null;
+    const explanationUk = String(step.content.explanationUk ?? "");
+    return explanationUk ? `${correct.textUk} — ${explanationUk}` : correct.textUk;
+  }
+  if (step.type === "open") {
+    const expected = String(step.content.expectedAnswerUk ?? "");
+    return expected || null;
+  }
+  if (step.type === "interactive") {
+    const text = String(step.visual.fallback_text ?? "");
+    return text || null;
+  }
+  return null;
+}
+
 async function evaluateAnswer(
   familyId: string,
   sessionId: string,
@@ -590,6 +803,21 @@ export interface AnswerResult {
   verdict: Verdict;
   explanation: string;
   formatChangeSuggested: boolean;
+  /**
+   * ADR-028/US-6.15: set exactly when this attempt started (or, on an
+   * idempotent replay, re-shows) the "explain -> reinforce" cycle.
+   * `retryStep` is rendered INLINE in place of the current step's own
+   * content/visual (same `stepId`, `stepNumber`/`totalSteps` unchanged) —
+   * never a modal, never a new step — so the nav rail/pause/BUG-013
+   * override all keep working completely unmodified (ADR-028 §4).
+   */
+  remediation: { explanationUk: string; retryStep: LessonStepView } | null;
+  /**
+   * ADR-028/US-6.15 КП-3: set when the cycle's one reinforcement attempt
+   * ALSO failed — the soft answer-reveal, shown once before the lesson
+   * moves on (`next` below is already the following step/block).
+   */
+  fallback: { textUk: string } | null;
   next:
     | { kind: "retry_step" }
     | { kind: "advance"; step: LessonStepView | null }
@@ -615,7 +843,10 @@ export async function submitStepAnswer(
   const session = await loadSession(familyId, sessionId);
   if (!session || session.current_step_id !== stepId) throw new Error("stale step — reload the session");
 
-  const { data: existing } = await scope.select("step_attempts", "*").eq("idempotency_key", idempotencyKey).maybeSingle<{ verdict: Verdict }>();
+  const { data: existing } = await scope
+    .select("step_attempts", "*")
+    .eq("idempotency_key", idempotencyKey)
+    .maybeSingle<{ verdict: Verdict; remediation: RemediationCache | null }>();
   const { data: stepRow } = await scope
     .select("library_steps", "id, type, content, visual, source_refs")
     .eq("id", stepId)
@@ -624,13 +855,20 @@ export async function submitStepAnswer(
   const step: LibraryStepView = { id: stepRow.id, sortOrder: 0, type: stepRow.type, content: stepRow.content, visual: stepRow.visual, sourceRefs: stepRow.source_refs };
 
   const { data: priorRows } = await scope
-    .select("step_attempts", "verdict, attempt_no, guess_flag")
+    .select("step_attempts", "verdict, attempt_no, guess_flag, remediation")
     .eq("session_id", sessionId)
     .eq("step_id", stepId)
     .order("attempt_no")
-    .returns<{ verdict: Verdict; attempt_no: number; guess_flag: boolean }[]>();
+    .returns<{ verdict: Verdict; attempt_no: number; guess_flag: boolean; remediation: RemediationCache | null }[]>();
   const priorAttempts = priorRows ?? [];
   const attemptNo = existing ? (priorAttempts.at(-1)?.attempt_no ?? 1) : priorAttempts.length + 1;
+
+  // ADR-028 §2: "are we on attempt 2 of a still-active remediation cycle" —
+  // read BEFORE evaluating, because attempt 2 must be graded against the
+  // cached retry variant/props, never the original step content again.
+  const remediationRetryNow = isRemediationRetryAttempt(priorAttempts) && stepHasRemediationContent(step);
+  const remediationCacheFromFirstAttempt = remediationRetryNow ? priorAttempts[0]!.remediation : null;
+  const evalStep = remediationCacheFromFirstAttempt ? effectiveStepForRemediation(step, remediationCacheFromFirstAttempt) : step;
 
   // NFR-SAFE-4, US-12.1: an open-question free-text answer is moderated like
   // any other reply from the child, once per real (non-idempotent-replay)
@@ -638,7 +876,14 @@ export async function submitStepAnswer(
   const openText = step.type === "open" && typeof (answer as { text?: unknown } | null)?.text === "string" ? (answer as { text: string }).text : null;
   const moderationPromise = !existing && openText ? moderateMessage({ familyId, sessionId, mode: "lesson", message: openText }) : null;
 
-  let { verdict, explanation } = existing ? { verdict: existing.verdict, explanation: "" } : await evaluateAnswer(familyId, sessionId, step, channel, answer);
+  let { verdict, explanation } = existing ? { verdict: existing.verdict, explanation: "" } : await evaluateAnswer(familyId, sessionId, evalStep, channel, answer);
+
+  // ADR-028 §5/КП-6: whenever moderation forces the deterministic go-to-dad
+  // reply, the remediation cycle (starting OR finishing) must never run —
+  // "без винятків", exactly like every other safety-override case. This is
+  // the ONLY guard the whole feature adds around BUG-013's existing code
+  // below, which is otherwise untouched.
+  let moderationForcedUrgent = false;
 
   if (moderationPromise) {
     const moderation = await moderationPromise;
@@ -657,10 +902,11 @@ export async function submitStepAnswer(
     if (moderation.severity === "urgent") {
       verdict = "partial";
       explanation = URGENT_REPLY_UK;
+      moderationForcedUrgent = true;
     }
   }
 
-  const questionLength = String(step.content.questionUk ?? step.content.textUk ?? "").length;
+  const questionLength = String(evalStep.content.questionUk ?? evalStep.content.textUk ?? "").length;
   const guessFlag = looksLikeGuess(channel, attemptNo, latencyMs, questionLength);
 
   if (!existing) {
@@ -690,12 +936,47 @@ export async function submitStepAnswer(
   const formatChangeSuggested = shouldSuggestFormatChange((recentRows ?? []).reverse().map((r) => ({ verdict: r.verdict, guessFlag: r.guess_flag })));
 
   if (branch.kind === "alt_explanation") {
-    return { verdict, explanation, formatChangeSuggested, next: { kind: "retry_step" } };
+    // ADR-028 §2: this is the attempt that STARTS (or, on an idempotent
+    // replay, re-shows) the "explain -> reinforce" cycle — attempt 1,
+    // non-correct, never when moderation already forced the safety phrase
+    // (КП-6). `stepHasRemediationContent` degrades an old/plain step to
+    // exactly today's behavior (`remediation` stays `null` below).
+    let remediation: AnswerResult["remediation"] = null;
+    if (attemptNo === 1 && !moderationForcedUrgent && stepHasRemediationContent(step)) {
+      const cached = existing?.remediation ?? null;
+      const built = cached ? { cache: cached, explanationUk: cached.explanationUk } : await buildRemediation(familyId, sessionId, step, answer);
+      if (built) {
+        if (!existing) {
+          await scope.update("step_attempts", { remediation: built.cache }).eq("idempotency_key", idempotencyKey);
+        }
+        const pos = await currentStepPosition(familyId, session, stepId);
+        if (pos) {
+          const effective = effectiveStepForRemediation(step, built.cache);
+          remediation = {
+            explanationUk: built.explanationUk,
+            retryStep: { stepId: step.id, type: step.type, content: effective.content, visual: effective.visual, sourceRefs: step.sourceRefs, stepNumber: pos.stepNumber, totalSteps: pos.totalSteps },
+          };
+        }
+      }
+    }
+    return { verdict, explanation, formatChangeSuggested, remediation, fallback: null, next: { kind: "retry_step" } };
   }
 
   // "advance" (skip helpers) or "mark_for_review_and_advance" both move on.
+  // ADR-028 §2 КП-3: when this "mark_for_review_and_advance" is specifically
+  // the remediation cycle's own 2nd (reinforcement) attempt also failing,
+  // attach the soft fallback answer-reveal — never for an ordinary 2nd miss
+  // on a step with no remediation content (unchanged US-6.3 КП-2 behavior),
+  // and never under a safety override (КП-6).
+  const fallback: AnswerResult["fallback"] =
+    branch.kind === "mark_for_review_and_advance" && remediationRetryNow && !moderationForcedUrgent
+      ? (() => {
+          const textUk = buildFallbackText(step);
+          return textUk ? { textUk } : null;
+        })()
+      : null;
   const next = await advanceAfterStep(familyId, session);
-  return { verdict, explanation, formatChangeSuggested, next };
+  return { verdict, explanation, formatChangeSuggested, remediation: null, fallback, next };
 }
 
 async function advanceAfterStep(familyId: string, session: SessionRow): Promise<AnswerResult["next"]> {

@@ -26,12 +26,33 @@ export interface SlideStepOut {
   exampleUk?: string;
   sourceRefs: SourceRefOut[];
 }
-export interface ChoiceStepOut {
-  type: "choice";
+/** ADR-028 §1 (ВП-36): one reinforcement variant of the same skill — a
+ * different number/example, same correct-answer shape — cached in the step
+ * itself at generation time, no AI call needed during the lesson. */
+export interface ChoiceRetryVariantOut {
   questionUk: string;
   options: { id: string; textUk: string }[];
   correctOptionId: string;
   explanationUk: string;
+}
+export interface OpenRetryVariantOut {
+  questionUk: string;
+  expectedAnswerUk: string;
+  rubricUk: string;
+}
+export interface ChoiceStepOut {
+  type: "choice";
+  questionUk: string;
+  /** ADR-028 §1: `misconceptionUk` is optional per-option — why THIS wrong
+   * option specifically is wrong (US-6.15 КП-1), known and cacheable ahead
+   * of time since the options are finite. */
+  options: { id: string; textUk: string; misconceptionUk?: string }[];
+  correctOptionId: string;
+  explanationUk: string;
+  /** ADR-028 §1 (ВП-36): 1–3 reinforcement variants, same skill. Optional —
+   * a step with none simply has no remediation content (ВП-37, degrades to
+   * today's plain retry). */
+  remediation?: { retryVariants: ChoiceRetryVariantOut[] };
   sourceRefs: SourceRefOut[];
 }
 export interface OpenStepOut {
@@ -39,6 +60,10 @@ export interface OpenStepOut {
   questionUk: string;
   expectedAnswerUk: string;
   rubricUk: string;
+  /** ADR-028 §1 (ВП-36): reinforcement variants. The explanation of a
+   * WRONG free-text answer is never cached here (a live call, §2) — only
+   * the retry question itself is. */
+  remediation?: { retryVariants: OpenRetryVariantOut[] };
   sourceRefs: SourceRefOut[];
 }
 export interface InteractiveStepOut {
@@ -124,12 +149,31 @@ const slideStep = z.object({
   ...baseStep,
 });
 
-const choiceStep = z.object({
-  type: z.literal("choice"),
+// ADR-028 §1: optional remediation content, generated alongside the rest of
+// the step (ADR-022 §3.2а) — never required, so a model that omits it still
+// produces a perfectly valid step (ВП-37 degrades gracefully).
+const choiceRetryVariant = z.object({
   questionUk: z.string().min(1).max(400),
   options: z.array(z.object({ id: z.string().min(1).max(10), textUk: z.string().min(1).max(200) })).min(2).max(5),
   correctOptionId: z.string().min(1).max(10),
   explanationUk: z.string().min(1).max(300),
+});
+const openRetryVariant = z.object({
+  questionUk: z.string().min(1).max(400),
+  expectedAnswerUk: z.string().min(1).max(300),
+  rubricUk: z.string().min(1).max(300),
+});
+
+const choiceStep = z.object({
+  type: z.literal("choice"),
+  questionUk: z.string().min(1).max(400),
+  options: z
+    .array(z.object({ id: z.string().min(1).max(10), textUk: z.string().min(1).max(200), misconceptionUk: z.string().min(1).max(300).optional() }))
+    .min(2)
+    .max(5),
+  correctOptionId: z.string().min(1).max(10),
+  explanationUk: z.string().min(1).max(300),
+  remediation: z.object({ retryVariants: z.array(choiceRetryVariant).min(1).max(3) }).optional(),
   ...baseStep,
 });
 
@@ -138,6 +182,7 @@ const openStep = z.object({
   questionUk: z.string().min(1).max(400),
   expectedAnswerUk: z.string().min(1).max(300),
   rubricUk: z.string().min(1).max(300),
+  remediation: z.object({ retryVariants: z.array(openRetryVariant).min(1).max(3) }).optional(),
   ...baseStep,
 });
 

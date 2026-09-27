@@ -165,6 +165,11 @@ export const uk = {
       // tell "close, try again" from "no, that's not it". `incorrect` is
       // shown only for verdict `incorrect`; `almost` stays for `partial`.
       incorrect: "Не зовсім так. Спробуй ще раз",
+      // ADR-028/US-6.15: the "explain -> reinforce" remediation cycle —
+      // shown inline, in place of the step's own content, never a modal.
+      remediationExplainTitle: "Давай розберемось",
+      remediationRetryHint: "Спробуй ще одне схоже завдання 👇",
+      remediationFallbackTitle: "Ось як це вирішується",
       // BUG-019: the deterministic fast path in `evaluateAnswer` (a bare
       // number, a lettered list, or otherwise differently-formatted answer
       // that matches the reference answer in substance) has no per-question

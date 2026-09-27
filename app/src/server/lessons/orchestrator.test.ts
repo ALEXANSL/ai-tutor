@@ -122,6 +122,7 @@ vi.mock("@/server/safety/events", () => ({ recordSafetyEvent: (...a: unknown[]) 
 const {
   chooseStartBlock,
   continueAfterBlock,
+  getLessonView,
   getPreviousModuleView,
   goToPreviousStep,
   pauseLessonSession,
@@ -1030,5 +1031,350 @@ describe("goToPreviousStep (BUG-029 follow-up: real step-back navigation)", () =
 
     expect(view).toBeNull();
     expect(loadLibraryItem).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * ADR-028/US-6.15/BUG-013: the remediation "explain -> reinforce -> fallback"
+ * cycle — `current_step_id` never changes (BUG-016/029 semantics untouched);
+ * "are we mid-remediation" is read from `step_attempts` alone. ВП-35: exactly
+ * one cycle before the soft fallback answer-reveal.
+ */
+describe("submitStepAnswer — ADR-028/US-6.15 (remediation dialog: explain the specific mistake, reinforce, resume on the same step)", () => {
+  const choiceStep = {
+    id: "st1",
+    type: "choice",
+    content: {
+      questionUk: "Скільки буде 2+2?",
+      options: [
+        { id: "a", textUk: "3", misconceptionUk: "Ти забула додати одиницю ще раз — 2+2, а не 2+1." },
+        { id: "b", textUk: "4" },
+      ],
+      correctOptionId: "b",
+      explanationUk: "2+2 = 4.",
+      remediation: {
+        retryVariants: [
+          { questionUk: "Скільки буде 3+3?", options: [{ id: "a", textUk: "5" }, { id: "b", textUk: "6" }], correctOptionId: "b", explanationUk: "3+3 = 6." },
+        ],
+      },
+    },
+    visual: {},
+    source_refs: [],
+  };
+
+  function baseTables(stepRow: FakeRow, priorAttempts: FakeRow[] = []) {
+    return {
+      lesson_sessions: { id: "s1", current_step_id: "st1", current_block_order: 1, subject_id: "subj1", topic_id: "top1", child_profile_id: "child1" },
+      library_steps: stepRow,
+      step_attempts: priorAttempts,
+      session_blocks: [{ session_id: "s1", sort_order: 1, library_item_id: "A" }],
+    };
+  }
+
+  it("`choice` КП-1: a wrong first attempt gets the SPECIFIC misconceptionUk for the option she chose (not the step's generic explanationUk), plus one cached reinforcement variant — zero AI calls (ВП-36)", async () => {
+    resetScope();
+    scopeState.tables = baseTables(choiceStep);
+    loadLibraryItem.mockResolvedValue({
+      id: "A",
+      title: "Блок A",
+      estimatedMinutes: 7,
+      visibleOutcomeUk: null,
+      steps: [{ id: "st1", sortOrder: 0, type: "choice", content: choiceStep.content, visual: {}, sourceRefs: [] }],
+    });
+
+    const result = await submitStepAnswer("fam1", "s1", "st1", "idem-1", "choice", { optionId: "a" }, 3000);
+
+    expect(callStructured).not.toHaveBeenCalled();
+    expect(result.verdict).toBe("incorrect");
+    expect(result.next).toEqual({ kind: "retry_step" });
+    expect(result.fallback).toBeNull();
+    expect(result.remediation).not.toBeNull();
+    expect(result.remediation?.explanationUk).toBe("Ти забула додати одиницю ще раз — 2+2, а не 2+1.");
+    // КП-4/§4: rendered INLINE — same stepId, content swapped to the variant.
+    expect(result.remediation?.retryStep).toEqual({
+      stepId: "st1",
+      type: "choice",
+      content: choiceStep.content.remediation.retryVariants[0],
+      visual: {},
+      sourceRefs: [],
+      stepNumber: 1,
+      totalSteps: 1,
+    });
+    // §2: cached on the attempt that started the cycle, for idempotent reload/resume + КП-7 journal.
+    const cacheWrite = scopeState.updates.find((u) => u.table === "step_attempts");
+    expect(cacheWrite?.values.remediation).toEqual({ explanationUk: "Ти забула додати одиницю ще раз — 2+2, а не 2+1.", retryVariantIndex: 0, source: "cached" });
+  });
+
+  it("КП-2: attempt 2 is graded against the RETRY VARIANT, not the original question — a correct answer to the variant advances the lesson (ВП-35: cycle done in 1 pass)", async () => {
+    resetScope();
+    const cache = { explanationUk: "Ти забула додати одиницю ще раз — 2+2, а не 2+1.", retryVariantIndex: 0, source: "cached" as const };
+    scopeState.tables = baseTables(choiceStep, [{ session_id: "s1", step_id: "st1", verdict: "incorrect", attempt_no: 1, guess_flag: false, remediation: cache }]);
+    loadLibraryItem.mockResolvedValue({
+      id: "A",
+      title: "Блок A",
+      estimatedMinutes: 7,
+      visibleOutcomeUk: null,
+      steps: [
+        { id: "st1", sortOrder: 0, type: "choice", content: choiceStep.content, visual: {}, sourceRefs: [] },
+        { id: "st2", sortOrder: 1, type: "slide", content: {}, visual: {}, sourceRefs: [] },
+      ],
+    });
+
+    // "b" is wrong for the ORIGINAL question's own option ids in a different
+    // sense here — what matters is it's the variant's correctOptionId ("b").
+    const result = await submitStepAnswer("fam1", "s1", "st1", "idem-2", "choice", { optionId: "b" }, 2500);
+
+    expect(result.verdict).toBe("correct");
+    expect(result.remediation).toBeNull();
+    expect(result.fallback).toBeNull();
+    expect(result.next).toEqual({ kind: "advance", step: expect.objectContaining({ stepId: "st2" }) });
+  });
+
+  it("КП-3: the reinforcement attempt ALSO failing produces the soft fallback (answer reveal) from the ORIGINAL step's own fields — no AI call — and the lesson still moves on", async () => {
+    resetScope();
+    const cache = { explanationUk: "Ти забула додати одиницю ще раз — 2+2, а не 2+1.", retryVariantIndex: 0, source: "cached" as const };
+    scopeState.tables = baseTables(choiceStep, [{ session_id: "s1", step_id: "st1", verdict: "incorrect", attempt_no: 1, guess_flag: false, remediation: cache }]);
+    loadLibraryItem.mockResolvedValue({
+      id: "A",
+      title: "Блок A",
+      estimatedMinutes: 7,
+      visibleOutcomeUk: null,
+      steps: [{ id: "st1", sortOrder: 0, type: "choice", content: choiceStep.content, visual: {}, sourceRefs: [] }],
+    });
+
+    const result = await submitStepAnswer("fam1", "s1", "st1", "idem-2", "choice", { optionId: "a" }, 2500);
+
+    expect(callStructured).not.toHaveBeenCalled();
+    expect(result.verdict).toBe("incorrect");
+    expect(result.remediation).toBeNull();
+    expect(result.fallback).toEqual({ textUk: "4 — 2+2 = 4." });
+    expect(result.next.kind).toBe("block_complete");
+  });
+
+  it("`open` КП-1: the wrong first attempt's explanation is the ONE live `step_reinforcement` call (not cached), with the child's own answer text in the prompt — the reinforcement variant itself stays cached (zero extra AI calls)", async () => {
+    resetScope();
+    const openStepWithRemediation = {
+      id: "st1",
+      type: "open",
+      content: {
+        questionUk: "Скільки буде 10% від 50?",
+        expectedAnswerUk: "5",
+        rubricUk: "приймати короткий запис",
+        remediation: { retryVariants: [{ questionUk: "Скільки буде 10% від 80?", expectedAnswerUk: "8", rubricUk: "приймати короткий запис" }] },
+      },
+      visual: {},
+      source_refs: [],
+    };
+    scopeState.tables = baseTables(openStepWithRemediation);
+    loadLibraryItem.mockResolvedValue({
+      id: "A",
+      title: "Блок A",
+      estimatedMinutes: 7,
+      visibleOutcomeUk: null,
+      steps: [{ id: "st1", sortOrder: 0, type: "open", content: openStepWithRemediation.content, visual: {}, sourceRefs: [] }],
+    });
+    moderateMessage.mockResolvedValue({ category: "none", severity: "normal", confidence: 0.99, reasonUk: "", layer1Flagged: false, escalated: false });
+    callStructured
+      .mockResolvedValueOnce({ result: { verdict: "incorrect", explanationUk: "Це не так, спробуй ще раз." }, model: {}, costUsd: 0, fallbackUsed: false })
+      .mockResolvedValueOnce({ result: { explanationUk: "Ти порахувала 10% від 500, а не від 50 — переглянь, з якого числа береш відсоток." }, model: {}, costUsd: 0, fallbackUsed: false });
+
+    const result = await submitStepAnswer("fam1", "s1", "st1", "idem-1", "text", { text: "50" }, 5000);
+
+    expect(callStructured).toHaveBeenCalledTimes(2);
+    // First call: the ordinary `answer_evaluation` (unchanged, US-6.2 КП-1).
+    expect(callStructured.mock.calls[0]![0]).toBe("answer_evaluation");
+    // Second call: the ADR-028/D-104 live remediation call — D-77/78 fast tier, same route ADR-023/S27 scaffolded.
+    expect(callStructured.mock.calls[1]![0]).toBe("step_reinforcement");
+    expect(callStructured.mock.calls[1]![1].prompt).toMatch(/50/);
+    expect(result.remediation?.explanationUk).toBe("Ти порахувала 10% від 500, а не від 50 — переглянь, з якого числа береш відсоток.");
+    expect(result.remediation?.retryStep.content).toEqual(openStepWithRemediation.content.remediation.retryVariants[0]);
+    const cacheWrite = scopeState.updates.find((u) => u.table === "step_attempts");
+    expect((cacheWrite?.values.remediation as { source: string } | undefined)?.source).toBe("live");
+  });
+
+  it("`interactive` (drag_sort): a wrong first attempt gets `describe()`'s own text plus a DETERMINISTIC, seed-based `regenerate()`d retry — zero AI calls, same items/answer mapping, different on-screen order", async () => {
+    resetScope();
+    const dragSortStep = {
+      id: "st1",
+      type: "interactive",
+      content: {},
+      visual: {
+        component: "drag_sort",
+        v: 1,
+        remediation: { hasRetry: true },
+        props: {
+          variant: "pairs",
+          instructionUk: "Розстав картки.",
+          items: [{ id: "i1", labelUk: "10%" }, { id: "i2", labelUk: "50%" }],
+          slots: [{ id: "s1", labelUk: "Менше" }, { id: "s2", labelUk: "Більше" }],
+          answer: { i1: "s1", i2: "s2" },
+        },
+        fallback_text: "Обери правильну відповідь.",
+      },
+      source_refs: [],
+    };
+    scopeState.tables = baseTables(dragSortStep);
+    loadLibraryItem.mockResolvedValue({
+      id: "A",
+      title: "Блок A",
+      estimatedMinutes: 7,
+      visibleOutcomeUk: null,
+      steps: [{ id: "st1", sortOrder: 0, type: "interactive", content: {}, visual: dragSortStep.visual, sourceRefs: [] }],
+    });
+
+    // Wrong placement: swaps i1/i2.
+    const result = await submitStepAnswer("fam1", "s1", "st1", "idem-1", "text", { i1: "s2", i2: "s1" }, 4000);
+
+    expect(callStructured).not.toHaveBeenCalled();
+    expect(result.verdict).toBe("incorrect");
+    expect(result.remediation).not.toBeNull();
+    const retryProps = result.remediation!.retryStep.visual.props as { items: { id: string }[]; slots: { id: string }[]; answer: Record<string, string> };
+    expect(new Set(retryProps.items.map((i) => i.id))).toEqual(new Set(["i1", "i2"]));
+    expect(retryProps.answer).toEqual({ i1: "s1", i2: "s2" });
+    const cacheWrite = scopeState.updates.find((u) => u.table === "step_attempts");
+    expect((cacheWrite?.values.remediation as { retryProps: unknown } | undefined)?.retryProps).toEqual(retryProps);
+  });
+
+  it("an OLDER step with no remediation content (no misconceptionUk/retryVariants) degrades to today's plain retry, unchanged (ВП-37) — `remediation` stays null even on a wrong first attempt", async () => {
+    resetScope();
+    const plainChoiceStep = { id: "st1", type: "choice", content: { questionUk: "2+2?", options: [{ id: "a", textUk: "3" }, { id: "b", textUk: "4" }], correctOptionId: "b", explanationUk: "2+2=4." }, visual: {}, source_refs: [] };
+    scopeState.tables = baseTables(plainChoiceStep);
+    loadLibraryItem.mockResolvedValue({ id: "A", title: "Блок A", estimatedMinutes: 7, visibleOutcomeUk: null, steps: [{ id: "st1", sortOrder: 0, type: "choice", content: plainChoiceStep.content, visual: {}, sourceRefs: [] }] });
+
+    const result = await submitStepAnswer("fam1", "s1", "st1", "idem-1", "choice", { optionId: "a" }, 3000);
+
+    expect(result.remediation).toBeNull();
+    expect(result.next).toEqual({ kind: "retry_step" });
+    expect(scopeState.updates.find((u) => u.table === "step_attempts")).toBeUndefined();
+  });
+
+  it("BUG-013 (безумовний пріоритет, КП-6): an 'urgent' moderation result on the FIRST attempt of a step that DOES have remediation content never starts the cycle — no `step_reinforcement` call, `remediation` stays null, only the deterministic go-to-dad phrase is shown", async () => {
+    resetScope();
+    const openStepWithRemediation = {
+      id: "st1",
+      type: "open",
+      content: {
+        questionUk: "Як почуваєшся?",
+        expectedAnswerUk: "—",
+        rubricUk: "—",
+        remediation: { retryVariants: [{ questionUk: "—", expectedAnswerUk: "—", rubricUk: "—" }] },
+      },
+      visual: {},
+      source_refs: [],
+    };
+    scopeState.tables = baseTables(openStepWithRemediation);
+    loadLibraryItem.mockResolvedValue({
+      id: "A",
+      title: "Блок A",
+      estimatedMinutes: 7,
+      visibleOutcomeUk: null,
+      steps: [{ id: "st1", sortOrder: 0, type: "open", content: openStepWithRemediation.content, visual: {}, sourceRefs: [] }],
+    });
+    moderateMessage.mockResolvedValue({ category: "self_harm", severity: "urgent", confidence: 0.95, reasonUk: "x", layer1Flagged: true, escalated: false });
+    callStructured.mockResolvedValue({ result: { verdict: "partial", explanationUk: "Гарна спроба, продовжуй!" }, model: {}, costUsd: 0, fallbackUsed: false });
+
+    const result = await submitStepAnswer("fam1", "s1", "st1", "idem-1", "text", { text: "я хочу собі зашкодити" }, 4000);
+
+    expect(result.explanation).toBe("Це звучить дуже серйозно. Будь ласка, зараз піди й скажи про це тату — він удома і допоможе.");
+    expect(result.verdict).toBe("partial");
+    expect(result.remediation).toBeNull();
+    expect(result.next).toEqual({ kind: "retry_step" });
+    // Only `answer_evaluation` was ever called — the remediation cycle's own
+    // live call never fires under a safety override.
+    expect(callStructured).toHaveBeenCalledTimes(1);
+    expect(callStructured.mock.calls[0]![0]).toBe("answer_evaluation");
+  });
+
+  it("BUG-013 on the CYCLE'S OWN reinforcement attempt (attempt 2): urgent moderation still overrides and skips the fallback answer-reveal — no exceptions for 'вже в циклі закріплення' either", async () => {
+    resetScope();
+    const openStepWithRemediation = {
+      id: "st1",
+      type: "open",
+      content: {
+        questionUk: "Скільки буде 10% від 50?",
+        expectedAnswerUk: "5",
+        rubricUk: "—",
+        remediation: { retryVariants: [{ questionUk: "Скільки буде 10% від 80?", expectedAnswerUk: "8", rubricUk: "—" }] },
+      },
+      visual: {},
+      source_refs: [],
+    };
+    const cache = { explanationUk: "конкретна причина", retryVariantIndex: 0, source: "live" as const };
+    scopeState.tables = baseTables(openStepWithRemediation, [{ session_id: "s1", step_id: "st1", verdict: "incorrect", attempt_no: 1, guess_flag: false, remediation: cache }]);
+    loadLibraryItem.mockResolvedValue({
+      id: "A",
+      title: "Блок A",
+      estimatedMinutes: 7,
+      visibleOutcomeUk: null,
+      steps: [{ id: "st1", sortOrder: 0, type: "open", content: openStepWithRemediation.content, visual: {}, sourceRefs: [] }],
+    });
+    moderateMessage.mockResolvedValue({ category: "self_harm", severity: "urgent", confidence: 0.95, reasonUk: "x", layer1Flagged: true, escalated: false });
+    callStructured.mockResolvedValue({ result: { verdict: "correct", explanationUk: "Гарна спроба, продовжуй!" }, model: {}, costUsd: 0, fallbackUsed: false });
+
+    const result = await submitStepAnswer("fam1", "s1", "st1", "idem-2", "text", { text: "мені страшно, я хочу зникнути" }, 4000);
+
+    expect(result.explanation).toBe("Це звучить дуже серйозно. Будь ласка, зараз піди й скажи про це тату — він удома і допоможе.");
+    expect(result.verdict).toBe("partial");
+    expect(result.fallback).toBeNull();
+    // `attemptNo` 2 + forced non-correct still ends the cycle (US-6.4:
+    // repeated non-correct advances), but WITHOUT the answer-reveal card.
+    expect(result.next.kind).toBe("block_complete");
+  });
+});
+
+/**
+ * ADR-028 §2: "reconstructed on reload/resume from `step_attempts` alone,
+ * exactly the same predicate `submitStepAnswer` computes" — never a
+ * session-level field.
+ */
+describe("getLessonView — ADR-028 §2 (mid-remediation state survives a reload/resume, reconstructed from step_attempts alone)", () => {
+  it("a step with one non-correct attempt and cached remediation shows the RETRY VARIANT (not the original question) plus the cached explanation banner", async () => {
+    resetScope();
+    const cache = { explanationUk: "Конкретна причина помилки.", retryVariantIndex: 0, source: "cached" as const };
+    const stepContent = {
+      questionUk: "2+2?",
+      options: [{ id: "a", textUk: "3", misconceptionUk: "Конкретна причина помилки." }, { id: "b", textUk: "4" }],
+      correctOptionId: "b",
+      explanationUk: "2+2=4.",
+      remediation: { retryVariants: [{ questionUk: "3+3?", options: [{ id: "a", textUk: "5" }, { id: "b", textUk: "6" }], correctOptionId: "b", explanationUk: "3+3=6." }] },
+    };
+    scopeState.tables = {
+      lesson_sessions: { id: "s1", current_step_id: "st1", current_block_order: 1 },
+      session_blocks: [{ session_id: "s1", sort_order: 1, library_item_id: "A" }],
+      step_attempts: [{ session_id: "s1", step_id: "st1", verdict: "incorrect", attempt_no: 1, remediation: cache }],
+    };
+    loadLibraryItem.mockResolvedValue({
+      id: "A",
+      title: "Блок A",
+      estimatedMinutes: 7,
+      visibleOutcomeUk: null,
+      steps: [{ id: "st1", sortOrder: 0, type: "choice", content: stepContent, visual: {}, sourceRefs: [] }],
+    });
+
+    const { step, remediation } = await getLessonView("fam1", "s1");
+
+    expect(remediation).toEqual({ explanationUk: "Конкретна причина помилки." });
+    expect(step?.content).toEqual(stepContent.remediation.retryVariants[0]);
+  });
+
+  it("a step with NO attempts yet shows the ordinary original question, with no remediation banner", async () => {
+    resetScope();
+    scopeState.tables = {
+      lesson_sessions: { id: "s1", current_step_id: "st1", current_block_order: 1 },
+      session_blocks: [{ session_id: "s1", sort_order: 1, library_item_id: "A" }],
+      step_attempts: [],
+    };
+    loadLibraryItem.mockResolvedValue({
+      id: "A",
+      title: "Блок A",
+      estimatedMinutes: 7,
+      visibleOutcomeUk: null,
+      steps: [{ id: "st1", sortOrder: 0, type: "slide", content: { textUk: "Крок 1" }, visual: {}, sourceRefs: [] }],
+    });
+
+    const { step, remediation } = await getLessonView("fam1", "s1");
+
+    expect(remediation).toBeNull();
+    expect(step?.content).toEqual({ textUk: "Крок 1" });
   });
 });
