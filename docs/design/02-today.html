@@ -58,6 +58,13 @@
   .badge-important{background:color-mix(in srgb, var(--warn) 20%, transparent); color:var(--warn);}
   .badge-review{background:color-mix(in srgb, var(--secondary) 20%, transparent); color:var(--secondary);}
 
+  /* US-11.9 (Розклад, D-109) — м'яка позначка «рекомендовано сьогодні»: лише порада, ніколи заборона. */
+  .schedule-tip{
+    display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; color:var(--accent);
+    background:color-mix(in srgb, var(--accent) 12%, transparent); border-radius:14px; padding:10px 14px; margin-bottom:10px;
+  }
+  .tile-tag{display:block; font-size:10px; font-weight:800; color:var(--accent); margin-top:2px;}
+
   .block-card{
     background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px 18px;
     display:flex; align-items:center; gap:14px; margin-bottom:10px; cursor:pointer; transition:transform .1s;
@@ -153,6 +160,9 @@
         </div>
 
         <h2><span class="group-badge badge-important">Важливо</span> Прогалини</h2>
+        <!-- US-11.9 (Розклад тата, D-109): м'яка підказка, не вимога. Дитина, яка обере інший предмет,
+             не побачить жодного попередження чи позначки "відхилення" — ні тут, ні в підсумку дня. -->
+        <div class="schedule-tip">🗓️ Сьогодні за розкладом тата пріоритет — <b>Історія</b>. Це лише порада: обереш інший предмет — і чудово!</div>
         <div class="block-card" onclick="showToast('Старт блоку')">
           <div class="block-icon">➗</div>
           <div class="block-info"><b>Математика — Спільний знаменник</b><span>передумова для поточної теми</span></div>
@@ -178,7 +188,7 @@
       <p>Обери сама, чим хочеш зайнятись зараз.</p>
       <div class="subject-grid">
         <div class="subject-tile active-subject"><span class="ic">➗</span><b>Математика</b><div class="ring" style="--p:72%"></div></div>
-        <div class="subject-tile active-subject"><span class="ic">📜</span><b>Історія</b><div class="ring" style="--p:40%"></div></div>
+        <div class="subject-tile active-subject"><span class="ic">📜</span><b>Історія</b><span class="tile-tag">★ рекомендовано сьогодні</span><div class="ring" style="--p:40%"></div></div>
         <div class="subject-tile active-subject"><span class="ic">🔤</span><b>Українська мова</b><div class="ring" style="--p:55%"></div></div>
         <div class="subject-tile active-subject"><span class="ic">📕</span><b>Література</b><div class="ring" style="--p:20%"></div></div>
         <div class="subject-tile active-subject"><span class="ic">🇬🇧</span><b>Англійська</b><div class="ring" style="--p:33%"></div></div>

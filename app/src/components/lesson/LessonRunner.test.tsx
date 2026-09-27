@@ -50,7 +50,7 @@ interface TestStep {
   type: string;
   content: Record<string, unknown>;
   visual: Record<string, unknown>;
-  sourceRefs: { materialId: string; materialTitle: string; page: number | null }[];
+  sourceRefs: { materialId: string; materialTitle: string; page: number | null; sectionTitle?: string | null }[];
   stepNumber: number;
   totalSteps: number;
 }
@@ -106,6 +106,32 @@ function renderRunner(currentBlockOrder?: number, activeStep: TestStep = step) {
 function findButtonByText(root: HTMLElement, text: string): HTMLButtonElement | null {
   return Array.from(root.querySelectorAll("button")).find((b) => b.textContent === text) ?? null;
 }
+
+/**
+ * D-106 (PO decision 2026-09-28): the source citation under a step must show
+ * the textbook's section/topic title alongside the page, when the cited
+ * page falls within one — not only "стор. N" as before.
+ */
+describe("D-106: source citation shows the section/topic title next to the page", () => {
+  it("shows the section title when the citation carries one", () => {
+    const withSection: TestStep = {
+      ...step,
+      sourceRefs: [{ materialId: "mat1", materialTitle: "Математика, підручник", page: 42, sectionTitle: "Дроби" }],
+    };
+    const el = renderRunner(undefined, withSection);
+    expect(el.textContent).toContain("Математика, підручник, розд. «Дроби», стор. 42");
+  });
+
+  it("falls back to page-only when the page falls outside every indexed section (no sectionTitle)", () => {
+    const noSection: TestStep = {
+      ...step,
+      sourceRefs: [{ materialId: "mat1", materialTitle: "Математика, підручник", page: 42, sectionTitle: null }],
+    };
+    const el = renderRunner(undefined, noSection);
+    expect(el.textContent).toContain("Математика, підручник, стор. 42");
+    expect(el.textContent).not.toContain("розд.");
+  });
+});
 
 describe("BUG-029: «⬅️ Попередній модуль»", () => {
   it("is hidden on the first block (default currentBlockOrder)", () => {

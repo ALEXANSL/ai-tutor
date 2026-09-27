@@ -8,6 +8,8 @@ import {
   isHeadingLike,
   mergeByTitle,
   narrowestContaining,
+  narrowestTitleFor,
+  normalizeProblems,
   normalizeSections,
   splitPrompt,
 } from "./structure";
@@ -66,6 +68,7 @@ describe("schema", () => {
       sections: [],
       dependencies: [],
       related_topics: [],
+      problems: [],
     };
     expect(schema.safeParse(ok).success).toBe(true);
     expect(schema.safeParse({ ...ok, kind: "novel" }).success).toBe(false);
@@ -108,6 +111,40 @@ describe("normalizeSections", () => {
   });
 });
 
+describe("normalizeProblems (ADR-029, US-2.8)", () => {
+  it("gates on strategy === textbook", () => {
+    const answer = { problems: [{ number: "117", page: 42 }] };
+    expect(normalizeProblems(answer, "chapters", 120)).toEqual([]);
+    expect(normalizeProblems(answer, "contents", 120)).toEqual([]);
+    expect(normalizeProblems(answer, "textbook", 120)).toEqual([{ number: "117", page: 42 }]);
+  });
+
+  it("drops a number with no page, an out-of-range page is clamped, and whitespace-containing numbers are dropped (КП-2: never invent)", () => {
+    const answer = {
+      problems: [
+        { number: "117", page: null },
+        { number: "118", page: 9999 },
+        { number: "9 7", page: 10 },
+        { number: "  119  ", page: 5 },
+      ],
+    };
+    expect(normalizeProblems(answer, "textbook", 120)).toEqual([
+      { number: "118", page: 120 },
+      { number: "119", page: 5 },
+    ]);
+  });
+
+  it("dedupes the same page+number seen twice, keeping the first display casing", () => {
+    const answer = {
+      problems: [
+        { number: "117а", page: 42 },
+        { number: "117А", page: 42 },
+      ],
+    };
+    expect(normalizeProblems(answer, "textbook", 120)).toEqual([{ number: "117а", page: 42 }]);
+  });
+});
+
 describe("mergeByTitle (US-2.2 KP-2: manual fixes survive re-indexing)", () => {
   it("updates automatic rows, keeps manual rows, deletes stale automatic rows", () => {
     const existing = [
@@ -141,5 +178,22 @@ describe("narrowestContaining", () => {
     expect(narrowestContaining(6, items)).toBe("section");
     expect(narrowestContaining(40, items)).toBeNull();
     expect(narrowestContaining(null, items)).toBeNull();
+  });
+});
+
+describe("narrowestTitleFor (D-106)", () => {
+  const items = [
+    { id: "section", title: "Розділ 1", page_from: 5, page_to: 29 },
+    { id: "topic", title: "Дроби", page_from: 12, page_to: 18 },
+  ];
+
+  it("returns the narrowest range's title when the page falls inside one", () => {
+    expect(narrowestTitleFor(14, items)).toBe("Дроби");
+    expect(narrowestTitleFor(6, items)).toBe("Розділ 1");
+  });
+
+  it("falls back to null when the page is outside every indexed range", () => {
+    expect(narrowestTitleFor(40, items)).toBeNull();
+    expect(narrowestTitleFor(null, items)).toBeNull();
   });
 });

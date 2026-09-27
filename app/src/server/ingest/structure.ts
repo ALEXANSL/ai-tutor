@@ -25,6 +25,11 @@ export function buildStructureSchema(kinds: string[], subjectCodes: string[]) {
     ),
     dependencies: z.array(z.object({ topic: z.string(), depends_on: z.string() })),
     related_topics: z.array(z.string()),
+    // ADR-029 (US-2.8): numbered textbook exercises/problems, recognized as
+    // part of this SAME one-per-book call (no separate AI call, КП-3) — a
+    // top-level array (not nested in sections/topics: problem numbering and
+    // section boundaries are different axes, per the ADR).
+    problems: z.array(z.object({ number: z.string().min(1).max(12), page: z.number().int().nullable() })).max(500),
   });
 }
 
@@ -132,6 +137,34 @@ export function normalizeSections(answer: Pick<StructureAnswer, "sections">, str
   return fillRanges(sections, pageCount).map((s) => ({ ...s, topics: fillRanges(s.topics, s.page_to) }));
 }
 
+/**
+ * ADR-029 §1 (US-2.8): cleans the model's `problems` answer the same way
+ * `normalizeSections` cleans `sections` — gated on `strategy === "textbook"`
+ * (MVP scope, see the ADR's Альтернативи) and NEVER inventing a number: an
+ * empty/unparseable number, an out-of-range or missing page, or a number
+ * containing whitespace (a sure sign the model merged unrelated text) is
+ * silently dropped rather than guessed at (КП-2). Dedupes by
+ * `page:number.toLowerCase()` so the same exercise mentioned twice in the
+ * outline (e.g. both in a table of contents and on its own page) becomes one
+ * row, keeping the first-seen display casing.
+ */
+export function normalizeProblems(
+  answer: Pick<StructureAnswer, "problems">,
+  strategy: StructureStrategyKey,
+  pageCount: number,
+): { number: string; page: number }[] {
+  if (strategy !== "textbook") return [];
+  const seen = new Map<string, { number: string; page: number }>();
+  for (const p of answer.problems) {
+    const number = p.number.trim().slice(0, 12);
+    const page = clampPage(p.page, pageCount);
+    if (!number || page == null || /\s/.test(number)) continue;
+    const key = `${page}:${number.toLowerCase()}`;
+    if (!seen.has(key)) seen.set(key, { number, page });
+  }
+  return [...seen.values()];
+}
+
 export const titleKey = (t: string) =>
   t
     .toLowerCase()
@@ -180,4 +213,24 @@ export function narrowestContaining(page: number | null, items: Ranged[]): strin
     if (!best || it.page_to - it.page_from < best.page_to! - best.page_from!) best = it;
   }
   return best?.id ?? null;
+}
+
+export interface TitledRange extends Ranged {
+  title: string;
+}
+
+/**
+ * D-106: the single closest title to show next to a lesson step's page
+ * citation — the narrowest of a material's sections/topics whose page range
+ * contains the page. Topics and sections can be passed in the same list
+ * (e.g. `assign_chunk_structure`'s SQL twin picks each independently, but a
+ * textbook topic's range is always inside its parent section's, so
+ * `narrowestContaining` naturally prefers the topic without any extra
+ * bookkeeping here). Returns `null` when the page falls outside every
+ * indexed range (untitled front matter, a page past the last section, …) —
+ * callers fall back to showing the page alone.
+ */
+export function narrowestTitleFor(page: number | null, items: TitledRange[]): string | null {
+  const id = narrowestContaining(page, items);
+  return id == null ? null : (items.find((it) => it.id === id)?.title ?? null);
 }

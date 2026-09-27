@@ -2,22 +2,36 @@ import "server-only";
 import { allowedForSubject, getLessonComponent } from "@/lesson-components";
 import { forFamily, type FamilyScope } from "@/server/db/family-scope";
 import { getLibraryWarmDailyBudgetUsd } from "@/server/env";
+import { narrowestTitleFor, type TitledRange } from "@/server/ingest/structure";
 import { notifyParent } from "@/server/notifications";
 import { validateComponentRef } from "./component-validator";
-import { LESSON_GENERATION_PROMPT_VERSION, runPedagogicalPipeline, type PipelineFragment, type PipelineHooks } from "./pipeline";
+import { LESSON_GENERATION_PROMPT_VERSION, runPedagogicalPipeline, type KnownProblem, type PipelineFragment, type PipelineHooks } from "./pipeline";
 import type { GeneratedStep } from "./schema";
 
 /** How many saved, *active* blocks of a topic we try to keep on hand (US-16.6: offer 2–3). */
 export const CANDIDATE_TARGET = 3;
 const FRAGMENTS_PER_BLOCK = 12;
 
+export interface SourceRefView {
+  materialId: string;
+  materialTitle: string;
+  page: number | null;
+  /** D-106: narrowest containing `material_sections`/`topics` title, or
+   * `null`/absent when the page falls outside every indexed range (or the
+   * row predates this field) — always fall back to the page alone. */
+  sectionTitle?: string | null;
+  /** ADR-029 (US-2.8): the exact textbook problem this step's example/exercise
+   * is drawn from, when the model cited one and it survived the server's
+   * `material_problems` double-check (`pipeline.ts`'s `verifyProblemNumbers`). */
+  problemNumber?: string | null;
+}
 export interface LibraryStepView {
   id: string;
   sortOrder: number;
   type: string;
   content: Record<string, unknown>;
   visual: Record<string, unknown>;
-  sourceRefs: { materialId: string; materialTitle: string; page: number | null }[];
+  sourceRefs: SourceRefView[];
 }
 export interface LibraryItemView {
   id: string;
@@ -106,6 +120,42 @@ function toStepRow(step: GeneratedStep, sortOrder: number) {
   };
 }
 
+/**
+ * D-106: given a batch of `{materialId, page}` refs, looks up each one's
+ * narrowest containing `material_sections`/`topics` title — a pure data
+ * lookup against already-indexed structure (`structure.ts`'s
+ * `narrowestTitleFor`), never a new AI call. Returns a map keyed by
+ * `materialId:page` so callers can enrich each `sourceRefs` entry without
+ * re-querying per step.
+ */
+async function attachSectionTitles(
+  scope: FamilyScope,
+  refs: { materialId: string; page: number | null }[],
+): Promise<Map<string, string | null>> {
+  const materialIds = [...new Set(refs.map((r) => r.materialId))];
+  const result = new Map<string, string | null>();
+  if (materialIds.length === 0) return result;
+
+  type Row = { id: string; material_id: string; title: string; page_from: number | null; page_to: number | null };
+  const [{ data: topicRows }, { data: sectionRows }] = await Promise.all([
+    scope.select("topics", "id, material_id, title, page_from, page_to").in("material_id", materialIds).returns<Row[]>(),
+    scope.select("material_sections", "id, material_id, title, page_from, page_to").in("material_id", materialIds).returns<Row[]>(),
+  ]);
+  const rangesByMaterial = new Map<string, TitledRange[]>();
+  for (const row of [...(topicRows ?? []), ...(sectionRows ?? [])]) {
+    const list = rangesByMaterial.get(row.material_id) ?? [];
+    list.push({ id: row.id, title: row.title, page_from: row.page_from, page_to: row.page_to });
+    rangesByMaterial.set(row.material_id, list);
+  }
+
+  for (const r of refs) {
+    const key = `${r.materialId}:${r.page}`;
+    if (result.has(key)) continue;
+    result.set(key, narrowestTitleFor(r.page, rangesByMaterial.get(r.materialId) ?? []));
+  }
+  return result;
+}
+
 /** ADR-023: exported so `warmup.ts` can check "is this topic already warm?" without duplicating the query. */
 export async function loadCandidates(scope: FamilyScope, topicId: string, limit: number): Promise<{ id: string; title: string; estimated_minutes: number | null }[]> {
   const { data } = await scope
@@ -117,6 +167,28 @@ export async function loadCandidates(scope: FamilyScope, topicId: string, limit:
     .limit(limit)
     .returns<{ id: string; title: string; estimated_minutes: number | null }[]>();
   return data ?? [];
+}
+
+/**
+ * ADR-029 (US-2.8): the known problem numbers on exactly the pages these
+ * fragments cite — a pure data lookup against already-indexed
+ * `material_problems` (S1/ADR-029), never a new AI call. Restricting to the
+ * fragments' own `{materialId, page}` pairs (rather than every problem of
+ * the material) keeps the `lesson_generation` prompt's known-numbers list
+ * short and matched to what the model can actually see.
+ */
+async function loadKnownProblems(scope: FamilyScope, fragments: PipelineFragment[]): Promise<KnownProblem[]> {
+  const pairs = fragments.filter((f): f is PipelineFragment & { page: number } => f.page != null).map((f) => ({ materialId: f.materialId, page: f.page }));
+  const materialIds = [...new Set(pairs.map((p) => p.materialId))];
+  if (materialIds.length === 0) return [];
+  const wanted = new Set(pairs.map((p) => `${p.materialId}:${p.page}`));
+  const { data } = await scope
+    .select("material_problems", "material_id, page, number")
+    .in("material_id", materialIds)
+    .returns<{ material_id: string; page: number; number: string }[]>();
+  return (data ?? [])
+    .filter((r) => wanted.has(`${r.material_id}:${r.page}`))
+    .map((r) => ({ materialId: r.material_id, page: r.page, number: r.number }));
 }
 
 /** Shared by `generateOneBlock` and the BUG-011 safe fallback template. */
@@ -172,10 +244,22 @@ export async function generateOneBlock(
     .limit(5)
     .returns<{ title: string }[]>();
   const recentTitles = (recentRows ?? []).map((r) => r.title);
+  const knownProblems = await loadKnownProblems(scope, fragments);
 
-  const pipeline = await runPedagogicalPipeline({ familyId, topicId, subjectName, grade, topicTitle, fragments, allowedComponents, recentTitles }, jobHooks);
+  const pipeline = await runPedagogicalPipeline(
+    { familyId, topicId, subjectName, grade, topicTitle, fragments, allowedComponents, recentTitles, knownProblems, scope },
+    jobHooks,
+  );
   const block = pipeline.block;
   await jobHooks?.onStage?.("saving");
+
+  // D-106: enrich every step's sourceRefs with the section/topic title the
+  // cited page falls within, looked up from already-indexed structure.
+  const sectionTitleByKey = await attachSectionTitles(scope, block.steps.flatMap((s) => s.sourceRefs));
+  const stepsWithSections = block.steps.map((s) => ({
+    ...s,
+    sourceRefs: s.sourceRefs.map((r) => ({ ...r, sectionTitle: sectionTitleByKey.get(`${r.materialId}:${r.page}`) ?? null })),
+  }));
 
   const pedagogy = {
     goalUk: pipeline.plan.goalUk,
@@ -200,7 +284,7 @@ export async function generateOneBlock(
       prompt_version: LESSON_GENERATION_PROMPT_VERSION,
       grade,
       estimated_minutes: block.estimatedMinutes,
-      source_refs: dedupeSourceRefs(block.steps.flatMap((s) => s.sourceRefs)),
+      source_refs: dedupeSourceRefs(stepsWithSections.flatMap((s) => s.sourceRefs)),
       pedagogy,
       child_feedback: { interesting: 0, normal: 0, boring: 0 },
     })
@@ -208,7 +292,7 @@ export async function generateOneBlock(
     .single<{ id: string }>();
   if (error || !item) throw new Error(`saving generated lesson block failed: ${error?.message}`);
 
-  const stepRows = block.steps.map((s, i) => ({ owner_family_id: familyId, item_id: item.id, ...toStepRow(s, i) }));
+  const stepRows = stepsWithSections.map((s, i) => ({ owner_family_id: familyId, item_id: item.id, ...toStepRow(s, i) }));
   const { error: stepsErr } = await scope.client.from("library_steps").insert(stepRows);
   if (stepsErr) throw new Error(`saving generated lesson steps failed: ${stepsErr.message}`);
 
@@ -239,8 +323,8 @@ export async function generateOneBlock(
   return item.id;
 }
 
-function dedupeSourceRefs(refs: { materialId: string; materialTitle: string; page: number | null }[]) {
-  const seen = new Map<string, { materialId: string; materialTitle: string; page: number | null }>();
+function dedupeSourceRefs(refs: SourceRefView[]) {
+  const seen = new Map<string, SourceRefView>();
   for (const r of refs) seen.set(`${r.materialId}:${r.page}`, r);
   return [...seen.values()];
 }
@@ -367,7 +451,15 @@ export async function getOrCreateFallbackBlock(
 
   const excerpt = fragment.text.length > 700 ? `${fragment.text.slice(0, 700)}…` : fragment.text;
   const title = `Резервний блок: ${topicTitle}`;
-  const sourceRefs = [{ materialId: fragment.materialId, materialTitle: fragment.materialTitle, page: fragment.page }];
+  const sectionTitleByKey = await attachSectionTitles(scope, [{ materialId: fragment.materialId, page: fragment.page }]);
+  const sourceRefs: SourceRefView[] = [
+    {
+      materialId: fragment.materialId,
+      materialTitle: fragment.materialTitle,
+      page: fragment.page,
+      sectionTitle: sectionTitleByKey.get(`${fragment.materialId}:${fragment.page}`) ?? null,
+    },
+  ];
   const steps = [
     { sort_order: 0, type: "slide", content: { textUk: excerpt, exampleUk: null }, visual: {}, source_refs: sourceRefs },
     {

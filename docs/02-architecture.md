@@ -6,7 +6,7 @@
 | Дата | 2026-09-27 |
 | Автор | `architect` |
 | Вхідні | `docs/00-product-brief.md`, `docs/01-requirements.md` v0.3.7 (затв. 2026-09-25, доповнено D-76/D-77 2026-09-26), `docs/05-backlog.md` v0.3 |
-| Пов'язані | `docs/03-resources-and-costs.md` (акаунти, ключі, кошторис), `docs/adr/001…027` |
+| Пов'язані | `docs/03-resources-and-costs.md` (акаунти, ключі, кошторис), `docs/adr/001…029` |
 
 > **Як читати.** Розділи 0–3 — для Алекса: що будуємо, з чого і чому (без коду). Розділи 4 і далі — для розробника: як саме.
 > Посилання `US-…`, `NFR-…`, `D-…`, `AR-…` — з `docs/01-requirements.md`. `ADR-NNN` — файли в `docs/adr/`.
@@ -696,6 +696,8 @@ erDiagram
   topics ||--o{ topic_dependencies : "залежить від"
   materials ||--o{ material_sections : структура
   materials ||--o{ chunks : фрагменти
+  materials ||--o{ material_problems : "номери вправ/задач"
+  topics ||--o{ material_problems : "прив'язка (ADR-029)"
   topics ||--o{ chunks : "прив'язка"
   topics ||--o{ library_items : "уроки бібліотеки"
   library_items ||--o{ library_steps : кроки
@@ -736,6 +738,7 @@ erDiagram
 | `topics` | `subject_id`, `section_id`, `title`, `pages`, `order`, `is_current`, `manual_override` | |
 | `topic_dependencies` | `topic_id`, `depends_on_id`, `source` (`ai`/`parent`) | Граф для діагностики (US-4.2). |
 | `chunks` | `material_id`, `topic_id`, `page`, `text`, `embedding halfvec(1536)`, `tsv` | HNSW-індекс + GIN (FTS, trigram). |
+| `material_problems` | `material_id`, `section_id`, `topic_id`, `number`, `page` | Номери вправ/задач підручника, розпізнані одноразово при `ingest.structure` (US-2.8, ADR-029); точний (не нечіткий) пошук за номером у межах теми — основа «поясни задачу №N» (US-8.7). Ніякого `manual_override` — переіндексація повністю перебудовує набір. |
 
 **Бібліотека уроків (E-19) — навчальні матеріали, без ПД дитини**
 | Таблиця | Ключові поля | Примітки |
@@ -820,8 +823,8 @@ sequenceDiagram
   API->>R: embeddings (text-embedding-3-large)
   R->>DB: embedding у chunks
   API->>J: job ingest.structure
-  API->>R: indexing_structure (Opus 5.5): зміст → розділи → теми → сторінки, залежності, тип «підручник / художній твір»
-  R->>DB: material_sections, topics, topic_dependencies (не чіпає manual_override)
+  API->>R: indexing_structure (Opus 5.5): зміст → розділи → теми → сторінки, залежності, тип «підручник / художній твір», номери вправ/задач (ADR-029, лише де однозначно видно)
+  R->>DB: material_sections, topics, topic_dependencies (не чіпає manual_override), material_problems (перебудовується повністю)
   API-->>T: статус «готово» / «помилка: причина»
 ```
 Кожен крок — окрема задача ≤ 300 с, відновлюється після збою. Для EPUB «сторінка» = розділ + позиція (у джерелі показується назва розділу). Режим бюджету — індексація відкладається (US-11.5 КП-6).

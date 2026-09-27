@@ -19,6 +19,17 @@ export interface SourceRefOut {
   materialId: string;
   materialTitle: string;
   page: number | null;
+  /** D-106: the narrowest section/topic title containing `page`, filled in
+   * by `generate.ts` from already-indexed `material_sections`/`topics` after
+   * the model answers — never asked of the model itself (no new AI call). */
+  sectionTitle?: string | null;
+  /** ADR-029 (US-2.8): set only when the step literally rests on this one
+   * indexed textbook problem — the model may only cite a number from the
+   * `known_problems` list it was given (`pipeline.ts`), and the server
+   * double-checks every cited number against `material_problems` right
+   * after generation regardless (defense in depth, NFR-LANG-3) — nulled out
+   * silently when no matching row exists. */
+  problemNumber?: string | null;
 }
 export interface SlideStepOut {
   type: "slide";
@@ -136,6 +147,10 @@ const sourceRefSchema = z.object({
   materialId: z.string().uuid(),
   materialTitle: z.string().min(1).max(200),
   page: z.number().int().min(1).max(5000).nullable(),
+  // ADR-029 (US-2.8): the model may cite a problem number here — verified
+  // against `material_problems` right after generation (`pipeline.ts`),
+  // never trusted on the model's word alone.
+  problemNumber: z.string().min(1).max(12).nullable().optional(),
 });
 
 const baseStep = {

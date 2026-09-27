@@ -35,7 +35,7 @@ interface StepView {
   type: string;
   content: Record<string, unknown>;
   visual: Record<string, unknown>;
-  sourceRefs: { materialId: string; materialTitle: string; page: number | null }[];
+  sourceRefs: { materialId: string; materialTitle: string; page: number | null; sectionTitle?: string | null }[];
   stepNumber: number;
   totalSteps: number;
 }
@@ -680,7 +680,7 @@ export function LessonRunner({
 
       {step.sourceRefs.length > 0 && (
         <p className="mt-4 text-xs text-muted">
-          {step.sourceRefs.map((r) => t.sourceRef(r.materialTitle, r.page)).join(" · ")}
+          {step.sourceRefs.map((r) => t.sourceRef(r.materialTitle, r.page, r.sectionTitle)).join(" · ")}
         </p>
       )}
 
