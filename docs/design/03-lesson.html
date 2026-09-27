@@ -18,19 +18,31 @@
     --warn:#F0B95A; --danger:#FF6B6E; --border:#37353F; --focus:#5B9CFF;
   }
   *{box-sizing:border-box;}
+  html,body{height:100%;}
   body{margin:0; font-family:'Nunito',sans-serif; background:var(--bg); color:var(--text);}
   .theme-toggle{position:fixed; top:12px; right:12px; z-index:80; display:flex; gap:8px; background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:6px; box-shadow:0 2px 10px rgba(0,0,0,.08);}
   .theme-toggle button{border:none; background:transparent; color:var(--text); font-family:inherit; font-weight:700; font-size:12px; padding:7px 12px; border-radius:999px; cursor:pointer;}
   .theme-toggle button.active{background:var(--primary); color:white;}
 
+  /* ---------- Header: progress + режим озвучки + голосовий стан ---------- */
   header.lesson-top{
     display:flex; align-items:center; gap:14px; padding:14px 20px; background:var(--surface); border-bottom:1px solid var(--border);
-    position:sticky; top:0; z-index:30;
+    position:sticky; top:0; z-index:40; flex-wrap:wrap; row-gap:10px;
   }
-  .progress-wrap{flex:1;}
+  .progress-wrap{flex:1; min-width:180px;}
   .progress-wrap .lbl{display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); margin-bottom:6px; font-weight:700;}
   .progress-bar{height:8px; background:var(--surface-alt); border-radius:99px; overflow:hidden;}
   .progress-bar > div{height:100%; width:45%; background:var(--secondary); border-radius:99px; transition:width .3s;}
+
+  /* Перемикач режиму озвучки (голос / авто / текст) — новий компонент, розд. 5.2 дизайн-системи */
+  .speech-mode{display:flex; align-items:center; gap:6px; background:var(--surface-alt); border-radius:999px; padding:4px; flex:none;}
+  .speech-mode button{
+    border:none; background:transparent; color:var(--text-muted); font-family:'Nunito',sans-serif; font-weight:800;
+    font-size:12px; padding:9px 11px; border-radius:999px; cursor:pointer; min-height:44px; display:flex; align-items:center; gap:5px; white-space:nowrap;
+  }
+  .speech-mode button.active{background:var(--accent); color:white;}
+  .speech-mode-caption{font-size:11px; color:var(--text-muted); font-weight:700; margin-right:2px;}
+
   .voice-state{display:flex; align-items:center; gap:8px; background:var(--surface-alt); border-radius:999px; padding:6px 12px 6px 6px; flex:none;}
   .voice-orb{width:28px; height:28px; border-radius:50%; background:radial-gradient(circle at 35% 30%, var(--accent), var(--primary)); flex:none; overflow:hidden; display:flex; align-items:center; justify-content:center; font-size:14px; color:white;}
   .voice-orb img{width:100%; height:100%; object-fit:cover;}
@@ -41,7 +53,6 @@
   @keyframes breathe{0%,100%{transform:scale(1);}50%{transform:scale(1.18);}}
   @keyframes spin{from{transform:rotate(0);}to{transform:rotate(360deg);}}
   @keyframes pulse{from{box-shadow:0 0 0 rgba(0,0,0,0);}to{box-shadow:0 0 14px color-mix(in srgb, var(--accent) 60%, transparent);}}
-  @keyframes sway{from{transform:translateY(0);}to{transform:translateY(-3px);}}
   .voice-state span{font-size:12px; font-weight:700; color:var(--text-muted);}
   .ai-badge-mini{font-size:10px; font-weight:800; color:var(--accent); background:color-mix(in srgb, var(--accent) 14%, transparent); padding:2px 7px; border-radius:99px; flex:none;}
   .avatar-switch{display:flex; gap:6px; align-items:center;}
@@ -51,13 +62,91 @@
     .voice-orb, .orb-lg{ animation:none !important; }
   }
 
-  main{padding:20px; max-width:760px; margin:0 auto 140px;}
-  .stepper-demo{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;}
+  /* ---------- Layout: nav (ліворуч/знизу) · урок (центр) · чат (праворуч/шухляда) ---------- */
+  .lesson-shell{ display:grid; grid-template-columns: 208px minmax(0,1fr) 340px; grid-template-areas:"nav content chat"; align-items:start; }
+
+  .lesson-nav{
+    grid-area:nav; position:sticky; top:64px; align-self:start; height:calc(100vh - 64px);
+    display:flex; flex-direction:column; gap:10px; padding:18px 12px; background:var(--surface); border-right:1px solid var(--border);
+    overflow-y:auto;
+  }
+  .nav-group-label{font-size:11px; font-weight:800; color:var(--text-muted); text-transform:uppercase; letter-spacing:.03em; margin:6px 4px 0;}
+  .nav-btn{
+    display:flex; align-items:center; gap:10px; min-height:56px; padding:10px 14px; border-radius:14px; border:1px solid var(--border);
+    background:var(--surface-alt); color:var(--text); font-family:'Nunito',sans-serif; font-weight:700; font-size:14px; cursor:pointer; text-align:left;
+  }
+  .nav-btn .ic{font-size:19px; flex:none;}
+  .nav-btn:hover{border-color:var(--accent);}
+  .nav-btn.explain{background:color-mix(in srgb, var(--accent) 12%, var(--surface-alt)); border-color:var(--accent); color:var(--accent);}
+  .nav-spacer{flex:1;}
+  .nav-btn.exit-btn{border:2px solid color-mix(in srgb, var(--text) 40%, transparent); background:var(--surface-alt); color:var(--text); font-weight:800;}
+  .nav-btn.alarm-nav-btn{background:var(--danger); border-color:var(--danger); color:white; font-weight:900; box-shadow:0 6px 16px color-mix(in srgb, var(--danger) 35%, transparent);}
+  .nav-btn.chat-toggle-btn{display:none;}
+
+  main.lesson-content{grid-area:content; padding:20px; max-width:760px; margin:0 auto; width:100%;}
+  .stepper-demo{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;}
+  .stepper-demo-note{font-size:11px; color:var(--text-muted); margin:0 0 10px; font-family:'Inter',sans-serif;}
   .stepper-demo button{
     border:1px solid var(--border); background:var(--surface); color:var(--text-muted); font-family:'Inter',sans-serif;
     font-size:11px; padding:7px 10px; border-radius:10px; cursor:pointer;
   }
   .stepper-demo button.active{background:var(--secondary); color:white; border-color:var(--secondary);}
+
+  /* ---------- Чат з репетитором (праворуч на планшеті-альбом; шухляда на портреті/телефоні) ---------- */
+  .lesson-chat{
+    grid-area:chat; position:sticky; top:64px; height:calc(100vh - 64px); display:flex; flex-direction:column;
+    background:var(--surface); border-left:1px solid var(--border);
+  }
+  .chat-header{display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid var(--border); font-weight:800; font-size:15px;}
+  .chat-close{display:none; border:none; background:var(--surface-alt); color:var(--text); border-radius:999px; width:36px; height:36px; font-size:16px; cursor:pointer;}
+  .chat-messages{flex:1; overflow-y:auto; padding:14px 16px; display:flex; flex-direction:column; gap:10px;}
+  .chat-msg{max-width:88%; padding:10px 14px; border-radius:14px; font-size:14px; line-height:1.45;}
+  .chat-msg.ai{align-self:flex-start; background:var(--surface-alt); border-bottom-left-radius:4px;}
+  .chat-msg.child{align-self:flex-end; background:var(--primary); color:white; border-bottom-right-radius:4px;}
+  .chat-input-row{display:flex; align-items:center; gap:8px; padding:12px; border-top:1px solid var(--border);}
+  .chat-input-row input{
+    flex:1; border:2px solid var(--border); background:var(--bg); color:var(--text); border-radius:12px; padding:10px 12px;
+    font-family:'Nunito',sans-serif; font-size:14px; min-height:44px;
+  }
+  .chat-mic-btn, .chat-send-btn{
+    flex:none; border:none; border-radius:12px; min-width:44px; min-height:44px; font-size:17px; cursor:pointer;
+  }
+  .chat-mic-btn{background:var(--accent); color:white;}
+  .chat-send-btn{background:var(--primary); color:white;}
+  .chat-backdrop{display:none;}
+
+  /* ---------- Portrait tablet / телефон: nav знизу, чат — шухляда праворуч ---------- */
+  @media (max-width: 880px), (max-width: 1100px) and (orientation: portrait){
+    .lesson-shell{ display:block; }
+    .lesson-nav{
+      position:fixed; top:auto; bottom:0; left:0; right:0; height:auto; width:auto;
+      flex-direction:row; overflow-x:auto; overflow-y:visible; border-right:none; border-top:1px solid var(--border);
+      padding:8px 10px; gap:8px; z-index:60; box-shadow:0 -6px 18px rgba(0,0,0,.08);
+    }
+    .nav-group-label{display:none;}
+    .nav-spacer{display:none;}
+    .nav-btn{flex:none; flex-direction:column; gap:4px; min-width:74px; min-height:60px; padding:8px 6px; font-size:11px; text-align:center; justify-content:center;}
+    .nav-btn span{white-space:nowrap;}
+    .nav-btn .ic{font-size:20px;}
+    .nav-btn.chat-toggle-btn{display:flex;}
+    main.lesson-content{padding:16px 16px 132px;}
+    .lesson-chat{
+      position:fixed; top:0; right:-100%; width:min(380px, 94vw); height:100dvh; z-index:120;
+      transition:right .25s ease-out; box-shadow:-10px 0 30px rgba(0,0,0,.25);
+    }
+    .lesson-chat.open{right:0;}
+    .chat-close{display:flex; align-items:center; justify-content:center;}
+    .chat-backdrop.open{display:block; position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:110;}
+  }
+  @media (max-width: 480px){
+    .speech-mode-caption{display:none;}
+    .speech-mode button span{display:none;}
+    .speech-mode button{padding:9px;}
+  }
+
+  .resume-card{background:var(--surface); border:2px dashed var(--secondary); border-radius:20px; padding:20px; margin-bottom:16px; display:flex; align-items:center; gap:14px;}
+  .resume-card b{display:block; font-size:15px;}
+  .resume-card span{font-size:13px; color:var(--text-muted);}
 
   .slide-card{background:var(--surface); border-radius:24px; padding:28px 26px; box-shadow:0 6px 20px rgba(0,0,0,.06);}
   .topic-tag{font-size:12px; font-weight:800; color:var(--secondary); text-transform:uppercase; letter-spacing:.03em; margin-bottom:8px;}
@@ -74,6 +163,13 @@
     font-family:'Nunito',sans-serif; font-weight:700; font-size:14px; cursor:pointer; min-height:44px;
   }
   .audio-controls button.subs-on{background:var(--secondary); color:white; border-color:var(--secondary);}
+  .audio-controls button:disabled{opacity:.4; cursor:default;}
+  .audiobook-banner{
+    display:none; align-items:center; gap:10px; margin-top:14px; padding:12px 14px; border-radius:14px;
+    background:color-mix(in srgb, var(--accent) 14%, var(--surface-alt)); border:1px solid var(--accent); font-size:14px; font-weight:700;
+  }
+  body.mode-voice .audiobook-banner{display:flex;}
+  body.mode-text .audio-controls .audio-only{opacity:.4; pointer-events:none;}
 
   .checkpoint-card{background:var(--surface); border-radius:24px; padding:26px; box-shadow:0 6px 20px rgba(0,0,0,.06);}
   .checkpoint-card h2{font-size:20px; margin:0 0 18px;}
@@ -123,12 +219,6 @@
   .break-actions .go-break{background:var(--secondary); color:white;}
   .break-actions .skip{background:var(--surface-alt); color:var(--text);}
 
-  .alarm-btn{
-    position:fixed; right:18px; bottom:18px; z-index:70; background:var(--danger); color:white; border:none; border-radius:999px;
-    padding:16px 20px; font-family:'Nunito',sans-serif; font-weight:800; font-size:15px; display:flex; align-items:center; gap:8px;
-    box-shadow:0 8px 22px rgba(229,72,77,.4); cursor:pointer; min-height:56px;
-  }
-
   .air-banner{
     position:fixed; inset:0; background:var(--danger); color:white; z-index:200; display:none; flex-direction:column;
     align-items:center; justify-content:center; text-align:center; padding:32px;
@@ -143,15 +233,22 @@
     font-weight:900; font-family:'Nunito',sans-serif; cursor:pointer; min-height:64px;
   }
 
+  /* Підтвердження виходу з уроку — власна нена-модальна панель (без alert/confirm браузера, розд. 9) */
+  .confirm-overlay{position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:210; display:none; align-items:center; justify-content:center; padding:20px;}
+  .confirm-overlay.active{display:flex;}
+  .confirm-card{background:var(--surface); border-radius:20px; padding:24px; max-width:360px; width:100%; text-align:center; box-shadow:0 12px 30px rgba(0,0,0,.25);}
+  .confirm-card h3{margin:0 0 10px; font-size:19px;}
+  .confirm-card p{margin:0 0 18px; font-size:14px; color:var(--text-muted);}
+  .confirm-actions{display:flex; gap:10px; flex-wrap:wrap;}
+  .confirm-actions button{flex:1; min-height:52px; border:none; border-radius:14px; font-family:'Nunito',sans-serif; font-weight:800; font-size:15px; cursor:pointer;}
+  .confirm-actions .yes{background:var(--surface-alt); color:var(--text); border:2px solid color-mix(in srgb, var(--text) 40%, transparent);}
+  .confirm-actions .no{background:var(--primary); color:white;}
+
   .toast-saved{
     position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(120%); background:var(--text); color:var(--bg);
-    padding:12px 20px; border-radius:14px; font-size:14px; font-weight:700; z-index:210; transition:transform .2s;
+    padding:12px 20px; border-radius:14px; font-size:14px; font-weight:700; z-index:210; transition:transform .2s; max-width:90vw; text-align:center;
   }
   .toast-saved.show{transform:translateX(-50%) translateY(0);}
-
-  .resume-card{background:var(--surface); border:2px dashed var(--secondary); border-radius:20px; padding:20px; margin-bottom:16px; display:flex; align-items:center; gap:14px;}
-  .resume-card b{display:block; font-size:15px;}
-  .resume-card span{font-size:13px; color:var(--text-muted);}
 
   /* --- Interactive lesson components (ADR-020) --- */
   .hint-box{margin-top:14px; padding:12px 14px; border-radius:12px; background:color-mix(in srgb, var(--warn) 20%, var(--surface)); border:1px solid var(--warn); font-size:14px;}
@@ -217,7 +314,7 @@
   .sr-dot.active{background:var(--accent); width:22px; border-radius:6px;}
 </style>
 </head>
-<body data-theme="light">
+<body data-theme="light" class="mode-auto">
   <div class="theme-toggle">
     <button id="btn-light" class="active" onclick="setTheme('light')">☀️</button>
     <button id="btn-dark" onclick="setTheme('dark')">🌙</button>
@@ -228,6 +325,14 @@
       <div class="lbl"><span>Математика · Дроби</span><span id="stepLbl">Крок 3 з 6</span></div>
       <div class="progress-bar"><div style="width:45%"></div></div>
     </div>
+
+    <div class="speech-mode" role="group" aria-label="Режим озвучки уроку">
+      <span class="speech-mode-caption">Озвучка:</span>
+      <button id="modeBtnVoice" onclick="setSpeechMode('voice')" title="Завжди читати вголос, як аудіокнигу">🔊<span> Вголос</span></button>
+      <button id="modeBtnAuto" class="active" onclick="setSpeechMode('auto')" title="Система сама вирішує (за замовчуванням)">🤖<span> Авто</span></button>
+      <button id="modeBtnText" onclick="setSpeechMode('text')" title="Лише текст, без звуку">🔤<span> Текстом</span></button>
+    </div>
+
     <div class="voice-state">
       <div class="voice-orb listening" id="orbSmall">✦</div>
       <span id="voiceLabel">Слухаю…</span>
@@ -243,150 +348,199 @@
     </div>
   </div>
 
-  <main>
-    <div class="stepper-demo">
-      <button class="active" onclick="showScreen('slide', this)">1. Слайд + озвучка</button>
-      <button onclick="showScreen('checkpoint', this)">2. Контрольна точка</button>
-      <button onclick="showScreen('voice', this)">3. Голосовий діалог</button>
-      <button onclick="showScreen('break', this)">4. Перерва</button>
-      <button onclick="showScreen('numberline', this)">5. Числова пряма</button>
-      <button onclick="showScreen('dragsort', this)">6. Перетягни й розстав</button>
-      <button onclick="showScreen('stepreveal', this)">7. Крок за кроком</button>
-      <button onclick="showAirAlarm()">🚨 Демо: банер тривоги</button>
-    </div>
+  <div class="lesson-shell">
 
-    <div class="resume-card" id="resumeCard" style="display:none;">
-      <div style="font-size:26px;">↩️</div>
-      <div><b>Продовжуємо з того місця</b><span>Востаннє тут була перед перервою через тривогу</span></div>
-    </div>
+    <!-- ================= NAV: навігація уроку (зліва на альбомному планшеті, знизу — на портреті/телефоні) ================= -->
+    <nav class="lesson-nav" aria-label="Навігація уроку">
+      <div class="nav-group-label">Перейти</div>
+      <button class="nav-btn" onclick="navAction('home')"><span class="ic">🏠</span><span>На головну</span></button>
+      <button class="nav-btn" onclick="navAction('subject-list')"><span class="ic">📚</span><span>Список уроків предмету</span></button>
+      <button class="nav-btn" onclick="navAction('prev-module')"><span class="ic">⬅️</span><span>Попередній модуль</span></button>
+      <button class="nav-btn explain" onclick="navAction('explain')"><span class="ic">💡</span><span>Пояснити</span></button>
+      <button class="nav-btn chat-toggle-btn" onclick="toggleChatDrawer()"><span class="ic">💬</span><span>Чат</span></button>
+      <div class="nav-spacer"></div>
+      <div class="nav-group-label">Безпека</div>
+      <button class="nav-btn exit-btn" onclick="showExitConfirm()"><span class="ic">↩️</span><span>Вийти з уроку</span></button>
+      <button class="nav-btn alarm-nav-btn" onclick="triggerAlarm()"><span class="ic">🚨</span><span>Тривога</span></button>
+    </nav>
 
-    <!-- SLIDE -->
-    <section id="s-slide">
-      <div class="slide-card">
-        <div class="topic-tag">Пояснення</div>
-        <h1>Скорочення дробів</h1>
-        <div class="slide-illustration">🍕➗2</div>
-        <p>Щоб скоротити дріб, треба поділити чисельник і знаменник на одне й те саме число. Наприклад, 6/8 ділимо на 2 — виходить 3/4.</p>
-        <div class="source-ref">📘 Джерело: підручник «Математика, 6 клас», с. 54</div>
-        <div class="audio-controls">
-          <button onclick="showToast('Пауза озвучки')">⏸ Пауза</button>
-          <button onclick="showToast('Повтор озвучки')">↺ Повторити</button>
-          <button class="subs-on" onclick="this.classList.toggle('subs-on')">CC Субтитри</button>
-        </div>
+    <!-- ================= CONTENT: слайд / контрольна точка / голос / перерва / інтерактив ================= -->
+    <main class="lesson-content">
+      <div class="stepper-demo">
+        <button class="active" onclick="showScreen('slide', this)">1. Слайд + озвучка</button>
+        <button onclick="showScreen('checkpoint', this)">2. Контрольна точка</button>
+        <button onclick="showScreen('voice', this)">3. Голосовий діалог</button>
+        <button onclick="showScreen('break', this)">4. Перерва</button>
+        <button onclick="showScreen('numberline', this)">5. Числова пряма</button>
+        <button onclick="showScreen('dragsort', this)">6. Перетягни й розстав</button>
+        <button onclick="showScreen('stepreveal', this)">7. Крок за кроком</button>
+        <button onclick="showAirAlarm()">🚨 Демо: банер тривоги</button>
       </div>
-    </section>
+      <p class="stepper-demo-note">↑ Це перемикач демо-екранів для показу макета, не частина продукту.</p>
 
-    <!-- CHECKPOINT -->
-    <section id="s-checkpoint" style="display:none;">
-      <div class="checkpoint-card">
-        <h2>Скороти дріб 8/12 наскільки можеш</h2>
-        <div class="choices">
-          <div class="choice" onclick="pickChoice(this,false)">4/6</div>
-          <div class="choice" onclick="pickChoice(this,true)">2/3</div>
-          <div class="choice" onclick="pickChoice(this,false)">1/2</div>
-        </div>
-        <div class="mic-row">
-          <button class="mic-btn">🎙️ Відповісти голосом</button>
-        </div>
-        <textarea placeholder="…або напиши відповідь тут"></textarea>
-        <div class="feedback" id="feedback" style="display:none;">
-          <span>✅</span><div><b>Так, 2/3 — це найбільше скорочення!</b><br>Ти поділила і чисельник, і знаменник на 4.</div>
-        </div>
+      <div class="resume-card" id="resumeCard" style="display:none;">
+        <div style="font-size:26px;">↩️</div>
+        <div><b>Продовжуємо з того місця</b><span>Востаннє тут була перед перервою через тривогу</span></div>
       </div>
-    </section>
 
-    <!-- VOICE DIALOG -->
-    <section id="s-voice" style="display:none;">
-      <div class="voice-dialog">
-        <div class="orb-wrap">
-          <div class="orb-lg" id="orbLarge">✦</div>
-          <span class="ai-badge-mini">✦ Я — ШІ, не людина</span>
+      <!-- SLIDE -->
+      <section id="s-slide">
+        <div class="slide-card">
+          <div class="topic-tag">Пояснення</div>
+          <h1>Скорочення дробів</h1>
+          <div class="slide-illustration">🍕➗2</div>
+          <p>Щоб скоротити дріб, треба поділити чисельник і знаменник на одне й те саме число. Наприклад, 6/8 ділимо на 2 — виходить 3/4.</p>
+          <div class="source-ref">📘 Джерело: підручник «Математика, 6 клас», с. 54</div>
+          <div class="audio-controls">
+            <button class="audio-only" onclick="showToast('Пауза озвучки')">⏸ Пауза</button>
+            <button class="audio-only" onclick="showToast('Повтор озвучки')">↺ Повторити</button>
+            <button class="subs-on" onclick="this.classList.toggle('subs-on')">CC Субтитри</button>
+          </div>
+          <div class="audiobook-banner">🎧 <span>Режим «Вголос»: репетитор читає розділ, як аудіокнигу — зручно для літератури й історії.</span></div>
         </div>
-        <div class="voice-status-text" id="voiceStatusText">Говорить Ліра</div>
-        <div class="transcript">
-          <div class="transcript-header">🎧 Транскрипт голосової сесії · 00:42</div>
-          <div class="t-msg ai">Спробуй пояснити своїми словами, чому 8/12 і 2/3 — це те саме число.<span class="wave">〜〜〜 Ліра · 09:14</span></div>
-          <div class="t-msg child">Бо ми ділимо однаково зверху і знизу, тому дріб не змінюється насправді<span class="wave">〜〜ти · 09:14</span></div>
-          <div class="t-msg ai">Саме так! Це і називається скороченням дробу.<span class="wave">〜〜〜 Ліра · 09:15</span></div>
-        </div>
-        <div class="audio-controls" style="justify-content:center;">
-          <button onclick="showToast('Мікрофон вимкнено, перехід у текст')">✋ Перебити</button>
-        </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- BREAK -->
-    <section id="s-break" style="display:none;">
-      <div class="break-card">
-        <div class="big-emoji">🧃</div>
-        <h2 style="margin:0;">Ти вчишся вже 20 хвилин!</h2>
-        <p style="color:var(--text-muted);">Розімнись, попий води або подивись у вікно.</p>
-        <div class="break-actions">
-          <button class="go-break">Перерва</button>
-          <button class="skip">Продовжити без перерви</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- INTERACTIVE: number_line -->
-    <section id="s-numberline" style="display:none;">
-      <div class="checkpoint-card">
-        <h2>Постав крапку там, де на прямій стоїть дріб <strong>3/4</strong></h2>
-        <div class="nl-wrap">
-          <div class="nl-track" id="nlTrack" role="slider" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0" aria-label="Позначка на числовій прямій від 0 до 1, познач 3/4" tabindex="0">
-            <div class="nl-tick" style="left:0%"><span>0</span></div>
-            <div class="nl-tick" style="left:25%"><span>1/4</span></div>
-            <div class="nl-tick" style="left:50%"><span>1/2</span></div>
-            <div class="nl-tick" style="left:75%"><span>3/4</span></div>
-            <div class="nl-tick" style="left:100%"><span>1</span></div>
-            <div class="nl-marker" id="nlMarker" style="left:0%">●</div>
+      <!-- CHECKPOINT -->
+      <section id="s-checkpoint" style="display:none;">
+        <div class="checkpoint-card">
+          <h2>Скороти дріб 8/12 наскільки можеш</h2>
+          <div class="choices">
+            <div class="choice" onclick="pickChoice(this,false)">4/6</div>
+            <div class="choice" onclick="pickChoice(this,true)">2/3</div>
+            <div class="choice" onclick="pickChoice(this,false)">1/2</div>
+          </div>
+          <div class="mic-row">
+            <button class="mic-btn">🎙️ Відповісти голосом</button>
+          </div>
+          <textarea placeholder="…або напиши відповідь тут"></textarea>
+          <div class="feedback" id="feedback" style="display:none;">
+            <span>✅</span><div><b>Так, 2/3 — це найбільше скорочення!</b><br>Ти поділила і чисельник, і знаменник на 4.</div>
           </div>
         </div>
-        <div class="feedback" id="nlFeedback" style="display:none;"></div>
-        <div class="hint-box" id="nlHint" style="display:none;">💡 Підказка: розділи пряму на 4 рівні частини між 0 і 1 — 3/4 це третя поділка, майже біля кінця.</div>
-        <div class="ds-hint-note">Перетягни кружечок пальцем чи мишею, або торкнись потрібного місця на прямій — стрілки ⬅➡ і Enter теж працюють.</div>
-      </div>
-    </section>
+      </section>
 
-    <!-- INTERACTIVE: drag_sort -->
-    <section id="s-dragsort" style="display:none;">
-      <div class="checkpoint-card">
-        <h2>Перетягни й розстав по місцях</h2>
-        <div class="ds-tabs">
-          <button class="active" id="dsTabTimeline" onclick="dsSwitchMode('timeline')">🕰️ Хронологія (історія)</button>
-          <button id="dsTabPairs" onclick="dsSwitchMode('pairs')">🌍 Пари слів (англійська)</button>
+      <!-- VOICE DIALOG -->
+      <section id="s-voice" style="display:none;">
+        <div class="voice-dialog">
+          <div class="orb-wrap">
+            <div class="orb-lg" id="orbLarge">✦</div>
+            <span class="ai-badge-mini">✦ Я — ШІ, не людина</span>
+          </div>
+          <div class="voice-status-text" id="voiceStatusText">Говорить Ліра</div>
+          <div class="transcript">
+            <div class="transcript-header">🎧 Транскрипт голосової сесії · 00:42</div>
+            <div class="t-msg ai">Спробуй пояснити своїми словами, чому 8/12 і 2/3 — це те саме число.<span class="wave">〜〜〜 Ліра · 09:14</span></div>
+            <div class="t-msg child">Бо ми ділимо однаково зверху і знизу, тому дріб не змінюється насправді<span class="wave">〜〜ти · 09:14</span></div>
+            <div class="t-msg ai">Саме так! Це і називається скороченням дробу.<span class="wave">〜〜〜 Ліра · 09:15</span></div>
+          </div>
+          <div class="audio-controls" style="justify-content:center;">
+            <button onclick="showToast('Мікрофон вимкнено, перехід у текст')">✋ Перебити</button>
+          </div>
         </div>
-        <div id="dsBoard"></div>
-        <div class="ds-actions">
-          <button class="ds-check" onclick="dsCheck()">Перевірити</button>
-          <button class="ds-reset" onclick="dsReset()">Почати заново</button>
-        </div>
-        <div class="ds-hint-note">Перетягни картку в порожнє місце пальцем чи мишею — або спочатку торкнись картки, а потім місця, куди її поставити.</div>
-      </div>
-    </section>
+      </section>
 
-    <!-- INTERACTIVE: step_reveal -->
-    <section id="s-stepreveal" style="display:none;">
-      <div class="checkpoint-card">
-        <h2>Подивись, як дріб 8/12 скорочується крок за кроком</h2>
-        <div class="sr-frame" id="srFrame"></div>
-        <div class="sr-controls">
-          <button id="srBack" onclick="srStep(-1)">← Назад</button>
-          <span class="sr-dots" id="srDots"></span>
-          <button id="srNext" onclick="srStep(1)">Далі →</button>
-          <button id="srAuto" onclick="srToggleAuto()">▶ Авто-показ</button>
+      <!-- BREAK -->
+      <section id="s-break" style="display:none;">
+        <div class="break-card">
+          <div class="big-emoji">🧃</div>
+          <h2 style="margin:0;">Ти вчишся вже 20 хвилин!</h2>
+          <p style="color:var(--text-muted);">Розімнись, попий води або подивись у вікно.</p>
+          <div class="break-actions">
+            <button class="go-break">Перерва</button>
+            <button class="skip">Продовжити без перерви</button>
+          </div>
         </div>
-      </div>
-    </section>
-  </main>
+      </section>
 
-  <button class="alarm-btn" onclick="triggerAlarm()">🚨 Тривога</button>
+      <!-- INTERACTIVE: number_line -->
+      <section id="s-numberline" style="display:none;">
+        <div class="checkpoint-card">
+          <h2>Постав крапку там, де на прямій стоїть дріб <strong>3/4</strong></h2>
+          <div class="nl-wrap">
+            <div class="nl-track" id="nlTrack" role="slider" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0" aria-label="Позначка на числовій прямій від 0 до 1, познач 3/4" tabindex="0">
+              <div class="nl-tick" style="left:0%"><span>0</span></div>
+              <div class="nl-tick" style="left:25%"><span>1/4</span></div>
+              <div class="nl-tick" style="left:50%"><span>1/2</span></div>
+              <div class="nl-tick" style="left:75%"><span>3/4</span></div>
+              <div class="nl-tick" style="left:100%"><span>1</span></div>
+              <div class="nl-marker" id="nlMarker" style="left:0%">●</div>
+            </div>
+          </div>
+          <div class="feedback" id="nlFeedback" style="display:none;"></div>
+          <div class="hint-box" id="nlHint" style="display:none;">💡 Підказка: розділи пряму на 4 рівні частини між 0 і 1 — 3/4 це третя поділка, майже біля кінця.</div>
+          <div class="ds-hint-note">Перетягни кружечок пальцем чи мишею, або торкнись потрібного місця на прямій — стрілки ⬅➡ і Enter теж працюють.</div>
+        </div>
+      </section>
+
+      <!-- INTERACTIVE: drag_sort -->
+      <section id="s-dragsort" style="display:none;">
+        <div class="checkpoint-card">
+          <h2>Перетягни й розстав по місцях</h2>
+          <div class="ds-tabs">
+            <button class="active" id="dsTabTimeline" onclick="dsSwitchMode('timeline')">🕰️ Хронологія (історія)</button>
+            <button id="dsTabPairs" onclick="dsSwitchMode('pairs')">🌍 Пари слів (англійська)</button>
+          </div>
+          <div id="dsBoard"></div>
+          <div class="ds-actions">
+            <button class="ds-check" onclick="dsCheck()">Перевірити</button>
+            <button class="ds-reset" onclick="dsReset()">Почати заново</button>
+          </div>
+          <div class="ds-hint-note">Перетягни картку в порожнє місце пальцем чи мишею — або спочатку торкнись картки, а потім місця, куди її поставити.</div>
+        </div>
+      </section>
+
+      <!-- INTERACTIVE: step_reveal -->
+      <section id="s-stepreveal" style="display:none;">
+        <div class="checkpoint-card">
+          <h2>Подивись, як дріб 8/12 скорочується крок за кроком</h2>
+          <div class="sr-frame" id="srFrame"></div>
+          <div class="sr-controls">
+            <button id="srBack" onclick="srStep(-1)">← Назад</button>
+            <span class="sr-dots" id="srDots"></span>
+            <button id="srNext" onclick="srStep(1)">Далі →</button>
+            <button id="srAuto" onclick="srToggleAuto()">▶ Авто-показ</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- ================= CHAT: чат з репетитором (праворуч на альбомі; шухляда на портреті/телефоні) ================= -->
+    <div class="chat-backdrop" id="chatBackdrop" onclick="toggleChatDrawer()"></div>
+    <aside class="lesson-chat" id="lessonChat">
+      <div class="chat-header">
+        <span>💬 Спитай <span id="chatTutorName">Ліру</span></span>
+        <button class="chat-close" onclick="toggleChatDrawer()" aria-label="Закрити чат">✕</button>
+      </div>
+      <div class="chat-messages" id="chatMessages">
+        <div class="chat-msg ai">Якщо щось незрозуміло на слайді — просто напиши чи запитай голосом, я поясню інакше.</div>
+        <div class="chat-msg child">А чому не можна поділити на 3?</div>
+        <div class="chat-msg ai">Можна! Спробуй — 8/12 теж ділиться на 4. А на 3 не вийде рівно, перевір сама.</div>
+      </div>
+      <div class="chat-input-row">
+        <button class="chat-mic-btn" title="Запитати голосом" onclick="showToast('Демо: слухаю питання голосом…')">🎙️</button>
+        <input type="text" class="chat-input" id="chatInput" placeholder="Напиши питання репетитору…">
+        <button class="chat-send-btn" onclick="chatSendDemo()" aria-label="Надіслати">➤</button>
+      </div>
+    </aside>
+
+  </div>
 
   <div class="air-banner" id="airBanner">
     <div class="siren">🚨</div>
     <h1>Повітряна тривога!</h1>
     <p>Постав урок на паузу і йди в укриття.</p>
     <button onclick="pauseFromAlarm()">⏸ Пауза</button>
+  </div>
+
+  <div class="confirm-overlay" id="exitConfirm">
+    <div class="confirm-card">
+      <h3>Вийти з уроку?</h3>
+      <p>Прогрес збережеться на цьому кроці — продовжиш звідси наступного разу.</p>
+      <div class="confirm-actions">
+        <button class="yes" onclick="confirmExitYes()">Так, вийти</button>
+        <button class="no" onclick="hideExitConfirm()">Ні, продовжити урок</button>
+      </div>
+    </div>
   </div>
 
   <div class="toast-saved" id="toastSaved">Збережено · продовжимо з цього кроку</div>
@@ -409,6 +563,28 @@
     document.querySelectorAll('.choice').forEach(c=>c.classList.remove('correct'));
     if(correct){ el.classList.add('correct'); document.getElementById('feedback').style.display='flex'; }
     else { document.getElementById('feedback').style.display='none'; showToast('Майже! Спробуймо ще раз по-іншому.'); }
+  }
+
+  // --- Перемикач режиму озвучки: вголос (примусово аудіо) / авто (за замовчуванням) / текстом (без звуку) ---
+  function setSpeechMode(mode){
+    document.body.classList.remove('mode-voice','mode-auto','mode-text');
+    document.body.classList.add('mode-'+mode);
+    document.getElementById('modeBtnVoice').classList.toggle('active', mode==='voice');
+    document.getElementById('modeBtnAuto').classList.toggle('active', mode==='auto');
+    document.getElementById('modeBtnText').classList.toggle('active', mode==='text');
+    if(mode==='text'){
+      showToast('Режим «Текстом»: без звуку, лише читання.');
+      document.getElementById('orbSmall').className='voice-orb muted';
+      document.getElementById('voiceLabel').textContent='Зараз говоримо текстом';
+    } else if(mode==='voice'){
+      showToast('Режим «Вголос»: репетитор читає все вголос, як аудіокнигу.');
+      document.getElementById('orbSmall').className='voice-orb speaking';
+      document.getElementById('voiceLabel').textContent='Говорить Ліра';
+    } else {
+      showToast('Режим «Авто»: система сама вирішує голос чи текст.');
+      document.getElementById('orbSmall').className='voice-orb listening';
+      document.getElementById('voiceLabel').textContent='Слухаю…';
+    }
   }
 
   // --- Avatar mode: "вогник" (default glow) vs "персонаж" (demo) ---
@@ -440,6 +616,71 @@
   }
   setInterval(()=>{ if(document.getElementById('s-voice').style.display!=='none'){ cycleVoice(); } }, 2200);
 
+  // --- Навігація уроку: «На головну» / «Список уроків» / «Попередній модуль» / «Пояснити» ---
+  function navAction(kind){
+    const messages={
+      'home':'Демо: перехід на «Сьогодні» (прогрес збережено).',
+      'subject-list':'Демо: перехід до списку уроків з математики.',
+      'prev-module':'Демо: повертаємось до попереднього модуля — «Дії з дробами».',
+      'explain':null
+    };
+    if(kind==='explain'){
+      explainAgain();
+      return;
+    }
+    showToast(messages[kind]);
+  }
+  function explainAgain(){
+    addChatMessage('ai', 'Ось інакше: уяви піцу, розрізану на 12 шматочків. Якщо взяти 8 із них — це стільки ж, як 2 шматочки з піци, розрізаної на 3.');
+    if(document.body.classList.contains('mode-text')){
+      showToast('Пояснюю ще раз текстом — дивись у чаті праворуч.');
+    } else {
+      showToast('Пояснюю ще раз вголос — і залишаю текст у чаті.');
+      document.getElementById('orbSmall').className='voice-orb speaking';
+      document.getElementById('voiceLabel').textContent='Говорить Ліра';
+    }
+    if(window.innerWidth<=880){ openChatDrawer(); }
+  }
+
+  // --- Чат з репетитором (текстові питання під час уроку, окремо від голосового транскрипту) ---
+  function addChatMessage(who, text){
+    const wrap=document.getElementById('chatMessages');
+    const el=document.createElement('div');
+    el.className='chat-msg '+who;
+    el.textContent=text;
+    wrap.appendChild(el);
+    wrap.scrollTop=wrap.scrollHeight;
+  }
+  function chatSendDemo(){
+    const input=document.getElementById('chatInput');
+    const val=input.value.trim();
+    if(!val) return;
+    addChatMessage('child', val);
+    input.value='';
+    setTimeout(()=>addChatMessage('ai','Добре питання! Подивись ще раз на приклад на слайді — спробуємо розібрати разом.'), 500);
+  }
+  document.getElementById('chatInput').addEventListener('keydown', function(e){ if(e.key==='Enter'){ chatSendDemo(); } });
+  function toggleChatDrawer(){
+    const chat=document.getElementById('lessonChat');
+    if(chat.classList.contains('open')){ closeChatDrawer(); } else { openChatDrawer(); }
+  }
+  function openChatDrawer(){
+    document.getElementById('lessonChat').classList.add('open');
+    document.getElementById('chatBackdrop').classList.add('open');
+  }
+  function closeChatDrawer(){
+    document.getElementById('lessonChat').classList.remove('open');
+    document.getElementById('chatBackdrop').classList.remove('open');
+  }
+
+  // --- Вихід з уроку: власне підтвердження (без alert/confirm браузера) ---
+  function showExitConfirm(){ document.getElementById('exitConfirm').classList.add('active'); }
+  function hideExitConfirm(){ document.getElementById('exitConfirm').classList.remove('active'); }
+  function confirmExitYes(){
+    hideExitConfirm();
+    showToast('Урок збережено на цьому кроці · демо переходу на «Сьогодні»');
+  }
+
   function triggerAlarm(){
     showToast('Збережено · продовжимо з цього кроку');
   }
@@ -456,7 +697,7 @@
     t.textContent = msg || 'Збережено · продовжимо з цього кроку';
     t.classList.add('show');
     clearTimeout(window.__toastTimer);
-    window.__toastTimer=setTimeout(()=>t.classList.remove('show'), 2400);
+    window.__toastTimer=setTimeout(()=>t.classList.remove('show'), 2600);
   }
 
   // ==================== Interactive lesson components (ADR-020) ====================
