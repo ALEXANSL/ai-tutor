@@ -6,7 +6,20 @@ import { checkWarmupProgressAction } from "@/app/actions/lesson";
 import { ChildCard } from "@/components/child/ChildCard";
 import { uk } from "@/i18n/uk";
 
-const POLL_MS = 3000;
+// Perf pass (2026-09-27): a full generate→review wait can run several
+// minutes (up to `MAX_REVIEW_PASSES` AI-call passes). Polling stays snappy
+// at the start, when the child is most likely still watching, then backs
+// off so a long wait doesn't keep hitting the DB every 3s for minutes on
+// end — this only changes how often the client asks, never what the
+// pipeline itself does.
+const POLL_MS_INITIAL = 3000;
+const POLL_MS_AFTER_30S = 5000;
+const POLL_MS_AFTER_90S = 8000;
+function nextPollMs(elapsedMs: number): number {
+  if (elapsedMs >= 90_000) return POLL_MS_AFTER_90S;
+  if (elapsedMs >= 30_000) return POLL_MS_AFTER_30S;
+  return POLL_MS_INITIAL;
+}
 const STAGE_ORDER = ["planning", "generating", "reviewing", "revising", "saving"] as const;
 type Stage = (typeof STAGE_ORDER)[number];
 
@@ -41,6 +54,7 @@ export function LibraryWarmProgress({ sessionId }: { sessionId: string }) {
 
   useEffect(() => {
     cancelledRef.current = false;
+    const startedAt = Date.now();
     let timer: ReturnType<typeof setTimeout>;
 
     async function poll() {
@@ -56,11 +70,11 @@ export function LibraryWarmProgress({ sessionId }: { sessionId: string }) {
         }
         setReviewPass(result.reviewPass ?? null);
       }
-      timer = setTimeout(poll, POLL_MS);
+      timer = setTimeout(poll, nextPollMs(Date.now() - startedAt));
     }
 
-    // First check right away — no need to wait a full POLL_MS just to show
-    // the actual current stage instead of the "planning" default.
+    // First check right away — no need to wait a full POLL_MS_INITIAL just
+    // to show the actual current stage instead of the "planning" default.
     void poll();
     return () => {
       cancelledRef.current = true;
