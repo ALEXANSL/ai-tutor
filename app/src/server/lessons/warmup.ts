@@ -1,4 +1,5 @@
 import "server-only";
+import { getBudget } from "@/server/ai/store";
 import { forFamily } from "@/server/db/family-scope";
 import { getLibraryWarmDailyBudgetUsd, getLibraryWarmLookaheadTopics, getLibraryWarmMaxConcurrent } from "@/server/env";
 import { registerJobHandler, type JobRow } from "@/server/jobs/runner";
@@ -46,6 +47,15 @@ export type EnsureActiveLibraryBlockResult =
   /** ADR-023 §Частина 1.6: the daily warm-up budget is spent — no new job started. */
   | { status: "deferred_daily_budget" };
 
+/**
+ * US-22.4 (D-108, S33): tags a `library.warm_topic` job by where it came
+ * from — the existing automatic triggers (`is_current`, ADR-023 §Частина 1/3)
+ * vs. the parent's own explicit, already-cost-confirmed bulk launch — purely
+ * for reporting/де-дуплікація status (КП-5/КП-6); `registerLibraryWarmJobs`
+ * behaves identically regardless of `source`.
+ */
+export type WarmJobSource = "auto" | "manual_bulk";
+
 interface WarmJobPayload {
   topicId: string;
   subjectId: string;
@@ -59,6 +69,9 @@ interface WarmJobPayload {
   /** BUG-035: current generate→review pass (1-based), when `stage` is
    * "generating"/"revising"/"reviewing"; `null`/absent otherwise. */
   reviewPass?: number | null;
+  /** US-22.4 (D-108): `"manual_bulk"` for this slice's bulk launch, `"auto"` for
+   * every existing trigger (`is_current`, `warmAheadForSubject`). */
+  source: WarmJobSource;
 }
 
 /**
@@ -89,7 +102,24 @@ export async function ensureActiveLibraryBlock(
   familyId: string,
   subject: WarmSubjectMeta,
   topic: WarmTopicMeta,
-  opts: { immediate: boolean },
+  opts: {
+    immediate: boolean;
+    /** US-22.4 (D-108): defaults to `"auto"` — pass `"manual_bulk"` only from
+     * the confirmed bulk-launch action. */
+    source?: WarmJobSource;
+    /**
+     * US-22.4 §КП-3 (D-108, 12.28): the manual bulk launch's own cost-confirmation
+     * screen (КП-2) IS the spending safeguard for THIS path — a second, silent
+     * daily-cap check right after the parent already confirmed the exact
+     * amount adds no safety and only breaks the "все за ніч" promise into a
+     * silent partial run. `true` skips §Частина 1.6's daily soft cap
+     * (`LIBRARY_WARM_DAILY_BUDGET_USD`) for this one call; the monthly
+     * 80/100/110% budget states (ADR-012) still apply unchanged to every
+     * individual `callModel` call regardless of this flag — this only ever
+     * touches the DAILY soft cap, never the hard monthly thresholds.
+     */
+    bypassDailyBudget?: boolean;
+  },
 ): Promise<EnsureActiveLibraryBlockResult> {
   const scope = forFamily(familyId);
   const { count: activeCount } = await scope
@@ -120,9 +150,13 @@ export async function ensureActiveLibraryBlock(
   // §Частина 1.6: a soft daily cap on warm-up spend specifically — a
   // safeguard for the parent marking many topics `is_current` in one sitting
   // (docs/01 D-65), independent of the monthly budget states (ADR-012).
-  const spentToday = await warmSpendTodayUsd(familyId);
-  if (spentToday >= getLibraryWarmDailyBudgetUsd()) {
-    return { status: "deferred_daily_budget" };
+  // US-22.4 (D-108, 12.28): explicitly skipped for the manual bulk launch —
+  // its own cost-confirmation screen already IS the safeguard for that path.
+  if (!opts.bypassDailyBudget) {
+    const spentToday = await warmSpendTodayUsd(familyId);
+    if (spentToday >= getLibraryWarmDailyBudgetUsd()) {
+      return { status: "deferred_daily_budget" };
+    }
   }
 
   const payload: WarmJobPayload = {
@@ -134,6 +168,7 @@ export async function ensureActiveLibraryBlock(
     grade: topic.grade,
     moduleCode: "school",
     stage: "planning",
+    source: opts.source ?? "auto",
   };
   const { data: inserted, error: insertError } = await db
     .from("jobs")
@@ -260,6 +295,137 @@ export async function warmAheadForSubject(familyId: string, subjectId: string, o
       console.error(`warmAheadForSubject: ensureActiveLibraryBlock failed for topic ${topic.id}: ${(e as Error).message}`);
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// US-22.4 (D-108, S33): the parent's own manual, potentially large bulk
+// launch ("Підготувати уроки" on the subject's topic list) — a SEPARATE
+// entry point from `warmAheadForSubject` above (a different trigger, a
+// different budget rule), sharing only `ensureActiveLibraryBlock` and the
+// same `library.warm_topic` queue (docs/05 S33: "жодного нового конвеєра
+// генерації").
+// ---------------------------------------------------------------------------
+
+/** ADR-023 §Частина 1.2 tariff for one topic's warm-up (one library block). */
+export const WARM_TOPIC_COST_USD = 0.33;
+
+/** US-22.4 КП-4: an extra "усвідомленість" line above this amount, `*(налашт.)*`. */
+export const BULK_WARM_AWARENESS_THRESHOLD_USD = 10;
+
+export type TopicWarmStatus = "ready" | "queued" | "generating" | "error";
+
+/**
+ * US-22.4 КП-5 (status badges) / КП-6 (де-дуплікація): the CURRENT status of
+ * each requested topic, derived purely from data already in `library_items`/
+ * `jobs` — the very same de-dup facts `ensureActiveLibraryBlock` itself
+ * checks, so this reads consistently whether a topic's job came from this
+ * slice's manual bulk launch or any of ADR-023's automatic triggers. A topic
+ * with neither an active block nor any `library.warm_topic` job is left out
+ * of the returned record entirely (no badge — "not touched yet", КП-1).
+ */
+export async function getTopicWarmupStatuses(familyId: string, topicIds: string[]): Promise<Record<string, TopicWarmStatus>> {
+  const uniqueIds = Array.from(new Set(topicIds));
+  const result: Record<string, TopicWarmStatus> = {};
+  if (uniqueIds.length === 0) return result;
+
+  const scope = forFamily(familyId);
+  const [{ data: activeItems }, { data: jobs }] = await Promise.all([
+    scope
+      .select("library_items", "topic_id")
+      .eq("kind", "block")
+      .eq("status", "active")
+      .in("topic_id", uniqueIds)
+      .returns<{ topic_id: string }[]>(),
+    scope
+      .select("jobs", "dedupe_key, status, created_at")
+      .eq("type", LIBRARY_WARM_JOB_TYPE)
+      .in("dedupe_key", uniqueIds.map(warmDedupeKey))
+      .order("created_at", { ascending: false })
+      .returns<{ dedupe_key: string; status: string; created_at: string }[]>(),
+  ]);
+
+  const activeSet = new Set((activeItems ?? []).map((r) => r.topic_id));
+  // Most-recent-first order above, so the first row seen per dedupe_key is
+  // that topic's latest job — a topic can have an older `failed` row and a
+  // newer `queued` retry sharing the same dedupe_key (§Частина 1.3/1.7: the
+  // unique index only blocks a duplicate while `queued`/`running`).
+  const latestJobStatusByDedupe = new Map<string, string>();
+  for (const j of jobs ?? []) if (!latestJobStatusByDedupe.has(j.dedupe_key)) latestJobStatusByDedupe.set(j.dedupe_key, j.status);
+
+  for (const topicId of uniqueIds) {
+    if (activeSet.has(topicId)) {
+      result[topicId] = "ready";
+      continue;
+    }
+    const jobStatus = latestJobStatusByDedupe.get(warmDedupeKey(topicId));
+    if (jobStatus === "queued") result[topicId] = "queued";
+    else if (jobStatus === "running") result[topicId] = "generating";
+    else if (jobStatus === "failed") result[topicId] = "error";
+    // "done" without an active block would be a data inconsistency (a
+    // finished warm job always leaves an active block behind) — never
+    // observed, so left untouched (no badge) rather than guessed at.
+  }
+  return result;
+}
+
+export interface BulkWarmTopicEstimate {
+  topicId: string;
+  /** `false` — already `active` or already `queued`/`running` (КП-6: $0, shown transparently, never hidden/disabled). */
+  needsPrep: boolean;
+}
+
+export interface BulkWarmEstimate {
+  items: BulkWarmTopicEstimate[];
+  selectedCount: number;
+  /** Already active/queued/running — excluded from the cost (КП-2/КП-6). */
+  readyCount: number;
+  neededCount: number;
+  estimatedCostUsd: number;
+  monthlySpentUsd: number;
+  monthlyLimitUsd: number;
+  /** КП-4: an extra "усвідомленість" line for a large batch. */
+  exceedsAwarenessThreshold: boolean;
+  /**
+   * КП-3: `spentUsd + estimatedCostUsd >= limitUsd` — the confirm button
+   * must be replaced entirely (no silent partial launch), unlike the daily
+   * soft cap this slice otherwise bypasses. The hard monthly 100%/110%
+   * thresholds (ADR-012) apply here with NO exceptions.
+   */
+  wouldExceedMonthlyLimit: boolean;
+}
+
+/**
+ * US-22.4 КП-2 (D-108): the exact pre-confirmation cost estimate — which of
+ * the selected topics genuinely need a new `library.warm_topic` job (КП-6
+ * de-dup, reusing the same facts `ensureActiveLibraryBlock` checks) and the
+ * resulting ≈$0.33/topic total, checked against the family's CURRENT monthly
+ * budget (ADR-012) so the confirm screen can replace its own button with the
+ * "ліміт вичерпано" state (КП-3) before anything is ever enqueued.
+ */
+export async function estimateBulkWarmup(familyId: string, topicIds: string[]): Promise<BulkWarmEstimate> {
+  const uniqueIds = Array.from(new Set(topicIds));
+  const [statuses, budget] = await Promise.all([getTopicWarmupStatuses(familyId, uniqueIds), getBudget(familyId)]);
+
+  const items: BulkWarmTopicEstimate[] = uniqueIds.map((topicId) => {
+    const status = statuses[topicId];
+    const needsPrep = status !== "ready" && status !== "queued" && status !== "generating";
+    return { topicId, needsPrep };
+  });
+  const neededCount = items.filter((i) => i.needsPrep).length;
+  const readyCount = items.length - neededCount;
+  const estimatedCostUsd = Math.round(neededCount * WARM_TOPIC_COST_USD * 100) / 100;
+
+  return {
+    items,
+    selectedCount: items.length,
+    readyCount,
+    neededCount,
+    estimatedCostUsd,
+    monthlySpentUsd: budget.spentUsd,
+    monthlyLimitUsd: budget.limitUsd,
+    exceedsAwarenessThreshold: estimatedCostUsd > BULK_WARM_AWARENESS_THRESHOLD_USD,
+    wouldExceedMonthlyLimit: budget.limitUsd > 0 && budget.spentUsd + estimatedCostUsd >= budget.limitUsd,
+  };
 }
 
 /**
