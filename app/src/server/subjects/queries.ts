@@ -46,8 +46,13 @@ interface TopicRow {
   is_current: boolean;
 }
 
-/** Only a `textbook`-kind, indexed and enabled book counts as "has a textbook" (US-3.1 KP-2). */
-const READY_TEXTBOOK_FILTERS = { kind: "textbook", status: "ready", use_in_lessons: true } as const;
+/**
+ * Only a `textbook`-kind, indexed and enabled book counts as "has a
+ * textbook" (US-3.1 KP-2). ADR-032: `ready_partial` counts too — a book with
+ * at least one permanently-failed section is still usable for every OTHER
+ * section's topics, so it must not disappear from "has a textbook" checks.
+ */
+const READY_TEXTBOOK_FILTERS = { kind: "textbook", statuses: ["ready", "ready_partial"] as const, use_in_lessons: true } as const;
 
 /**
  * "Предмети" (kind='school_subject', default — US-3.1, US-3.2) or "Курси"
@@ -69,7 +74,7 @@ export async function listSubjectsOverview(familyId: string, kind: SubjectKind =
     scope
       .select("materials", "subject_id, title, name")
       .eq("kind", READY_TEXTBOOK_FILTERS.kind)
-      .eq("status", READY_TEXTBOOK_FILTERS.status)
+      .in("status", READY_TEXTBOOK_FILTERS.statuses)
       .eq("use_in_lessons", READY_TEXTBOOK_FILTERS.use_in_lessons)
       .not("subject_id", "is", null)
       .returns<TextbookRow[]>(),
@@ -163,7 +168,7 @@ export async function getSubjectDetail(familyId: string, subjectId: string): Pro
       .select("materials", "title, name")
       .eq("subject_id", subjectId)
       .eq("kind", READY_TEXTBOOK_FILTERS.kind)
-      .eq("status", READY_TEXTBOOK_FILTERS.status)
+      .in("status", READY_TEXTBOOK_FILTERS.statuses)
       .eq("use_in_lessons", READY_TEXTBOOK_FILTERS.use_in_lessons)
       .order("added_at", { ascending: false })
       .limit(1)

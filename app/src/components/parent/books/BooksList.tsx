@@ -20,13 +20,11 @@ const POLL_MS = 8000;
 
 function StatusBadge({ book }: { book: BookListItem }) {
   const t = uk.parent.books;
-  const tone =
-    book.status === "ready"
-      ? "bg-p-success"
-      : book.status === "error" || book.status === "scan_no_text"
-        ? "bg-p-danger"
-        : "bg-p-warn";
-  const icon = book.status === "ready" ? "✓" : book.status === "error" || book.status === "scan_no_text" ? "!" : "…";
+  const tone = book.status === "ready" ? "bg-p-success" : book.status === "error" || book.status === "scan_no_text" ? "bg-p-danger" : "bg-p-warn";
+  // ADR-032: `ready_partial` gets its own icon ("±", not "✓"/"…") — the book
+  // is usable but not every section succeeded.
+  const icon =
+    book.status === "ready" ? "✓" : book.status === "ready_partial" ? "±" : book.status === "error" || book.status === "scan_no_text" ? "!" : "…";
   const step = book.progress.step ? t.progress[book.progress.step] : null;
   const isOcrStep = book.progress.step === "ocr" && book.progress.total;
   const count =
@@ -38,7 +36,7 @@ function StatusBadge({ book }: { book: BookListItem }) {
           {icon}
         </span>
         {t.status[book.status] ?? book.status}
-        {book.status === "ready" && book.pageCount ? ` · ${t.pages(book.pageCount, book.format === "epub")}` : ""}
+        {(book.status === "ready" || book.status === "ready_partial") && book.pageCount ? ` · ${t.pages(book.pageCount, book.format === "epub")}` : ""}
       </span>
       {IN_PROGRESS.has(book.status) && isOcrStep && (
         <div className="text-p-muted">{t.ocrProgress(book.progress.done ?? 0, book.progress.total!)}</div>

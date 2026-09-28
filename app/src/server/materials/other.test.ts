@@ -64,13 +64,15 @@ vi.mock("@/server/db/family-scope", () => ({ forFamily: () => scope }));
 const { listUnlinkedMaterials, getOtherMaterialDetail } = await import("./other");
 
 describe("listUnlinkedMaterials (US-23.1 КП-1, КП-2, КП-6)", () => {
-  it("applies kind<>textbook, status=ready, use_in_lessons=true, subject_id is null", async () => {
+  it("applies kind<>textbook, status in (ready, ready_partial), use_in_lessons=true, subject_id is null", async () => {
     const calls: Call[] = [];
     scope = makeScope(materialsRows, [], calls);
     await listUnlinkedMaterials("fam1");
 
     expect(calls).toContainEqual({ method: "neq", args: ["materials", "kind", "textbook"] });
-    expect(calls).toContainEqual({ method: "eq", args: ["materials", "status", "ready"] });
+    // ADR-032: a book with one permanently-failed section (`ready_partial`)
+    // is still usable for its ready sections.
+    expect(calls).toContainEqual({ method: "in", args: ["materials", "status", ["ready", "ready_partial"]] });
     expect(calls).toContainEqual({ method: "eq", args: ["materials", "use_in_lessons", true] });
     expect(calls).toContainEqual({ method: "is", args: ["materials", "subject_id", null] });
   });
@@ -169,5 +171,27 @@ describe("getOtherMaterialDetail (US-23.1 КП-2, КП-3, КП-6)", () => {
       count: (table: string) => chain(table, 0, calls),
     };
     expect(await getOtherMaterialDetail("fam1", "m1")).toBeNull();
+
+    // ADR-032: a fully-failed status ('error') is still not usable.
+    scope = {
+      select: (table: string) => chain(table, table === "materials" ? { ...readyMaterial, status: "error" } : null, calls),
+      count: (table: string) => chain(table, 0, calls),
+    };
+    expect(await getOtherMaterialDetail("fam1", "m1")).toBeNull();
+  });
+
+  it("ADR-032: status='ready_partial' (one section permanently failed) is still usable", async () => {
+    const calls: Call[] = [];
+    scope = {
+      select: (table: string) => {
+        if (table === "materials") return chain(table, { ...readyMaterial, status: "ready_partial" }, calls);
+        if (table === "material_topic_links") return chain(table, null, calls);
+        if (table === "chunks") return chain(table, [{ id: "c1", section_id: null, page: 1, text: "Текст" }], calls);
+        if (table === "material_sections") return chain(table, [], calls);
+        return chain(table, [], calls);
+      },
+      count: (table: string) => chain(table, 0, calls),
+    };
+    expect(await getOtherMaterialDetail("fam1", "m1")).not.toBeNull();
   });
 });

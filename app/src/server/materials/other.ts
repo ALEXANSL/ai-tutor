@@ -8,7 +8,8 @@ import { forFamily } from "@/server/db/family-scope";
  *
  * Visibility criterion (КП-1, КП-2, КП-6 — all four together):
  *  - `kind <> 'textbook'` (a textbook always belongs to a subject/topic flow);
- *  - `status = 'ready'` (indexed);
+ *  - `status in ('ready', 'ready_partial')` (indexed — ADR-032: a book with
+ *    one permanently-failed section is still usable for its ready ones);
  *  - `use_in_lessons = true` (the existing "Мої книги" toggle, no new UI);
  *  - `subject_id is null` (not attached to a course, US-22.2 КП-3 / S31);
  *  - no `material_topic_links` row (not manually linked to a topic, US-2.6 КП-1).
@@ -36,7 +37,7 @@ export async function listUnlinkedMaterials(familyId: string): Promise<OtherMate
   const { data: materials } = await scope
     .select("materials", "id, name, title, kind, added_at")
     .neq("kind", "textbook")
-    .eq("status", "ready")
+    .in("status", ["ready", "ready_partial"])
     .eq("use_in_lessons", true)
     .is("subject_id", null)
     .order("added_at", { ascending: false })
@@ -102,7 +103,14 @@ export async function getOtherMaterialDetail(familyId: string, materialId: strin
       use_in_lessons: boolean;
       subject_id: string | null;
     }>();
-  if (!material || material.kind === "textbook" || material.status !== "ready" || !material.use_in_lessons || material.subject_id) return null;
+  if (
+    !material ||
+    material.kind === "textbook" ||
+    (material.status !== "ready" && material.status !== "ready_partial") ||
+    !material.use_in_lessons ||
+    material.subject_id
+  )
+    return null;
 
   const { data: link } = await scope.select("material_topic_links", "material_id").eq("material_id", materialId).limit(1).maybeSingle<{ material_id: string }>();
   if (link) return null;

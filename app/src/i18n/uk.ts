@@ -764,12 +764,23 @@ export const uk = {
         queued: "Індексується…",
         indexing: "Індексується…",
         ready: "Готово",
+        // ADR-032: some sections (розділи) permanently failed their own
+        // structuring, but the rest of the book is usable already.
+        ready_partial: "Готово частково",
         error: "Помилка",
         scan_no_text: "Скан не вдалося розпізнати",
         scan_awaiting_ocr: "Скан — очікує підтвердження",
         deferred: "Індексацію відкладено",
         removed: "Видалено з папки",
       } as Record<string, string>,
+      // ADR-032: one section's own status (шкала "Структура" на сторінці книги).
+      sectionStatus: {
+        pending: "У черзі",
+        indexing: "Структурується…",
+        ready: "✓",
+        error: "Помилка",
+      } as Record<string, string>,
+      retrySection: "Повторити цей розділ",
       progress: {
         download: "завантаження",
         extract: "читання тексту",
@@ -799,6 +810,8 @@ export const uk = {
         ai_not_configured: "ШІ ще не підключено (ключ API у змінних середовища).",
         ai_failed: "Сервіс ШІ не відповів. Спробуйте «Переіндексувати» пізніше.",
         failed: "Не вдалося проіндексувати. Спробуйте «Переіндексувати».",
+        // ADR-032: shown next to the "Готово частково" badge.
+        ready_partial: "Один або кілька розділів не вдалося структурувати — решта книги вже готова. Нижче можна повторити лише невдалий розділ.",
       } as Record<string, string>,
       chapterFallback: (n: number) => `Розділ ${n}`,
       upload: {

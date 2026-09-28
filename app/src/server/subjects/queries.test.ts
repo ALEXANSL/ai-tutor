@@ -22,6 +22,10 @@ function makeScope(tables: Record<string, FakeRow[] | FakeRow>) {
         filters.push([col, val]);
         return self;
       },
+      in(col: string, vals: unknown[]) {
+        filters.push([col, vals]);
+        return self;
+      },
       order() {
         return self;
       },
@@ -37,7 +41,7 @@ function makeScope(tables: Record<string, FakeRow[] | FakeRow>) {
       matched() {
         const rows = tables[table];
         const list = Array.isArray(rows) ? rows : rows ? [rows] : [];
-        return list.filter((r) => filters.every(([c, v]) => r[c] === v));
+        return list.filter((r) => filters.every(([c, v]) => (Array.isArray(v) ? v.includes(r[c]) : r[c] === v)));
       },
       maybeSingle: () => Promise.resolve({ data: self.matched()[0] ?? null, error: null }),
       returns: () => Promise.resolve({ data: self.matched(), error: null }),

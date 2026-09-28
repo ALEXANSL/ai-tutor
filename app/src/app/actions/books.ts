@@ -11,6 +11,7 @@ import { DriveError } from "@/server/drive/google";
 import { getFolderAccessStatus } from "@/server/drive/service";
 import { confirmBookOcr, requestReindex, syncDriveFolder } from "@/server/ingest/pipeline";
 import { kickJobs } from "@/server/jobs/kick";
+import { enqueueJob } from "@/server/jobs/runner";
 import { searchMaterials, type SearchHit } from "@/server/search/search";
 import type { FormState } from "./state";
 
@@ -46,6 +47,26 @@ export async function reindexAction(formData: FormData): Promise<void> {
   const id = uuidOf(formData, "materialId");
   if (!id) return;
   await requestReindex(familyId, id);
+  kickJobs();
+  revalidatePath("/parent/books", "layout");
+}
+
+/**
+ * ADR-032 (§Стійкість до відмови одного розділу): re-queues just ONE
+ * section's `ingest.structure_section` job — cheap, does not touch the
+ * book's other (already-`ready`) sections, unlike the whole-book
+ * "Переіндексувати".
+ */
+export async function retrySectionAction(formData: FormData): Promise<void> {
+  const { familyId } = await requireParentAccess();
+  const materialId = uuidOf(formData, "materialId");
+  const sectionId = uuidOf(formData, "sectionId");
+  if (!materialId || !sectionId) return;
+  const scope = forFamily(familyId);
+  const { data: section } = await scope.select("material_sections", "id").eq("id", sectionId).eq("material_id", materialId).maybeSingle<{ id: string }>();
+  if (!section) return;
+  await scope.update("material_sections", { status: "pending", status_detail: null }).eq("id", sectionId);
+  await enqueueJob(familyId, "ingest.structure_section", { materialId, sectionId }, { dedupeKey: `ingest.structure_section:${materialId}:${sectionId}` });
   kickJobs();
   revalidatePath("/parent/books", "layout");
 }
