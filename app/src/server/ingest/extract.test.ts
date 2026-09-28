@@ -3,7 +3,7 @@ import { makeEpub, makeMixedPdf, makeScanPdf, makeTextPdf } from "../../../tests
 import { decodeEntities, extractEpub, htmlToText } from "./extract-epub";
 import { extractPdf } from "./extract-pdf";
 import { mergeOcrIntoUnits, pagesNeedingOcr } from "./ocr";
-import { chunkUnits, looksLikeScan, meaningfulChars, normalizeText, type ExtractedUnit } from "./text";
+import { chunkUnits, looksLikeScan, meaningfulChars, normalizeText, truncateAtSentenceBoundary, type ExtractedUnit } from "./text";
 
 describe("PDF extraction (generated fixtures)", () => {
   it("extracts text page by page with page numbers and title", async () => {
@@ -200,5 +200,31 @@ describe("chunking (ADR-008)", () => {
     );
     expect(chunks).toHaveLength(1);
     expect(chunks[0]!.text.endsWith("Кінець.")).toBe(true);
+  });
+});
+
+describe("truncateAtSentenceBoundary (BUG fix: no more mid-word cuts)", () => {
+  it("returns the text unchanged when it already fits", () => {
+    expect(truncateAtSentenceBoundary("Коротке речення.", 700)).toBe("Коротке речення.");
+  });
+
+  it("never cuts in the middle of a sentence when an earlier sentence end exists", () => {
+    // Regression case for the reported bug: text that, at a hard 700-char
+    // cut, would land mid-clause ("...незламній\nволі до").
+    const text =
+      "Це перше речення підручника, яке трохи довше за середнє, щоб зайняти простір. " +
+      "Це друге речення, яке також довге і описує персонажа, що вижив завдяки незламній волі до життя. " +
+      "Це третє речення продовжує розповідь про подальші випробування головного героя.";
+    const out = truncateAtSentenceBoundary(text, 140);
+    expect(out.length).toBeLessThanOrEqual(140);
+    expect(/[.!?…]$/u.test(out)).toBe(true);
+    expect(out.endsWith("волі до")).toBe(false);
+  });
+
+  it("falls back to a word boundary with an ellipsis when no sentence end is close enough", () => {
+    const text = `${"а".repeat(50)} ${"б".repeat(50)} ${"в".repeat(500)}`;
+    const out = truncateAtSentenceBoundary(text, 60);
+    expect(out.length).toBeLessThanOrEqual(61); // 50 "а" + space + 9 "б" would be cut mid-word, so it backs off to the space
+    expect(out).toBe(`${"а".repeat(50)}…`);
   });
 });
