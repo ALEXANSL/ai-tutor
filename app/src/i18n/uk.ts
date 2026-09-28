@@ -321,6 +321,13 @@ export const uk = {
       textModeBanner: "Зараз говоримо текстом",
       narrationPause: "⏸ Пауза",
       narrationReplay: "↺ Повторити",
+      // PO complaint (2026-09-28): "довго готує голос" — TTS synthesis for
+      // the step's narration has no on-screen feedback at all while it runs
+      // (`NarrationPlayer` used to render nothing until the audio arrived),
+      // so a multi-second wait looked like nothing was happening. This is
+      // shown in its place, matching `blockContinueBusy`'s "give an honest,
+      // small status instead of silence" pattern.
+      narrationPreparing: "🎧 Готуємо озвучку…",
       // D-111 п.5: PO asked for narration ~10-15% faster, or adjustable
       // "as in most courses". The generated audio is already a fixed 1.1x
       // (`openaiTts`'s `speed` param) — these labels describe the extra

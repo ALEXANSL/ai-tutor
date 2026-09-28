@@ -949,7 +949,22 @@ function NarrationPlayer({ sessionId, stepId, labels: t }: { sessionId: string; 
     }
   }
 
-  if (!audioUrl) return null;
+  // PO complaint (2026-09-28): TTS synthesis (`synthesizeNarrationAction`,
+  // one live OpenAI TTS call per step, never cached/prefetched — see
+  // `narration.ts`) can take a few seconds; this used to render nothing at
+  // all while it ran, so a slow synthesis looked identical to a broken
+  // player. A small, honest status line (same spirit as
+  // `blockContinueBusy`/`blockContinueSlowHint`) is a safe, self-contained
+  // perceived-latency mitigation — it does not change how long synthesis
+  // actually takes.
+  if (!audioUrl) {
+    return (
+      <div className="mb-4 flex min-h-11 items-center gap-2 rounded-full border-2 border-dashed border-line bg-surface-alt px-3.5 text-sm font-bold text-muted" role="status">
+        <span className="inline-block h-2.5 w-2.5 animate-pulse rounded-full bg-accent" aria-hidden="true" />
+        {t.narrationPreparing}
+      </div>
+    );
+  }
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2">
       <audio ref={audioRef} src={audioUrl} autoPlay controls className="h-10 flex-1" />
