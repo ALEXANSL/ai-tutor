@@ -119,17 +119,18 @@ export function getGoogleServiceAccount(): GoogleServiceAccount | null {
 /**
  * ADR-023 §Частина 1.5: global cap on `library.warm_topic` jobs running at
  * once (across every concurrent Vercel invocation — enforced by counting
- * `jobs` rows with `status = 'running'`, not by anything in-process). Default
- * **2** is a deliberately conservative placeholder: this environment has no
- * way to read the family's actual Anthropic/OpenAI account tier or RPM limit
- * (no billing console access, no tier info in env) — `docs/STATUS.md` asks
- * Alex to check the real per-minute limits in both provider consoles and
- * raise `LIBRARY_WARM_MAX_CONCURRENT` if they comfortably allow more before
- * relying on 2 as a long-term value.
+ * `jobs` rows with `status = 'running'`, not by anything in-process). Raised
+ * from the original placeholder of 2 to 4 (2026-09-28, PO decision) after a
+ * real bulk-warmup queue of ~19 topics sat for hours under the old cap. This
+ * environment still has no way to read the family's actual Anthropic/OpenAI
+ * account tier or RPM limit (no billing console access, no tier info in
+ * env) — raise `LIBRARY_WARM_MAX_CONCURRENT` further if provider rate limits
+ * comfortably allow it; lower it if concurrent generation starts tripping
+ * provider rate limits.
  */
 export function getLibraryWarmMaxConcurrent(): number {
   const raw = Number(process.env.LIBRARY_WARM_MAX_CONCURRENT);
-  return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 2;
+  return Number.isFinite(raw) && raw >= 1 ? Math.floor(raw) : 4;
 }
 
 /**
