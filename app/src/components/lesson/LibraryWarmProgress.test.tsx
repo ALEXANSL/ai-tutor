@@ -13,8 +13,20 @@ import { LibraryWarmProgress } from "./LibraryWarmProgress";
 
 describe("LibraryWarmProgress", () => {
   it("renders links back to /today and the subject's lesson list", () => {
-    const html = renderToStaticMarkup(<LibraryWarmProgress sessionId="s1" subjectId="subj-1" />);
+    const html = renderToStaticMarkup(
+      <LibraryWarmProgress sessionId="s1" subjectId="subj-1" subjectName="Математика" topicTitle="Дроби" />,
+    );
     expect(html).toContain('href="/today"');
     expect(html).toContain('href="/subject/subj-1"');
+  });
+
+  // Reported: "не зрозуміло який урок ми готуємо" — the child/parent had no
+  // way to tell which subject/topic this wait was even for.
+  it("shows which subject and topic are being prepared", () => {
+    const html = renderToStaticMarkup(
+      <LibraryWarmProgress sessionId="s1" subjectId="subj-1" subjectName="Математика" topicTitle="Дроби" />,
+    );
+    expect(html).toContain("Математика");
+    expect(html).toContain("Дроби");
   });
 });

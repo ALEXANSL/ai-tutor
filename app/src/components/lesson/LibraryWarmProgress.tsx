@@ -46,7 +46,17 @@ const MAX_REVIEW_PASSES = 3;
 // this long, add a reassuring note (without touching the pipeline itself).
 const SLOW_WAIT_MS = 90_000;
 
-export function LibraryWarmProgress({ sessionId, subjectId }: { sessionId: string; subjectId: string }) {
+export function LibraryWarmProgress({
+  sessionId,
+  subjectId,
+  subjectName,
+  topicTitle,
+}: {
+  sessionId: string;
+  subjectId: string;
+  subjectName: string;
+  topicTitle: string;
+}) {
   const router = useRouter();
   const [stage, setStage] = useState<Stage>("planning");
   const [reviewPass, setReviewPass] = useState<number | null>(null);
@@ -120,7 +130,8 @@ export function LibraryWarmProgress({ sessionId, subjectId }: { sessionId: strin
         <div className="mb-4 text-5xl" aria-hidden>
           ✨
         </div>
-        <h1 className="mb-2 text-xl font-bold text-text">{t.title}</h1>
+        <h1 className="mb-1 text-xl font-bold text-text">{t.title}</h1>
+        <p className="mb-2 text-sm font-bold text-secondary">{t.subjectTopicLine(subjectName, topicTitle)}</p>
         <p className="mb-6 text-sm text-text-muted">{t.etaHint}</p>
         <ol className="space-y-2 text-left" aria-live="polite">
           {STAGE_ORDER.map((s, i) => (

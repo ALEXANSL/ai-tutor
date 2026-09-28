@@ -328,6 +328,7 @@ export const uk = {
       // static "Готуємо урок…" with a staged, honest progress view.
       warmup: {
         title: "Готуємо урок…",
+        subjectTopicLine: (subject: string, topic: string) => `${subject} · ${topic}`,
         // BUG-035: the old fixed "~1 хвилину" promise didn't match a real
         // wait, which can legitimately take several genuine AI-call passes
         // (planning + up to 3× generate/review) — a realistic range instead
