@@ -5,6 +5,7 @@ import { getLibraryWarmDailyBudgetUsd } from "@/server/env";
 import { narrowestTitleFor, type TitledRange } from "@/server/ingest/structure";
 import { truncateAtSentenceBoundary } from "@/server/ingest/text";
 import { notifyParent } from "@/server/notifications";
+import { checkVerbatimExcerptContentQa, type ContentQaFailure } from "./content-qa";
 import { validateComponentRef } from "./component-validator";
 import { LESSON_GENERATION_PROMPT_VERSION, runPedagogicalPipeline, type KnownProblem, type PipelineFragment, type PipelineHooks } from "./pipeline";
 import type { GeneratedStep } from "./schema";
@@ -31,6 +32,21 @@ export class NoIndexedFragmentsError extends Error {
   }
 }
 
+/**
+ * ADR-034: the BUG-011 fallback path used to trust its one candidate
+ * fragment blindly (zero verification, the exact gap that let a corrupted
+ * excerpt reach the child live). `getOrCreateFallbackBlock` now tries
+ * several candidate fragments in order and only throws this when *every one*
+ * of them fails `content_qa` — an honest, distinct failure instead of
+ * silently serving a broken excerpt.
+ */
+export class NoValidFragmentsError extends Error {
+  constructor(topicId: string) {
+    super(`no fragment for topic ${topicId} passed the content_qa technical check — every candidate excerpt was rejected (truncated, corrupted encoding, or not a genuine verbatim match)`);
+    this.name = "NoValidFragmentsError";
+  }
+}
+
 export interface SourceRefView {
   materialId: string;
   materialTitle: string;
@@ -43,6 +59,12 @@ export interface SourceRefView {
    * is drawn from, when the model cited one and it survived the server's
    * `material_problems` double-check (`pipeline.ts`'s `verifyProblemNumbers`). */
   problemNumber?: string | null;
+  /** ADR-034: true only for the BUG-011 fallback excerpt — the step's text is
+   * a verbatim (whitespace-normalized) quote of this ref's `chunks.text`,
+   * checked by `content-qa.ts`'s `checkVerbatimFidelity`. Never set by the
+   * model/AI-generation path (paraphrase by design) — an extension of the
+   * existing `source_refs` jsonb shape, not a new DB column. */
+  verbatim?: boolean;
 }
 export interface LibraryStepView {
   id: string;
@@ -306,6 +328,12 @@ export async function generateOneBlock(
       source_refs: dedupeSourceRefs(stepsWithSections.flatMap((s) => s.sourceRefs)),
       pedagogy,
       child_feedback: { interesting: 0, normal: 0, boring: 0 },
+      // ADR-034: WHY a block is `needs_review` (never set otherwise) and the
+      // `content_qa` gate's own result for the finally-saved draft.
+      needs_review_reason: pipeline.status === "needs_review" ? pipeline.needsReviewReason : null,
+      content_qa: pipeline.contentQa
+        ? { status: pipeline.contentQa.ok ? "checked_ok" : "flagged", failures: pipeline.contentQa.failures, checkedAt: new Date().toISOString() }
+        : null,
     })
     .select("id")
     .single<{ id: string }>();
@@ -320,7 +348,7 @@ export async function generateOneBlock(
       owner_family_id: familyId,
       library_item_id: item.id,
       iteration: r.iteration,
-      reviewer_role: "lesson_review",
+      reviewer_role: r.reviewerRole,
       provider: r.provider,
       model: r.model,
       verdict: r.verdict,
@@ -335,7 +363,7 @@ export async function generateOneBlock(
     await notifyParent(familyId, {
       type: "lesson_block_needs_review",
       severity: "normal",
-      payload: { topicId, topicTitle, libraryItemId: item.id, title: block.titleUk },
+      payload: { topicId, topicTitle, libraryItemId: item.id, title: block.titleUk, reason: pipeline.needsReviewReason },
     }).catch((e: Error) => console.error(`needs_review notification failed: ${e.message}`));
   }
 
@@ -433,6 +461,9 @@ export async function getOrGenerateLessonBlocks(
   return { candidates: candidates.map((c) => ({ id: c.id, title: c.title, estimatedMinutes: c.estimated_minutes })), failureReasonUk: null };
 }
 
+/** ADR-034: how many candidate fragments to try before giving up honestly (§ "Резервний шаблон BUG-011"). */
+const FALLBACK_FRAGMENT_CANDIDATES = 5;
+
 /**
  * BUG-011 / US-6.11: the "safe simplified template" used only when
  * `getOrGenerateLessonBlocks` could not produce a single approved block —
@@ -444,7 +475,14 @@ export async function getOrGenerateLessonBlocks(
  * block), has no methodical passport (US-6.10 — `pedagogy` stays `{}`), and
  * is reused across repeated calls for the same topic instead of inserting a
  * new row every time the reviewer keeps failing.
+ *
+ * ADR-034: the candidate excerpt is now verified by `content_qa`
+ * (completeness + encoding + genuine verbatim substring of its source
+ * fragment) before being saved — trying up to `FALLBACK_FRAGMENT_CANDIDATES`
+ * fragments in order and failing honestly (`NoValidFragmentsError`) if none
+ * pass, instead of the old zero-verification "just take the first fragment".
  */
+
 export async function getOrCreateFallbackBlock(
   familyId: string,
   subjectId: string,
@@ -463,26 +501,58 @@ export async function getOrCreateFallbackBlock(
     .maybeSingle<{ id: string; title: string; estimated_minutes: number | null }>();
   if (existing) return { id: existing.id, title: existing.title, estimatedMinutes: existing.estimated_minutes };
 
-  const [fragment] = await loadTopicFragments(scope, familyId, topicId, 1);
-  if (!fragment) {
+  const fragments = await loadTopicFragments(scope, familyId, topicId, FALLBACK_FRAGMENT_CANDIDATES);
+  if (fragments.length === 0) {
     throw new NoIndexedFragmentsError(topicId);
   }
 
-  // Sentence-boundary-aware (not a hard character cut, BUG fix): a verbatim
-  // excerpt must never stop mid-clause for the child reading it.
-  const excerpt = truncateAtSentenceBoundary(fragment.text, 700);
+  // ADR-034: the fallback excerpt used to be built from the first fragment,
+  // trusted blindly (no verification at all — the exact gap that let a
+  // corrupted excerpt reach the child live, BUG-011/BUG-046). Try each
+  // candidate fragment in order and use the first whose excerpt passes
+  // content_qa (completeness + encoding + genuine verbatim substring of the
+  // fragment it claims to quote); if none pass, fail honestly instead of
+  // silently serving a broken one.
+  let chosen: { fragment: PipelineFragment; excerpt: string } | null = null;
+  const allFailures: ContentQaFailure[] = [];
+  for (const fragment of fragments) {
+    // Sentence-boundary-aware (not a hard character cut, BUG fix): a verbatim
+    // excerpt must never stop mid-clause for the child reading it.
+    const excerpt = truncateAtSentenceBoundary(fragment.text, 700);
+    const qa = checkVerbatimExcerptContentQa(excerpt, fragment.text);
+    if (qa.ok) {
+      chosen = { fragment, excerpt };
+      break;
+    }
+    allFailures.push(...qa.failures);
+  }
+  if (!chosen) {
+    await notifyParent(familyId, {
+      type: "fallback_content_qa_failed",
+      severity: "normal",
+      payload: { topicId, topicTitle, candidatesTried: fragments.length, failures: allFailures.map((f) => f.reason) },
+    }).catch((e: Error) => console.error(`fallback_content_qa_failed notification failed: ${e.message}`));
+    throw new NoValidFragmentsError(topicId);
+  }
+  const { fragment, excerpt } = chosen;
+
   const title = `Резервний блок: ${topicTitle}`;
   const sectionTitleByKey = await attachSectionTitles(scope, [{ materialId: fragment.materialId, page: fragment.page }]);
-  const sourceRefs: SourceRefView[] = [
-    {
-      materialId: fragment.materialId,
-      materialTitle: fragment.materialTitle,
-      page: fragment.page,
-      sectionTitle: sectionTitleByKey.get(`${fragment.materialId}:${fragment.page}`) ?? null,
-    },
-  ];
+  const sourceRefBase: Omit<SourceRefView, "verbatim"> = {
+    materialId: fragment.materialId,
+    materialTitle: fragment.materialTitle,
+    page: fragment.page,
+    sectionTitle: sectionTitleByKey.get(`${fragment.materialId}:${fragment.page}`) ?? null,
+  };
+  // ADR-034: `verbatim: true` only on the slide step, whose `textUk` genuinely
+  // IS the excerpt quoted verbatim — the choice step's `explanationUk` is a
+  // template sentence *about* the excerpt, not a quote of it, so it must not
+  // be marked verbatim (a future content_qa sweep would otherwise wrongly
+  // fail its fidelity check against `chunks.text`).
+  const slideSourceRefs: SourceRefView[] = [{ ...sourceRefBase, verbatim: true }];
+  const choiceSourceRefs: SourceRefView[] = [{ ...sourceRefBase }];
   const steps = [
-    { sort_order: 0, type: "slide", content: { textUk: excerpt, exampleUk: null }, visual: {}, source_refs: sourceRefs },
+    { sort_order: 0, type: "slide", content: { textUk: excerpt, exampleUk: null }, visual: {}, source_refs: slideSourceRefs },
     {
       sort_order: 1,
       type: "choice",
@@ -496,7 +566,7 @@ export async function getOrCreateFallbackBlock(
         explanationUk: `Так — це уривок підручника саме про «${topicTitle}»${fragment.page != null ? ` (стор. ${fragment.page})` : ""}.`,
       },
       visual: {},
-      source_refs: sourceRefs,
+      source_refs: choiceSourceRefs,
     },
   ];
 
@@ -513,9 +583,10 @@ export async function getOrCreateFallbackBlock(
       prompt_version: null,
       grade,
       estimated_minutes: 5,
-      source_refs: sourceRefs,
+      source_refs: slideSourceRefs,
       pedagogy: {},
       child_feedback: { interesting: 0, normal: 0, boring: 0 },
+      content_qa: { status: "checked_ok", failures: [], checkedAt: new Date().toISOString() },
     })
     .select("id")
     .single<{ id: string }>();

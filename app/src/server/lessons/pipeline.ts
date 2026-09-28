@@ -7,6 +7,7 @@ import { AiNotConfiguredError } from "@/server/ai/types";
 import type { FamilyScope } from "@/server/db/family-scope";
 import { fillTemplate, splitPrompt } from "@/server/ingest/structure";
 import { safetyPreambleGenericUk } from "@/server/safety/preamble";
+import { checkBlockContentQa, contentQaFailureNoteUk, type ContentQaResult } from "./content-qa";
 import { pedagogyCatalogForPrompt, REVIEW_CRITERION_LABELS_UK } from "./pedagogy";
 import { buildLessonBlockSchema, planSchema, reviewSchema, type GeneratedStep, type LessonBlockGenerated, type LessonPlan, type ReviewOutput } from "./schema";
 
@@ -112,10 +113,15 @@ export interface PipelineCallLog {
 
 export interface PipelineReviewRecord {
   iteration: number;
+  /** ADR-034: `"content_qa"` rows are the deterministic gate's own synthetic
+   * verdicts — `library_item_reviews.reviewer_role`, alongside the existing
+   * `"lesson_review"` rows, gives one unified audit trail. */
+  reviewerRole: "lesson_review" | "content_qa";
   provider: string;
   model: string;
   verdict: ReviewOutput["verdict"];
-  scores: ReviewOutput["scores"];
+  /** Empty for a `content_qa` row — no rubric scores apply to a rule-based check. */
+  scores: Partial<ReviewOutput["scores"]>;
   notes: string[];
   summaryUk: string;
 }
@@ -130,6 +136,16 @@ export interface PipelineResult {
   /** For the library card status text (M-10, US-6.11 КП-3). */
   reviewStatus: "first_pass" | "revised" | "needs_review";
   calls: PipelineCallLog[];
+  /** ADR-034: distinguishes WHY a block ended up `needs_review` — a failed
+   * `content_qa` gate ("technical") vs. an unapproved `lesson_review`
+   * ("pedagogical") — `null` when `status === "active"`. Saved as
+   * `library_items.needs_review_reason` so the parent notification/log can
+   * say what actually went wrong. */
+  needsReviewReason: "pedagogical" | "technical" | null;
+  /** ADR-034: the `content_qa` result for the finally-saved draft (whichever
+   * iteration ended the loop) — `generate.ts` persists it as
+   * `library_items.content_qa` for parent visibility and the retroactive sweep. */
+  contentQa: ContentQaResult | null;
 }
 
 /** BUG-010: the textbook is always labeled and listed first — the model is told it outranks any book. */
@@ -353,6 +369,8 @@ export async function runPedagogicalPipeline(input: PipelineInput, hooks: Pipeli
   let revisionNotes: string[] | null = null;
   const reviews: PipelineReviewRecord[] = [];
   let status: PipelineResult["status"] = "needs_review";
+  let needsReviewReason: PipelineResult["needsReviewReason"] = null;
+  let contentQa: ContentQaResult | null = null;
 
   for (let iteration = 1; iteration <= MAX_REVISIONS + 1; iteration++) {
     await hooks.onStage?.(iteration === 1 ? "generating" : "revising", iteration);
@@ -363,6 +381,35 @@ export async function runPedagogicalPipeline(input: PipelineInput, hooks: Pipeli
     // problemNumber that genuinely exists in `material_problems`.
     block = fillMissingMisconceptions(await verifyProblemNumbers(input.scope, draft.block));
     generationModel = draft.call.model;
+
+    // ADR-034: the deterministic, $0 `content_qa` gate runs BEFORE the paid
+    // `lesson_review` call, same ordering rationale as `verifyProblemNumbers`
+    // above — a technically broken draft (truncated, mojibake) should never
+    // spend a reviewer call, since it can never be shown to the child
+    // regardless of pedagogical quality. A failure becomes a synthetic
+    // "revise" verdict and consumes this same iteration's `MAX_REVISIONS`
+    // slot — no new retry budget is introduced.
+    contentQa = checkBlockContentQa(block);
+    if (!contentQa.ok) {
+      const notes = contentQa.failures.map(contentQaFailureNoteUk);
+      reviews.push({
+        iteration,
+        reviewerRole: "content_qa",
+        provider: "deterministic",
+        model: "rule-based-v1",
+        verdict: "revise",
+        scores: {},
+        notes,
+        summaryUk: "Технічна перевірка (content_qa) виявила проблеми з текстом до педагогічної рецензії — рецензента не викликано.",
+      });
+      if (iteration > MAX_REVISIONS) {
+        status = "needs_review";
+        needsReviewReason = "technical";
+        break;
+      }
+      revisionNotes = notes;
+      continue;
+    }
 
     await hooks.onStage?.("reviewing", iteration);
     let reviewed: { review: ReviewOutput; call: PipelineCallLog };
@@ -377,19 +424,30 @@ export async function runPedagogicalPipeline(input: PipelineInput, hooks: Pipeli
     }
     calls.push(reviewed.call);
     const verdict = enforcedVerdict(reviewed.review);
-    reviews.push({ iteration, provider: reviewed.call.provider, model: reviewed.call.model, verdict: verdict.verdict, scores: verdict.scores, notes: verdict.notes, summaryUk: verdict.summaryUk });
+    reviews.push({
+      iteration,
+      reviewerRole: "lesson_review",
+      provider: reviewed.call.provider,
+      model: reviewed.call.model,
+      verdict: verdict.verdict,
+      scores: verdict.scores,
+      notes: verdict.notes,
+      summaryUk: verdict.summaryUk,
+    });
 
     if (verdict.verdict === "approved") {
       status = "active";
+      needsReviewReason = null;
       break;
     }
     if (iteration > MAX_REVISIONS) {
       status = "needs_review";
+      needsReviewReason = "pedagogical";
       break;
     }
     revisionNotes = verdict.notes.length ? verdict.notes : [verdict.summaryUk];
   }
 
   const reviewStatus: PipelineResult["reviewStatus"] = status === "needs_review" ? "needs_review" : reviews.length === 1 ? "first_pass" : "revised";
-  return { status, block: block!, plan, generationModel, reviews, reviewStatus, calls };
+  return { status, block: block!, plan, generationModel, reviews, reviewStatus, calls, needsReviewReason, contentQa };
 }

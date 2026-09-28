@@ -505,10 +505,18 @@ export const uk = {
           }`,
         provider_fallback: (p: { role?: string; from?: string; to?: string }) =>
           `Провайдер ШІ не відповів (${p.from ?? "?"}) — використано резервну модель ${p.to ?? "?"}`,
-        lesson_block_needs_review: (p: { topicTitle?: string; title?: string }) =>
-          `Тема «${p.topicTitle ?? ""}»: блок «${p.title ?? ""}» не пройшов рецензію — дитині не показано`,
+        lesson_block_needs_review: (p: { topicTitle?: string; title?: string; reason?: string | null }) =>
+          `Тема «${p.topicTitle ?? ""}»: блок «${p.title ?? ""}» не пройшов ${
+            p.reason === "technical" ? "технічну перевірку якості тексту" : "рецензію"
+          } — дитині не показано`,
         lesson_started_with_fallback: (p: { topicTitle?: string; reason?: string }) =>
           `Урок з теми «${p.topicTitle ?? ""}» запущено зі спрощеним резервним блоком: ${p.reason ?? "блок не пройшов рецензію"}`,
+        // ADR-034: every candidate textbook excerpt for the safe fallback
+        // template failed the technical content_qa check (truncated,
+        // corrupted encoding, or not a genuine verbatim match) — a new,
+        // honest failure state instead of silently serving a broken excerpt.
+        fallback_content_qa_failed: (p: { topicTitle?: string }) =>
+          `Тема «${p.topicTitle ?? ""}»: жоден уривок підручника не пройшов технічну перевірку — можливе пошкодження тексту при індексації, перевірте книгу`,
         safety_alert: (p: { category?: string; mode?: string; isTest?: boolean }) =>
           p.isTest
             ? "Тестове термінове сповіщення (перевірка каналів)"
