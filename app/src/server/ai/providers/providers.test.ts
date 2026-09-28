@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { anthropicStructured, anthropicVisionStructured } from "./anthropic";
 import { openaiEmbed, openaiStructured, openaiTts } from "./openai";
@@ -48,6 +49,33 @@ describe("anthropicStructured (mocked SDK)", () => {
     await expect(
       anthropicStructured({ model: "m", system: "", prompt: "", schema, params: {} }, { messages: { stream: parse } } as never),
     ).rejects.toMatchObject({ retryable: true });
+  });
+
+  /**
+   * Prod incident 2026-09-28 (Bug 2): jobs failed with a bare "anthropic
+   * request error 400" and NOTHING else in `jobs.last_error` (truncated to
+   * 500 chars in the DB, but there was no further detail even to truncate).
+   * A 400 from the Anthropic client always carries the actual API response
+   * body on `.error` — it must now be logged in full so a future 400 is
+   * never a dead end.
+   */
+  it("logs the full response body of a 400 before wrapping it (Bug 2, 2026-09-28)", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const body = { type: "invalid_request_error", message: "schema too complex: too many nested optional fields" };
+    const badRequest = new Anthropic.BadRequestError(400, body, "bad request", undefined as unknown as Headers);
+    const stream = vi.fn(() => ({
+      finalMessage: () => {
+        throw badRequest;
+      },
+    }));
+    const err = await anthropicStructured(
+      { model: "m", system: "", prompt: "", schema, params: {} },
+      { messages: { stream } } as never,
+    ).catch((e) => e);
+    expect(err).toMatchObject({ name: "ProviderError", message: "anthropic request error 400", retryable: false });
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining("anthropic request error 400"));
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining("schema too complex"));
+    spy.mockRestore();
   });
 
   it("needs ANTHROPIC_API_KEY when no client is injected", async () => {
