@@ -13,7 +13,7 @@ import type { LessonBlockGenerated, LessonPlan, ReviewOutput } from "./schema";
 const callStructured = vi.fn();
 vi.mock("@/server/ai/router", () => ({ callStructured: (...args: unknown[]) => callStructured(...args) }));
 
-const { runPedagogicalPipeline, ReviewerUnavailableError, verifyProblemNumbers } = await import("./pipeline");
+const { runPedagogicalPipeline, ReviewerUnavailableError, verifyProblemNumbers, fillMissingMisconceptions, FALLBACK_MISCONCEPTION_UK } = await import("./pipeline");
 
 function plan(over: Partial<LessonPlan> = {}): LessonPlan {
   return {
@@ -246,5 +246,116 @@ describe("verifyProblemNumbers (ADR-029 §1, BUG-041)", () => {
   it("is a no-op (and never queries the DB) when no sourceRef cites a problemNumber", async () => {
     const out = await verifyProblemNumbers(fakeScope, block());
     expect(out).toEqual(block());
+  });
+});
+
+/**
+ * Prod incident 2026-09-28 (Bug 1): defense-in-depth alongside the
+ * strengthened `lesson_generation.md` prompt instruction (the primary fix) —
+ * `fillMissingMisconceptions` substitutes a generic fallback for a wrong
+ * `choice` option's empty/missing `misconceptionUk` rather than ever letting
+ * that fail the whole block's Zod validation (schema.ts no longer requires
+ * non-empty there).
+ */
+describe("fillMissingMisconceptions (Bug 1, 2026-09-28)", () => {
+  it("fills an empty-string misconceptionUk on a wrong option with the generic fallback", () => {
+    const b = block({
+      steps: [
+        {
+          type: "choice",
+          questionUk: "Яка дріб більша?",
+          options: [{ id: "a", textUk: "1/2" }, { id: "b", textUk: "1/4", misconceptionUk: "" }],
+          correctOptionId: "a",
+          explanationUk: "1/2 більша частка",
+          sourceRefs: [],
+        },
+      ],
+    });
+    const out = fillMissingMisconceptions(b);
+    const choiceStep = out.steps[0] as Extract<LessonBlockGenerated["steps"][number], { type: "choice" }>;
+    expect(choiceStep.options[1]!.misconceptionUk).toBe(FALLBACK_MISCONCEPTION_UK);
+  });
+
+  it("fills a fully-omitted misconceptionUk on a wrong option the same way", () => {
+    const b = block({
+      steps: [
+        {
+          type: "choice",
+          questionUk: "Яка дріб більша?",
+          options: [{ id: "a", textUk: "1/2" }, { id: "b", textUk: "1/4" }],
+          correctOptionId: "a",
+          explanationUk: "1/2 більша частка",
+          sourceRefs: [],
+        },
+      ],
+    });
+    const out = fillMissingMisconceptions(b);
+    const choiceStep = out.steps[0] as Extract<LessonBlockGenerated["steps"][number], { type: "choice" }>;
+    expect(choiceStep.options[1]!.misconceptionUk).toBe(FALLBACK_MISCONCEPTION_UK);
+  });
+
+  it("never fills the correct option, even if it somehow has no misconceptionUk", () => {
+    const b = block({
+      steps: [
+        {
+          type: "choice",
+          questionUk: "Яка дріб більша?",
+          options: [{ id: "a", textUk: "1/2" }, { id: "b", textUk: "1/4" }],
+          correctOptionId: "a",
+          explanationUk: "1/2 більша частка",
+          sourceRefs: [],
+        },
+      ],
+    });
+    const out = fillMissingMisconceptions(b);
+    const choiceStep = out.steps[0] as Extract<LessonBlockGenerated["steps"][number], { type: "choice" }>;
+    expect(choiceStep.options[0]!.misconceptionUk).toBeUndefined();
+  });
+
+  it("never overwrites a real, already-present misconceptionUk", () => {
+    const b = block({
+      steps: [
+        {
+          type: "choice",
+          questionUk: "Яка дріб більша?",
+          options: [{ id: "a", textUk: "1/2" }, { id: "b", textUk: "1/4", misconceptionUk: "Порівняли лише знаменники" }],
+          correctOptionId: "a",
+          explanationUk: "1/2 більша частка",
+          sourceRefs: [],
+        },
+      ],
+    });
+    const out = fillMissingMisconceptions(b);
+    const choiceStep = out.steps[0] as Extract<LessonBlockGenerated["steps"][number], { type: "choice" }>;
+    expect(choiceStep.options[1]!.misconceptionUk).toBe("Порівняли лише знаменники");
+  });
+
+  it("leaves non-choice steps (slide, open, interactive) completely untouched", () => {
+    const b = block({ steps: [{ type: "slide", textUk: "текст", sourceRefs: [] }] });
+    expect(fillMissingMisconceptions(b)).toEqual(b);
+  });
+
+  it("runs automatically inside the pipeline, so an approved block never carries an empty misconceptionUk", async () => {
+    mockRoleQueue({
+      lesson_planning: [plan()],
+      lesson_generation: [
+        block({
+          steps: [
+            {
+              type: "choice",
+              questionUk: "Яка дріб більша?",
+              options: [{ id: "a", textUk: "1/2" }, { id: "b", textUk: "1/4", misconceptionUk: "" }],
+              correctOptionId: "a",
+              explanationUk: "1/2 більша частка",
+              sourceRefs: [],
+            },
+          ],
+        }),
+      ],
+      lesson_review: [review()],
+    });
+    const res = await runPedagogicalPipeline(baseInput);
+    const choiceStep = res.block.steps[0] as Extract<LessonBlockGenerated["steps"][number], { type: "choice" }>;
+    expect(choiceStep.options[1]!.misconceptionUk).toBe(FALLBACK_MISCONCEPTION_UK);
   });
 });

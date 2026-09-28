@@ -204,6 +204,34 @@ export async function verifyProblemNumbers(scope: FamilyScope, block: LessonBloc
   } as LessonBlockGenerated;
 }
 
+/**
+ * Prod incident 2026-09-28 (Bug 1, defense in depth alongside the
+ * strengthened prompt instruction in `lesson_generation.md`, which is the
+ * primary fix): a generic, neutral fallback substituted for a WRONG
+ * `choice`-option's `misconceptionUk` when the model left it empty or
+ * omitted — instead of letting the whole block fail Zod validation
+ * (`schema.ts`'s `choiceStep.options[].misconceptionUk` no longer requires
+ * non-empty). Never touches the correct option (no misconception expected
+ * there) or an already-present non-empty explanation.
+ */
+export const FALLBACK_MISCONCEPTION_UK =
+  "Цей варіант неправильний — уважно перечитай пояснення до правильної відповіді, щоб зрозуміти, у чому тут помилка.";
+
+export function fillMissingMisconceptions(block: LessonBlockGenerated): LessonBlockGenerated {
+  return {
+    ...block,
+    steps: block.steps.map((step) => {
+      if (step.type !== "choice") return step;
+      return {
+        ...step,
+        options: step.options.map((o) =>
+          o.id === step.correctOptionId || (o.misconceptionUk?.trim().length ?? 0) > 0 ? o : { ...o, misconceptionUk: FALLBACK_MISCONCEPTION_UK },
+        ),
+      };
+    }),
+  };
+}
+
 function stepSummaryUk(step: GeneratedStep, i: number): string {
   if (step.type === "slide") return `${i + 1}. [slide] ${step.textUk}${step.exampleUk ? ` (приклад: ${step.exampleUk})` : ""}`;
   if (step.type === "choice") return `${i + 1}. [choice] ${step.questionUk} — варіанти: ${step.options.map((o) => o.textUk).join(" / ")}; правильна: ${step.correctOptionId}; пояснення: ${step.explanationUk}`;
@@ -333,7 +361,7 @@ export async function runPedagogicalPipeline(input: PipelineInput, hooks: Pipeli
     // ADR-029 §1: the DB double-check runs BEFORE `lesson_review` sees the
     // block, so the reviewer (and the saved block) only ever sees a
     // problemNumber that genuinely exists in `material_problems`.
-    block = await verifyProblemNumbers(input.scope, draft.block);
+    block = fillMissingMisconceptions(await verifyProblemNumbers(input.scope, draft.block));
     generationModel = draft.call.model;
 
     await hooks.onStage?.("reviewing", iteration);

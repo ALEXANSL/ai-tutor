@@ -23,6 +23,15 @@ export interface StructuredResult<T> {
   usage: Usage;
 }
 
+/** Bug 2 (2026-09-28): best-effort stringify for logging an error detail — never throws on a circular/odd shape. */
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
 let cached: { key: string; client: Anthropic } | null = null;
 
 function client(): Anthropic {
@@ -94,9 +103,17 @@ async function runStructured<S extends z.ZodType>(
       throw new ProviderError(`anthropic auth error ${e.status}`, "anthropic", e.status ?? null, false);
     }
     if (e instanceof Anthropic.BadRequestError || e instanceof Anthropic.NotFoundError) {
+      // Prod incident 2026-09-28 (Bug 2): `jobs.last_error` truncates to 500
+      // chars and a bare "anthropic request error 400" carried no further
+      // detail — the actual cause (e.g. an invalid parameter, a malformed
+      // schema in the request body) only ever lived in the response body
+      // the SDK parses onto `e.error`. Logged in full here, every time, so a
+      // future 400 is never a dead end even if the DB column stays short.
+      console.error(`anthropic request error ${e.status}: ${safeJson(e.error ?? e.message)}`);
       throw new ProviderError(`anthropic request error ${e.status}`, "anthropic", e.status ?? null, false);
     }
     if (e instanceof Anthropic.APIError) {
+      console.error(`anthropic error ${e.status ?? "network"}: ${safeJson((e as { error?: unknown }).error ?? e.message)}`);
       throw new ProviderError(`anthropic error ${e.status ?? "network"}`, "anthropic", e.status ?? null, true);
     }
     throw new ProviderError(`anthropic call failed: ${(e as Error).message}`, "anthropic", null, true);

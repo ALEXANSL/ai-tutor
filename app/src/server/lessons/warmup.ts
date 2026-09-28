@@ -5,7 +5,7 @@ import { getLibraryWarmDailyBudgetUsd, getLibraryWarmLookaheadTopics, getLibrary
 import { registerJobHandler, type JobRow } from "@/server/jobs/runner";
 import { kickJobs } from "@/server/jobs/kick";
 import { createServiceClient } from "@/server/supabase/clients";
-import { generateOneBlock, loadCandidates } from "./generate";
+import { generateOneBlock, loadCandidates, NoIndexedFragmentsError } from "./generate";
 import { ReviewerUnavailableError, type PipelineStage } from "./pipeline";
 
 /**
@@ -501,7 +501,11 @@ export function registerLibraryWarmJobs(): void {
         // attempts' worth of backoff. The cold path's own fallback template
         // (`getOrCreateFallbackBlock`, via `checkWarmupProgress`) still
         // covers the child regardless of why this job never finished.
-        if (e instanceof ReviewerUnavailableError) throw Object.assign(e, { __warmupGiveUp: true });
+        //
+        // Prod incident 2026-09-28 (Bug 3): a topic with zero indexed
+        // fragments is the same kind of permanent, non-retryable condition —
+        // retrying can never create the missing indexed content.
+        if (e instanceof ReviewerUnavailableError || e instanceof NoIndexedFragmentsError) throw Object.assign(e, { __warmupGiveUp: true });
         throw e;
       }
     },

@@ -12,6 +12,24 @@ import type { GeneratedStep } from "./schema";
 export const CANDIDATE_TARGET = 3;
 const FRAGMENTS_PER_BLOCK = 12;
 
+/**
+ * Prod incident 2026-09-28 (Bug 3): a topic whose assigned page range has
+ * zero indexed `chunks` will NEVER succeed no matter how many times the
+ * `library.warm_topic` job retries — retrying cannot create missing
+ * content. Dedicated error class (matching `ReviewerUnavailableError`'s
+ * pattern, `pipeline.ts`) so `registerLibraryWarmJobs` (`warmup.ts`) can
+ * recognize this specific, permanent condition and give up immediately via
+ * `onGiveUp` instead of burning through up to 20 retry attempts over many
+ * hours. The message text is unchanged from before this class existed —
+ * `startLessonAction` (`app/actions/lesson.ts`) still matches on it.
+ */
+export class NoIndexedFragmentsError extends Error {
+  constructor(topicId: string) {
+    super(`no indexed textbook fragments for topic ${topicId} — index the textbook before starting a lesson`);
+    this.name = "NoIndexedFragmentsError";
+  }
+}
+
 export interface SourceRefView {
   materialId: string;
   materialTitle: string;
@@ -232,7 +250,7 @@ export async function generateOneBlock(
 ): Promise<string> {
   const fragments = await loadTopicFragments(scope, familyId, topicId, FRAGMENTS_PER_BLOCK);
   if (fragments.length === 0) {
-    throw new Error(`no indexed textbook fragments for topic ${topicId} — index the textbook before starting a lesson`);
+    throw new NoIndexedFragmentsError(topicId);
   }
 
   const allowedComponents = allowedForSubject((subjectConfig.allowed_components as string[] | undefined) ?? []);
@@ -446,7 +464,7 @@ export async function getOrCreateFallbackBlock(
 
   const [fragment] = await loadTopicFragments(scope, familyId, topicId, 1);
   if (!fragment) {
-    throw new Error(`no indexed textbook fragments for topic ${topicId} — index the textbook before starting a lesson`);
+    throw new NoIndexedFragmentsError(topicId);
   }
 
   const excerpt = fragment.text.length > 700 ? `${fragment.text.slice(0, 700)}…` : fragment.text;

@@ -183,7 +183,25 @@ const choiceStep = z.object({
   type: z.literal("choice"),
   questionUk: z.string().min(1).max(400),
   options: z
-    .array(z.object({ id: z.string().min(1).max(10), textUk: z.string().min(1).max(200), misconceptionUk: z.string().min(1).max(300).optional() }))
+    .array(
+      z.object({
+        id: z.string().min(1).max(10),
+        textUk: z.string().min(1).max(200),
+        // Prod incident 2026-09-28 (Bug 1): this used to be `.min(1)`, so a
+        // model that returned `misconceptionUk: ""` on even one option (seen
+        // across many unrelated subjects — math, mythology, literature — so
+        // this is a general model-reliability issue, not subject-specific)
+        // failed the ENTIRE block's Zod validation and burned a full
+        // plan+generate+review retry cycle for nothing. The field being
+        // optional already meant an *absent* value was always fine; there is
+        // no reason an *empty string* should be treated any differently —
+        // `fillMissingMisconceptions` (pipeline.ts) substitutes a generic
+        // fallback for either case right after generation, as a defensive
+        // safety net alongside the strengthened prompt instruction
+        // (prompts/lesson_generation.md) that is the actual, primary fix.
+        misconceptionUk: z.string().max(300).optional(),
+      }),
+    )
     .min(2)
     .max(5),
   correctOptionId: z.string().min(1).max(10),

@@ -150,10 +150,15 @@ vi.mock("@/server/supabase/clients", () => ({
 
 const generateOneBlockMock = vi.fn();
 const loadCandidatesMock = vi.fn();
-vi.mock("./generate", () => ({
-  generateOneBlock: (...a: unknown[]) => generateOneBlockMock(...a),
-  loadCandidates: (...a: unknown[]) => loadCandidatesMock(...a),
-}));
+const { NoIndexedFragmentsError } = await import("./generate");
+vi.mock("./generate", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./generate")>();
+  return {
+    ...actual,
+    generateOneBlock: (...a: unknown[]) => generateOneBlockMock(...a),
+    loadCandidates: (...a: unknown[]) => loadCandidatesMock(...a),
+  };
+});
 
 const { ensureActiveLibraryBlock, warmAheadForSubject, registerLibraryWarmJobs, warmDedupeKey, getTopicWarmupStatuses, estimateBulkWarmup, WARM_TOPIC_COST_USD } =
   await import("./warmup");
@@ -363,6 +368,63 @@ describe("registerLibraryWarmJobs — re-checks subjects.active/is_stub before g
     generateOneBlockMock.mockResolvedValue(undefined);
     await runHandler().run(job);
     expect(generateOneBlockMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Prod incident 2026-09-28 (Bug 3): real jobs for topics with zero indexed
+ * textbook fragments (confirmed mythology topics: "Лісовик", "Дажбог і
+ * Жива", "Сокіл-Род", "Дерево Життя") kept retrying up to 20 times over many
+ * hours — a condition that can NEVER succeed on retry, since retrying does
+ * not create missing indexed content. `NoIndexedFragmentsError` must be
+ * wired into the same `__warmupGiveUp` mechanism `ReviewerUnavailableError`
+ * already uses (BUG-011-style), so the job fails fast instead.
+ */
+describe("registerLibraryWarmJobs — gives up immediately on a permanently unfixable failure (Bug 3, 2026-09-28)", () => {
+  const job = {
+    id: "job1",
+    family_id: "fam1",
+    payload: {
+      topicId: "top1",
+      subjectId: "subj1",
+      subjectNameUk: "Українська міфологія",
+      subjectConfig: {},
+      topicTitle: "Лісовик",
+      grade: 6,
+      moduleCode: "school",
+      stage: "planning",
+    },
+  };
+
+  function runHandler() {
+    registerLibraryWarmJobs();
+    const call = registerJobHandler.mock.calls.find((c) => c[0] === "library.warm_topic")!;
+    return call[1] as { run: (job: unknown) => Promise<unknown>; isRetryable: (error: unknown) => boolean };
+  }
+
+  it("tags NoIndexedFragmentsError with __warmupGiveUp instead of leaving it retryable", async () => {
+    subjectsData = [{ id: "subj1", active: true, is_stub: false }];
+    generateOneBlockMock.mockRejectedValue(new NoIndexedFragmentsError("top1"));
+    const handler = runHandler();
+    const error = await handler.run(job).catch((e) => e);
+    expect(error).toBeInstanceOf(NoIndexedFragmentsError);
+    expect((error as { __warmupGiveUp?: boolean }).__warmupGiveUp).toBe(true);
+    expect(handler.isRetryable(error)).toBe(false);
+  });
+
+  it("keeps the exact message text startLessonAction matches on ('no indexed textbook fragments')", async () => {
+    subjectsData = [{ id: "subj1", active: true, is_stub: false }];
+    generateOneBlockMock.mockRejectedValue(new NoIndexedFragmentsError("top1"));
+    const error = await runHandler().run(job).catch((e) => e);
+    expect((error as Error).message).toContain("no indexed textbook fragments for topic top1");
+  });
+
+  it("still leaves an ordinary (transient) error retryable, unaffected by this fix", async () => {
+    subjectsData = [{ id: "subj1", active: true, is_stub: false }];
+    generateOneBlockMock.mockRejectedValue(new Error("temporary network blip"));
+    const handler = runHandler();
+    const error = await handler.run(job).catch((e) => e);
+    expect(handler.isRetryable(error)).toBe(true);
   });
 });
 
