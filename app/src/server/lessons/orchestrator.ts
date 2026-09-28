@@ -1050,7 +1050,23 @@ export async function continueAfterBlock(familyId: string, sessionId: string): P
     await scope.update("lesson_sessions", { mode: "summary", status: "completed", completed_at: new Date().toISOString(), current_step_id: null }).eq("id", sessionId);
     return { kind: "lesson_complete" };
   }
-  const nextItem = await activateBlock(familyId, session, next.id);
+
+  // BUG-045: `nextSessionBlock` above can take 1-5 minutes when it has to
+  // generate the block on demand (docs/bugs/BUG-034). The `session` loaded
+  // at the top of this function is now stale — if the child used the
+  // always-available "Вийти з уроку" (BUG-034) while this was running,
+  // `pauseLessonSession` already flipped the row to `status: "paused"`.
+  // Activating unconditionally here would silently overwrite that back to
+  // `"active"` with a brand-new `current_step_id`, resurrecting a lesson
+  // she already left without her (or Alex) ever knowing — a dangling
+  // background promise stomping on navigation state that already moved on.
+  // Re-check right before committing so a concurrent pause/exit wins.
+  const fresh = await loadSession(familyId, sessionId);
+  if (!fresh || fresh.status !== "active") {
+    return { kind: "advance", step: null };
+  }
+
+  const nextItem = await activateBlock(familyId, fresh, next.id);
   return { kind: "advance", step: stepView(nextItem, nextItem.steps[0]!, 1) };
 }
 
