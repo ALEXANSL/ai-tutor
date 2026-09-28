@@ -6,6 +6,7 @@ import { uk } from "@/i18n/uk";
 import { requireLessonAccess } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
 import type { ChildProfileRow } from "@/server/db/types";
+import { kickJobs } from "@/server/jobs/kick";
 import { askTopicChat, explainStepAgain } from "@/server/lessons/chat";
 import { recordChildFeedback, type ChildFeedbackKind } from "@/server/lessons/generate";
 import { readableTextForStep, synthesizeStepNarration } from "@/server/lessons/narration";
@@ -348,6 +349,7 @@ export async function checkWarmupProgressAction(
   try {
     const progress = await checkWarmupProgress(familyId, sessionId);
     if (progress.ready) revalidatePath(`/lesson/${sessionId}`);
+    else kickJobs();
     return { status: "ok", ready: progress.ready, stage: progress.stage, reviewPass: progress.reviewPass };
   } catch (e) {
     console.error(`checkWarmupProgressAction failed: ${(e as Error).message}`);

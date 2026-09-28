@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
+import { kickJobs } from "@/server/jobs/kick";
 import { ensureActiveLibraryBlock, estimateBulkWarmup, getTopicWarmupStatuses, type TopicWarmStatus, warmAheadForSubject } from "@/server/lessons/warmup";
 import { getSubjectForBulkWarmup } from "@/server/subjects/queries";
 import type { FormState } from "./state";
@@ -331,5 +332,6 @@ export async function getBulkWarmupStatusAction(topicIds: string[]): Promise<Bul
   const { familyId } = await requireParentAccess();
   const ids = parseTopicIds(topicIds);
   const statuses = await getTopicWarmupStatuses(familyId, ids);
+  if (Object.values(statuses).some((s) => s === "queued" || s === "generating")) kickJobs();
   return { status: "ok", statuses };
 }
