@@ -790,10 +790,14 @@ export const uk = {
       } as Record<string, string>,
       ocrProgress: (done: number, total: number) => `Розпізнається: сторінка ${done} з ${total}`,
       ocrConfirm: {
-        title: (pages: number) => `Це скан (${pages} стор. без тексту) — потрібне розпізнавання`,
+        // Deliberately "ми не знайшли" (we did not find), not "це скан" (this is a scan):
+        // this page can also mean our own text-reader failed on a real text PDF, not that
+        // the file is a photographed scan — see "Переіндексувати" note below.
+        title: (pages: number) => `Ми не знайшли текстового шару (${pages} стор.) — потрібне розпізнавання`,
         estimate: (usd: string) => `Орієнтовна вартість розпізнавання ≈ $${usd}`,
         button: "🔎 Розпізнати",
         small: "Невеликий скан розпізнається автоматично.",
+        retryHint: "Якщо це не скан, а звичайний текстовий PDF — спробуйте безкоштовну «Переіндексувати» ще раз, перш ніж розпізнавати.",
       },
       details: {
         scan_no_text: "Скан без текстового шару — сторінок для розпізнавання не знайдено.",
