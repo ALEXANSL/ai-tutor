@@ -246,6 +246,13 @@ export async function openaiTts(req: OpenAiTtsRequest, fetchImpl: typeof fetch =
         voice: req.voiceId ?? "alloy",
         instructions: "Читай тепло й спокійно, українською, як аудіокнигу — не як озвучений слайд.",
         response_format: "mp3",
+        // D-111 п.5: PO reported narration felt too slow and asked for
+        // ~10-15% faster; the API supports 0.25-4.0 (default 1.0) but this
+        // was never passed. ADR-025 has no existing guidance on `speed`, so
+        // this picks 1.1 (10% faster), the low end of the PO's own range —
+        // the client-side `playbackRate` control (`NarrationPlayer`) lets
+        // each listener go faster still on top of this baseline.
+        speed: 1.1,
       }),
       signal: AbortSignal.timeout(req.params.timeout_ms ?? 30_000),
     });

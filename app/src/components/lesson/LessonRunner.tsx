@@ -888,11 +888,39 @@ function PreviousModuleModal({
  * the current step; failure/unavailable is silent (docs/04 §5) — the step's
  * own text is already on screen either way.
  */
+/** D-111 п.5: speed multipliers applied on top of the generated audio (itself
+ * already `speed: 1.1` in `openaiTts`) via `HTMLAudioElement.playbackRate` —
+ * zero extra generation cost, each listener picks their own, same idea as
+ * "most courses"/podcast apps per the PO's own comparison. */
+const NARRATION_SPEEDS = [0.75, 1, 1.25, 1.5] as const;
+type NarrationSpeed = (typeof NARRATION_SPEEDS)[number];
+const DEFAULT_NARRATION_SPEED: NarrationSpeed = 1;
+const NARRATION_SPEED_STORAGE_KEY = "narrationSpeed";
+
+/** Reads the child's last-picked speed (per-browser convenience, docs/04 —
+ * never a synced setting); a missing/blocked/invalid value silently falls
+ * back to the default, matching this app's "never let storage break the
+ * page" rule for `localStorage`. */
+function readStoredNarrationSpeed(): NarrationSpeed {
+  try {
+    const raw = window.localStorage.getItem(NARRATION_SPEED_STORAGE_KEY);
+    const n = Number(raw);
+    if (NARRATION_SPEEDS.includes(n as NarrationSpeed)) return n as NarrationSpeed;
+  } catch {
+    // ignore (private mode, blocked storage, etc.)
+  }
+  return DEFAULT_NARRATION_SPEED;
+}
+
 function NarrationPlayer({ sessionId, stepId, labels: t }: { sessionId: string; stepId: string; labels: Labels }) {
   // The parent renders this with `key={step.stepId}` (a fresh mount, and so
   // a fresh `useState`/`useEffect`, per step) — no in-place reset is needed
   // here for a step change.
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  // Speed is remembered across steps/lessons (read once at mount, via a lazy
+  // initializer — not an effect — so it applies from the very first render
+  // of each fresh `NarrationPlayer` mount, not one render late).
+  const [speed, setSpeed] = useState<NarrationSpeed>(readStoredNarrationSpeed);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
@@ -906,9 +934,24 @@ function NarrationPlayer({ sessionId, stepId, labels: t }: { sessionId: string; 
     };
   }, [sessionId, stepId]);
 
+  // Applies to the current audio element immediately (mid-playback too), and
+  // again whenever a new step's element mounts.
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.playbackRate = speed;
+  }, [speed, audioUrl]);
+
+  function chooseSpeed(next: NarrationSpeed) {
+    setSpeed(next);
+    try {
+      window.localStorage.setItem(NARRATION_SPEED_STORAGE_KEY, String(next));
+    } catch {
+      // per-viewer convenience only — fine to drop silently
+    }
+  }
+
   if (!audioUrl) return null;
   return (
-    <div className="mb-4 flex items-center gap-2">
+    <div className="mb-4 flex flex-wrap items-center gap-2">
       <audio ref={audioRef} src={audioUrl} autoPlay controls className="h-10 flex-1" />
       <button
         type="button"
@@ -917,6 +960,22 @@ function NarrationPlayer({ sessionId, stepId, labels: t }: { sessionId: string; 
       >
         {t.narrationReplay}
       </button>
+      <div className="flex min-h-11 items-center gap-1.5 rounded-full border-2 border-line bg-surface px-2">
+        <span className="text-xs font-bold text-muted">{t.narrationSpeedLabel}</span>
+        {NARRATION_SPEEDS.map((s) => (
+          <button
+            key={s}
+            type="button"
+            aria-pressed={s === speed}
+            onClick={() => chooseSpeed(s)}
+            className={`min-h-8 min-w-8 rounded-full px-2 text-xs font-bold ${
+              s === speed ? "bg-primary text-white" : "text-muted"
+            }`}
+          >
+            {t.narrationSpeedOptions[String(s) as keyof Labels["narrationSpeedOptions"]]}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

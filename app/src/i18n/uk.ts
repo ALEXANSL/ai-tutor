@@ -310,6 +310,19 @@ export const uk = {
       textModeBanner: "Зараз говоримо текстом",
       narrationPause: "⏸ Пауза",
       narrationReplay: "↺ Повторити",
+      // D-111 п.5: PO asked for narration ~10-15% faster, or adjustable
+      // "as in most courses". The generated audio is already a fixed 1.1x
+      // (`openaiTts`'s `speed` param) — these labels describe the extra
+      // playback-rate multiplier the listener chooses on top of that, so
+      // "1x" here honestly means "as generated" rather than "OpenAI's
+      // untouched default pace".
+      narrationSpeedLabel: "Швидкість:",
+      narrationSpeedOptions: {
+        "0.75": "0.75×",
+        "1": "1×",
+        "1.25": "1.25×",
+        "1.5": "1.5×",
+      },
       // ADR-023 (D-76): shown on the progress screen while the topic's first
       // block is still being generated in the background — replaces the old
       // static "Готуємо урок…" with a staged, honest progress view.
