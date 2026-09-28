@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   batchPages,
+  bookNeedsOcr,
   estimateOcrCostUsd,
   mergeOcrIntoUnits,
   needsOcrConfirmation,
   ocrResultSchema,
   OCR_BATCH_PAGES,
+  OCR_MIN_TEXTLESS_SHARE,
+  OCR_TEXTLESS_ABSOLUTE_SAFETY_PAGES,
   pagesNeedingOcr,
 } from "./ocr";
 
@@ -94,5 +97,37 @@ describe("mergeOcrIntoUnits", () => {
   it("leaves an unrecognised (unreadable) page empty, so the chunker drops it", () => {
     const units = [{ page: 5, locator: null, text: "" }];
     expect(mergeOcrIntoUnits(units, new Map())[0]!.text).toBe("");
+  });
+});
+
+describe("bookNeedsOcr (D-54 refinement, bug 2026-09-28: real-book PDF with illustration pages blocked on OCR)", () => {
+  it("skips OCR for a mostly-real-text book with a minority of textless (illustration) pages — the confirmed real case: 30/123 = 24.4% textless", () => {
+    expect(bookNeedsOcr(30, 123)).toBe(false);
+  });
+
+  it("has no textless pages: nothing to OCR", () => {
+    expect(bookNeedsOcr(0, 123)).toBe(false);
+  });
+
+  it("still requires OCR for a genuinely scan-heavy book (matches looksLikeScan's own territory: ~95% textless)", () => {
+    expect(bookNeedsOcr(117, 123)).toBe(true);
+  });
+
+  it("requires OCR once the textless share crosses OCR_MIN_TEXTLESS_SHARE", () => {
+    const total = 100;
+    const justUnder = Math.floor(total * OCR_MIN_TEXTLESS_SHARE);
+    const justOver = justUnder + 1;
+    expect(bookNeedsOcr(justUnder, total)).toBe(false);
+    expect(bookNeedsOcr(justOver, total)).toBe(true);
+  });
+
+  it("absolute safety net: a huge number of textless pages still requires OCR even if the share is proportionally small", () => {
+    const total = 10_000;
+    expect(OCR_TEXTLESS_ABSOLUTE_SAFETY_PAGES / total).toBeLessThan(OCR_MIN_TEXTLESS_SHARE);
+    expect(bookNeedsOcr(OCR_TEXTLESS_ABSOLUTE_SAFETY_PAGES, total)).toBe(true);
+  });
+
+  it("a book with zero known pages but some textless count is treated as needing OCR (degenerate input, safe default)", () => {
+    expect(bookNeedsOcr(5, 0)).toBe(true);
   });
 });
