@@ -30,9 +30,19 @@ export default async function LessonPage({ params }: { params: Promise<{ session
   // first one in the background; the progress screen polls until it (or the
   // safe fallback template) is ready, then this page re-renders as `choosing`.
   if (session.mode === "warming") {
+    const scope = forFamily(familyId);
+    const [{ data: subject }, { data: topic }] = await Promise.all([
+      scope.select("subjects", "name_uk").eq("id", session.subject_id).maybeSingle<{ name_uk: string }>(),
+      scope.select("topics", "title").eq("id", session.topic_id).maybeSingle<{ title: string }>(),
+    ]);
     return (
       <div className="pb-10">
-        <LibraryWarmProgress sessionId={sessionId} subjectId={session.subject_id} />
+        <LibraryWarmProgress
+          sessionId={sessionId}
+          subjectId={session.subject_id}
+          subjectName={subject?.name_uk ?? ""}
+          topicTitle={topic?.title ?? ""}
+        />
       </div>
     );
   }
