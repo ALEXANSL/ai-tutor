@@ -790,10 +790,14 @@ export const uk = {
       } as Record<string, string>,
       ocrProgress: (done: number, total: number) => `Розпізнається: сторінка ${done} з ${total}`,
       ocrConfirm: {
-        title: (pages: number) => `Це скан (${pages} стор. без тексту) — потрібне розпізнавання`,
+        // Deliberately "ми не знайшли" (we did not find), not "це скан" (this is a scan):
+        // this page can also mean our own text-reader failed on a real text PDF, not that
+        // the file is a photographed scan — see "Переіндексувати" note below.
+        title: (pages: number) => `Ми не знайшли текстового шару (${pages} стор.) — потрібне розпізнавання`,
         estimate: (usd: string) => `Орієнтовна вартість розпізнавання ≈ $${usd}`,
         button: "🔎 Розпізнати",
         small: "Невеликий скан розпізнається автоматично.",
+        retryHint: "Якщо це не скан, а звичайний текстовий PDF — спробуйте безкоштовну «Переіндексувати» ще раз, перш ніж розпізнавати.",
       },
       details: {
         scan_no_text: "Скан без текстового шару — сторінок для розпізнавання не знайдено.",
@@ -890,6 +894,69 @@ export const uk = {
         saveTopic: "Зберегти тему",
         ocrUnreadable: "Розпізнано не повністю",
         ocrUnreadableValue: (n: number) => `${n} ${ukPlural(n, "сторінку", "сторінки", "сторінок")} не вдалося розпізнати — можливо, скан нечіткий.`,
+      },
+    },
+    // ADR-031 §3: ZIP з кількома предметними теками (напр. від сторонньої
+    // "розкладки" підручника) — "Розібрати архів" -> перегляд/правка
+    // мапування предметів -> "Імпортувати". Жодного запису в базу до кліку
+    // "Імпортувати" (крок 3).
+    manualImport: {
+      title: "Пакетний імпорт із ZIP",
+      back: "◂ Мої книги",
+      empty: "Пакетів поки немає. Покладіть ZIP-архів у папку Google Drive і натисніть «Я додав — перевірити папку» на сторінці «Мої книги».",
+      listDesc: "ZIP з кількома предметними теками (кожна — власний index.json + pages.jsonl). Спершу «Розібрати архів» — це нічого не записує, лише показує, що всередині.",
+      col: { name: "Архів", status: "Статус", added: "Знайдено" },
+      status: {
+        pending_review_unparsed: "Ще не розібрано",
+        pending_review: "Готово до перегляду",
+        importing: "Імпортується…",
+        done: "Імпортовано",
+        error: "Помилка",
+      } as Record<string, string>,
+      errorDetail: {
+        single_manifest_not_supported: "Це ZIP одного підручника (manifest.json у корені), а не пакет кількох предметів — цей екран для іншого формату.",
+        empty_zip: "У ZIP не знайдено жодної предметної теки.",
+        drive_not_configured: "Папка Google Drive ще не підключена.",
+        drive_forbidden: "Немає доступу до файлу в Google Drive.",
+        drive_file_missing: "Файл не знайдено в папці.",
+        too_large: "Файл завеликий (понад 150 МБ).",
+        reparse_mismatch: "Вміст архіву змінився з моменту розбору — натисніть «Розібрати архів» ще раз.",
+      } as Record<string, string>,
+      parse: {
+        button: "🔎 Розібрати архів",
+        queued: "Розбір поставлено в чергу…",
+      },
+      open: "Переглянути ▸",
+      confirm: {
+        title: "Перевірте розподіл по предметах",
+        intro: "Нижче — кожна предметна тека з архіву. Оберіть предмет (або створіть новий) для кожної, або позначте «Не імпортувати». Нічого не запишеться в базу, доки ви не натиснете «Імпортувати».",
+        folderCounts: (importable: number, imageOnly: number, needsReview: number) => {
+          const parts = [`придатно до імпорту: ${importable}`];
+          if (imageOnly > 0) parts.push(`скан без тексту (не імпортується): ${imageOnly}`);
+          if (needsReview > 0) parts.push(`потребує ручної перевірки: ${needsReview}`);
+          return parts.join(" · ");
+        },
+        rejected: "Уся тека — скановані сторінки без тексту. Додайте оригінальний PDF окремо для розпізнавання (OCR).",
+        parseError: "Не вдалося розібрати цю теку (немає index.json/pages.jsonl або файл пошкоджено) — пропущено.",
+        needsReviewTitle: "Потребує ручної перевірки (не імпортується автоматично):",
+        subjectLabel: "Предмет",
+        subjectPlaceholder: "— оберіть —",
+        createSubjectOption: "➕ Створити новий предмет",
+        newSubjectPlaceholder: "Назва нового предмета",
+        skipOption: "Не імпортувати цю теку",
+        submit: "Імпортувати",
+        started: "Імпорт поставлено в чергу.",
+        alreadyImported: "Уже імпортовано раніше.",
+      },
+      report: {
+        title: "Результат імпорту",
+        imported: (topics: number) => `Імпортовано: ${topics} ${ukPlural(topics, "тему", "теми", "тем")}.`,
+        rejected_scan: "Відхилено — скан без тексту, додайте оригінальний PDF для розпізнавання.",
+        skipped_by_parent: "Пропущено — ви обрали «не імпортувати».",
+        already_imported: "Уже було імпортовано раніше.",
+        error: "Помилка імпорту цієї теки.",
+        needsReview: (n: number) => (n > 0 ? ` Потребує ручної перевірки: ${n}.` : ""),
+        imageOnlySkipped: (n: number) => (n > 0 ? ` Пропущено (скан у тексті теки): ${n}.` : ""),
       },
     },
     settings: {

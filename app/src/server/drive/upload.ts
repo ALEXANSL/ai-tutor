@@ -88,7 +88,10 @@ export interface ResumableUploadSession {
 export async function initResumableUpload(opts: InitResumableUploadOptions): Promise<ResumableUploadSession> {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const format = formatOf({ name: opts.fileName, mimeType: opts.mimeType });
-  if (!format) throw new DriveError("unsupported file type", null, "unsupported_type");
+  // ADR-031 §3.8: a manual-import batch ZIP is placed straight in the Drive
+  // folder and picked up by `syncDriveFolder` — this direct-upload widget
+  // (PDF/EPUB only, browser size limit) never handles it.
+  if (!format || format === "zip") throw new DriveError("unsupported file type", null, "unsupported_type");
   if (opts.declaredSize != null && opts.declaredSize > MAX_UPLOAD_BYTES) {
     throw new DriveError("file too large", 413, "too_large");
   }
@@ -180,7 +183,7 @@ export async function confirmUpload(opts: ConfirmUploadOptions): Promise<Uploade
     throw new DriveError("uploaded file is not in the uploads folder", 403, "forbidden");
   }
   const format = formatOf({ name: file.name, mimeType: file.mimeType });
-  if (!format) throw new DriveError("unsupported file type", null, "unsupported_type");
+  if (!format || format === "zip") throw new DriveError("unsupported file type", null, "unsupported_type");
   const size = file.size ? Number(file.size) : null;
   if (size != null && size > MAX_UPLOAD_BYTES) throw new DriveError("file too large", 413, "too_large");
 

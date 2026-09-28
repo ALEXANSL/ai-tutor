@@ -65,6 +65,7 @@ function OcrConfirm({ book }: { book: BookListItem }) {
     <div className="mt-1 max-w-72 rounded-lg bg-p-warn/10 p-2">
       <div className="font-semibold text-p-text">{t.title(book.ocrPagesTotal ?? 0)}</div>
       {book.ocrEstimatedCostUsd != null && <div className="text-p-muted">{t.estimate(book.ocrEstimatedCostUsd.toFixed(2))}</div>}
+      <div className="mt-0.5 text-p-muted">{t.retryHint}</div>
       <form action={confirmOcrAction} className="mt-1">
         <input type="hidden" name="materialId" value={book.id} />
         <button type="submit" className="min-h-11 text-[12px] font-bold text-p-primary">

@@ -67,3 +67,46 @@ export function planSync(known: KnownMaterial[], files: FolderFile[], opts: { bu
   }
   return plan;
 }
+
+/**
+ * ADR-031 §3.8: the ZIP equivalent of `planSync` above, but much smaller —
+ * a ZIP never turns into a `materials` row by itself (0..N rows, one per
+ * confirmed subject-folder, only at `ingest.manual_batch_commit`). Drive
+ * sync only needs to (a) notice a brand-new ZIP (insert a
+ * `manual_import_batches` row, `pending_review`, empty `plan` — the parent's
+ * own "Розібрати архів" click runs `ingest.manual_batch_preview`) and
+ * (b) notice the SAME ZIP replaced with different content (its md5 changed)
+ * so the stale preview is not trusted for a commit.
+ */
+export interface KnownBatch {
+  id: string;
+  drive_file_id: string;
+  drive_md5: string | null;
+}
+export interface ManualBatchSyncPlan {
+  insert: { driveFileId: string; name: string; driveMd5: string | null }[];
+  /** md5 changed since the last preview — the parent must re-run "Розібрати архів" before confirming. */
+  resetForReparse: { id: string; driveMd5: string | null }[];
+}
+export interface ZipFile {
+  id: string;
+  name: string;
+  md5Checksum?: string;
+}
+export function planManualBatchSync(known: KnownBatch[], zipFiles: ZipFile[]): ManualBatchSyncPlan {
+  const byDriveId = new Map(known.map((k) => [k.drive_file_id, k]));
+  const insert: ManualBatchSyncPlan["insert"] = [];
+  const resetForReparse: ManualBatchSyncPlan["resetForReparse"] = [];
+  const seen = new Set<string>();
+  for (const f of zipFiles) {
+    if (seen.has(f.id)) continue;
+    seen.add(f.id);
+    const k = byDriveId.get(f.id);
+    if (!k) {
+      insert.push({ driveFileId: f.id, name: f.name, driveMd5: f.md5Checksum ?? null });
+      continue;
+    }
+    if (f.md5Checksum && k.drive_md5 && f.md5Checksum !== k.drive_md5) resetForReparse.push({ id: k.id, driveMd5: f.md5Checksum });
+  }
+  return { insert, resetForReparse };
+}

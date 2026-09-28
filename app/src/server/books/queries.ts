@@ -6,7 +6,7 @@ export interface BookListItem {
   id: string;
   name: string;
   title: string | null;
-  format: "pdf" | "epub";
+  format: "pdf" | "epub" | "manual";
   kind: string;
   subjectId: string | null;
   useInLessons: boolean;
@@ -60,7 +60,7 @@ interface MaterialDbRow {
   id: string;
   name: string;
   title: string | null;
-  format: "pdf" | "epub";
+  format: "pdf" | "epub" | "manual";
   kind: string;
   subject_id: string | null;
   use_in_lessons: boolean;
@@ -126,6 +126,43 @@ export async function listSubjects(familyId: string): Promise<SubjectOption[]> {
     .order("sort_order")
     .returns<{ id: string; code: string; name_uk: string }[]>();
   return (data ?? []).map((s) => ({ id: s.id, code: s.code, name: s.name_uk }));
+}
+
+/** ADR-031 §3.8: ZIP batches detected in the Drive folder ("Розібрати архів" / confirm / "Імпортувати"). */
+export interface ManualImportBatchItem {
+  id: string;
+  name: string;
+  status: string;
+  errorDetail: string | null;
+  plan: unknown;
+  createdAt: string;
+}
+
+interface ManualBatchDbRow {
+  id: string;
+  name: string;
+  status: string;
+  error_detail: string | null;
+  plan: unknown;
+  created_at: string;
+}
+
+export async function listManualImportBatches(familyId: string): Promise<ManualImportBatchItem[]> {
+  const { data, error } = await forFamily(familyId)
+    .select("manual_import_batches", "id, name, status, error_detail, plan, created_at")
+    .order("created_at", { ascending: false })
+    .returns<ManualBatchDbRow[]>();
+  if (error) throw new Error(`listManualImportBatches failed: ${error.message}`);
+  return (data ?? []).map((r) => ({ id: r.id, name: r.name, status: r.status, errorDetail: r.error_detail, plan: r.plan, createdAt: r.created_at }));
+}
+
+export async function getManualImportBatch(familyId: string, id: string): Promise<ManualImportBatchItem | null> {
+  const { data } = await forFamily(familyId)
+    .select("manual_import_batches", "id, name, status, error_detail, plan, created_at")
+    .eq("id", id)
+    .maybeSingle<ManualBatchDbRow>();
+  if (!data) return null;
+  return { id: data.id, name: data.name, status: data.status, errorDetail: data.error_detail, plan: data.plan, createdAt: data.created_at };
 }
 
 export async function getBook(familyId: string, id: string): Promise<BookDetail | null> {
