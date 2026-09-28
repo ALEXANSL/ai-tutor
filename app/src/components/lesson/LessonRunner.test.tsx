@@ -26,6 +26,7 @@ const goToPreviousStepAction = vi.fn();
 const continueAfterBlockAction = vi.fn();
 const submitStepAnswerAction = vi.fn();
 const pauseLessonAction = vi.fn().mockResolvedValue(undefined);
+const synthesizeNarrationAction = vi.fn();
 vi.mock("@/app/actions/lesson", () => ({
   acknowledgeSlideAction: vi.fn(),
   askTopicChatAction: vi.fn(),
@@ -38,7 +39,7 @@ vi.mock("@/app/actions/lesson", () => ({
   skipLessonBreakAction: vi.fn(),
   submitBlockFeedbackAction: vi.fn(),
   submitStepAnswerAction: (...a: unknown[]) => submitStepAnswerAction(...a),
-  synthesizeNarrationAction: vi.fn(),
+  synthesizeNarrationAction: (...a: unknown[]) => synthesizeNarrationAction(...a),
   takeLessonBreakAction: vi.fn(),
   tickLessonActivityAction: vi.fn().mockResolvedValue({ breakOffer: false }),
 }));
@@ -79,10 +80,16 @@ afterEach(() => {
   submitStepAnswerAction.mockReset();
   pauseLessonAction.mockClear();
   pauseLessonAction.mockResolvedValue(undefined);
+  synthesizeNarrationAction.mockReset();
   routerPush.mockClear();
+  try {
+    window.localStorage.clear();
+  } catch {
+    // ignore
+  }
 });
 
-function renderRunner(currentBlockOrder?: number, activeStep: TestStep = step) {
+function renderRunner(currentBlockOrder?: number, activeStep: TestStep = step, presentationMode: "text" | "voice" | "auto" = "text") {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -95,7 +102,7 @@ function renderRunner(currentBlockOrder?: number, activeStep: TestStep = step) {
         step={activeStep}
         idleHintS={60}
         idlePauseS={180}
-        presentationMode="text"
+        presentationMode={presentationMode}
         currentBlockOrder={currentBlockOrder}
       />,
     );
@@ -361,5 +368,54 @@ describe("BUG-034: «Вийти з уроку» on the block-complete screen alw
 
     expect(pauseLessonAction).toHaveBeenCalledWith("s1", "manual_exit");
     expect(routerPush).toHaveBeenCalledWith("/today");
+  });
+});
+
+/**
+ * D-111 п.5 (PO decision 2026-09-28): narration audio is generated ~10%
+ * faster server-side (`openaiTts`'s `speed: 1.1`), and the player also lets
+ * the listener pick their own extra playback-rate multiplier — "як у
+ * більшості курсів" (podcast/audiobook-style speed buttons), independent of
+ * that generation-time speed.
+ */
+describe("D-111 п.5: narration playback-speed control", () => {
+  it("defaults to 1x, and choosing a speed sets playbackRate and remembers it for the next step", async () => {
+    synthesizeNarrationAction.mockResolvedValue({ status: "ok", mimeType: "audio/mpeg", audioBase64: "AAAA" });
+    const el = renderRunner(undefined, step, "voice");
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const audio = el.querySelector("audio") as HTMLAudioElement;
+    expect(audio).not.toBeNull();
+    expect(audio.playbackRate).toBe(1);
+
+    const fastButton = findButtonByText(el, "1.5×")!;
+    expect(fastButton).not.toBeNull();
+
+    await act(async () => {
+      fastButton.click();
+    });
+
+    expect(audio.playbackRate).toBe(1.5);
+    expect(fastButton.getAttribute("aria-pressed")).toBe("true");
+    expect(window.localStorage.getItem("narrationSpeed")).toBe("1.5");
+  });
+
+  it("carries the previously chosen speed into a freshly mounted player (next step)", async () => {
+    window.localStorage.setItem("narrationSpeed", "0.75");
+    synthesizeNarrationAction.mockResolvedValue({ status: "ok", mimeType: "audio/mpeg", audioBase64: "AAAA" });
+    const el = renderRunner(undefined, step, "voice");
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const audio = el.querySelector("audio") as HTMLAudioElement;
+    expect(audio.playbackRate).toBe(0.75);
+    expect(findButtonByText(el, "0.75×")!.getAttribute("aria-pressed")).toBe("true");
   });
 });

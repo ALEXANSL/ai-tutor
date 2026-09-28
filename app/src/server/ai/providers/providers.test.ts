@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { anthropicStructured, anthropicVisionStructured } from "./anthropic";
-import { openaiEmbed, openaiStructured } from "./openai";
+import { openaiEmbed, openaiStructured, openaiTts } from "./openai";
 import { AiNotConfiguredError, ProviderError } from "../types";
 
 afterEach(() => {
@@ -139,6 +139,31 @@ describe("openaiEmbed (mocked fetch)", () => {
   it("is not configured without OPENAI_API_KEY", async () => {
     vi.stubEnv("OPENAI_API_KEY", "");
     await expect(openaiEmbed({ model: "m", texts: ["a"] }, vi.fn())).rejects.toBeInstanceOf(AiNotConfiguredError);
+  });
+});
+
+describe("openaiTts (mocked fetch)", () => {
+  it("requests a 10% faster speed (D-111 п.5) and returns base64 audio", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-key-not-real");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(new Uint8Array([1, 2, 3]), { status: 200 }));
+    const res = await openaiTts({ model: "gpt-4o-mini-tts", text: "Привіт", params: {} }, fetchMock);
+    expect(res.data.mimeType).toBe("audio/mpeg");
+    expect(Buffer.from(res.data.audioBase64, "base64")).toEqual(Buffer.from([1, 2, 3]));
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("https://api.openai.com/v1/audio/speech");
+    expect(JSON.parse(init.body)).toMatchObject({ model: "gpt-4o-mini-tts", input: "Привіт", speed: 1.1 });
+  });
+
+  it("rejects empty text without calling the API", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "test-key-not-real");
+    const fetchMock = vi.fn();
+    await expect(openaiTts({ model: "m", text: "   ", params: {} }, fetchMock)).rejects.toBeInstanceOf(ProviderError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("is not configured without OPENAI_API_KEY", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "");
+    await expect(openaiTts({ model: "m", text: "a", params: {} }, vi.fn())).rejects.toBeInstanceOf(AiNotConfiguredError);
   });
 });
 
