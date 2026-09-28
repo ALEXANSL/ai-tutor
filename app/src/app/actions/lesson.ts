@@ -70,7 +70,16 @@ async function onlyChild(familyId: string): Promise<ChildProfileRow> {
 export async function startLessonAction(
   subjectId: string,
   topicId: string,
-): Promise<{ status: "ok"; sessionId: string; candidates: StartCandidate[] } | { status: "error"; message: string }> {
+): Promise<
+  | { status: "ok"; sessionId: string; candidates: StartCandidate[] }
+  // `reason` is a machine-readable tag for the SAME condition `message`
+  // already describes in words. `message` stays worded for the PARENT
+  // caller (`StartLessonButton`, `parent/subjects/[id]`); the CHILD caller
+  // (`ChildStartLessonButton`) must not render `message` for `no_textbook`
+  // — it has its own child-appropriate copy keyed off `reason` instead, so
+  // the parent-facing "«Мої книги»" instruction never reaches the child.
+  | { status: "error"; message: string; reason?: "no_textbook" }
+> {
   const { familyId } = await requireLessonAccess();
   UUID.parse(subjectId);
   UUID.parse(topicId);
@@ -82,10 +91,10 @@ export async function startLessonAction(
   } catch (e) {
     const err = e as Error;
     console.error(`startLessonAction failed: ${err.message}`);
-    const message = err.message.includes("no indexed textbook fragments")
-      ? uk.parent.subjects.errors.noTextbook
-      : uk.parent.subjects.errors.startLessonFailed;
-    return { status: "error", message };
+    if (err.message.includes("no indexed textbook fragments")) {
+      return { status: "error", message: uk.parent.subjects.errors.noTextbook, reason: "no_textbook" };
+    }
+    return { status: "error", message: uk.parent.subjects.errors.startLessonFailed };
   }
 }
 
