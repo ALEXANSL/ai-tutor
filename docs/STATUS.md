@@ -1,5 +1,9 @@
 # Статус проєкту — ШІ-Репетитор
 
+## ADR-031 Частина 3 (architect, 2026-09-28 пізній вечір) — пакетний ручний імпорт з реального ZIP, готово до реалізації
+
+PO надав вночі два реальні ZIP на своєму Google Drive (кілька предметних тек — `ukr_mova`, `ukr_literatura`, `zar_literatura`, `istoriia`, `geografiia`, `informatyka`, `pryroda`, `zdorovia` — кожна з `index.json`+`pages.jsonl`) і хочу розібрати їх зараз, одним переглядом/підтвердженням мапування «тека → предмет». `docs/adr/031-multi-format-ingest-and-visual-content.md` Частина 3 фіксує точний контракт (`index.json`/`pages.jsonl`, статуси `text_in_pdf`/`image_only`/`QR_external_check_pdf`), нову колонку `materials.source_subpath` (один ZIP → кілька рядків `materials`), нову таблицю `manual_import_batches`, рефактор `runStructure` → спільна `applyStructureRows` (AI- і ручний шлях), два нові job (`ingest.manual_batch_preview`/`ingest.manual_batch_commit`) і екран підтвердження мапування предметів (з можливістю створити новий предмет — `pryroda`/`zdorovia` сьогодні відсутні в `app/config/family-defaults.json`; `geografiia`/`informatyka` — `image_only`, відхиляються від цього шляху, потребують окремого OCR оригіналу). **Готово для `developer` — деталі реалізації в ADR, не переказані тут.**
+
 ## Дослідження `architect` за D-111 (2026-09-28) — див. `docs/01-requirements.md` 12.30
 
 **П.2/п.3 (формати файлів, зображення/візуалізація) — нове ADR-031** (`docs/adr/031-multi-format-ingest-and-visual-content.md`), нова US-2.10, нові відкриті питання ВП-57…ВП-59 (обсяг зображень — продуктовий вибір PO, не вирішено).
