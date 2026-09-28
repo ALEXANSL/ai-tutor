@@ -34,7 +34,14 @@ export async function checkFolderAction(): Promise<FormState> {
     const s = await syncDriveFolder(familyId);
     kickJobs();
     revalidatePath("/parent/books", "layout");
-    return { status: "ok", message: t.add.result(s.added, s.updated, s.removed) + (s.deferred ? t.add.deferred(s.deferred) : "") };
+    revalidatePath("/parent/books/import", "layout");
+    return {
+      status: "ok",
+      message:
+        t.add.result(s.added, s.updated, s.removed) +
+        (s.deferred ? t.add.deferred(s.deferred) : "") +
+        (s.manualBatchesAdded ? ` ${uk.parent.manualImport.title}: +${s.manualBatchesAdded}.` : ""),
+    };
   } catch (e) {
     if (e instanceof DriveError && e.code === "not_configured") return { status: "error", message: t.add.notConfigured };
     console.error(`checkFolder failed: ${(e as Error).name}`);

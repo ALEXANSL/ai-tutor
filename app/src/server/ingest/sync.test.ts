@@ -4,7 +4,7 @@ import { DriveError } from "../drive/google";
 import { buildTsQuery, cleanQuery, prefixStem } from "../search/query";
 import { EpubError } from "./extract-epub";
 import { errorCodeOf, IngestError, isRetryableIngestError } from "./pipeline";
-import { planSync, type FolderFile, type KnownMaterial } from "./sync-plan";
+import { planManualBatchSync, planSync, type FolderFile, type KnownBatch, type KnownMaterial } from "./sync-plan";
 
 const file = (id: string, over: Partial<FolderFile> = {}): FolderFile => ({
   id,
@@ -68,6 +68,28 @@ describe("planSync — 'Я додав — перевірити папку' (US-2
     expect(cfg.requeue).toHaveLength(1);
     const broken = planSync([known("a", { status: "error", status_detail: "extract_failed" })], [file("a")], { budgetBlocked: false });
     expect(broken.requeue).toHaveLength(0);
+  });
+});
+
+describe("planManualBatchSync (ADR-031 §3.8)", () => {
+  const knownBatch = (id: string, over: Partial<KnownBatch> = {}): KnownBatch => ({ id: `b-${id}`, drive_file_id: id, drive_md5: `md5-${id}`, ...over });
+  const zip = (id: string, over: Partial<{ name: string; md5Checksum: string }> = {}) => ({ id, name: `${id}.zip`, md5Checksum: `md5-${id}`, ...over });
+
+  it("inserts a batch row for a brand-new ZIP", () => {
+    const plan = planManualBatchSync([], [zip("a")]);
+    expect(plan.insert).toEqual([{ driveFileId: "a", name: "a.zip", driveMd5: "md5-a" }]);
+    expect(plan.resetForReparse).toEqual([]);
+  });
+
+  it("does not touch a known, unchanged ZIP", () => {
+    const plan = planManualBatchSync([knownBatch("a")], [zip("a")]);
+    expect(plan.insert).toEqual([]);
+    expect(plan.resetForReparse).toEqual([]);
+  });
+
+  it("flags a changed ZIP (different md5) for re-parse, never silently keeps the stale preview", () => {
+    const plan = planManualBatchSync([knownBatch("a")], [zip("a", { md5Checksum: "new-md5" })]);
+    expect(plan.resetForReparse).toEqual([{ id: "b-a", driveMd5: "new-md5" }]);
   });
 });
 

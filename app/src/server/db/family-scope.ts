@@ -10,6 +10,7 @@ const FAMILY_COLUMN: Record<string, string> = {
   families: "id",
   subjects: "owner_family_id",
   materials: "owner_family_id",
+  manual_import_batches: "owner_family_id",
   material_sections: "owner_family_id",
   topics: "owner_family_id",
   topic_dependencies: "owner_family_id",

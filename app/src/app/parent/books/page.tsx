@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { AddBookPanel } from "@/components/parent/books/AddBookPanel";
 import { BooksList } from "@/components/parent/books/BooksList";
 import { FolderAccessBanner } from "@/components/parent/books/FolderAccessBanner";
@@ -5,7 +6,7 @@ import { SearchPanel } from "@/components/parent/books/SearchPanel";
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
 import { kindOptions } from "@/server/books/kinds";
-import { listBooks, listSubjects } from "@/server/books/queries";
+import { listBooks, listManualImportBatches, listSubjects } from "@/server/books/queries";
 import { forFamily, getFamilyTimezone } from "@/server/db/family-scope";
 import { getFolderAccessStatus, isDriveConfigured, isUploadsFolderConfigured } from "@/server/drive/service";
 import { PageTitle, Panel } from "../ui";
@@ -16,13 +17,14 @@ export const maxDuration = 300;
 /** "Мої книги" (mockup 17; US-2.1 KP-1, 2; US-2.7 KP-1, 3, 4; US-2.3). */
 export default async function BooksPage() {
   const { familyId } = await requireParentAccess();
-  const [books, subjects, access, driveConfigured, uploadEnabled, timeZone] = await Promise.all([
+  const [books, subjects, access, driveConfigured, uploadEnabled, timeZone, manualBatches] = await Promise.all([
     listBooks(familyId),
     listSubjects(familyId),
     getFolderAccessStatus(familyId),
     isDriveConfigured(familyId),
     isUploadsFolderConfigured(familyId),
     getFamilyTimezone(forFamily(familyId)),
+    listManualImportBatches(familyId),
   ]);
   const kinds = kindOptions();
   const t = uk.parent.books;
@@ -30,6 +32,11 @@ export default async function BooksPage() {
     <>
       <PageTitle>{t.title}</PageTitle>
       <FolderAccessBanner status={access} />
+      {manualBatches.length > 0 && (
+        <Link href="/parent/books/import" className="mb-4 block rounded-2xl border border-p-line bg-p-surface px-5 py-3.5 text-[13px] font-bold text-p-primary">
+          {uk.parent.manualImport.title} ({manualBatches.length}) ▸
+        </Link>
+      )}
       <Panel title={t.listTitle}>
         <p className="-mt-2 mb-3.5 text-xs text-p-muted">{t.listDesc}</p>
         <BooksList initial={books} subjects={subjects} kinds={kinds} timeZone={timeZone} />

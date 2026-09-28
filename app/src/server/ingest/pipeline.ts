@@ -37,7 +37,7 @@ import {
   splitPrompt,
   type PageText,
 } from "./structure";
-import { planSync, type KnownMaterial } from "./sync-plan";
+import { planManualBatchSync, planSync, type KnownMaterial } from "./sync-plan";
 import { chunkUnits, type ExtractedUnit } from "./text";
 
 /**
@@ -107,14 +107,14 @@ export function isRetryableIngestError(e: unknown): boolean {
 
 const budgetBlocks = (state: string) => state === "budget" || state === "hard_stop";
 
-async function patchMaterial(scope: FamilyScope, id: string, patch: Record<string, unknown>): Promise<void> {
+export async function patchMaterial(scope: FamilyScope, id: string, patch: Record<string, unknown>): Promise<void> {
   const { error } = await scope.update("materials", patch).eq("id", id);
   if (error) throw new Error(`materials update failed: ${error.message}`);
 }
 
 const dedupe = (type: string, materialId: string) => `${type}:${materialId}`;
 
-async function enqueueStep(familyId: string, type: string, materialId: string, extra: Record<string, unknown> = {}) {
+export async function enqueueStep(familyId: string, type: string, materialId: string, extra: Record<string, unknown> = {}) {
   await enqueueJob(familyId, type, { materialId, ...extra }, { dedupeKey: dedupe(type, materialId) });
 }
 
@@ -128,6 +128,8 @@ export interface SyncSummary {
   removed: number;
   skipped: number;
   deferred: number;
+  /** ADR-031 §3.8: new ZIP batches detected (not yet parsed — the parent runs "Розібрати архів" per batch). */
+  manualBatchesAdded: number;
 }
 
 export async function syncDriveFolder(familyId: string): Promise<SyncSummary> {
@@ -139,20 +141,44 @@ export async function syncDriveFolder(familyId: string): Promise<SyncSummary> {
   // ADR-024 (docs/02 10.3): the same conveyor scans BOTH the manually-shared
   // materials folder and, once configured, the app-owned "Мої книги" uploads
   // folder — merged (de-duplicated by id) into one file list.
-  const byId = new Map<string, DriveFile & { format: "pdf" | "epub" }>();
+  const byId = new Map<string, DriveFile & { format: "pdf" | "epub" | "zip" }>();
   let skipped = 0;
   for (const folder of folders) {
     const res = await listFolderFiles(folder.folderId, accessToken);
     skipped += res.skipped;
     for (const f of res.files) byId.set(f.id, f);
   }
-  const files = [...byId.values()];
+  const allFiles = [...byId.values()];
+  // ADR-031 §3.8: a ZIP never becomes a `materials` row directly — it goes
+  // through `manual_import_batches` instead (0..N rows only at commit).
+  const files = allFiles.filter((f): f is DriveFile & { format: "pdf" | "epub" } => f.format !== "zip");
+  const zipFiles = allFiles.filter((f) => f.format === "zip");
   const { data: known, error } = await scope
     .select("materials", "id, drive_file_id, name, drive_md5, drive_modified_time, status, status_detail")
     .returns<KnownMaterial[]>();
   if (error) throw new Error(`materials select failed: ${error.message}`);
   const budget = await getBudget(familyId);
   const plan = planSync(known ?? [], files, { budgetBlocked: budgetBlocks(budget.state) });
+
+  let manualBatchesAdded = 0;
+  if (zipFiles.length) {
+    const { data: knownBatches, error: batchErr } = await scope
+      .select("manual_import_batches", "id, drive_file_id, drive_md5")
+      .returns<{ id: string; drive_file_id: string; drive_md5: string | null }[]>();
+    if (batchErr) throw new Error(`manual_import_batches select failed: ${batchErr.message}`);
+    const batchPlan = planManualBatchSync(knownBatches ?? [], zipFiles);
+    if (batchPlan.insert.length) {
+      const { error: insErr } = await scope.insert(
+        "manual_import_batches",
+        batchPlan.insert.map((b) => ({ drive_file_id: b.driveFileId, name: b.name, drive_md5: b.driveMd5, status: "pending_review", plan: {} })),
+      );
+      if (insErr) throw new Error(`manual_import_batches insert failed: ${insErr.message}`);
+      manualBatchesAdded = batchPlan.insert.length;
+    }
+    for (const r of batchPlan.resetForReparse) {
+      await scope.update("manual_import_batches", { drive_md5: r.driveMd5, status: "pending_review", plan: {}, error_detail: null }).eq("id", r.id);
+    }
+  }
 
   const driveMeta = (f: (typeof files)[number]) => ({
     name: f.name,
@@ -211,6 +237,7 @@ export async function syncDriveFolder(familyId: string): Promise<SyncSummary> {
     removed: plan.remove.length,
     skipped,
     deferred: [...plan.insert, ...plan.requeue].filter((x) => x.status === "deferred").length,
+    manualBatchesAdded,
   };
 }
 
@@ -277,7 +304,7 @@ export async function ingestUploadedMaterial(
 // ---------------------------------------------------------------------------
 // ingest.extract
 // ---------------------------------------------------------------------------
-interface MaterialRow {
+export interface MaterialRow {
   id: string;
   name: string;
   title: string | null;
@@ -314,8 +341,14 @@ async function deferIfBudget(scope: FamilyScope, familyId: string, materialId: s
   return true;
 }
 
-/** Chunks the merged units, saves them and hands off to `ingest.embed` — the shared tail of a text extraction and an OCR run (D-54). */
-async function finishExtraction(
+/**
+ * Chunks the merged units, saves them and hands off to `ingest.embed` — the
+ * shared tail of a text extraction and an OCR run (D-54), also reused by the
+ * manual-batch-import commit (ADR-031 §3.6, `manual-batch-pipeline.ts`) for
+ * its own already-clean `ExtractedUnit[]` (no download/extract step of its
+ * own — the parent's ZIP already has the text).
+ */
+export async function finishExtraction(
   scope: FamilyScope,
   familyId: string,
   materialId: string,
@@ -393,6 +426,13 @@ async function runExtract(job: JobRow): Promise<void> {
       await enqueueStep(familyId, JOB.embed, materialId);
       return;
     }
+  }
+
+  // ADR-031 §3: a `format = 'manual'` row (batch ZIP import) has no
+  // `sourceExtractors` entry on purpose — it is only ever produced, and only
+  // ever re-produced, by `ingest.manual_batch_commit`, never by this job.
+  if (m.format === "manual") {
+    throw new IngestError("extract_failed", "manual batch-imported materials are not re-extracted here — re-run the batch import to update this subject's content");
   }
 
   await patchMaterial(scope, materialId, { progress: { step: "extract" } });
@@ -575,6 +615,14 @@ async function runEmbed(job: JobRow, ctx: { deadline: number }): Promise<void | 
       .returns<{ id: string; text: string }[]>();
     if (error) throw new Error(`chunks select failed: ${error.message}`);
     if (!batch?.length) {
+      // ADR-031 §3.6: a manual batch-import row already has its
+      // sections/topics written directly by `applyManualStructure` at
+      // commit time (no AI call) — once embedding is done there is nothing
+      // left to structure, unlike the AI path below.
+      if (m.format === "manual") {
+        await patchMaterial(scope, materialId, { status: "ready", status_detail: null, indexed_at: new Date().toISOString(), progress: {} });
+        return;
+      }
       await patchMaterial(scope, materialId, { progress: { step: "structure", done: total, total } });
       await enqueueStep(familyId, JOB.structureOutline, materialId);
       return;

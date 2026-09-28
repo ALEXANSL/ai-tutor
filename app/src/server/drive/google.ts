@@ -74,17 +74,20 @@ export interface DriveFile {
 }
 
 const FOLDER_MIME = "application/vnd.google-apps.folder";
-export const SUPPORTED_MIME: Record<string, "pdf" | "epub"> = {
+/** ADR-031 §3.8: 'zip' is a manual-import batch (`manual_import_batches`), never a `materials` row directly — see `syncDriveFolder`. */
+export const SUPPORTED_MIME: Record<string, "pdf" | "epub" | "zip"> = {
   "application/pdf": "pdf",
   "application/epub+zip": "epub",
+  "application/zip": "zip",
+  "application/x-zip-compressed": "zip",
 };
 
-/** Format by MIME type or by extension (Drive sometimes reports octet-stream for EPUB). */
-export function formatOf(file: Pick<DriveFile, "name" | "mimeType">): "pdf" | "epub" | null {
+/** Format by MIME type or by extension (Drive sometimes reports octet-stream for EPUB/ZIP). */
+export function formatOf(file: Pick<DriveFile, "name" | "mimeType">): "pdf" | "epub" | "zip" | null {
   const byMime = SUPPORTED_MIME[file.mimeType];
   if (byMime) return byMime;
   const ext = file.name.toLowerCase().split(".").pop();
-  return ext === "pdf" ? "pdf" : ext === "epub" ? "epub" : null;
+  return ext === "pdf" ? "pdf" : ext === "epub" ? "epub" : ext === "zip" ? "zip" : null;
 }
 
 async function driveGet(url: string, token: string, fetchImpl: typeof fetch, timeoutMs = 30_000): Promise<Response> {
@@ -109,9 +112,9 @@ export async function listFolderFiles(
   token: string,
   fetchImpl: typeof fetch = fetch,
   maxDepth = 3,
-): Promise<{ files: (DriveFile & { format: "pdf" | "epub" })[]; skipped: number }> {
+): Promise<{ files: (DriveFile & { format: "pdf" | "epub" | "zip" })[]; skipped: number }> {
   if (!isValidDriveId(folderId)) throw new DriveError("invalid folder id", null, "not_configured");
-  const files: (DriveFile & { format: "pdf" | "epub" })[] = [];
+  const files: (DriveFile & { format: "pdf" | "epub" | "zip" })[] = [];
   let skipped = 0;
   const queue: { id: string; depth: number }[] = [{ id: folderId, depth: 0 }];
   const seen = new Set<string>();
