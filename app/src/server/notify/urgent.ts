@@ -58,6 +58,20 @@ export function buildUrgentMessage(
 export const JOB_DELIVER = "notify.deliver_urgent";
 export const JOB_REMIND = "notify.remind_unread";
 
+/**
+ * BUG-015 (PO decision 2026-09-28): Telegram bot linking never actually
+ * succeeds (`getLinkedChatId()` reliably returns null), so every
+ * `notify.deliver_urgent{channel:telegram}` job was a guaranteed, deterministic
+ * failure — it just burned retries and filled the `jobs` table for nothing.
+ * E-mail (Resend) alone is confirmed reliable and sufficient for now. This is
+ * a temporary pause on *enqueueing* the telegram job, not a removal of
+ * Telegram support: the job handler (`jobs.ts`) and `telegram.ts` are left
+ * fully intact so any already-queued or manually retried telegram job still
+ * behaves correctly, and re-enabling is a one-line change back to
+ * `["email", "telegram"] as const` once BUG-015's linking bug is fixed.
+ */
+const URGENT_DELIVERY_CHANNELS = ["email"] as const;
+
 export async function enqueueUrgentDelivery(
   familyId: string,
   safetyEventId: string | null,
@@ -67,7 +81,7 @@ export async function enqueueUrgentDelivery(
 ): Promise<void> {
   const db = createServiceClient();
   const rows: { id: string; channel: "email" | "telegram" }[] = [];
-  for (const channel of ["email", "telegram"] as const) {
+  for (const channel of URGENT_DELIVERY_CHANNELS) {
     const { data, error } = await db
       .from("outbound_deliveries")
       .insert({ family_id: familyId, safety_event_id: safetyEventId, channel, is_test: isTest })
