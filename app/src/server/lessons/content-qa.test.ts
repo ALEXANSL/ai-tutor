@@ -58,6 +58,21 @@ describe("looksComplete (completeness check, generalizes truncateAtSentenceBound
     expect(looksComplete("Більше або", "label")).toBe(false);
   });
 
+  it("BUG-047 #1: a single-word label that is itself a stop-word is NOT dangling — Так/Ні choice-option answers", () => {
+    expect(looksComplete("Ні", "label")).toBe(true);
+    expect(looksComplete("Так", "label")).toBe(true);
+    expect(looksComplete("За", "label")).toBe(true);
+    expect(looksComplete("До", "label")).toBe(true);
+  });
+
+  it("BUG-047 #1: the stop-word list still applies to a MULTI-word label (real mid-phrase cutoff)", () => {
+    expect(looksComplete("Ні один із варіантів не", "label")).toBe(false);
+  });
+
+  it("BUG-047 #1: 'prose' kind still rejects a lone stop-word as an incomplete sentence", () => {
+    expect(looksComplete("Ні", "prose")).toBe(false);
+  });
+
   it("kind='label': is lighter than 'prose' — allows a bare comma-ending label", () => {
     expect(looksComplete("Перший варіант,", "label")).toBe(true);
   });
@@ -100,6 +115,12 @@ describe("looksEncodedCorrectly (encoding sanity + narrow BUG-046 signature)", (
 
   it("does NOT flag ³/¿ that are not adjacent to a Cyrillic letter in the same word (Latin/space/digit neighbor)", () => {
     expect(looksEncodedCorrectly("x³ + y² = 9, formula in Latin").ok).toBe(true);
+  });
+
+  it("BUG-047 #2: does NOT flag a digit glued directly to a whitelisted unit with no space (10см³, 5м³, 2км²)", () => {
+    expect(looksEncodedCorrectly("Об'єм становить 10см³ рівно.").ok).toBe(true);
+    expect(looksEncodedCorrectly("Довжина сторони 5м³.").ok).toBe(true);
+    expect(looksEncodedCorrectly("Площа ділянки 2км².").ok).toBe(true);
   });
 
   it("rejects text with a high density of characters outside the expected range", () => {
@@ -199,6 +220,21 @@ describe("checkStepContentQa / checkBlockContentQa (per-field, per-step orchestr
     expect(fields).toContain("options[1].misconceptionUk");
     expect(fields).not.toContain("options[0].textUk");
     expect(fields).not.toContain("explanationUk");
+  });
+
+  it("BUG-047: passes a normal Так/Ні choice step cleanly (the exact repro from the bug doc)", () => {
+    const step: LessonBlockGenerated["steps"][number] = {
+      type: "choice",
+      questionUk: "Чи є 5 парним числом?",
+      options: [
+        { id: "yes", textUk: "Так" },
+        { id: "no", textUk: "Ні" },
+      ],
+      correctOptionId: "no",
+      explanationUk: "5 — непарне число, воно не ділиться на 2 без остачі.",
+      sourceRefs: [],
+    };
+    expect(checkStepContentQa(step, 0)).toEqual([]);
   });
 
   it("checks open step fields (question/expectedAnswer/rubric) and remediation retry variants", () => {

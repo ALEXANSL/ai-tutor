@@ -94,9 +94,16 @@ export function looksComplete(text: string, kind: ContentFieldKind = "prose"): b
   // code cut mid-way ("...досягнуто 70" instead of "...70 балів").
   if (kind === "prose" && /\d/.test(rawLast) && !/\p{L}/u.test(rawLast) && !/[.!?…%)]$/u.test(rawLast)) return false;
 
+  // a) dangling conjunction/preposition — mid-PROSE cutoff signal only. A
+  // `label` field that consists of exactly one word (the whole trimmed text
+  // *is* that one token, e.g. a "Так"/"Ні" choice-option text, or a
+  // one-word "За"/"До" answer) has no preceding context within the same
+  // field to be "continuing" — it is a complete answer by construction, not
+  // a truncated phrase, so the list only applies when there's more than one
+  // word to have been cut off from, or the field is prose (BUG-047).
   const word = coreWord(rawLast);
-  // a) dangling conjunction/preposition.
-  if (UK_DANGLING_WORDS.has(word)) return false;
+  const isSingleWordLabel = kind === "label" && rawLast === trimmed;
+  if (!isSingleWordLabel && UK_DANGLING_WORDS.has(word)) return false;
 
   // b) prose only: ends on a bare comma or dash.
   if (kind === "prose" && /[,—–-]$/u.test(rawLast)) return false;
@@ -134,7 +141,11 @@ function bug046Signature(text: string): string | null {
   const tokens = text.match(/[\p{L}\p{N}³¿]+/gu) ?? [];
   for (const token of tokens) {
     if (!/[³¿]/.test(token)) continue;
-    if (KNOWN_UNIT_TOKENS.has(token.toLowerCase())) continue;
+    // A digit run glued directly to the unit with no space ("10см³") tokenizes
+    // as one token together with the leading digits — strip them before the
+    // whitelist lookup so digit-adjacent units still match (BUG-047 #2).
+    const unitPart = token.replace(/^\p{N}+/u, "");
+    if (KNOWN_UNIT_TOKENS.has(token.toLowerCase()) || KNOWN_UNIT_TOKENS.has(unitPart.toLowerCase())) continue;
     if (/\p{Script=Cyrillic}[³¿]|[³¿]\p{Script=Cyrillic}/u.test(token)) return token;
   }
   return null;
