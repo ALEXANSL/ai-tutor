@@ -26,6 +26,10 @@ export interface LibraryCard {
   pedagogy: PedagogyPassport | null;
   childFeedback: { interesting: number; normal: number; boring: number };
   createdAt: string;
+  /** ADR-034: WHY a `needs_review` block is hidden — `'technical'` (content_qa
+   * gate) vs `'pedagogical'` (lesson_review never approved). `null` for any
+   * other status, or for a row saved before this field existed. */
+  needsReviewReason: "pedagogical" | "technical" | null;
 }
 
 interface LibraryItemRow {
@@ -36,6 +40,7 @@ interface LibraryItemRow {
   pedagogy: PedagogyPassport | null;
   child_feedback: { interesting?: number; normal?: number; boring?: number } | null;
   created_at: string;
+  needs_review_reason: "pedagogical" | "technical" | null;
 }
 
 function toCard(row: LibraryItemRow): LibraryCard {
@@ -47,13 +52,14 @@ function toCard(row: LibraryItemRow): LibraryCard {
     pedagogy: row.pedagogy && Object.keys(row.pedagogy).length > 0 ? row.pedagogy : null,
     childFeedback: { interesting: row.child_feedback?.interesting ?? 0, normal: row.child_feedback?.normal ?? 0, boring: row.child_feedback?.boring ?? 0 },
     createdAt: row.created_at,
+    needsReviewReason: row.needs_review_reason ?? null,
   };
 }
 
 /** US-6.10 КП-1, DoD п.11: every saved block of a topic, newest first, with its passport and status. */
 export async function listLibraryCardsForTopic(familyId: string, topicId: string): Promise<LibraryCard[]> {
   const { data } = await forFamily(familyId)
-    .select("library_items", "id, title, status, estimated_minutes, pedagogy, child_feedback, created_at")
+    .select("library_items", "id, title, status, estimated_minutes, pedagogy, child_feedback, created_at, needs_review_reason")
     .eq("topic_id", topicId)
     .eq("kind", "block")
     .order("created_at", { ascending: false })
@@ -82,7 +88,7 @@ export interface LibraryItemDetail {
 export async function loadLibraryCardDetail(familyId: string, itemId: string): Promise<LibraryItemDetail | null> {
   const scope = forFamily(familyId);
   const { data: item } = await scope
-    .select("library_items", "id, title, status, estimated_minutes, pedagogy, child_feedback, created_at, subject_id, topic_id")
+    .select("library_items", "id, title, status, estimated_minutes, pedagogy, child_feedback, created_at, needs_review_reason, subject_id, topic_id")
     .eq("id", itemId)
     .maybeSingle<LibraryItemRow & { subject_id: string; topic_id: string }>();
   if (!item) return null;

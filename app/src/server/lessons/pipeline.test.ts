@@ -13,7 +13,7 @@ import type { LessonBlockGenerated, LessonPlan, ReviewOutput } from "./schema";
 const callStructured = vi.fn();
 vi.mock("@/server/ai/router", () => ({ callStructured: (...args: unknown[]) => callStructured(...args) }));
 
-const { runPedagogicalPipeline, ReviewerUnavailableError, verifyProblemNumbers, fillMissingMisconceptions, FALLBACK_MISCONCEPTION_UK } = await import("./pipeline");
+const { runPedagogicalPipeline, ReviewerUnavailableError, verifyProblemNumbers, fillMissingMisconceptions, FALLBACK_MISCONCEPTION_UK, MAX_REVISIONS } = await import("./pipeline");
 
 function plan(over: Partial<LessonPlan> = {}): LessonPlan {
   return {
@@ -357,5 +357,79 @@ describe("fillMissingMisconceptions (Bug 1, 2026-09-28)", () => {
     const res = await runPedagogicalPipeline(baseInput);
     const choiceStep = res.block.steps[0] as Extract<LessonBlockGenerated["steps"][number], { type: "choice" }>;
     expect(choiceStep.options[1]!.misconceptionUk).toBe(FALLBACK_MISCONCEPTION_UK);
+  });
+});
+
+/**
+ * ADR-034 integration tests: the `content_qa` gate runs BEFORE the paid
+ * `lesson_review` call, consuming the SAME `MAX_REVISIONS` budget (no new
+ * retry limit), and distinguishes `needsReviewReason` ("technical" vs
+ * "pedagogical") when retries are exhausted.
+ */
+describe("content_qa gate inside runPedagogicalPipeline (ADR-034)", () => {
+  const brokenBlock = block({
+    steps: [{ type: "slide", textUk: "Персонаж вижив завдяки незламній волі до", sourceRefs: [] }], // BUG-011-style dangling cut
+  });
+
+  it("a content_qa failure produces a synthetic 'revise' verdict and skips the paid lesson_review call for that iteration", async () => {
+    mockRoleQueue({
+      lesson_planning: [plan()],
+      lesson_generation: [brokenBlock, block()],
+      lesson_review: [review()],
+    });
+    const res = await runPedagogicalPipeline(baseInput);
+    expect(res.status).toBe("active");
+    // Two generations happened (broken draft + the fixed retry)...
+    expect(callStructured.mock.calls.filter((c) => c[0] === "lesson_generation")).toHaveLength(2);
+    // ...but lesson_review was called exactly once — never for the content_qa-failed draft.
+    expect(callStructured.mock.calls.filter((c) => c[0] === "lesson_review")).toHaveLength(1);
+    expect(res.reviews.map((r) => r.reviewerRole)).toEqual(["content_qa", "lesson_review"]);
+    expect(res.reviews[0]!.verdict).toBe("revise");
+    expect(res.reviews[0]!.provider).toBe("deterministic");
+    // The content_qa failure notes reached the next generation call's prompt.
+    const secondGenCall = callStructured.mock.calls.filter((c) => c[0] === "lesson_generation")[1]!;
+    expect((secondGenCall[1] as { prompt: string }).prompt).toMatch(/Крок 1/);
+  });
+
+  it("a content_qa failure consumes an existing MAX_REVISIONS slot, not a new/separate budget", async () => {
+    // Every single generation attempt is broken -> exhausts MAX_REVISIONS + 1
+    // attempts exactly like a fully-failing lesson_review would (existing test above).
+    mockRoleQueue({
+      lesson_planning: [plan()],
+      lesson_generation: Array.from({ length: MAX_REVISIONS + 1 }, () => brokenBlock),
+    });
+    const res = await runPedagogicalPipeline(baseInput);
+    expect(callStructured.mock.calls.filter((c) => c[0] === "lesson_generation")).toHaveLength(MAX_REVISIONS + 1);
+    expect(callStructured.mock.calls.filter((c) => c[0] === "lesson_review")).toHaveLength(0); // never once paid for review
+    expect(res.status).toBe("needs_review");
+  });
+
+  it("exhausted retries on content_qa alone -> needs_review with needsReviewReason='technical'", async () => {
+    mockRoleQueue({
+      lesson_planning: [plan()],
+      lesson_generation: Array.from({ length: MAX_REVISIONS + 1 }, () => brokenBlock),
+    });
+    const res = await runPedagogicalPipeline(baseInput);
+    expect(res.status).toBe("needs_review");
+    expect(res.needsReviewReason).toBe("technical");
+  });
+
+  it("exhausted retries on lesson_review alone (content_qa always passing) -> needsReviewReason='pedagogical'", async () => {
+    mockRoleQueue({
+      lesson_planning: [plan()],
+      lesson_generation: [block(), block(), block()],
+      lesson_review: [review({ verdict: "revise" }), review({ verdict: "revise" }), review({ verdict: "revise" })],
+    });
+    const res = await runPedagogicalPipeline(baseInput);
+    expect(res.status).toBe("needs_review");
+    expect(res.needsReviewReason).toBe("pedagogical");
+  });
+
+  it("needsReviewReason is null and contentQa.ok is true when a block is approved", async () => {
+    mockRoleQueue({ lesson_planning: [plan()], lesson_generation: [block()], lesson_review: [review()] });
+    const res = await runPedagogicalPipeline(baseInput);
+    expect(res.status).toBe("active");
+    expect(res.needsReviewReason).toBeNull();
+    expect(res.contentQa?.ok).toBe(true);
   });
 });
