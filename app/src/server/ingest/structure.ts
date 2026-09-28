@@ -2,38 +2,54 @@ import { z } from "zod";
 import type { StructureStrategyKey } from "@/core/registries/learning";
 
 /**
- * Structure step of the universal pipeline (docs/02 9.1, ADR-017): prompt
- * input, output schema and the pure rules that apply the model's answer
- * without overwriting manual corrections (US-2.2 KP-2, US-2.6 KP-1).
+ * Structure steps of the universal pipeline (docs/02 9.1, ADR-017, ADR-032):
+ * prompt input, output schemas and the pure rules that apply the model's
+ * answer without overwriting manual corrections (US-2.2 KP-2, US-2.6 KP-1).
+ *
+ * ADR-032 split the single whole-book `indexing_structure` call into two
+ * passes to bound each call's output size (the root cause of a real prod
+ * failure — deep section hierarchies / hundreds of numbered exercises
+ * pushed the old single call past `max_tokens`/the provider timeout):
+ *  - `indexing_outline` (PROMPT_VERSION_OUTLINE): section BOUNDARIES only —
+ *    small, predictable output regardless of book size.
+ *  - `indexing_structure` (PROMPT_VERSION_SECTION): topics/problems/
+ *    dependencies/related_topics for ONE section at a time, given that
+ *    section's full (uncompressed) text.
  */
 
-export const PROMPT_VERSION = "indexing_structure.v1";
+export const PROMPT_VERSION_OUTLINE = "indexing_outline.v1";
+export const PROMPT_VERSION_SECTION = "indexing_structure.v2";
 
-export function buildStructureSchema(kinds: string[], subjectCodes: string[]) {
-  const pages = { page_from: z.number().int().nullable(), page_to: z.number().int().nullable() };
+const pageBounds = { page_from: z.number().int().nullable(), page_to: z.number().int().nullable() };
+
+/** Pass 1 (ADR-032): book classification + section boundaries only — no topics/problems/dependencies. */
+export function buildOutlineSchema(kinds: string[], subjectCodes: string[]) {
   return z.object({
     title: z.string(),
     kind: z.enum(kinds as [string, ...string[]]),
     subject_code: z.enum(["none", ...subjectCodes] as [string, ...string[]]),
     grade: z.number().int().nullable(),
-    sections: z.array(
-      z.object({
-        title: z.string(),
-        ...pages,
-        topics: z.array(z.object({ title: z.string(), ...pages })),
-      }),
-    ),
+    sections: z.array(z.object({ title: z.string(), ...pageBounds })),
+  });
+}
+export type OutlineAnswer = z.infer<ReturnType<typeof buildOutlineSchema>>;
+
+/**
+ * Pass 2 (ADR-032): one call PER SECTION — topics of that section, its
+ * numbered exercises (ADR-029), dependencies between ITS OWN topics, and
+ * (non-textbook only) related_topics. Bounded output: at most a few dozen
+ * topics/exercises per section, an order of magnitude below the old
+ * whole-book 500-problem ceiling.
+ */
+export function buildSectionSchema() {
+  return z.object({
+    topics: z.array(z.object({ title: z.string(), ...pageBounds })),
     dependencies: z.array(z.object({ topic: z.string(), depends_on: z.string() })),
     related_topics: z.array(z.string()),
-    // ADR-029 (US-2.8): numbered textbook exercises/problems, recognized as
-    // part of this SAME one-per-book call (no separate AI call, КП-3) — a
-    // top-level array (not nested in sections/topics: problem numbering and
-    // section boundaries are different axes, per the ADR).
     problems: z.array(z.object({ number: z.string().min(1).max(12), page: z.number().int().nullable() })).max(500),
   });
 }
-
-export type StructureAnswer = z.infer<ReturnType<typeof buildStructureSchema>>;
+export type SectionAnswer = z.infer<ReturnType<typeof buildSectionSchema>>;
 
 export interface PageText {
   page: number;
@@ -55,9 +71,11 @@ export function isHeadingLike(line: string): boolean {
 }
 
 /**
- * Compact outline for the model: full text of the first/last pages (where the
- * table of contents usually is) and, for every other page, its beginning plus
- * heading-like lines. Keeps the structure call ≈ $0.1–0.5 per book (docs/03 3.8).
+ * Compact outline for the model (pass 1 — `indexing_outline`): full text of
+ * the first/last pages (where the table of contents usually is) and, for
+ * every other page, its beginning plus heading-like lines. Keeps the outline
+ * call cheap and its output small (section boundaries only, ADR-032) —
+ * unchanged from the pre-ADR-032 single-call outline extract.
  */
 export function buildOutline(pages: PageText[], opts: { maxChars?: number; edgePages?: number } = {}): string {
   const maxChars = opts.maxChars ?? 120_000;
@@ -83,6 +101,19 @@ export function buildOutline(pages: PageText[], opts: { maxChars?: number; edgeP
     out = render(head, edgeChars);
   }
   return out.length > maxChars ? out.slice(0, maxChars) : out;
+}
+
+/**
+ * Full, UNCOMPRESSED text of one section's pages (pass 2 — `indexing_structure`
+ * per section, ADR-032): unlike `buildOutline`, this never truncates or
+ * summarizes — a section is a fraction of the book (typically 15–30 pages),
+ * so its full text stays well within one call's input budget while giving
+ * the model much better material than the old whole-book compressed extract.
+ */
+export function buildSectionText(pages: PageText[]): string {
+  return pages
+    .map((p) => `--- ${p.locator ? `Стор. ${p.page} (${p.locator})` : `Стор. ${p.page}`} ---\n${p.text}`)
+    .join("\n");
 }
 
 export function fillTemplate(template: string, values: Record<string, string>): string {
@@ -119,27 +150,35 @@ function fillRanges<T extends NormalizedTopic>(items: T[], upper: number | null)
   });
 }
 
-/** Cleans the model's answer and applies the strategy of the source type. */
-export function normalizeSections(answer: Pick<StructureAnswer, "sections">, strategy: StructureStrategyKey, pageCount: number): NormalizedSection[] {
+/** Cleans pass 1's answer: book-wide section boundaries only (ADR-032). */
+export function normalizeOutlineSections(answer: Pick<OutlineAnswer, "sections">, pageCount: number): NormalizedTopic[] {
   const sections = answer.sections
-    .map((s) => ({
-      title: s.title.trim().slice(0, 300),
-      page_from: clampPage(s.page_from, pageCount),
-      page_to: clampPage(s.page_to, pageCount),
-      topics:
-        strategy === "textbook"
-          ? s.topics
-              .map((t) => ({ title: t.title.trim().slice(0, 300), page_from: clampPage(t.page_from, pageCount), page_to: clampPage(t.page_to, pageCount) }))
-              .filter((t) => t.title)
-          : [],
-    }))
+    .map((s) => ({ title: s.title.trim().slice(0, 300), page_from: clampPage(s.page_from, pageCount), page_to: clampPage(s.page_to, pageCount) }))
     .filter((s) => s.title);
-  return fillRanges(sections, pageCount).map((s) => ({ ...s, topics: fillRanges(s.topics, s.page_to) }));
+  return fillRanges(sections, pageCount);
+}
+
+/**
+ * Cleans pass 2's `topics` answer for ONE section (ADR-032) — same rules as
+ * the pre-ADR-032 whole-book version, but the fill-range upper bound is the
+ * SECTION's own `page_to` (topics can never spill past their section).
+ */
+export function normalizeSectionTopics(
+  answer: Pick<SectionAnswer, "topics">,
+  strategy: StructureStrategyKey,
+  pageCount: number,
+  sectionPageTo: number | null,
+): NormalizedTopic[] {
+  if (strategy !== "textbook") return [];
+  const topics = answer.topics
+    .map((t) => ({ title: t.title.trim().slice(0, 300), page_from: clampPage(t.page_from, pageCount), page_to: clampPage(t.page_to, pageCount) }))
+    .filter((t) => t.title);
+  return fillRanges(topics, sectionPageTo);
 }
 
 /**
  * ADR-029 §1 (US-2.8): cleans the model's `problems` answer the same way
- * `normalizeSections` cleans `sections` — gated on `strategy === "textbook"`
+ * `normalizeSectionTopics` cleans `topics` — gated on `strategy === "textbook"`
  * (MVP scope, see the ADR's Альтернативи) and NEVER inventing a number: an
  * empty/unparseable number, an out-of-range or missing page, or a number
  * containing whitespace (a sure sign the model merged unrelated text) is
@@ -149,7 +188,7 @@ export function normalizeSections(answer: Pick<StructureAnswer, "sections">, str
  * row, keeping the first-seen display casing.
  */
 export function normalizeProblems(
-  answer: Pick<StructureAnswer, "problems">,
+  answer: Pick<SectionAnswer, "problems">,
   strategy: StructureStrategyKey,
   pageCount: number,
 ): { number: string; page: number }[] {
@@ -181,6 +220,9 @@ export interface Existing {
 /**
  * Re-indexing keeps identities: incoming items are matched to existing rows by
  * title; manual rows are never updated or deleted; unmatched automatic rows go.
+ * ADR-032: used both book-wide (sections, pass 1) and per-section (topics,
+ * pass 2 — the caller scopes `existing` to `section_id = :sectionId` so a
+ * topic never merges with one from a different section on re-index).
  */
 export function mergeByTitle(existing: Existing[], incoming: { title: string }[]) {
   const byKey = new Map(existing.map((e) => [titleKey(e.title), e]));

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { reindexAction } from "@/app/actions/books";
+import { reindexAction, retrySectionAction } from "@/app/actions/books";
 import { BookSettingsForm, TopicEditForm, TopicLinksForm } from "@/components/parent/books/BookForms";
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
@@ -95,6 +95,20 @@ export default async function BookPage({ params }: { params: Promise<{ id: strin
                       ({t.search.page(s.pageFrom)}
                       {s.pageTo && s.pageTo !== s.pageFrom ? `–${s.pageTo}` : ""})
                     </span>
+                  )}{" "}
+                  {/* ADR-032: this section's own structuring status — a book
+                      can be "Готово частково" while most sections are ready. */}
+                  {s.id !== "none" && s.status !== "ready" && (
+                    <span className={`font-normal ${s.status === "error" ? "text-p-danger" : "text-p-muted"}`}>[{t.sectionStatus[s.status] ?? s.status}]</span>
+                  )}
+                  {s.id !== "none" && s.status === "error" && (
+                    <form action={retrySectionAction} className="mt-1 inline-block">
+                      <input type="hidden" name="materialId" value={book.id} />
+                      <input type="hidden" name="sectionId" value={s.id} />
+                      <button type="submit" className="ml-1 min-h-6 rounded-lg border border-p-line px-2 text-[11px] font-bold">
+                        🔄 {t.retrySection}
+                      </button>
+                    </form>
                   )}
                 </p>
                 {s.topics.length > 0 && (

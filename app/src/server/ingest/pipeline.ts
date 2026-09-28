@@ -26,11 +26,14 @@ import {
 } from "./ocr";
 import {
   buildOutline,
-  buildStructureSchema,
+  buildOutlineSchema,
+  buildSectionSchema,
+  buildSectionText,
   fillTemplate,
   mergeByTitle,
+  normalizeOutlineSections,
   normalizeProblems,
-  normalizeSections,
+  normalizeSectionTopics,
   splitPrompt,
   type PageText,
 } from "./structure";
@@ -39,7 +42,9 @@ import { chunkUnits, type ExtractedUnit } from "./text";
 
 /**
  * Universal ingest pipeline (docs/02 9.1, ADR-008, ADR-017):
- * drive.sync → ingest.extract → ingest.embed → ingest.structure.
+ * drive.sync → ingest.extract → ingest.embed → ingest.structure_outline →
+ * N × ingest.structure_section (ADR-032 — one section at a time, not the
+ * whole book in a single call; see the ADR for why).
  * Every step is a separate job (≤ 300 s), resumable after a crash.
  */
 export const JOB = {
@@ -47,7 +52,14 @@ export const JOB = {
   extract: "ingest.extract",
   ocr: "ingest.ocr",
   embed: "ingest.embed",
-  structure: "ingest.structure",
+  /** ADR-032 pass 1: book classification + section boundaries only. */
+  structureOutline: "ingest.structure_outline",
+  /** ADR-032 pass 2: one job per section, payload `{ materialId, sectionId }`. */
+  structureSection: "ingest.structure_section",
+  /** Legacy job type from before ADR-032 — kept registered (mapped to the
+   * new outline pass) so any job already queued at deploy time still
+   * completes instead of failing with "no handler". Never enqueued by new code. */
+  structureLegacy: "ingest.structure",
 } as const;
 
 /** Error codes shown to the parent (texts in i18n: uk.parent.books.details). */
@@ -564,7 +576,7 @@ async function runEmbed(job: JobRow, ctx: { deadline: number }): Promise<void | 
     if (error) throw new Error(`chunks select failed: ${error.message}`);
     if (!batch?.length) {
       await patchMaterial(scope, materialId, { progress: { step: "structure", done: total, total } });
-      await enqueueStep(familyId, JOB.structure, materialId);
+      await enqueueStep(familyId, JOB.structureOutline, materialId);
       return;
     }
     let res;
@@ -594,15 +606,65 @@ async function runEmbed(job: JobRow, ctx: { deadline: number }): Promise<void | 
 }
 
 // ---------------------------------------------------------------------------
-// ingest.structure
+// ingest.structure_outline / ingest.structure_section (ADR-032)
 // ---------------------------------------------------------------------------
-let promptCache: { system: string; user: string } | null = null;
-function structurePrompt(): { system: string; user: string } {
-  promptCache ??= splitPrompt(readFileSync(join(process.cwd(), "prompts", "indexing_structure.md"), "utf8"));
-  return promptCache;
+let outlinePromptCache: { system: string; user: string } | null = null;
+function outlinePrompt(): { system: string; user: string } {
+  outlinePromptCache ??= splitPrompt(readFileSync(join(process.cwd(), "prompts", "indexing_outline.md"), "utf8"));
+  return outlinePromptCache;
+}
+let sectionPromptCache: { system: string; user: string } | null = null;
+function sectionPrompt(): { system: string; user: string } {
+  sectionPromptCache ??= splitPrompt(readFileSync(join(process.cwd(), "prompts", "indexing_structure.md"), "utf8"));
+  return sectionPromptCache;
 }
 
-async function runStructure(job: JobRow): Promise<void> {
+/**
+ * ADR-032: the book-level status a partway/finished structuring pass should
+ * show. Recomputed from `material_sections.status` every time a section
+ * finishes (success or final failure) — never assumed, so it stays correct
+ * regardless of which section finishes first (sections run independently and
+ * in any order once queued). `ready_partial` (new terminal status, needs the
+ * matching migration) is used only once EVERY section has either succeeded
+ * or exhausted its own retries and at least one of each is true; a book
+ * whose every section failed is `error` (same as a failed outline pass) —
+ * nothing usable came out of it.
+ */
+async function finalizeMaterialStatus(scope: FamilyScope, materialId: string): Promise<void> {
+  const [{ data: sections }, { data: mat }] = await Promise.all([
+    scope.select("material_sections", "status").eq("material_id", materialId).returns<{ status: string }[]>(),
+    scope.select("materials", "kind, subject_id").eq("id", materialId).maybeSingle<{ kind: string; subject_id: string | null }>(),
+  ]);
+  const rows = sections ?? [];
+  const total = rows.length;
+  const doneCount = rows.filter((s) => s.status === "ready" || s.status === "error").length;
+  if (total > 0 && doneCount < total) {
+    await patchMaterial(scope, materialId, { progress: { step: "structure", sections_total: total, sections_done: doneCount } });
+    return;
+  }
+  const anyError = rows.some((s) => s.status === "error");
+  const anyReady = rows.some((s) => s.status === "ready");
+  const status = total === 0 || !anyError ? "ready" : anyReady ? "ready_partial" : "error";
+  const strategy = mat ? (sourceTypes.get(mat.kind)?.structureStrategy ?? "contents") : "contents";
+  const noSubject = strategy === "textbook" && !!mat && !mat.subject_id;
+  await patchMaterial(scope, materialId, {
+    status,
+    status_detail: status === "error" ? "ai_failed" : status === "ready_partial" ? "ready_partial" : noSubject ? "no_subject" : null,
+    indexed_at: new Date().toISOString(),
+    progress: {},
+  });
+}
+
+/**
+ * ADR-032 pass 1 (`ingest.structure_outline`): a small, reliable call —
+ * book classification + top-level section BOUNDARIES only (no topics, no
+ * exercises, no dependencies — those are each section's own job below).
+ * Writes `materials.kind/subject_id/grade/title` and `material_sections`
+ * rows right away, then fans out one `ingest.structure_section` job PER
+ * section, all enqueued at once (not one after another) so the existing
+ * cron/kick mechanism can pick them up in parallel across ticks.
+ */
+async function runStructureOutline(job: JobRow): Promise<void> {
   const familyId = job.family_id;
   const materialId = String(job.payload.materialId);
   const scope = forFamily(familyId);
@@ -610,7 +672,7 @@ async function runStructure(job: JobRow): Promise<void> {
   if (!m || m.status === "removed") return;
   if (await deferIfBudget(scope, familyId, materialId)) return;
 
-  const [{ data: chunkRows }, { data: subjects }, { data: topics }, { data: year }] = await Promise.all([
+  const [{ data: chunkRows }, { data: subjects }, { data: year }] = await Promise.all([
     scope
       .select("chunks", "page, locator, text, ordinal")
       .eq("material_id", materialId)
@@ -618,12 +680,6 @@ async function runStructure(job: JobRow): Promise<void> {
       .limit(20000)
       .returns<{ page: number; locator: string | null; text: string }[]>(),
     scope.select("subjects", "id, code, name_uk, is_stub").returns<{ id: string; code: string; name_uk: string; is_stub: boolean }[]>(),
-    scope
-      .select("topics", "id, title, subject_id, material_id")
-      .or(`material_id.is.null,material_id.neq.${materialId}`)
-      .order("sort_order")
-      .limit(300)
-      .returns<{ id: string; title: string; subject_id: string; material_id: string | null }[]>(),
     scope.select("academic_years", "grade").eq("status", "active").maybeSingle<{ grade: number }>(),
   ]);
 
@@ -635,16 +691,13 @@ async function runStructure(job: JobRow): Promise<void> {
   }
   const kinds = sourceTypes.list().filter((t) => t.autoDetect);
   const realSubjects = (subjects ?? []).filter((s) => !s.is_stub);
-  const subjectName = new Map((subjects ?? []).map((s) => [s.id, s.name_uk]));
-  const topicRefs = (topics ?? []).map((t, i) => ({ ref: `t${i + 1}`, ...t }));
-  const { system, user } = structurePrompt();
+  const { system, user } = outlinePrompt();
   const prompt = fillTemplate(user, {
     file_name: m.name,
     meta_title: m.title ?? "—",
     grade_hint: year?.grade != null ? String(year.grade) : "—",
     kinds: kinds.map((k) => `${k.key} — ${k.titleUk}`).join("\n"),
     subjects: realSubjects.map((s) => `${s.code} — ${s.name_uk}`).join("\n") || "—",
-    existing_topics: topicRefs.map((t) => `${t.ref} — ${subjectName.get(t.subject_id) ?? "?"} — ${t.title}`).join("\n") || "—",
     // EPUB chapter titles are part of the outline (page labels).
     toc: "—",
     outline: buildOutline([...pages.values()].sort((a, b) => a.page - b.page)),
@@ -654,8 +707,8 @@ async function runStructure(job: JobRow): Promise<void> {
   let answer;
   try {
     const res = await callStructured(
-      "indexing_structure",
-      { system, prompt, schema: buildStructureSchema(kinds.map((k) => k.key), [...realSubjects.map((s) => s.code)]) },
+      "indexing_outline",
+      { system, prompt, schema: buildOutlineSchema(kinds.map((k) => k.key), [...realSubjects.map((s) => s.code)]) },
       { familyId, ref: { table: "materials", id: materialId } },
     );
     answer = res.result;
@@ -668,14 +721,14 @@ async function runStructure(job: JobRow): Promise<void> {
   }
 
   const kind = m.kind_manual ? m.kind : answer.kind;
-  const subjectId = m.subject_manual
-    ? m.subject_id
-    : (realSubjects.find((s) => s.code === answer.subject_code)?.id ?? null);
+  const subjectId = m.subject_manual ? m.subject_id : (realSubjects.find((s) => s.code === answer.subject_code)?.id ?? null);
   const grade = m.grade ?? answer.grade ?? null;
-  const strategy = sourceTypes.get(kind)?.structureStrategy ?? "contents";
-  const sections = normalizeSections(answer, strategy, m.page_count ?? pages.size);
+  const sections = normalizeOutlineSections(answer, m.page_count ?? pages.size);
 
-  // Sections (keep manual ones, keep identities by title).
+  // Sections (keep manual ones, keep identities by title) — every section is
+  // re-queued for its own structuring pass below regardless of
+  // manual_override: that flag protects only the section's OWN title/pages,
+  // not the topics/exercises inside it (same split as before ADR-032).
   const { data: oldSections } = await scope
     .select("material_sections", "id, title, manual_override")
     .eq("material_id", materialId)
@@ -684,43 +737,174 @@ async function runStructure(job: JobRow): Promise<void> {
   const sectionIds: string[] = [];
   for (const [i, s] of sections.entries()) {
     const step = sectionMerge.plan[i]!;
-    const row = { title: s.title, page_from: s.page_from, page_to: s.page_to, sort_order: i };
     if (step.action === "insert") {
       const { data, error } = await scope.client
         .from("material_sections")
-        .insert({ ...row, owner_family_id: familyId, material_id: materialId })
+        .insert({
+          title: s.title,
+          page_from: s.page_from,
+          page_to: s.page_to,
+          sort_order: i,
+          status: "pending",
+          status_detail: null,
+          owner_family_id: familyId,
+          material_id: materialId,
+        })
         .select("id")
         .single<{ id: string }>();
       if (error) throw new Error(`section insert failed: ${error.message}`);
       sectionIds.push(data.id);
+    } else if (step.action === "update") {
+      await scope
+        .update("material_sections", { title: s.title, page_from: s.page_from, page_to: s.page_to, sort_order: i, status: "pending", status_detail: null })
+        .eq("id", step.id!);
+      sectionIds.push(step.id!);
     } else {
-      if (step.action === "update") await scope.update("material_sections", row).eq("id", step.id!);
+      // "keep" (manual_override): title/pages untouched, but still queued.
+      await scope.update("material_sections", { status: "pending", status_detail: null }).eq("id", step.id!);
       sectionIds.push(step.id!);
     }
   }
   if (sectionMerge.remove.length) await scope.delete("material_sections").in("id", sectionMerge.remove);
 
-  // Topics (textbooks with a subject only).
+  // Related-topic links (non-textbook types, US-2.6 KP-1) are rebuilt fully
+  // across all sections on every (re)index — clear once here, each section
+  // job below only ever upserts (never deletes), so sections finishing in
+  // any order never erase each other's contribution.
+  if (!m.topics_manual) await scope.delete("material_topic_links").eq("material_id", materialId).eq("source", "ai");
+
+  await patchMaterial(scope, materialId, {
+    kind,
+    subject_id: subjectId,
+    grade,
+    title: m.title ?? (answer.title.trim() || null),
+    status: "indexing",
+    status_detail: null,
+    progress: { step: "structure", sections_total: sectionIds.length, sections_done: 0 },
+  });
+
+  if (sectionIds.length === 0) {
+    await finalizeMaterialStatus(scope, materialId);
+    return;
+  }
+  for (const sectionId of sectionIds) {
+    await enqueueJob(familyId, JOB.structureSection, { materialId, sectionId }, { dedupeKey: `${JOB.structureSection}:${materialId}:${sectionId}` });
+  }
+}
+
+interface SectionRow {
+  id: string;
+  title: string;
+  page_from: number | null;
+  page_to: number | null;
+  sort_order: number;
+}
+
+/**
+ * ADR-032 pass 2 (`ingest.structure_section`): one job per section, run
+ * independently (own retry/backoff, own final status) — a section that keeps
+ * failing never blocks the rest of the book. Input is the section's own
+ * FULL, uncompressed page text (not the whole-book 120k-char extract), so
+ * both the risk of an oversized output AND the risk of the model having to
+ * "guess" from a compressed extract drop together.
+ */
+async function runStructureSection(job: JobRow): Promise<void> {
+  const familyId = job.family_id;
+  const materialId = String(job.payload.materialId);
+  const sectionId = String(job.payload.sectionId);
+  const scope = forFamily(familyId);
+  const m = await loadMaterial(scope, materialId);
+  if (!m || m.status === "removed") return;
+  if (await deferIfBudget(scope, familyId, materialId)) return;
+
+  const { data: section } = await scope
+    .select("material_sections", "id, title, page_from, page_to, sort_order")
+    .eq("id", sectionId)
+    .maybeSingle<SectionRow>();
+  if (!section) return; // a later re-index removed this section before this job ran
+
+  let chunkQuery = scope.select("chunks", "page, locator, text, ordinal").eq("material_id", materialId).order("ordinal").limit(20000);
+  if (section.page_from != null) chunkQuery = chunkQuery.gte("page", section.page_from);
+  if (section.page_to != null) chunkQuery = chunkQuery.lte("page", section.page_to);
+  const [{ data: chunkRows }, { data: topics }, { data: subjectRows }, { data: year }] = await Promise.all([
+    chunkQuery.returns<{ page: number; locator: string | null; text: string }[]>(),
+    scope
+      .select("topics", "id, title, subject_id, material_id")
+      .or(`material_id.is.null,material_id.neq.${materialId}`)
+      .order("sort_order")
+      .limit(300)
+      .returns<{ id: string; title: string; subject_id: string; material_id: string | null }[]>(),
+    scope.select("subjects", "id, name_uk").returns<{ id: string; name_uk: string }[]>(),
+    scope.select("academic_years", "grade").eq("status", "active").maybeSingle<{ grade: number }>(),
+  ]);
+
+  await scope.update("material_sections", { status: "indexing", status_detail: null }).eq("id", sectionId);
+
+  const pages = new Map<number, PageText>();
+  for (const c of chunkRows ?? []) {
+    const p = pages.get(c.page) ?? { page: c.page, locator: c.locator, text: "" };
+    p.text = p.text ? `${p.text}\n${c.text}` : c.text;
+    pages.set(c.page, p);
+  }
+  const sortedPages = [...pages.values()].sort((a, b) => a.page - b.page);
+  const kindMeta = sourceTypes.get(m.kind);
+  const strategy = kindMeta?.structureStrategy ?? "contents";
+  const subjectName = new Map((subjectRows ?? []).map((s) => [s.id, s.name_uk]));
+  const topicRefs = (topics ?? []).map((t, i) => ({ ref: `t${i + 1}`, ...t }));
+  const rangeLabel =
+    section.page_from != null ? `стор. ${section.page_from}${section.page_to != null && section.page_to !== section.page_from ? `–${section.page_to}` : ""}` : "—";
+  const { system, user } = sectionPrompt();
+  const prompt = fillTemplate(user, {
+    file_name: m.name,
+    meta_title: m.title ?? "—",
+    kind_title: kindMeta?.titleUk ?? m.kind,
+    section_title: section.title,
+    section_range: rangeLabel,
+    existing_topics: topicRefs.map((t) => `${t.ref} — ${subjectName.get(t.subject_id) ?? "?"} — ${t.title}`).join("\n") || "—",
+    section_text: buildSectionText(sortedPages),
+  });
+
+  let answer;
+  try {
+    const res = await callStructured(
+      "indexing_structure",
+      { system, prompt, schema: buildSectionSchema() },
+      { familyId, ref: { table: "materials", id: materialId } },
+    );
+    answer = res.result;
+  } catch (e) {
+    if (e instanceof BudgetBlockedError) {
+      await patchMaterial(scope, materialId, { status: "deferred", status_detail: "budget_deferred" });
+      return;
+    }
+    throw e;
+  }
+
+  const subjectId = m.subject_id;
+  const pageCount = m.page_count ?? sortedPages.length;
+  const topicsNorm = strategy === "textbook" && subjectId ? normalizeSectionTopics(answer, strategy, pageCount, section.page_to) : [];
+
+  // Topics: mergeByTitle scoped to THIS section (ADR-032) — a topic can
+  // never merge with one from a different section on re-index, unlike the
+  // whole-book scoping used before ADR-032.
   const { data: oldTopics } = await scope
     .select("topics", "id, title, manual_override")
     .eq("material_id", materialId)
+    .eq("section_id", sectionId)
     .returns<{ id: string; title: string; manual_override: boolean }[]>();
-  const incomingTopics =
-    strategy === "textbook" && subjectId
-      ? sections.flatMap((s, si) => s.topics.map((t) => ({ ...t, sectionId: sectionIds[si]! })))
-      : [];
-  const topicMerge = mergeByTitle(oldTopics ?? [], incomingTopics);
+  const topicMerge = mergeByTitle(oldTopics ?? [], topicsNorm);
   const topicIdByTitle = new Map<string, string>();
-  for (const [i, t] of incomingTopics.entries()) {
+  const baseOrder = section.sort_order * 1000;
+  for (const [i, t] of topicsNorm.entries()) {
     const step = topicMerge.plan[i]!;
     const row = {
       title: t.title,
       page_from: t.page_from,
       page_to: t.page_to,
-      section_id: t.sectionId,
-      sort_order: i,
+      section_id: sectionId,
+      sort_order: baseOrder + i,
       subject_id: subjectId,
-      grade: grade ?? year?.grade ?? null,
+      grade: m.grade ?? year?.grade ?? null,
       curriculum_version: m.curriculum_version,
     };
     if (step.action === "insert") {
@@ -738,7 +922,9 @@ async function runStructure(job: JobRow): Promise<void> {
   }
   if (topicMerge.remove.length) await scope.delete("topics").in("id", topicMerge.remove);
 
-  // Topic dependencies proposed by the model (the parent's ones are kept).
+  // Dependencies between THIS section's own topics (prompt rule 5 — the
+  // model is only ever shown this section's topics, so `depends_on` can
+  // never name a topic outside `ownTopicIds`).
   const ownTopicIds = [...topicIdByTitle.values()];
   if (ownTopicIds.length) {
     await scope.delete("topic_dependencies").eq("source", "ai").in("topic_id", ownTopicIds);
@@ -748,9 +934,9 @@ async function runStructure(job: JobRow): Promise<void> {
     if (deps.length) await scope.upsert("topic_dependencies", deps.map((d) => ({ ...d, source: "ai" })), "topic_id,depends_on_id");
   }
 
-  // Links of any other book to existing topics (US-2.6 KP-1), unless the parent set them.
+  // This section's related-topic links (non-textbook types) — additive only
+  // (see the outline pass's one-time clear above), unless the parent set them.
   if (!m.topics_manual) {
-    await scope.delete("material_topic_links").eq("material_id", materialId).eq("source", "ai");
     const refs = new Map(topicRefs.map((t) => [t.ref, t.id]));
     const links = strategy === "textbook" ? [] : [...new Set(answer.related_topics)].map((r) => refs.get(r)).filter((x): x is string => !!x);
     if (links.length) {
@@ -758,45 +944,40 @@ async function runStructure(job: JobRow): Promise<void> {
     }
   }
 
-  // ADR-029 (US-2.8): problem numbers recognized by this SAME call — full
-  // delete+insert per material (no manual-correction UI, no external FK on
-  // `material_problems.id` — ADR-029 §2/Альтернативи, unlike sections/topics
-  // this never needs `mergeByTitle`-style identity-preservation).
-  await scope.delete("material_problems").eq("material_id", materialId);
-  const problems = normalizeProblems(answer, strategy, m.page_count ?? pages.size);
+  // ADR-029 (US-2.8): this section's numbered exercises — delete+insert
+  // scoped to `material_id + section_id` (not the whole material, ADR-032),
+  // so sections finishing in any order never clobber each other's exercises.
+  await scope.delete("material_problems").eq("material_id", materialId).eq("section_id", sectionId);
+  const problems = strategy === "textbook" ? normalizeProblems(answer, strategy, pageCount) : [];
   if (problems.length) {
     const { error: probErr } = await scope.insert(
       "material_problems",
-      problems.map((p) => ({ material_id: materialId, number: p.number, page: p.page })),
+      problems.map((p) => ({ material_id: materialId, section_id: sectionId, number: p.number, page: p.page })),
     );
     if (probErr) throw new Error(`material_problems insert failed: ${probErr.message}`);
   }
+  // Whole-material scan (ADR-032: "trochu надлишковий по обчисленню в БД,
+  // але дешевий, без ШІ-вартості" — idempotent, safe to call once per
+  // finished section rather than only once per book).
   const { error: assignProbErr } = await scope.client.rpc("assign_problem_structure", { p_family_id: familyId, p_material_id: materialId });
   if (assignProbErr) throw new Error(`assign_problem_structure failed: ${assignProbErr.message}`);
-
   const { error: assignErr } = await scope.client.rpc("assign_chunk_structure", { p_family_id: familyId, p_material_id: materialId });
   if (assignErr) throw new Error(`assign_chunk_structure failed: ${assignErr.message}`);
 
-  await patchMaterial(scope, materialId, {
-    kind,
-    subject_id: subjectId,
-    grade,
-    title: m.title ?? (answer.title.trim() || null),
-    status: "ready",
-    status_detail: strategy === "textbook" && !subjectId ? "no_subject" : null,
-    indexed_at: new Date().toISOString(),
-    progress: {},
-  });
+  await scope.update("material_sections", { status: "ready", status_detail: null }).eq("id", sectionId);
+  await finalizeMaterialStatus(scope, materialId);
 
-  // ADR-023 §Частина 3.1 (D-103): the parent's own act of indexing a textbook
-  // for an already-active, non-stub subject is itself the "positive" signal
-  // — no separate manual `is_current` click should be required per topic
-  // before the server starts getting lessons ready. `warmAheadForSubject`
-  // re-checks `subjects.active`/`is_stub` itself; never blocks or fails the
-  // ingest job either way.
-  if (strategy === "textbook" && subjectId) {
-    await warmAheadForSubject(familyId, subjectId).catch((e: Error) =>
-      console.error(`warm-ahead after ingest.structure failed: ${e.message}`),
+  // ADR-023 §Частина 3.1 (D-103) + ADR-032: the parent's own act of indexing
+  // a textbook for an already-active, non-stub subject is itself the
+  // "positive" signal — no separate manual `is_current` click required. Now
+  // fired per FINISHED SECTION (not once for the whole book, ADR-032's main
+  // point): topics of section 1 start warming up while section 5 is still
+  // being structured. `warmAheadForSubject` re-checks `subjects.active`/
+  // `is_stub` itself; never blocks or fails the ingest job either way.
+  if (strategy === "textbook" && subjectId && topicIdByTitle.size > 0) {
+    const anchorTopicId = [...topicIdByTitle.values()][0];
+    await warmAheadForSubject(familyId, subjectId, { anchorTopicId }).catch((e: Error) =>
+      console.error(`warm-ahead after ingest.structure_section failed: ${e.message}`),
     );
   }
 }
@@ -814,6 +995,18 @@ async function giveUp(job: JobRow, e: unknown): Promise<void> {
   });
 }
 
+/** ADR-032: a section that exhausted its own retries only fails ITSELF — the
+ * book's overall status is recomputed (may still land on `ready_partial`,
+ * never a blanket `error` for the other, successful sections). */
+async function giveUpSection(job: JobRow, e: unknown): Promise<void> {
+  const materialId = job.payload.materialId;
+  const sectionId = job.payload.sectionId;
+  if (typeof materialId !== "string" || typeof sectionId !== "string") return;
+  const scope = forFamily(job.family_id);
+  await scope.update("material_sections", { status: "error", status_detail: errorCodeOf(e) }).eq("id", sectionId);
+  await finalizeMaterialStatus(scope, materialId);
+}
+
 let registered = false;
 export function registerIngestJobs(): void {
   if (registered) return;
@@ -828,5 +1021,11 @@ export function registerIngestJobs(): void {
   registerJobHandler(JOB.extract, { ...common, run: runExtract });
   registerJobHandler(JOB.ocr, { ...common, run: runOcr });
   registerJobHandler(JOB.embed, { ...common, run: runEmbed });
-  registerJobHandler(JOB.structure, { ...common, run: runStructure });
+  registerJobHandler(JOB.structureOutline, { ...common, run: runStructureOutline });
+  registerJobHandler(JOB.structureSection, { isRetryable: isRetryableIngestError, onGiveUp: giveUpSection, run: runStructureSection });
+  // Legacy alias (ADR-032): any `ingest.structure` job still queued from
+  // before this deploy runs the new outline pass instead of failing with
+  // "no handler" — it then fans out into `ingest.structure_section` jobs
+  // itself, same as a fresh `ingest.structure_outline` job would.
+  registerJobHandler(JOB.structureLegacy, { ...common, run: runStructureOutline });
 }

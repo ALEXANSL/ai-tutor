@@ -33,6 +33,9 @@ export interface BookDetail extends BookListItem {
     title: string;
     pageFrom: number | null;
     pageTo: number | null;
+    /** ADR-032: this section's OWN `ingest.structure_section` status — a book can be `ready_partial` overall while most of its sections are `ready`. */
+    status: string;
+    statusDetail: string | null;
     topics: { id: string; title: string; pageFrom: number | null; pageTo: number | null; manual: boolean }[];
   }[];
   linkedTopicIds: string[];
@@ -143,10 +146,10 @@ export async function getBook(familyId: string, id: string): Promise<BookDetail 
   if (!m) return null;
   const [{ data: sections }, { data: topics }, { data: links }, costs, { count: ocrUnreadableCount }] = await Promise.all([
     scope
-      .select("material_sections", "id, title, page_from, page_to, sort_order")
+      .select("material_sections", "id, title, page_from, page_to, sort_order, status, status_detail")
       .eq("material_id", id)
       .order("sort_order")
-      .returns<{ id: string; title: string; page_from: number | null; page_to: number | null }[]>(),
+      .returns<{ id: string; title: string; page_from: number | null; page_to: number | null; status: string; status_detail: string | null }[]>(),
     scope
       .select("topics", "id, title, page_from, page_to, section_id, sort_order, manual_override")
       .eq("material_id", id)
@@ -171,10 +174,13 @@ export async function getBook(familyId: string, id: string): Promise<BookDetail 
     title: s.title,
     pageFrom: s.page_from,
     pageTo: s.page_to,
+    status: s.status,
+    statusDetail: s.status_detail,
     topics: topicList.filter((t) => t.section_id === s.id).map(mapTopic),
   }));
   const orphans = topicList.filter((t) => !t.section_id || !sectionList.some((s) => s.id === t.section_id));
-  if (orphans.length) sectionList.push({ id: "none", title: "—", pageFrom: null, pageTo: null, topics: orphans.map(mapTopic) });
+  if (orphans.length)
+    sectionList.push({ id: "none", title: "—", pageFrom: null, pageTo: null, status: "ready", statusDetail: null, topics: orphans.map(mapTopic) });
   return {
     ...toItem(m, costs.get(id) ?? 0),
     provenance: m.provenance,
