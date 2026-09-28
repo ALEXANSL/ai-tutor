@@ -96,6 +96,35 @@ function splitLong(paragraph: string, maxChars: number): string[] {
   return out.filter(Boolean);
 }
 
+/**
+ * BUG: verbatim excerpts (e.g. the BUG-011 safe fallback block) used to be
+ * cut with a hard `text.slice(0, maxChars)`, which can land mid-sentence or
+ * even mid-word ("...незламній волі до") — a visible, unprofessional defect
+ * for a child reading it. This truncates at the last complete sentence
+ * within `maxChars` instead, falling back to a paragraph break and then a
+ * word boundary (marked with an ellipsis) when no sentence end is close
+ * enough to be worth keeping.
+ */
+export function truncateAtSentenceBoundary(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  const slice = text.slice(0, maxChars);
+  const minKeep = maxChars * 0.4;
+
+  const sentenceEnds = [...slice.matchAll(/[.!?…][»”")]*(?=\s|$)/gu)];
+  const lastSentence = sentenceEnds.at(-1);
+  if (lastSentence && lastSentence.index !== undefined) {
+    const cut = lastSentence.index + lastSentence[0].length;
+    if (cut >= minKeep) return slice.slice(0, cut).trim();
+  }
+
+  const paragraphBreak = slice.lastIndexOf("\n\n");
+  if (paragraphBreak >= minKeep) return slice.slice(0, paragraphBreak).trim();
+
+  const wordBoundary = slice.search(/\s+\S*$/);
+  const base = wordBoundary > 0 ? slice.slice(0, wordBoundary) : slice;
+  return `${base.trim()}…`;
+}
+
 function tail(text: string, chars: number): string {
   if (chars <= 0 || text.length <= chars) return chars <= 0 ? "" : text;
   const cut = text.slice(-chars);

@@ -186,6 +186,77 @@ describe("continueAfterBlock (BUG-009: no block repeats within one session)", ()
   });
 });
 
+/**
+ * BUG-045 (found investigating a live report of BUG-034 apparently
+ * recurring): `nextSessionBlock` above can take 1-5 minutes for a real
+ * on-demand generation. The `session` `continueAfterBlock` loaded at its
+ * top is stale by the time that resolves — if the child used the
+ * always-available "Вийти з уроку" (BUG-034) while it was still running,
+ * `pauseLessonSession` already flipped the row to `paused` out of band.
+ * Activating unconditionally on the stale `session` would silently
+ * overwrite that back to `active`, resurrecting a lesson she already left.
+ * The client-side exit button itself was already correct (BUG-034,
+ * verified in `LessonRunner.test.tsx`) — this is a distinct, server-side
+ * race in the abandoned background promise, not a repeat of BUG-034.
+ */
+describe("continueAfterBlock — BUG-045 (a dangling generation promise must not resurrect a session paused/exited mid-flight)", () => {
+  const baseTables = () => ({
+    lesson_sessions: { id: "s1", status: "active", active_seconds: 300, planned_minutes: 30, subject_id: "subj1", topic_id: "top1", current_block_order: 1 },
+    subjects: { id: "subj1", name_uk: "Математика", config: {} },
+    topics: { id: "top1", title: "Дроби", grade: 6 },
+    session_blocks: [],
+  });
+  const libraryItem = {
+    id: "C",
+    title: "Блок C",
+    estimatedMinutes: 7,
+    visibleOutcomeUk: null,
+    steps: [{ id: "st1", sortOrder: 0, type: "slide", content: {}, visual: {}, sourceRefs: [] }],
+  };
+
+  it("activates the new block normally when the session is still active once generation finishes", async () => {
+    resetScope();
+    scopeState.tables = baseTables();
+    nextSessionBlock.mockResolvedValue({ id: "C", title: "Блок C", estimatedMinutes: 7 });
+    loadLibraryItem.mockResolvedValue(libraryItem);
+
+    const next = await continueAfterBlock("fam1", "s1");
+
+    expect(next.kind).toBe("advance");
+    expect((next as { step: { stepId: string } | null }).step?.stepId).toBe("st1");
+    expect(
+      scopeState.updates.some(
+        (u) => u.table === "lesson_sessions" && u.values.status === "active" && u.values.current_block_order === 2,
+      ),
+    ).toBe(true);
+  });
+
+  it("returns a safe no-op and leaves the pause in place when 'Вийти з уроку' paused the session while generation was still running", async () => {
+    resetScope();
+    scopeState.tables = baseTables();
+    // Reproduces the real race: WHILE `nextSessionBlock` is "in flight",
+    // the child's exit click lands as a separate, already-completed
+    // request/action that pauses the session out of band.
+    nextSessionBlock.mockImplementation(async () => {
+      const session = scopeState.tables.lesson_sessions as FakeRow;
+      session.status = "paused";
+      session.pause_reason = "manual_exit";
+      return { id: "C", title: "Блок C", estimatedMinutes: 7 };
+    });
+    loadLibraryItem.mockResolvedValue(libraryItem);
+
+    const next = await continueAfterBlock("fam1", "s1");
+
+    // Not "advance" with a real step, and not "lesson_complete" either
+    // (that would wrongly mark a merely-paused session finished) — a safe
+    // no-op the (long-gone) client is never even waiting on.
+    expect(next).toEqual({ kind: "advance", step: null });
+    // Crucially: nothing here wrote the session back to "active".
+    expect(scopeState.updates.some((u) => u.table === "lesson_sessions" && u.values.status === "active")).toBe(false);
+    expect((scopeState.tables.lesson_sessions as FakeRow).status).toBe("paused");
+  });
+});
+
 describe("startLessonSession — BUG-011: US-6.11 requires a 'safe simplified template' fallback " +
   "when every generated block ends up needs_review, but none exists yet", () => {
   it("starts the lesson with the safe fallback block (not a thrown error) when the reviewer is unavailable", async () => {

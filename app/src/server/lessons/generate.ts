@@ -3,6 +3,7 @@ import { allowedForSubject, getLessonComponent } from "@/lesson-components";
 import { forFamily, type FamilyScope } from "@/server/db/family-scope";
 import { getLibraryWarmDailyBudgetUsd } from "@/server/env";
 import { narrowestTitleFor, type TitledRange } from "@/server/ingest/structure";
+import { truncateAtSentenceBoundary } from "@/server/ingest/text";
 import { notifyParent } from "@/server/notifications";
 import { validateComponentRef } from "./component-validator";
 import { LESSON_GENERATION_PROMPT_VERSION, runPedagogicalPipeline, type KnownProblem, type PipelineFragment, type PipelineHooks } from "./pipeline";
@@ -467,7 +468,9 @@ export async function getOrCreateFallbackBlock(
     throw new NoIndexedFragmentsError(topicId);
   }
 
-  const excerpt = fragment.text.length > 700 ? `${fragment.text.slice(0, 700)}…` : fragment.text;
+  // Sentence-boundary-aware (not a hard character cut, BUG fix): a verbatim
+  // excerpt must never stop mid-clause for the child reading it.
+  const excerpt = truncateAtSentenceBoundary(fragment.text, 700);
   const title = `Резервний блок: ${topicTitle}`;
   const sectionTitleByKey = await attachSectionTitles(scope, [{ materialId: fragment.materialId, page: fragment.page }]);
   const sourceRefs: SourceRefView[] = [
