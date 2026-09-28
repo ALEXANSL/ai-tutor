@@ -151,6 +151,10 @@ interface FakeState {
   rpcCalls: Record<string, number>;
   /** RPC name -> attempt number (1-based) -> `{ error }` to return; the last configured attempt repeats for any further call. */
   rpcResults: Record<string, { error: unknown }[]>;
+  /** Number of times `.update()` has been called against each table so far. */
+  updateCalls: Record<string, number>;
+  /** Table -> attempt number (1-based) -> `{ error }` to return from `.update()`; the last configured attempt repeats for any further call. Optional — a table not listed here always succeeds. */
+  updateResults: Record<string, { error: unknown }[]>;
 }
 
 function makeFakeScope(state: FakeState) {
@@ -170,9 +174,14 @@ function makeFakeScope(state: FakeState) {
       return makeChain({ data: null, error: null }, { data: [], error: null });
     },
     update(table: string, values: Record<string, unknown>) {
-      if (table === "materials") Object.assign(state.material, values);
-      if (table === "material_sections") Object.assign(state.section, values);
-      return makeChain({ error: null }, { error: null });
+      const n = (state.updateCalls[table] = (state.updateCalls[table] ?? 0) + 1);
+      const results = state.updateResults[table];
+      const result = results ? results[Math.min(n, results.length) - 1]! : { error: null };
+      if (!result.error) {
+        if (table === "materials") Object.assign(state.material, values);
+        if (table === "material_sections") Object.assign(state.section, values);
+      }
+      return makeChain(result, result);
     },
     delete() {
       return makeChain({ error: null }, { error: null });
@@ -248,6 +257,8 @@ describe("cost-safety checkpoint — a downstream DB failure after a successful 
         // confirmed mechanism from the real incident. Succeeds on retry.
         assign_chunk_structure: [{ error: { message: "transient db error" } }, { error: null }],
       },
+      updateCalls: {},
+      updateResults: {},
     };
     fakeScope = makeFakeScope(state);
 
@@ -296,6 +307,8 @@ describe("cost-safety checkpoint — a downstream DB failure after a successful 
       oldSections: [],
       rpcCalls: {},
       rpcResults: {},
+      updateCalls: {},
+      updateResults: {},
     };
     fakeScope = makeFakeScope(state);
 
@@ -309,5 +322,70 @@ describe("cost-safety checkpoint — a downstream DB failure after a successful 
     await runStructureOutline(job);
     expect(callStructured).toHaveBeenCalledTimes(1); // still just once
     expect(state.material.structure_outline_result).toBeNull(); // cleared once the fan-out fully succeeds
+  });
+
+  /**
+   * BUG-044: unlike the test above (which fails a step BEFORE the checkpoint
+   * clear / `status: "ready"` write), this simulates a failure in
+   * `finalizeMaterialStatus` — which runs AFTER `material_sections.status`
+   * is already "ready" and `structure_result` already cleared for this same
+   * attempt. Without a guard for an already-`ready` section, a retry would
+   * see the cleared cache as a miss and pay for a second `indexing_structure`
+   * call on a section that is already fully done.
+   */
+  it("runStructureSection: AI called once even though finalizeMaterialStatus fails AFTER the section was already marked ready in this attempt (BUG-044)", async () => {
+    callStructured.mockClear();
+    callStructured.mockResolvedValue({ result: { topics: [], dependencies: [], related_topics: [], problems: [] }, model: { provider: "anthropic", model: "m" }, costUsd: 0.01 });
+
+    const state: FakeState = {
+      material: {
+        id: "mat-3",
+        name: "book.pdf",
+        title: null,
+        status: "indexing",
+        kind: "worksheet",
+        kind_manual: false,
+        subject_id: null,
+        subject_manual: false,
+        topics_manual: true,
+        page_count: 10,
+        grade: null,
+        curriculum_version: null,
+        structure_outline_result: null,
+      },
+      section: { id: "sec-3", title: "Розділ 1", page_from: 1, page_to: 5, sort_order: 0, status: "indexing", status_detail: null, structure_result: null },
+      oldSections: [],
+      rpcCalls: {},
+      rpcResults: {},
+      updateCalls: {},
+      updateResults: {
+        // `finalizeMaterialStatus` (called AFTER `material_sections.status`
+        // has already been set to "ready" + `structure_result` cleared, in
+        // this very attempt) fails its own write to `materials` on the first
+        // call, succeeding on retry — the exact narrow window BUG-044
+        // describes (distinct from the assign_chunk_structure test above,
+        // which fails BEFORE the section is marked ready).
+        materials: [{ error: { message: "transient db error" } }, { error: null }],
+      },
+    };
+    fakeScope = makeFakeScope(state);
+
+    const job = { id: "job-3", family_id: "fam-1", type: "ingest.structure_section", payload: { materialId: "mat-3", sectionId: "sec-3" }, attempts: 1, max_attempts: 5 };
+
+    await expect(runStructureSection(job)).rejects.toThrow(/materials update failed/);
+    expect(callStructured).toHaveBeenCalledTimes(1);
+    // The section was already committed as fully done BEFORE the failure —
+    // this is the narrow window BUG-044 describes: `status`/`structure_result`
+    // are already terminal even though the attempt as a whole threw.
+    expect(state.section.status).toBe("ready");
+    expect(state.section.structure_result).toBeNull();
+
+    // Retry: the job runner would re-invoke the same handler on the same job.
+    // Before the BUG-044 fix, `runStructureSection` had no guard for an
+    // already-`ready` section, so it treated the cleared checkpoint as a
+    // cache miss and paid for a SECOND `indexing_structure` call.
+    await runStructureSection(job);
+    expect(callStructured).toHaveBeenCalledTimes(1); // still just once — no second paid call
+    expect(state.section.status).toBe("ready");
   });
 });

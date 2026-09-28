@@ -875,10 +875,16 @@ export async function runStructureOutline(job: JobRow): Promise<void> {
   });
 
   if (sectionIds.length === 0) {
-    // Cache-miss path only wrote the checkpoint; a cache-hit run has nothing
-    // to clear, but the update is harmless (idempotent) either way.
-    await scope.update("materials", { structure_outline_result: null }).eq("id", materialId);
+    // BUG-044 (cost-safety, 2026-09-28): `finalizeMaterialStatus` below is
+    // itself a fallible, retryable step, so it must run BEFORE the checkpoint
+    // clear — not after — or a transient failure in it would leave
+    // `structure_outline_result` already cleared on retry, causing a second
+    // paid `indexing_outline` call for a material whose outline pass already
+    // succeeded. Cache-miss path only wrote the checkpoint; a cache-hit run
+    // has nothing to clear, but the update is harmless (idempotent) either
+    // way.
     await finalizeMaterialStatus(scope, materialId);
+    await scope.update("materials", { structure_outline_result: null }).eq("id", materialId);
     return;
   }
   for (const sectionId of sectionIds) {
@@ -897,6 +903,7 @@ interface SectionRow {
   page_from: number | null;
   page_to: number | null;
   sort_order: number;
+  status: string;
   /** ADR-032 cost-safety checkpoint (see the migration comment): the cached
    * `indexing_structure` answer, set right after a successful call and
    * cleared once this section reaches `status: "ready"`. */
@@ -920,10 +927,20 @@ export async function runStructureSection(job: JobRow): Promise<void> {
   if (!m || m.status === "removed") return;
 
   const { data: section } = await scope
-    .select("material_sections", "id, title, page_from, page_to, sort_order, structure_result")
+    .select("material_sections", "id, title, page_from, page_to, sort_order, status, structure_result")
     .eq("id", sectionId)
     .maybeSingle<SectionRow>();
   if (!section) return; // a later re-index removed this section before this job ran
+  // BUG-044 (cost-safety, 2026-09-28): the terminal write below clears this
+  // section's checkpoint TOGETHER WITH `status: "ready"`, but a further,
+  // still-fallible step (`finalizeMaterialStatus`) runs AFTER that write. If
+  // THAT step throws, the whole job retries and re-enters this function with
+  // `status` already "ready" and the cache already cleared — without this
+  // guard that would look like a cache miss and pay for a second
+  // `indexing_structure` call on a section that is already fully done. This
+  // makes the function idempotent on an already-`ready` section regardless of
+  // which downstream step failed, including ones added after this comment.
+  if (section.status === "ready") return;
 
   // `chunkRows` (page count fallback for EPUBs, where `m.page_count` is
   // always null — see `finishExtraction`'s manual-batch caller — AND the
