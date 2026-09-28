@@ -22,6 +22,44 @@ export function pagesNeedingOcr(units: Pick<ExtractedUnit, "page" | "text">[]): 
   return units.filter((u) => meaningfulChars(u.text) < SCAN_MIN_CHARS_PER_PAGE).map((u) => u.page);
 }
 
+/**
+ * Share of textless pages above which a book is treated as a genuine (at
+ * least partial) scan worth OCR-ing — below it, the textless pages are
+ * presumed to be non-text illustration/divider pages (a cover, a chapter
+ * divider, a full-page AI-generated picture with only a printed page number)
+ * rather than scanned content whose recognition was missed. Deliberately a
+ * much looser bar than `looksLikeScan`'s 10 %: that constant answers "is
+ * this book unusable without OCR" (≥ 90 % textless); this one answers "is it
+ * even worth trying to recognise the textless minority of an otherwise fine
+ * book" (bug 2026-09-28: a 123-page real-text book with 30 illustration
+ * pages — 24.4 % textless — was blocking indexing of the other 93 pages
+ * while waiting on an OCR confirmation those 30 pages never needed).
+ */
+export const OCR_MIN_TEXTLESS_SHARE = 0.3;
+
+/**
+ * Absolute safety net (D-54 point 4): even a proportionally small textless
+ * share can mean a lot of *actual* missed content once a book is huge, so a
+ * very large absolute count of textless pages still routes through OCR
+ * (auto or parent-confirmed, per `needsOcrConfirmation`) regardless of the
+ * book's total size.
+ */
+export const OCR_TEXTLESS_ABSOLUTE_SAFETY_PAGES = 200;
+
+/**
+ * Whether the textless pages of a book are worth OCR-ing at all (D-54
+ * refinement). `false` means: skip the OCR pipeline entirely for this book
+ * — no cost, no `scan_awaiting_ocr` block — and index the real-text pages
+ * as-is; the textless pages simply produce no chunks (the same safe state
+ * as a page whose only content is an uncaptioned image/diagram).
+ */
+export function bookNeedsOcr(textlessPageCount: number, totalPageCount: number): boolean {
+  if (textlessPageCount <= 0) return false;
+  if (textlessPageCount >= OCR_TEXTLESS_ABSOLUTE_SAFETY_PAGES) return true;
+  if (totalPageCount <= 0) return true;
+  return textlessPageCount / totalPageCount > OCR_MIN_TEXTLESS_SHARE;
+}
+
 /** Splits a page list into fixed-size batches, one vision request each. */
 export function batchPages(pages: number[], size: number = OCR_BATCH_PAGES): number[][] {
   const sorted = [...new Set(pages)].sort((a, b) => a - b);

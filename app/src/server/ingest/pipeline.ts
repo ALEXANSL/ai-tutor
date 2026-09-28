@@ -16,6 +16,7 @@ import { EpubError } from "./extract-epub";
 import { sourceExtractors, type SourceFormat } from "./extractors";
 import {
   batchPages,
+  bookNeedsOcr,
   estimateOcrCostUsd,
   mergeOcrIntoUnits,
   needsOcrConfirmation,
@@ -35,7 +36,9 @@ import {
   normalizeProblems,
   normalizeSectionTopics,
   splitPrompt,
+  type OutlineAnswer,
   type PageText,
+  type SectionAnswer,
 } from "./structure";
 import { planManualBatchSync, planSync, type KnownMaterial } from "./sync-plan";
 import { chunkUnits, type ExtractedUnit } from "./text";
@@ -321,13 +324,17 @@ export interface MaterialRow {
   grade: number | null;
   curriculum_version: string | null;
   ocr_confirmed_at: string | null;
+  /** ADR-032 cost-safety checkpoint (see the migration comment): the cached
+   * `indexing_outline` answer, set right after a successful call and cleared
+   * once `runStructureOutline` finishes. Only `runStructureOutline` reads it. */
+  structure_outline_result: unknown;
 }
 
 async function loadMaterial(scope: FamilyScope, id: string): Promise<MaterialRow | null> {
   const { data } = await scope
     .select(
       "materials",
-      "id, name, title, format, drive_file_id, status, content_hash, kind, kind_manual, subject_id, subject_manual, topics_manual, page_count, grade, curriculum_version, ocr_confirmed_at",
+      "id, name, title, format, drive_file_id, status, content_hash, kind, kind_manual, subject_id, subject_manual, topics_manual, page_count, grade, curriculum_version, ocr_confirmed_at, structure_outline_result",
     )
     .eq("id", id)
     .maybeSingle<MaterialRow>();
@@ -454,7 +461,13 @@ async function runExtract(job: JobRow): Promise<void> {
   // D-54: pages (or the whole book) without a usable text layer go through OCR
   // instead of the old blanket "скан без тексту" refusal (US-2.2 KP-3).
   const scanPages = m.format === "pdf" ? pagesNeedingOcr(extraction.units) : [];
-  if (scanPages.length === 0) {
+
+  // D-54 refinement (bug 2026-09-28): a minority of textless pages in an
+  // otherwise real-text book (illustration/divider pages) is not a scan
+  // problem — skip OCR entirely and index the real-text pages now instead of
+  // blocking the whole book on a confirmation those pages don't need. See
+  // `bookNeedsOcr` for the share/absolute-count reasoning.
+  if (scanPages.length === 0 || !bookNeedsOcr(scanPages.length, extraction.units.length)) {
     await finishExtraction(scope, familyId, materialId, base, extraction.units);
     return;
   }
@@ -712,13 +725,12 @@ async function finalizeMaterialStatus(scope: FamilyScope, materialId: string): P
  * section, all enqueued at once (not one after another) so the existing
  * cron/kick mechanism can pick them up in parallel across ticks.
  */
-async function runStructureOutline(job: JobRow): Promise<void> {
+export async function runStructureOutline(job: JobRow): Promise<void> {
   const familyId = job.family_id;
   const materialId = String(job.payload.materialId);
   const scope = forFamily(familyId);
   const m = await loadMaterial(scope, materialId);
   if (!m || m.status === "removed") return;
-  if (await deferIfBudget(scope, familyId, materialId)) return;
 
   const [{ data: chunkRows }, { data: subjects }, { data: year }] = await Promise.all([
     scope
@@ -739,33 +751,50 @@ async function runStructureOutline(job: JobRow): Promise<void> {
   }
   const kinds = sourceTypes.list().filter((t) => t.autoDetect);
   const realSubjects = (subjects ?? []).filter((s) => !s.is_stub);
-  const { system, user } = outlinePrompt();
-  const prompt = fillTemplate(user, {
-    file_name: m.name,
-    meta_title: m.title ?? "—",
-    grade_hint: year?.grade != null ? String(year.grade) : "—",
-    kinds: kinds.map((k) => `${k.key} — ${k.titleUk}`).join("\n"),
-    subjects: realSubjects.map((s) => `${s.code} — ${s.name_uk}`).join("\n") || "—",
-    // EPUB chapter titles are part of the outline (page labels).
-    toc: "—",
-    outline: buildOutline([...pages.values()].sort((a, b) => a.page - b.page)),
-  });
 
   await patchMaterial(scope, materialId, { progress: { step: "structure" } });
-  let answer;
-  try {
-    const res = await callStructured(
-      "indexing_outline",
-      { system, prompt, schema: buildOutlineSchema(kinds.map((k) => k.key), [...realSubjects.map((s) => s.code)]) },
-      { familyId, ref: { table: "materials", id: materialId } },
-    );
-    answer = res.result;
-  } catch (e) {
-    if (e instanceof BudgetBlockedError) {
-      await patchMaterial(scope, materialId, { status: "deferred", status_detail: "budget_deferred" });
-      return;
+  // Cost-safety checkpoint (post-incident fix, 2026-09-28 — see the migration
+  // comment on `materials.structure_outline_result`): several deterministic,
+  // retryable DB writes follow this paid AI call below. If one of THEM
+  // throws, the whole job retries and would otherwise re-enter this function
+  // and pay for a SECOND `indexing_outline` call for the same material, even
+  // though the first one already succeeded. So: check for an already-cached
+  // answer first, and only call + bill the model when there isn't one yet.
+  // The cache is written right after a successful call, before any
+  // downstream write starts, and cleared only once every downstream write
+  // (including the fan-out below) has finished without error.
+  let answer: OutlineAnswer;
+  if (m.structure_outline_result != null) {
+    answer = m.structure_outline_result as OutlineAnswer;
+  } else {
+    if (await deferIfBudget(scope, familyId, materialId)) return;
+    const { system, user } = outlinePrompt();
+    const prompt = fillTemplate(user, {
+      file_name: m.name,
+      meta_title: m.title ?? "—",
+      grade_hint: year?.grade != null ? String(year.grade) : "—",
+      kinds: kinds.map((k) => `${k.key} — ${k.titleUk}`).join("\n"),
+      subjects: realSubjects.map((s) => `${s.code} — ${s.name_uk}`).join("\n") || "—",
+      // EPUB chapter titles are part of the outline (page labels).
+      toc: "—",
+      outline: buildOutline([...pages.values()].sort((a, b) => a.page - b.page)),
+    });
+    try {
+      const res = await callStructured(
+        "indexing_outline",
+        { system, prompt, schema: buildOutlineSchema(kinds.map((k) => k.key), [...realSubjects.map((s) => s.code)]) },
+        { familyId, ref: { table: "materials", id: materialId } },
+      );
+      answer = res.result;
+    } catch (e) {
+      if (e instanceof BudgetBlockedError) {
+        await patchMaterial(scope, materialId, { status: "deferred", status_detail: "budget_deferred" });
+        return;
+      }
+      throw e;
     }
-    throw e;
+    const { error: cacheErr } = await scope.update("materials", { structure_outline_result: answer }).eq("id", materialId);
+    if (cacheErr) throw new Error(`materials structure_outline_result checkpoint write failed: ${cacheErr.message}`);
   }
 
   const kind = m.kind_manual ? m.kind : answer.kind;
@@ -803,13 +832,27 @@ async function runStructureOutline(job: JobRow): Promise<void> {
       if (error) throw new Error(`section insert failed: ${error.message}`);
       sectionIds.push(data.id);
     } else if (step.action === "update") {
+      // `structure_result: null` — this section is being re-queued for a
+      // fresh `ingest.structure_section` run, so any previous checkpointed
+      // answer (cost-safety fix above) must not be reused: that cache exists
+      // only to survive a DB-write retry WITHIN one indexing run, never
+      // across a genuine re-index like this one.
       await scope
-        .update("material_sections", { title: s.title, page_from: s.page_from, page_to: s.page_to, sort_order: i, status: "pending", status_detail: null })
+        .update("material_sections", {
+          title: s.title,
+          page_from: s.page_from,
+          page_to: s.page_to,
+          sort_order: i,
+          status: "pending",
+          status_detail: null,
+          structure_result: null,
+        })
         .eq("id", step.id!);
       sectionIds.push(step.id!);
     } else {
-      // "keep" (manual_override): title/pages untouched, but still queued.
-      await scope.update("material_sections", { status: "pending", status_detail: null }).eq("id", step.id!);
+      // "keep" (manual_override): title/pages untouched, but still queued
+      // (and its structuring checkpoint cleared — same reasoning as above).
+      await scope.update("material_sections", { status: "pending", status_detail: null, structure_result: null }).eq("id", step.id!);
       sectionIds.push(step.id!);
     }
   }
@@ -832,12 +875,26 @@ async function runStructureOutline(job: JobRow): Promise<void> {
   });
 
   if (sectionIds.length === 0) {
+    // BUG-044 (cost-safety, 2026-09-28): `finalizeMaterialStatus` below is
+    // itself a fallible, retryable step, so it must run BEFORE the checkpoint
+    // clear — not after — or a transient failure in it would leave
+    // `structure_outline_result` already cleared on retry, causing a second
+    // paid `indexing_outline` call for a material whose outline pass already
+    // succeeded. Cache-miss path only wrote the checkpoint; a cache-hit run
+    // has nothing to clear, but the update is harmless (idempotent) either
+    // way.
     await finalizeMaterialStatus(scope, materialId);
+    await scope.update("materials", { structure_outline_result: null }).eq("id", materialId);
     return;
   }
   for (const sectionId of sectionIds) {
     await enqueueJob(familyId, JOB.structureSection, { materialId, sectionId }, { dedupeKey: `${JOB.structureSection}:${materialId}:${sectionId}` });
   }
+  // Every downstream write (including the fan-out above, via `enqueueJob`'s
+  // own dedupe-on-conflict idempotency) has now succeeded — clear the
+  // checkpoint so a later GENUINE re-index of this material calls the model
+  // again instead of reusing this run's cached classification.
+  await scope.update("materials", { structure_outline_result: null }).eq("id", materialId);
 }
 
 interface SectionRow {
@@ -846,6 +903,11 @@ interface SectionRow {
   page_from: number | null;
   page_to: number | null;
   sort_order: number;
+  status: string;
+  /** ADR-032 cost-safety checkpoint (see the migration comment): the cached
+   * `indexing_structure` answer, set right after a successful call and
+   * cleared once this section reaches `status: "ready"`. */
+  structure_result: unknown;
 }
 
 /**
@@ -856,25 +918,43 @@ interface SectionRow {
  * both the risk of an oversized output AND the risk of the model having to
  * "guess" from a compressed extract drop together.
  */
-async function runStructureSection(job: JobRow): Promise<void> {
+export async function runStructureSection(job: JobRow): Promise<void> {
   const familyId = job.family_id;
   const materialId = String(job.payload.materialId);
   const sectionId = String(job.payload.sectionId);
   const scope = forFamily(familyId);
   const m = await loadMaterial(scope, materialId);
   if (!m || m.status === "removed") return;
-  if (await deferIfBudget(scope, familyId, materialId)) return;
 
   const { data: section } = await scope
-    .select("material_sections", "id, title, page_from, page_to, sort_order")
+    .select("material_sections", "id, title, page_from, page_to, sort_order, status, structure_result")
     .eq("id", sectionId)
     .maybeSingle<SectionRow>();
   if (!section) return; // a later re-index removed this section before this job ran
+  // BUG-044 (cost-safety, 2026-09-28): the terminal write below clears this
+  // section's checkpoint TOGETHER WITH `status: "ready"`, but a further,
+  // still-fallible step (`finalizeMaterialStatus`) runs AFTER that write. If
+  // THAT step throws, the whole job retries and re-enters this function with
+  // `status` already "ready" and the cache already cleared — without this
+  // guard that would look like a cache miss and pay for a second
+  // `indexing_structure` call on a section that is already fully done. This
+  // makes the function idempotent on an already-`ready` section regardless of
+  // which downstream step failed, including ones added after this comment.
+  if (section.status === "ready") return;
 
+  // `chunkRows` (page count fallback for EPUBs, where `m.page_count` is
+  // always null — see `finishExtraction`'s manual-batch caller — AND the
+  // section's own text), `topics` (for `topicRefs`, used both in the prompt
+  // below and in the related-topics linking further down) and `year` (used
+  // in every topic row written below) are all needed whether or not the AI
+  // call itself ends up cached — none of them cost anything to read, unlike
+  // the AI call, so they're fetched unconditionally. Only `subjectRows`
+  // (used solely to label `existing_topics` in the prompt) and the prompt
+  // itself are skipped on a cache hit.
   let chunkQuery = scope.select("chunks", "page, locator, text, ordinal").eq("material_id", materialId).order("ordinal").limit(20000);
   if (section.page_from != null) chunkQuery = chunkQuery.gte("page", section.page_from);
   if (section.page_to != null) chunkQuery = chunkQuery.lte("page", section.page_to);
-  const [{ data: chunkRows }, { data: topics }, { data: subjectRows }, { data: year }] = await Promise.all([
+  const [{ data: chunkRows }, { data: topics }, { data: year }] = await Promise.all([
     chunkQuery.returns<{ page: number; locator: string | null; text: string }[]>(),
     scope
       .select("topics", "id, title, subject_id, material_id")
@@ -882,7 +962,6 @@ async function runStructureSection(job: JobRow): Promise<void> {
       .order("sort_order")
       .limit(300)
       .returns<{ id: string; title: string; subject_id: string; material_id: string | null }[]>(),
-    scope.select("subjects", "id, name_uk").returns<{ id: string; name_uk: string }[]>(),
     scope.select("academic_years", "grade").eq("status", "active").maybeSingle<{ grade: number }>(),
   ]);
 
@@ -897,35 +976,56 @@ async function runStructureSection(job: JobRow): Promise<void> {
   const sortedPages = [...pages.values()].sort((a, b) => a.page - b.page);
   const kindMeta = sourceTypes.get(m.kind);
   const strategy = kindMeta?.structureStrategy ?? "contents";
-  const subjectName = new Map((subjectRows ?? []).map((s) => [s.id, s.name_uk]));
   const topicRefs = (topics ?? []).map((t, i) => ({ ref: `t${i + 1}`, ...t }));
-  const rangeLabel =
-    section.page_from != null ? `стор. ${section.page_from}${section.page_to != null && section.page_to !== section.page_from ? `–${section.page_to}` : ""}` : "—";
-  const { system, user } = sectionPrompt();
-  const prompt = fillTemplate(user, {
-    file_name: m.name,
-    meta_title: m.title ?? "—",
-    kind_title: kindMeta?.titleUk ?? m.kind,
-    section_title: section.title,
-    section_range: rangeLabel,
-    existing_topics: topicRefs.map((t) => `${t.ref} — ${subjectName.get(t.subject_id) ?? "?"} — ${t.title}`).join("\n") || "—",
-    section_text: buildSectionText(sortedPages),
-  });
 
-  let answer;
-  try {
-    const res = await callStructured(
-      "indexing_structure",
-      { system, prompt, schema: buildSectionSchema() },
-      { familyId, ref: { table: "materials", id: materialId } },
-    );
-    answer = res.result;
-  } catch (e) {
-    if (e instanceof BudgetBlockedError) {
-      await patchMaterial(scope, materialId, { status: "deferred", status_detail: "budget_deferred" });
-      return;
+  // Cost-safety checkpoint (post-incident fix, 2026-09-28 — see the
+  // migration comment on `material_sections.structure_result`): several
+  // deterministic, retryable DB writes follow this paid AI call below. If
+  // one of THEM throws, the whole job retries and would otherwise re-enter
+  // this function and pay for a SECOND `indexing_structure` call for the
+  // same section, even though the first one already succeeded (this is the
+  // confirmed mechanism behind the 2026-09-28 cost incident). So: check for
+  // an already-cached answer first, and only call + bill the model when
+  // there isn't one yet. The cache is written right after a successful
+  // call, before any downstream write starts, and cleared only once the
+  // section reaches `status: "ready"` below.
+  let answer: SectionAnswer;
+  if (section.structure_result != null) {
+    answer = section.structure_result as SectionAnswer;
+  } else {
+    if (await deferIfBudget(scope, familyId, materialId)) return;
+    const { data: subjectRows } = await scope.select("subjects", "id, name_uk").returns<{ id: string; name_uk: string }[]>();
+    const subjectName = new Map((subjectRows ?? []).map((s) => [s.id, s.name_uk]));
+    const rangeLabel =
+      section.page_from != null
+        ? `стор. ${section.page_from}${section.page_to != null && section.page_to !== section.page_from ? `–${section.page_to}` : ""}`
+        : "—";
+    const { system, user } = sectionPrompt();
+    const prompt = fillTemplate(user, {
+      file_name: m.name,
+      meta_title: m.title ?? "—",
+      kind_title: kindMeta?.titleUk ?? m.kind,
+      section_title: section.title,
+      section_range: rangeLabel,
+      existing_topics: topicRefs.map((t) => `${t.ref} — ${subjectName.get(t.subject_id) ?? "?"} — ${t.title}`).join("\n") || "—",
+      section_text: buildSectionText(sortedPages),
+    });
+    try {
+      const res = await callStructured(
+        "indexing_structure",
+        { system, prompt, schema: buildSectionSchema() },
+        { familyId, ref: { table: "materials", id: materialId } },
+      );
+      answer = res.result;
+    } catch (e) {
+      if (e instanceof BudgetBlockedError) {
+        await patchMaterial(scope, materialId, { status: "deferred", status_detail: "budget_deferred" });
+        return;
+      }
+      throw e;
     }
-    throw e;
+    const { error: cacheErr } = await scope.update("material_sections", { structure_result: answer }).eq("id", sectionId);
+    if (cacheErr) throw new Error(`material_sections structure_result checkpoint write failed: ${cacheErr.message}`);
   }
 
   const subjectId = m.subject_id;
@@ -1012,7 +1112,10 @@ async function runStructureSection(job: JobRow): Promise<void> {
   const { error: assignErr } = await scope.client.rpc("assign_chunk_structure", { p_family_id: familyId, p_material_id: materialId });
   if (assignErr) throw new Error(`assign_chunk_structure failed: ${assignErr.message}`);
 
-  await scope.update("material_sections", { status: "ready", status_detail: null }).eq("id", sectionId);
+  // Clear the checkpoint (above) together with the terminal status write —
+  // this section is now genuinely done, so any later re-run must call the
+  // model again rather than reuse this run's cached answer.
+  await scope.update("material_sections", { status: "ready", status_detail: null, structure_result: null }).eq("id", sectionId);
   await finalizeMaterialStatus(scope, materialId);
 
   // ADR-023 §Частина 3.1 (D-103) + ADR-032: the parent's own act of indexing

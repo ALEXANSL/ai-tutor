@@ -190,6 +190,17 @@ export const uk = {
       pickSubtitle: "Обери один із блоків",
       startAny: "Почати",
       startingLesson: "Готуємо урок…",
+      // BUG (child-facing leak): `startLessonAction` used to surface
+      // `uk.parent.subjects.errors.noTextbook` — a PARENT-facing
+      // instruction ("додайте й проіндексуйте його в «Мої книги»") that
+      // references a screen the child has no access to. This is the
+      // child's own copy for the exact same underlying condition (topic has
+      // no indexed source material yet): warm, no blame, no admin jargon —
+      // matches `today.emptyPlanBody`'s tone ("Тато вже готує підручники…").
+      // The "Почати" button is hidden once this is shown (retrying would
+      // just fail again the same way) — see `ChildStartLessonButton`.
+      notReadyTitle: "Цей урок ще не готовий",
+      notReadyBody: "Скажи татові чи мамі — вони знають, що робити 👋",
       stepOf: (k: number, n: number) => `Крок ${k} з ${n}`,
       alarmButton: "🚨 Тривога",
       alarmSaved: "Йди в безпечне місце. Я все збережу, продовжимо потім.",
