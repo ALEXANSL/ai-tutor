@@ -164,6 +164,16 @@ export const uk = {
       topicsSubtitle: "Обери тему, з якої почнемо:",
       priorityBadge: "Пріоритет",
       pages: (from: number, to: number) => (from === to ? `стор. ${from}` : `стор. ${from}–${to}`),
+      // US-19.5 КП-1: the same "is there an active block?" fact the parent's
+      // bulk-warmup panel already shows (US-22.4 КП-5), now visible to the
+      // child too, in her own wording — no technical words like "у черзі"/
+      // "jobs" (КП-1's own explicit rule). Only the two states КП-1 actually
+      // asks for; a job already queued/generating in the background (e.g.
+      // from an automatic warm-ahead trigger) still reads as "Потрібна
+      // підготовка" here — there is no child-facing "start preparing"
+      // action yet (КП-2, not built — see the S38/US-19.5 status note in
+      // docs/05-backlog.md and this session's QA report).
+      topicStatus: { ready: "Готово", needsPrep: "Потрібна підготовка" },
     },
     // E-23 (US-23.1, D-105): reading + chat screen for one "Інше" material.
     material: {

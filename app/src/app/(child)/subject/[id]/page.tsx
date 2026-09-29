@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ChildStartLessonButton } from "@/components/child/ChildStartLessonButton";
 import { uk } from "@/i18n/uk";
 import { requireChild } from "@/server/auth/guards";
+import { getTopicWarmupStatuses } from "@/server/lessons/warmup";
 import { getSubjectDetail } from "@/server/subjects/queries";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -36,6 +37,11 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
   if (!subject || !subject.childVisible) notFound();
   const t = uk.child.today;
   const ts = uk.child.subject;
+  // US-19.5 КП-1: reuse the exact same "does this topic already have an
+  // active block?" fact the parent's bulk-warmup panel shows (US-22.4 КП-5)
+  // — only the two states КП-1 asks for (see uk.ts's `topicStatus` comment
+  // for why a third "generating" badge is not shown here yet).
+  const warmupStatuses = subject.topics.length > 0 ? await getTopicWarmupStatuses(ctx.familyId, subject.topics.map((tp) => tp.id)) : {};
 
   return (
     <div className="px-6 pt-5 pb-10">
@@ -53,6 +59,15 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
                 {topic.id === subject.currentTopicId && (
                   <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">{ts.priorityBadge}</span>
                 )}
+                <span
+                  className={
+                    warmupStatuses[topic.id] === "ready"
+                      ? "rounded-full bg-secondary/10 px-2 py-0.5 text-xs font-bold text-secondary"
+                      : "rounded-full bg-surface-alt px-2 py-0.5 text-xs font-bold text-muted"
+                  }
+                >
+                  {warmupStatuses[topic.id] === "ready" ? ts.topicStatus.ready : ts.topicStatus.needsPrep}
+                </span>
               </div>
               {topic.pageFrom != null && topic.pageTo != null && (
                 <p className="mb-3 text-sm text-muted">{ts.pages(topic.pageFrom, topic.pageTo)}</p>
