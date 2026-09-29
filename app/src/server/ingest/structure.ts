@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { StructureStrategyKey } from "@/core/registries/learning";
 
@@ -114,6 +115,37 @@ export function buildSectionText(pages: PageText[]): string {
   return pages
     .map((p) => `--- ${p.locator ? `Стор. ${p.page} (${p.locator})` : `Стор. ${p.page}`} ---\n${p.text}`)
     .join("\n");
+}
+
+/**
+ * ADR-036 #1 (re-index cost fix): a stable content fingerprint for one
+ * section's own page-range text, written to `material_sections.source_text_hash`
+ * once the section reaches `status: "ready"`. On a later re-index this is
+ * recomputed for the section's (possibly updated) page range and compared
+ * against the stored value — an unchanged hash on an already-`ready` section
+ * means the section's text is genuinely identical to what was last
+ * successfully structured, so the paid `indexing_structure` call for it can
+ * be skipped. Hashes `buildSectionText`'s own output so both call sites
+ * (the outline pass comparing, and the section pass storing) always hash
+ * the exact same string shape.
+ */
+export function hashSectionText(pages: PageText[]): string {
+  return createHash("sha256").update(buildSectionText(pages)).digest("hex");
+}
+
+/**
+ * ADR-036 #1: whether a re-index can skip re-queueing `ingest.structure_section`
+ * for this section entirely — reusing its existing topics/material_problems/
+ * chunks structure data untouched. Deliberately conservative: only a section
+ * that is already fully, successfully structured (`status: "ready"`) AND
+ * whose current text hashes to exactly the previously-stored value is
+ * skipped. A section that is `pending`/`indexing`/`error`, or has no stored
+ * hash yet (first-time index, or indexed before this fix shipped), is always
+ * re-queued — this is a targeted skip for genuinely-identical content, never
+ * a blanket "never re-structure".
+ */
+export function shouldSkipSectionRestructure(prev: { status: string; source_text_hash: string | null } | null | undefined, newHash: string): boolean {
+  return !!prev && prev.status === "ready" && prev.source_text_hash != null && prev.source_text_hash === newHash;
 }
 
 export function fillTemplate(template: string, values: Record<string, string>): string {
