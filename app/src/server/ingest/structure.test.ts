@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -7,6 +8,7 @@ import {
   buildSectionSchema,
   buildSectionText,
   fillTemplate,
+  hashSectionText,
   isHeadingLike,
   mergeByTitle,
   narrowestContaining,
@@ -14,6 +16,7 @@ import {
   normalizeOutlineSections,
   normalizeProblems,
   normalizeSectionTopics,
+  shouldSkipSectionRestructure,
   splitPrompt,
 } from "./structure";
 
@@ -242,5 +245,59 @@ describe("narrowestTitleFor (D-106)", () => {
   it("falls back to null when the page is outside every indexed range", () => {
     expect(narrowestTitleFor(40, items)).toBeNull();
     expect(narrowestTitleFor(null, items)).toBeNull();
+  });
+});
+
+/**
+ * ADR-036 recommendation #1 (real cost-waste fix): re-indexing a book used to
+ * re-run the paid `indexing_structure` call for EVERY section unconditionally,
+ * even ones whose source text hadn't changed since the last successful pass.
+ * `hashSectionText`/`shouldSkipSectionRestructure` are the pure decision
+ * pieces `runStructureOutline` uses to skip those sections on a re-index —
+ * see pipeline.test.ts for the end-to-end (job-level) coverage.
+ */
+describe("hashSectionText (ADR-036 #1)", () => {
+  it("is a stable fingerprint of the section's page text", () => {
+    const pages = [{ page: 1, locator: null, text: "Тема 1" }];
+    expect(hashSectionText(pages)).toBe(hashSectionText(pages));
+    expect(hashSectionText(pages)).toMatch(/^[0-9a-f]{64}$/); // sha256 hex digest
+  });
+
+  it("changes when the page text changes", () => {
+    const before = hashSectionText([{ page: 1, locator: null, text: "Тема 1" }]);
+    const after = hashSectionText([{ page: 1, locator: null, text: "Тема 1 (виправлено)" }]);
+    expect(after).not.toBe(before);
+  });
+
+  it("matches buildSectionText's own output exactly (same call sites must agree)", () => {
+    const pages = [{ page: 1, locator: "§1", text: "текст" }];
+    expect(hashSectionText(pages)).toBe(createHash("sha256").update(buildSectionText(pages)).digest("hex"));
+  });
+});
+
+describe("shouldSkipSectionRestructure (ADR-036 #1)", () => {
+  const hash = hashSectionText([{ page: 1, locator: null, text: "незмінний текст" }]);
+
+  it("skips only a section that is already ready AND whose hash is unchanged", () => {
+    expect(shouldSkipSectionRestructure({ status: "ready", source_text_hash: hash }, hash)).toBe(true);
+  });
+
+  it("never skips a section whose text actually changed (different hash)", () => {
+    expect(shouldSkipSectionRestructure({ status: "ready", source_text_hash: hash }, "a-different-hash")).toBe(false);
+  });
+
+  it("never skips a section that isn't fully ready yet, even with a matching hash", () => {
+    expect(shouldSkipSectionRestructure({ status: "pending", source_text_hash: hash }, hash)).toBe(false);
+    expect(shouldSkipSectionRestructure({ status: "error", source_text_hash: hash }, hash)).toBe(false);
+    expect(shouldSkipSectionRestructure({ status: "indexing", source_text_hash: hash }, hash)).toBe(false);
+  });
+
+  it("never skips a first-time index (no prior section/hash at all)", () => {
+    expect(shouldSkipSectionRestructure(undefined, hash)).toBe(false);
+    expect(shouldSkipSectionRestructure(null, hash)).toBe(false);
+  });
+
+  it("never skips a section indexed before this fix shipped (ready, but no stored hash yet)", () => {
+    expect(shouldSkipSectionRestructure({ status: "ready", source_text_hash: null }, hash)).toBe(false);
   });
 });

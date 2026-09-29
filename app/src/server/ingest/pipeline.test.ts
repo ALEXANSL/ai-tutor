@@ -32,6 +32,7 @@ vi.mock("../jobs/runner", async (importOriginal) => {
 vi.mock("../lessons/warmup", () => ({ warmAheadForSubject: vi.fn(async () => {}) }));
 
 const { errorCodeOf, IngestError, isRetryableIngestError, runStructureOutline, runStructureSection, skipReextraction } = await import("./pipeline");
+const { hashSectionText } = await import("./structure");
 
 /**
  * Error classification of the ingest pipeline (QA: "поведінка без ключів",
@@ -146,7 +147,9 @@ function makeChain(single: unknown, list: unknown) {
 interface FakeState {
   material: Record<string, unknown>;
   section: Record<string, unknown>;
-  oldSections: { id: string; title: string; manual_override: boolean }[];
+  oldSections: { id: string; title: string; manual_override: boolean; status: string; source_text_hash: string | null }[];
+  /** Chunk rows `runStructureOutline`/`runStructureSection` read to build each section's text (ADR-036 #1 hash). Defaults to empty (no chunk text — see the "chunks" branch below). */
+  chunks?: { page: number; locator: string | null; text: string }[];
   /** Number of times each RPC has been called so far — lets a test fail an RPC on its first call and succeed after. */
   rpcCalls: Record<string, number>;
   /** RPC name -> attempt number (1-based) -> `{ error }` to return; the last configured attempt repeats for any further call. */
@@ -168,8 +171,9 @@ function makeFakeScope(state: FakeState) {
         // the same underlying array.
         return makeChain({ data: state.section, error: null }, { data: state.oldSections.length ? state.oldSections : [state.section], error: null });
       }
-      // chunks / topics / subjects / academic_years: no test data needed —
-      // an empty/null result is enough since these tests pick a non-"textbook"
+      if (table === "chunks") return makeChain({ data: null, error: null }, { data: state.chunks ?? [], error: null });
+      // topics / subjects / academic_years: no test data needed — an
+      // empty/null result is enough since these tests pick a non-"textbook"
       // `strategy` (see the fixtures below), so nothing downstream reads them.
       return makeChain({ data: null, error: null }, { data: [], error: null });
     },
@@ -199,7 +203,7 @@ function makeFakeScope(state: FakeState) {
             select: () => ({
               single: async () => {
                 const id = `sec-${state.oldSections.length + 1}`;
-                state.oldSections.push({ id, title: row.title as string, manual_override: false });
+                state.oldSections.push({ id, title: row.title as string, manual_override: false, status: row.status as string, source_text_hash: null });
                 return { data: { id }, error: null };
               },
             }),
@@ -387,5 +391,148 @@ describe("cost-safety checkpoint — a downstream DB failure after a successful 
     await runStructureSection(job);
     expect(callStructured).toHaveBeenCalledTimes(1); // still just once — no second paid call
     expect(state.section.status).toBe("ready");
+  });
+});
+
+/**
+ * ADR-036 recommendation #1 — the real cost-waste fix under test in this
+ * suite: before it, re-indexing a book re-ran the paid `indexing_structure`
+ * call for EVERY section unconditionally, even sections whose source text
+ * hadn't changed since the last successful pass — a re-index cost exactly as
+ * much as the first index. These tests exercise `runStructureOutline`'s
+ * section fan-out (`toEnqueue` vs `sectionIds`) end-to-end with the same fake
+ * scope as the cost-safety checkpoint suite above.
+ */
+describe("ADR-036 #1 — re-index skips sections whose source text hasn't changed", () => {
+  function baseMaterial(id: string) {
+    return {
+      id,
+      name: "book.pdf",
+      title: "Книга",
+      status: "indexing",
+      kind: "worksheet", // not a registered "textbook" kind → structureStrategy defaults to "contents"
+      kind_manual: false,
+      subject_id: null,
+      subject_manual: false,
+      topics_manual: true,
+      page_count: 10,
+      grade: null,
+      curriculum_version: null,
+      structure_outline_result: null,
+    };
+  }
+
+  it("an unchanged, already-ready section is skipped: no new ingest.structure_section job, no second AI call, section stays ready", async () => {
+    callStructured.mockClear();
+    enqueueJob.mockClear();
+    const chunks = [
+      { page: 1, locator: null, text: "Розділ 1, стор. 1" },
+      { page: 2, locator: null, text: "Розділ 1, стор. 2" },
+    ];
+    const unchangedHash = hashSectionText(chunks);
+    callStructured.mockResolvedValue({
+      result: { title: "Підручник", kind: "worksheet", subject_code: "none", grade: null, sections: [{ title: "Розділ 1", page_from: 1, page_to: 2 }] },
+      model: { provider: "anthropic", model: "m" },
+      costUsd: 0.01,
+    });
+
+    const state: FakeState = {
+      material: baseMaterial("mat-unchanged"),
+      section: { id: "sec-1", title: "Розділ 1", page_from: 1, page_to: 2, sort_order: 0, status: "ready", status_detail: null, structure_result: null },
+      oldSections: [{ id: "sec-1", title: "Розділ 1", manual_override: false, status: "ready", source_text_hash: unchangedHash }],
+      chunks,
+      rpcCalls: {},
+      rpcResults: {},
+      updateCalls: {},
+      updateResults: {},
+    };
+    fakeScope = makeFakeScope(state);
+
+    const job = { id: "job-unchanged", family_id: "fam-1", type: "ingest.structure_outline", payload: { materialId: "mat-unchanged" }, attempts: 1, max_attempts: 5 };
+    await runStructureOutline(job);
+
+    expect(callStructured).toHaveBeenCalledTimes(1); // only the outline call itself
+    expect(enqueueJob).not.toHaveBeenCalled(); // no ingest.structure_section job — text unchanged, section already ready
+    // Nothing was enqueued, so `runStructureOutline` finalizes the book's
+    // status itself right away instead of leaving it stuck in "indexing".
+    expect(state.material.status).toBe("ready");
+  });
+
+  it("a section whose text actually changed is still re-structured (re-queued for ingest.structure_section)", async () => {
+    callStructured.mockClear();
+    enqueueJob.mockClear();
+    const chunks = [
+      { page: 1, locator: null, text: "Розділ 1, ВИПРАВЛЕНИЙ текст" },
+      { page: 2, locator: null, text: "Розділ 1, стор. 2" },
+    ];
+    callStructured.mockResolvedValue({
+      result: { title: "Підручник", kind: "worksheet", subject_code: "none", grade: null, sections: [{ title: "Розділ 1", page_from: 1, page_to: 2 }] },
+      model: { provider: "anthropic", model: "m" },
+      costUsd: 0.01,
+    });
+
+    const state: FakeState = {
+      material: baseMaterial("mat-changed"),
+      section: { id: "sec-1", title: "Розділ 1", page_from: 1, page_to: 2, sort_order: 0, status: "ready", status_detail: null, structure_result: null },
+      // Stored hash is stale — from before the parent uploaded a corrected PDF.
+      oldSections: [{ id: "sec-1", title: "Розділ 1", manual_override: false, status: "ready", source_text_hash: "stale-hash-from-before-the-correction" }],
+      chunks,
+      rpcCalls: {},
+      rpcResults: {},
+      updateCalls: {},
+      updateResults: {},
+    };
+    fakeScope = makeFakeScope(state);
+
+    const job = { id: "job-changed", family_id: "fam-1", type: "ingest.structure_outline", payload: { materialId: "mat-changed" }, attempts: 1, max_attempts: 5 };
+    await runStructureOutline(job);
+
+    expect(callStructured).toHaveBeenCalledTimes(1); // outline call
+    expect(enqueueJob).toHaveBeenCalledTimes(1); // section text changed → re-queued despite already being "ready"
+    expect(enqueueJob).toHaveBeenCalledWith(
+      "fam-1",
+      "ingest.structure_section",
+      { materialId: "mat-changed", sectionId: "sec-1" },
+      expect.objectContaining({ dedupeKey: expect.stringContaining("sec-1") }),
+    );
+    // The book goes back to "indexing" (not finalized yet) since a section job is now pending.
+    expect(state.material.status).toBe("indexing");
+  });
+
+  it("a first-time index is unaffected: no prior section/hash exists, so every section is structured as normal", async () => {
+    callStructured.mockClear();
+    enqueueJob.mockClear();
+    callStructured.mockResolvedValue({
+      result: {
+        title: "Підручник",
+        kind: "worksheet",
+        subject_code: "none",
+        grade: null,
+        sections: [
+          { title: "Розділ 1", page_from: 1, page_to: 5 },
+          { title: "Розділ 2", page_from: 6, page_to: 10 },
+        ],
+      },
+      model: { provider: "anthropic", model: "m" },
+      costUsd: 0.01,
+    });
+
+    const state: FakeState = {
+      material: baseMaterial("mat-first"),
+      section: { id: "unused", title: "unused", page_from: null, page_to: null, sort_order: 0, status: "pending", status_detail: null, structure_result: null },
+      oldSections: [], // no previous run at all
+      rpcCalls: {},
+      rpcResults: {},
+      updateCalls: {},
+      updateResults: {},
+    };
+    fakeScope = makeFakeScope(state);
+
+    const job = { id: "job-first", family_id: "fam-1", type: "ingest.structure_outline", payload: { materialId: "mat-first" }, attempts: 1, max_attempts: 5 };
+    await runStructureOutline(job);
+
+    expect(callStructured).toHaveBeenCalledTimes(1);
+    expect(enqueueJob).toHaveBeenCalledTimes(2); // both new sections queued — nothing to compare against yet
+    expect(state.material.status).toBe("indexing");
   });
 });

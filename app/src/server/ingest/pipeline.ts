@@ -31,10 +31,12 @@ import {
   buildSectionSchema,
   buildSectionText,
   fillTemplate,
+  hashSectionText,
   mergeByTitle,
   normalizeOutlineSections,
   normalizeProblems,
   normalizeSectionTopics,
+  shouldSkipSectionRestructure,
   splitPrompt,
   type OutlineAnswer,
   type PageText,
@@ -804,16 +806,33 @@ export async function runStructureOutline(job: JobRow): Promise<void> {
 
   // Sections (keep manual ones, keep identities by title) — every section is
   // re-queued for its own structuring pass below regardless of
-  // manual_override: that flag protects only the section's OWN title/pages,
-  // not the topics/exercises inside it (same split as before ADR-032).
+  // manual_override (that flag protects only the section's OWN title/pages,
+  // not the topics/exercises inside it, same split as before ADR-032)
+  // UNLESS its text is genuinely unchanged since its last successful pass
+  // (ADR-036 #1, `shouldSkipSectionRestructure` below) — a real re-index cost
+  // fix: skipping unchanged sections means a re-index only pays for the
+  // sections that actually changed, not the whole book again.
   const { data: oldSections } = await scope
-    .select("material_sections", "id, title, manual_override")
+    .select("material_sections", "id, title, manual_override, status, source_text_hash")
     .eq("material_id", materialId)
-    .returns<{ id: string; title: string; manual_override: boolean }[]>();
+    .returns<{ id: string; title: string; manual_override: boolean; status: string; source_text_hash: string | null }[]>();
+  const oldById = new Map((oldSections ?? []).map((s) => [s.id, s]));
   const sectionMerge = mergeByTitle(oldSections ?? [], sections);
+  const sortedPages = [...pages.values()].sort((a, b) => a.page - b.page);
   const sectionIds: string[] = [];
+  // ADR-036 #1 (re-index cost fix): only the section ids that actually need a
+  // fresh `ingest.structure_section` run — as opposed to `sectionIds` above,
+  // which is every section of the book (used for the "book has no sections at
+  // all" check and the progress total below).
+  const toEnqueue: string[] = [];
   for (const [i, s] of sections.entries()) {
     const step = sectionMerge.plan[i]!;
+    // Same page-range text this section's own `ingest.structure_section` run
+    // would send to the model (`buildSectionText`) — hashed the same way
+    // that run stores it on success, so an unchanged hash on an already-
+    // `ready` section reliably means "genuinely identical content" (ADR-036 #1).
+    const sectionPages = sortedPages.filter((p) => (s.page_from == null || p.page >= s.page_from) && (s.page_to == null || p.page <= s.page_to));
+    const newHash = hashSectionText(sectionPages);
     if (step.action === "insert") {
       const { data, error } = await scope.client
         .from("material_sections")
@@ -831,29 +850,34 @@ export async function runStructureOutline(job: JobRow): Promise<void> {
         .single<{ id: string }>();
       if (error) throw new Error(`section insert failed: ${error.message}`);
       sectionIds.push(data.id);
+      toEnqueue.push(data.id); // first-time index: no prior hash to compare against, always structured (ADR-036 #1)
     } else if (step.action === "update") {
-      // `structure_result: null` — this section is being re-queued for a
-      // fresh `ingest.structure_section` run, so any previous checkpointed
-      // answer (cost-safety fix above) must not be reused: that cache exists
-      // only to survive a DB-write retry WITHIN one indexing run, never
-      // across a genuine re-index like this one.
-      await scope
-        .update("material_sections", {
-          title: s.title,
-          page_from: s.page_from,
-          page_to: s.page_to,
-          sort_order: i,
-          status: "pending",
-          status_detail: null,
-          structure_result: null,
-        })
-        .eq("id", step.id!);
+      const skip = shouldSkipSectionRestructure(oldById.get(step.id!), newHash);
+      const patch: Record<string, unknown> = { title: s.title, page_from: s.page_from, page_to: s.page_to, sort_order: i };
+      if (!skip) {
+        // `structure_result: null` — this section is being re-queued for a
+        // fresh `ingest.structure_section` run, so any previous checkpointed
+        // answer (cost-safety fix above) must not be reused: that cache
+        // exists only to survive a DB-write retry WITHIN one indexing run,
+        // never across a genuine re-index like this one.
+        patch.status = "pending";
+        patch.status_detail = null;
+        patch.structure_result = null;
+      }
+      // Skipped: leave `status`/`structure_result` untouched — the section
+      // stays `ready` with its existing topics/material_problems/chunks data
+      // reused as-is, no re-structuring, no re-billing (ADR-036 #1).
+      await scope.update("material_sections", patch).eq("id", step.id!);
       sectionIds.push(step.id!);
+      if (!skip) toEnqueue.push(step.id!);
     } else {
-      // "keep" (manual_override): title/pages untouched, but still queued
-      // (and its structuring checkpoint cleared — same reasoning as above).
-      await scope.update("material_sections", { status: "pending", status_detail: null, structure_result: null }).eq("id", step.id!);
+      // "keep" (manual_override): title/pages untouched. Same skip check as
+      // "update" above — a manually-pinned section's text can still be
+      // genuinely unchanged since its last successful structuring pass.
+      const skip = shouldSkipSectionRestructure(oldById.get(step.id!), newHash);
+      if (!skip) await scope.update("material_sections", { status: "pending", status_detail: null, structure_result: null }).eq("id", step.id!);
       sectionIds.push(step.id!);
+      if (!skip) toEnqueue.push(step.id!);
     }
   }
   if (sectionMerge.remove.length) await scope.delete("material_sections").in("id", sectionMerge.remove);
@@ -871,10 +895,15 @@ export async function runStructureOutline(job: JobRow): Promise<void> {
     title: m.title ?? (answer.title.trim() || null),
     status: "indexing",
     status_detail: null,
-    progress: { step: "structure", sections_total: sectionIds.length, sections_done: 0 },
+    // ADR-036 #1: sections already skipped above (unchanged text, already
+    // `ready`) count as done from the start of this run, not zero.
+    progress: { step: "structure", sections_total: sectionIds.length, sections_done: sectionIds.length - toEnqueue.length },
   });
 
-  if (sectionIds.length === 0) {
+  if (toEnqueue.length === 0) {
+    // Either the book has no sections at all, OR (ADR-036 #1) a re-index
+    // found every section's text genuinely unchanged since its last
+    // successful structuring pass — nothing new to enqueue either way.
     // BUG-044 (cost-safety, 2026-09-28): `finalizeMaterialStatus` below is
     // itself a fallible, retryable step, so it must run BEFORE the checkpoint
     // clear — not after — or a transient failure in it would leave
@@ -887,7 +916,7 @@ export async function runStructureOutline(job: JobRow): Promise<void> {
     await scope.update("materials", { structure_outline_result: null }).eq("id", materialId);
     return;
   }
-  for (const sectionId of sectionIds) {
+  for (const sectionId of toEnqueue) {
     await enqueueJob(familyId, JOB.structureSection, { materialId, sectionId }, { dedupeKey: `${JOB.structureSection}:${materialId}:${sectionId}` });
   }
   // Every downstream write (including the fan-out above, via `enqueueJob`'s
@@ -1114,8 +1143,14 @@ export async function runStructureSection(job: JobRow): Promise<void> {
 
   // Clear the checkpoint (above) together with the terminal status write —
   // this section is now genuinely done, so any later re-run must call the
-  // model again rather than reuse this run's cached answer.
-  await scope.update("material_sections", { status: "ready", status_detail: null, structure_result: null }).eq("id", sectionId);
+  // model again rather than reuse this run's cached answer. `source_text_hash`
+  // (ADR-036 #1) is a fingerprint of exactly the text this run structured
+  // (`sortedPages`, same shape `buildSectionText` sends to the model) — a
+  // FUTURE re-index's `runStructureOutline` compares against it to decide
+  // whether this section can be skipped next time.
+  await scope
+    .update("material_sections", { status: "ready", status_detail: null, structure_result: null, source_text_hash: hashSectionText(sortedPages) })
+    .eq("id", sectionId);
   await finalizeMaterialStatus(scope, materialId);
 
   // ADR-023 §Частина 3.1 (D-103) + ADR-032: the parent's own act of indexing
