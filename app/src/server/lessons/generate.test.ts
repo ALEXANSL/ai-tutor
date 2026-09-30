@@ -119,6 +119,19 @@ describe("getOrCreateFallbackBlock (ADR-034: content_qa verification of the BUG-
     expect((slideStep.content as { textUk: string }).textUk).toContain("літературної");
   });
 
+  it("BUG (P0, 2026-09-30): skips a fragment whose excerpt keeps a figure-reference marker (◄Мал. 1.2►) and uses the next one", async () => {
+    scopeToReturn = makeScope([
+      chunkRow({ material_id: "bad", text: "Розглянь малюнок нижче. ◄Мал. 1.2► Опиши, що на ньому зображено." }),
+      chunkRow({ material_id: "good", text: "Це другий, цілком нормальний і завершений уривок без жодних малюнків." }),
+    ]);
+    const result = await getOrCreateFallbackBlock("fam1", "subj1", "topic1", "Тема", 6);
+    expect(result.id).toBe("item1");
+    const slideStep = insertedSteps!.find((s) => s.type === "slide")!;
+    expect((slideStep.content as { textUk: string }).textUk).not.toContain("◄");
+    const sourceRefs = slideStep.source_refs as { materialId: string }[];
+    expect(sourceRefs[0]!.materialId).toBe("good");
+  });
+
   it("never flags a legitimate cubic-unit token (см³) as BUG-046 mojibake", async () => {
     scopeToReturn = makeScope([chunkRow({ text: "Об'єм становить 5 см³ води в мірному стакані." })]);
     const result = await getOrCreateFallbackBlock("fam1", "subj1", "topic1", "Тема", 6);

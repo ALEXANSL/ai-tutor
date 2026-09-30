@@ -104,14 +104,31 @@ const nextSessionBlock = vi.fn();
 const loadLibraryItem = vi.fn();
 const getOrGenerateLessonBlocks = vi.fn();
 const getOrCreateFallbackBlock = vi.fn();
+/**
+ * ADR-037: `activateBlock`'s reactive-prefetch check reads `loadCandidates`
+ * (defaults to `[]` below — "no pool known" — so none of the pre-existing
+ * tests in this file accidentally trigger a prefetch just by activating a
+ * block). Tests that specifically exercise the prefetch trigger override
+ * this per-test.
+ */
+const loadCandidates = vi.fn();
 const notifyParent = vi.fn().mockResolvedValue(undefined);
 vi.mock("./generate", () => ({
   nextSessionBlock: (...a: unknown[]) => nextSessionBlock(...a),
   loadLibraryItem: (...a: unknown[]) => loadLibraryItem(...a),
   getOrGenerateLessonBlocks: (...a: unknown[]) => getOrGenerateLessonBlocks(...a),
   getOrCreateFallbackBlock: (...a: unknown[]) => getOrCreateFallbackBlock(...a),
+  loadCandidates: (...a: unknown[]) => loadCandidates(...a),
+  // A real, small constant — not worth mocking per-test, same value as the
+  // real module (`generate.ts`'s `CANDIDATE_TARGET`).
+  CANDIDATE_TARGET: 3,
 }));
 vi.mock("@/server/notifications", () => ({ notifyParent: (...a: unknown[]) => notifyParent(...a) }));
+const prefetchNextBlock = vi.fn().mockResolvedValue({ status: "job_pending", jobId: "job-prefetch" });
+vi.mock("./warmup", () => ({
+  warmAheadForSubject: () => Promise.resolve(),
+  prefetchNextBlock: (...a: unknown[]) => prefetchNextBlock(...a),
+}));
 
 const callStructured = vi.fn();
 vi.mock("@/server/ai/router", () => ({ callStructured: (...a: unknown[]) => callStructured(...a) }));
@@ -141,6 +158,8 @@ function resetScope() {
   loadLibraryItem.mockClear();
   getOrGenerateLessonBlocks.mockClear();
   getOrCreateFallbackBlock.mockClear();
+  loadCandidates.mockReset().mockResolvedValue([]);
+  prefetchNextBlock.mockClear().mockResolvedValue({ status: "job_pending", jobId: "job-prefetch" });
   notifyParent.mockClear();
   callStructured.mockClear();
   moderateMessage.mockClear();
@@ -683,6 +702,126 @@ describe("chooseStartBlock (BUG-016: picking an offered block after a real gener
     };
     loadLibraryItem.mockRejectedValue(new Error("timeout fetching library item"));
     await expect(chooseStartBlock("fam1", "s1", "blk1")).rejects.toThrow("timeout fetching library item");
+  });
+});
+
+/**
+ * ADR-037 ("Швидкість-1", Задача 1 Варіант 1): `activateBlock`'s reactive
+ * prefetch of block N+1 — fires `prefetchNextBlock` (`./warmup`) exactly
+ * when the block just activated was the LAST unused active candidate of the
+ * topic's pool within this session, and never earlier. `activateBlock` fires
+ * this check fire-and-forget (`.catch(...)`, never awaited) — these tests
+ * flush the microtask queue (`await flushMicrotasks()`) after the awaited
+ * call returns so the background check has had a chance to run before
+ * asserting on it, exactly like production code would let it run after the
+ * response is already on its way back to the child.
+ */
+function flushMicrotasks(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+describe("activateBlock — ADR-037 reactive prefetch of block N+1", () => {
+  const realisticItem = {
+    id: "blk-last",
+    title: "Блок",
+    estimatedMinutes: 10,
+    visibleOutcomeUk: null,
+    steps: [{ id: "st1", sortOrder: 0, type: "slide", content: {}, visual: {}, sourceRefs: [] }],
+  };
+
+  it("does NOT prefetch when activating block 1 of a normal 3-candidate pool (plenty of candidates left)", async () => {
+    resetScope();
+    scopeState.tables = {
+      lesson_sessions: { id: "s1", mode: "choosing", status: "active", current_block_order: 0, subject_id: "subj1", topic_id: "top1", candidate_library_item_ids: ["A", "B", "C"] },
+      subjects: { id: "subj1", name_uk: "Математика", config: {} },
+      topics: { id: "top1", title: "Дроби", grade: 6 },
+      session_blocks: [], // nothing used yet in this session
+    };
+    loadCandidates.mockResolvedValue([{ id: "A", title: "A", estimated_minutes: 10 }, { id: "B", title: "B", estimated_minutes: 10 }, { id: "C", title: "C", estimated_minutes: 10 }]);
+    loadLibraryItem.mockResolvedValue({ ...realisticItem, id: "A" });
+
+    await chooseStartBlock("fam1", "s1", "A");
+    await flushMicrotasks();
+
+    expect(prefetchNextBlock).not.toHaveBeenCalled();
+  });
+
+  it("does NOT prefetch on the 2nd of 3 candidates either (still one unused candidate left)", async () => {
+    resetScope();
+    scopeState.tables = {
+      lesson_sessions: { id: "s1", status: "active", current_block_order: 1, subject_id: "subj1", topic_id: "top1" },
+      subjects: { id: "subj1", name_uk: "Математика", config: {} },
+      topics: { id: "top1", title: "Дроби", grade: 6 },
+      session_blocks: [{ session_id: "s1", library_item_id: "A" }], // A already used
+    };
+    loadCandidates.mockResolvedValue([{ id: "A", title: "A", estimated_minutes: 10 }, { id: "B", title: "B", estimated_minutes: 10 }, { id: "C", title: "C", estimated_minutes: 10 }]);
+    nextSessionBlock.mockResolvedValue({ id: "B", title: "B", estimatedMinutes: 10 });
+    loadLibraryItem.mockResolvedValue({ ...realisticItem, id: "B" });
+
+    await continueAfterBlock("fam1", "s1");
+    await flushMicrotasks();
+
+    expect(prefetchNextBlock).not.toHaveBeenCalled();
+  });
+
+  it("DOES prefetch exactly when activating the LAST (3rd of 3) remaining candidate of the pool", async () => {
+    resetScope();
+    scopeState.tables = {
+      lesson_sessions: { id: "s1", status: "active", current_block_order: 2, subject_id: "subj1", topic_id: "top1" },
+      subjects: { id: "subj1", name_uk: "Математика", config: { allowed_components: [] } },
+      topics: { id: "top1", title: "Дроби", grade: 6 },
+      session_blocks: [
+        { session_id: "s1", library_item_id: "A" },
+        { session_id: "s1", library_item_id: "B" },
+      ], // A and B already used — C is the pool's last one
+    };
+    loadCandidates.mockResolvedValue([{ id: "A", title: "A", estimated_minutes: 10 }, { id: "B", title: "B", estimated_minutes: 10 }, { id: "C", title: "C", estimated_minutes: 10 }]);
+    nextSessionBlock.mockResolvedValue({ id: "C", title: "C", estimatedMinutes: 10 });
+    loadLibraryItem.mockResolvedValue({ ...realisticItem, id: "C" });
+
+    await continueAfterBlock("fam1", "s1");
+    await flushMicrotasks();
+
+    expect(prefetchNextBlock).toHaveBeenCalledTimes(1);
+    expect(prefetchNextBlock).toHaveBeenCalledWith(
+      "fam1",
+      { id: "subj1", nameUk: "Математика", config: { allowed_components: [] } },
+      { id: "top1", title: "Дроби", grade: 6 },
+    );
+  });
+
+  it("DOES prefetch on block 1 already when the topic's pool has only ever had 1 candidate (brand-new topic)", async () => {
+    resetScope();
+    scopeState.tables = {
+      lesson_sessions: { id: "s1", mode: "choosing", status: "active", current_block_order: 0, subject_id: "subj1", topic_id: "top1", candidate_library_item_ids: ["A"] },
+      subjects: { id: "subj1", name_uk: "Математика", config: {} },
+      topics: { id: "top1", title: "Дроби", grade: 6 },
+      session_blocks: [],
+    };
+    loadCandidates.mockResolvedValue([{ id: "A", title: "A", estimated_minutes: 10 }]); // pool of exactly 1
+    loadLibraryItem.mockResolvedValue({ ...realisticItem, id: "A" });
+
+    await chooseStartBlock("fam1", "s1", "A");
+    await flushMicrotasks();
+
+    expect(prefetchNextBlock).toHaveBeenCalledTimes(1);
+  });
+
+  it("never throws / never fails the activation even if loadCandidates itself rejects (best-effort background check)", async () => {
+    resetScope();
+    scopeState.tables = {
+      lesson_sessions: { id: "s1", mode: "choosing", status: "active", current_block_order: 0, subject_id: "subj1", topic_id: "top1", candidate_library_item_ids: ["A"] },
+    };
+    loadCandidates.mockRejectedValue(new Error("db blip"));
+    loadLibraryItem.mockResolvedValue({ ...realisticItem, id: "A" });
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const step = await chooseStartBlock("fam1", "s1", "A");
+    await flushMicrotasks();
+
+    expect(step.stepId).toBe("st1"); // the child's own activation still succeeded
+    expect(prefetchNextBlock).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 });
 

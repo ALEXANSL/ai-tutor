@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { LessonComponentDefinition } from "@/lesson-components/registry";
 import { callStructured } from "@/server/ai/router";
-import { AiNotConfiguredError } from "@/server/ai/types";
+import { AiNotConfiguredError, type CacheableTextBlock, type PromptContent } from "@/server/ai/types";
 import type { FamilyScope } from "@/server/db/family-scope";
 import { fillTemplate, splitPrompt } from "@/server/ingest/structure";
 import { safetyPreambleGenericUk } from "@/server/safety/preamble";
@@ -266,6 +266,32 @@ function blockForReviewPrompt(block: LessonBlockGenerated): string {
   ].join("\n");
 }
 
+const REVISION_NOTES_SENTINEL = "\u0000__revision_notes__\u0000";
+
+/**
+ * ADR-033 item 1: `lesson_generation`'s plan+fragments+known_problems prefix
+ * (`values`, everything except `revision_notes`) is byte-identical across
+ * all `MAX_REVIEW_PASSES` generate→review→revise passes for the SAME block
+ * — only `revision_notes` differs, and (per `lesson_generation.md`'s layout)
+ * is kept last in the template. Filling the template with a sentinel in
+ * place of `revision_notes` and splitting the result around it turns that
+ * shared prefix into one `cache_control` breakpoint, so a "revise" verdict's
+ * 2nd/3rd `lesson_generation` call reads the ~10K-token prefix from cache
+ * instead of paying full input price for it again. Falls back to a single,
+ * uncached block if the placeholder is ever removed from the template —
+ * caching is only ever an optimization here, never a way to lose content.
+ */
+function generationPromptContent(template: string, values: Record<string, string>, revisionNotesText: string): PromptContent {
+  const filled = fillTemplate(template, { ...values, revision_notes: REVISION_NOTES_SENTINEL });
+  const idx = filled.indexOf(REVISION_NOTES_SENTINEL);
+  if (idx === -1) return fillTemplate(template, { ...values, revision_notes: revisionNotesText });
+  const prefix = filled.slice(0, idx);
+  const tail = revisionNotesText + filled.slice(idx + REVISION_NOTES_SENTINEL.length);
+  const blocks: CacheableTextBlock[] = [{ type: "text", text: prefix, cache_control: { type: "ephemeral" } }];
+  if (tail) blocks.push({ type: "text", text: tail });
+  return blocks;
+}
+
 async function generateDraft(
   input: PipelineInput,
   plan: LessonPlan,
@@ -274,23 +300,27 @@ async function generateDraft(
 ): Promise<{ block: LessonBlockGenerated; call: PipelineCallLog }> {
   const schema = buildLessonBlockSchema(input.allowedComponents);
   const { system, user } = lessonGenerationPrompt();
-  const prompt = fillTemplate(user, {
-    subject_name: input.subjectName,
-    grade: input.grade != null ? String(input.grade) : "—",
-    topic_title: input.topicTitle,
-    allowed_components: input.allowedComponents.length
-      ? input.allowedComponents.map((d) => `- ${d.key}: ${d.promptDoc}`).join("\n")
-      : "(немає — не використовуй жодного інтерактивного компонента)",
-    fragments: fragmentsForPrompt(input.fragments),
-    known_problems: knownProblemsForPrompt(input.knownProblems),
-    plan_goal: plan.goalUk,
-    plan_hook: plan.hookUk,
-    plan_outcome: plan.visibleOutcomeUk,
-    plan_techniques: techniquesForPrompt(plan),
-    plan_misconceptions: plan.misconceptionsUk.map((m) => `- ${m}`).join("\n"),
-    plan_tone: plan.toneNotesUk,
-    revision_notes: revisionNotesUk?.length ? revisionNotesUk.map((n) => `- ${n}`).join("\n") : "(це перша спроба — попередніх зауважень немає)",
-  });
+  const revisionNotesText = revisionNotesUk?.length ? revisionNotesUk.map((n) => `- ${n}`).join("\n") : "(це перша спроба — попередніх зауважень немає)";
+  const prompt = generationPromptContent(
+    user,
+    {
+      subject_name: input.subjectName,
+      grade: input.grade != null ? String(input.grade) : "—",
+      topic_title: input.topicTitle,
+      allowed_components: input.allowedComponents.length
+        ? input.allowedComponents.map((d) => `- ${d.key}: ${d.promptDoc}`).join("\n")
+        : "(немає — не використовуй жодного інтерактивного компонента)",
+      fragments: fragmentsForPrompt(input.fragments),
+      known_problems: knownProblemsForPrompt(input.knownProblems),
+      plan_goal: plan.goalUk,
+      plan_hook: plan.hookUk,
+      plan_outcome: plan.visibleOutcomeUk,
+      plan_techniques: techniquesForPrompt(plan),
+      plan_misconceptions: plan.misconceptionsUk.map((m) => `- ${m}`).join("\n"),
+      plan_tone: plan.toneNotesUk,
+    },
+    revisionNotesText,
+  );
   const system2 = `${safetyPreambleGenericUk()}\n\n${system}`;
   const res = await callStructured("lesson_generation", { system: system2, prompt, schema }, { familyId: input.familyId, ref: { table: "topics", id: input.topicId }, jobId });
   return { block: res.result, call: { role: "lesson_generation", provider: res.model.provider, model: res.model.model, costUsd: res.costUsd } };

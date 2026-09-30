@@ -3,19 +3,20 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { z } from "zod";
 import { getServerSecret } from "../../env";
-import { AiNotConfiguredError, ProviderError, type RouteParams, type Usage, type VisionDocument } from "../types";
+import { AiNotConfiguredError, ProviderError, type PromptContent, type RouteParams, type Usage, type VisionDocument } from "../types";
 
 export interface StructuredRequest<S extends z.ZodType> {
   model: string;
   system: string;
-  prompt: string;
+  prompt: PromptContent;
   schema: S;
   params: RouteParams;
 }
 
-/** Same as `StructuredRequest`, plus page images/PDFs to OCR (D-54). */
-export interface VisionStructuredRequest<S extends z.ZodType> extends StructuredRequest<S> {
+/** Same as `StructuredRequest`, plus page images/PDFs to OCR (D-54) — the prompt here is always a plain string (ADR-033 item 1 doesn't apply to `ocr_page`). */
+export interface VisionStructuredRequest<S extends z.ZodType> extends Omit<StructuredRequest<S>, "prompt"> {
   documents: VisionDocument[];
+  prompt: string;
 }
 
 export interface StructuredResult<T> {
@@ -50,6 +51,37 @@ function documentBlocks(documents: VisionDocument[]): Anthropic.ContentBlockPara
 }
 
 /**
+ * ADR-033 item 3: the cheap, safe, systemwide win — every Anthropic call's
+ * system prompt gets one `cache_control` breakpoint. Anthropic's cache key
+ * is the exact prefix text, not scoped to any one family or role, so a
+ * static system prompt (e.g. `lesson_generation.md`, `indexing_structure.md`)
+ * is shared across every call to that role for every family. Below the
+ * model's minimum cacheable-prefix size (1024 tokens for Sonnet/Opus-class
+ * models, 4096 for Haiku — see ADR-033) the breakpoint is simply a no-op:
+ * the API neither errors nor charges extra for it, so this applies uniformly
+ * without checking each prompt's length. An empty system string is left as
+ * `undefined` — an empty cacheable block is pointless and some request
+ * shapes reject a zero-length text block.
+ */
+function toAnthropicSystem(system: string): string | Anthropic.TextBlockParam[] | undefined {
+  if (!system) return undefined;
+  return [{ type: "text", text: system, cache_control: { type: "ephemeral" } }];
+}
+
+/**
+ * ADR-033 item 1: converts a `PromptContent` (see `ai/types.ts`) into the
+ * shape the SDK wants. A plain string passes through unchanged (most
+ * roles); a block list (currently only `lesson_generation`'s
+ * generate→review→revise passes, built in `server/lessons/pipeline.ts`)
+ * becomes one Anthropic text content block per entry, carrying its
+ * `cache_control` breakpoint (if any) through untouched.
+ */
+function toAnthropicContent(prompt: PromptContent): string | Anthropic.ContentBlockParam[] {
+  if (typeof prompt === "string") return prompt;
+  return prompt.map((b) => ({ type: "text", text: b.text, ...(b.cache_control ? { cache_control: b.cache_control } : {}) }));
+}
+
+/**
  * One structured (JSON-schema) call to a Claude model, optionally with
  * page images/PDF attached (D-54 OCR). Current models (e.g. Opus 5.5) run
  * adaptive thinking by default and reject sampling parameters, so only
@@ -71,7 +103,7 @@ async function runStructured<S extends z.ZodType>(
         {
           model,
           max_tokens: params.max_tokens ?? 32000,
-          system,
+          system: toAnthropicSystem(system),
           messages: [{ role: "user", content }],
           output_config: {
             format: zodOutputFormat(schema),
@@ -125,7 +157,7 @@ export async function anthropicStructured<S extends z.ZodType>(
   req: StructuredRequest<S>,
   anthropic: Pick<Anthropic, "messages"> = client(),
 ): Promise<StructuredResult<z.infer<S>>> {
-  return runStructured(anthropic, req.model, req.system, req.prompt, req.schema, req.params);
+  return runStructured(anthropic, req.model, req.system, toAnthropicContent(req.prompt), req.schema, req.params);
 }
 
 /**

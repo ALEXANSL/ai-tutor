@@ -4,7 +4,12 @@ ADR-014, ADR-020, ADR-022 step 2/4). Version: lesson_generation.v2 — v2 adds
 the plan from `lesson_planning` as input plus `hookUk`/`visibleOutcomeUk`/
 `techniquesUsed` in the output (D-55), and revision notes from
 `lesson_review` when this is a re-generation (ADR-022 step 4).
-Edit freely, keep {{placeholders}}.
+Edit freely, keep {{placeholders}}. `{{revision_notes}}` is kept LAST in the
+USER section on purpose (ADR-033): `pipeline.ts` splits the filled prompt
+around it so everything before it (plan + fragments + known_problems) is one
+cacheable, byte-identical prefix across a block's generate→review→revise
+passes — moving it back earlier would still work correctly, just without the
+cache benefit on revision passes.
 Structured output (JSON schema, see app/src/server/lessons/schema.ts) is
 enforced by the provider — this text is the system+user framing around it.
 
@@ -49,13 +54,13 @@ block has no idea who will study it or who "teaches" it.
 {{plan_misconceptions}}
 - Тон: {{plan_tone}}
 
-Зауваження рецензента з попередньої спроби (якщо це доопрацювання — виправ саме це; якщо перша спроба, нижче написано, що зауважень немає):
-{{revision_notes}}
-
 Фрагменти підручника (джерело — цитуй `materialId` і сторінку точно так, як тут; підручник позначено `ПІДРУЧНИК`, додаткові книги — `КНИГА «Назва»`):
 {{fragments}}
 
 Відомі номери вправ підручника на цих сторінках (лише ці можна цитувати в `sourceRefs[].problemNumber` — інших не існує):
 {{known_problems}}
+
+Зауваження рецензента з попередньої спроби (якщо це доопрацювання — виправ саме це; якщо перша спроба, нижче написано, що зауважень немає):
+{{revision_notes}}
 
 Поверни один блок уроку зі щонайменше 3 кроками за схемою.

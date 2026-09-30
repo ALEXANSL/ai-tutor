@@ -46,6 +46,17 @@ function block(over: Partial<LessonBlockGenerated> = {}): LessonBlockGenerated {
   };
 }
 
+/**
+ * ADR-033: `lesson_generation`'s prompt is now `PromptContent` — a plain
+ * string for every other role, but a cacheable-prefix + dynamic-tail block
+ * list for `lesson_generation` itself (`pipeline.ts`'s `generationPromptContent`).
+ * Tests that only care "does the filled text contain X" join the blocks
+ * back into one string first, exactly like the model would read them.
+ */
+function promptText(prompt: unknown): string {
+  return typeof prompt === "string" ? prompt : (prompt as { text: string }[]).map((b) => b.text).join("");
+}
+
 function review(over: Partial<ReviewOutput> = {}): ReviewOutput {
   return {
     verdict: "approved",
@@ -113,7 +124,7 @@ describe("runPedagogicalPipeline (ADR-022)", () => {
     expect(res.block.titleUk).toBe("Спроба 2");
     // The revision notes actually reached the second generation call's prompt.
     const secondGenCall = callStructured.mock.calls.filter((c) => c[0] === "lesson_generation")[1]!;
-    expect((secondGenCall[1] as { prompt: string }).prompt).toContain("бракує гачка");
+    expect(promptText((secondGenCall[1] as { prompt: unknown }).prompt)).toContain("бракує гачка");
   });
 
   it("two failed reviews in a row -> needs_review, never shown to the child, after exactly 3 generations", async () => {
@@ -171,6 +182,55 @@ describe("runPedagogicalPipeline (ADR-022)", () => {
     });
     await expect(runPedagogicalPipeline(baseInput)).rejects.toThrow(ReviewerUnavailableError);
     await expect(runPedagogicalPipeline(baseInput)).rejects.toThrow("рецензент недоступний: не налаштовано OPENAI_API_KEY");
+  });
+});
+
+/**
+ * ADR-033 item 1: `lesson_generation`'s prompt is split into a static,
+ * cacheable prefix (plan + fragments + known_problems) and a dynamic tail
+ * (revision notes) so the 2nd/3rd generate→review→revise pass on the SAME
+ * block reads that prefix from the prompt cache instead of paying full
+ * input price for it again.
+ */
+describe("lesson_generation prompt caching (ADR-033 item 1)", () => {
+  function genPrompt(callIndex: number): { type: string; text: string; cache_control?: { type: string } }[] {
+    const call = callStructured.mock.calls.filter((c) => c[0] === "lesson_generation")[callIndex]!;
+    return (call[1] as { prompt: { type: string; text: string; cache_control?: { type: string } }[] }).prompt;
+  }
+
+  it("sends a cache_control breakpoint on the static prefix, none on the dynamic tail", async () => {
+    mockRoleQueue({ lesson_planning: [plan()], lesson_generation: [block()], lesson_review: [review()] });
+    await runPedagogicalPipeline(baseInput);
+    const prompt = genPrompt(0);
+    expect(prompt).toHaveLength(2);
+    expect(prompt[0]!.cache_control).toEqual({ type: "ephemeral" });
+    expect(prompt[1]!.cache_control).toBeUndefined();
+  });
+
+  it("the cacheable prefix is byte-identical across a first pass and its revision, only the tail differs", async () => {
+    mockRoleQueue({
+      lesson_planning: [plan()],
+      lesson_generation: [block({ titleUk: "Спроба 1" }), block({ titleUk: "Спроба 2" })],
+      lesson_review: [review({ verdict: "revise", notes: ["бракує гачка"] }), review({ verdict: "approved" })],
+    });
+    await runPedagogicalPipeline(baseInput);
+    const [firstPass, secondPass] = [genPrompt(0), genPrompt(1)];
+    expect(firstPass[0]!.text).toBe(secondPass[0]!.text); // identical prefix -> a real cache hit on pass 2
+    expect(secondPass[1]!.text).toContain("бракує гачка");
+    expect(firstPass[1]!.text).not.toContain("бракує гачка");
+  });
+
+  it("the static prefix carries the plan/fragments/known_problems, never the revision notes", async () => {
+    mockRoleQueue({
+      lesson_planning: [plan()],
+      lesson_generation: [block({ titleUk: "Спроба 1" }), block({ titleUk: "Спроба 2" })],
+      lesson_review: [review({ verdict: "revise", notes: ["ось конкретне унікальне зауваження"] }), review({ verdict: "approved" })],
+    });
+    await runPedagogicalPipeline(baseInput);
+    const prefix = genPrompt(1)[0]!.text;
+    expect(prefix).toContain("Дріб — це..."); // fragments
+    expect(prefix).toContain(plan().hookUk); // plan fields
+    expect(prefix).not.toContain("ось конкретне унікальне зауваження");
   });
 });
 
@@ -388,7 +448,7 @@ describe("content_qa gate inside runPedagogicalPipeline (ADR-034)", () => {
     expect(res.reviews[0]!.provider).toBe("deterministic");
     // The content_qa failure notes reached the next generation call's prompt.
     const secondGenCall = callStructured.mock.calls.filter((c) => c[0] === "lesson_generation")[1]!;
-    expect((secondGenCall[1] as { prompt: string }).prompt).toMatch(/Крок 1/);
+    expect(promptText((secondGenCall[1] as { prompt: unknown }).prompt)).toMatch(/Крок 1/);
   });
 
   it("a content_qa failure consumes an existing MAX_REVISIONS slot, not a new/separate budget", async () => {

@@ -1,3 +1,4 @@
+import { ContentQaSweepPanel } from "@/components/parent/ContentQaSweepPanel";
 import { GoogleDriveConnectPanel, type DriveConnectQueryStatus } from "@/components/parent/GoogleDriveConnectPanel";
 import { PinForm } from "@/components/parent/PinForm";
 import { UrgentChannelsPanel } from "@/components/parent/UrgentChannelsPanel";
@@ -12,6 +13,11 @@ import { PageTitle, Panel } from "../ui";
 
 type Search = Promise<{ drive?: string; drive_error?: string }>;
 const KNOWN_ERRORS: DriveConnectQueryStatus[] = ["denied", "state", "not_configured", "failed"];
+
+// The content_qa sweep can process the whole library and take a while
+// (§ContentQaSweepPanel) — same generous budget as the books indexing
+// routes and the lesson-generation pages (`(child)/subject/[id]`, etc.).
+export const maxDuration = 300;
 
 /** Settings (S0 part): the parent-mode PIN (US-1.5 KP-5) and its policy. */
 export default async function SettingsPage({ searchParams }: { searchParams: Search }) {
@@ -69,6 +75,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
         ) : (
           <p className="text-sm">{t.drive.onlyOwnAccount}</p>
         )}
+      </Panel>
+      <Panel title={t.maintenance.title}>
+        <ContentQaSweepPanel />
       </Panel>
     </>
   );

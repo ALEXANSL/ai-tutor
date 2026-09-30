@@ -11,7 +11,7 @@ import { URGENT_REPLY_UK } from "@/server/safety/urgentReplyUk";
 import { createServiceClient } from "@/server/supabase/clients";
 import { CANDIDATE_TARGET, getOrCreateFallbackBlock, getOrGenerateLessonBlocks, loadCandidates, loadLibraryItem, nextSessionBlock, type LibraryItemView, type LibraryStepView } from "./generate";
 import type { PipelineStage } from "./pipeline";
-import { warmAheadForSubject } from "./warmup";
+import { prefetchNextBlock, warmAheadForSubject } from "./warmup";
 import {
   breakDue,
   decideBranch,
@@ -291,6 +291,16 @@ async function activateBlock(familyId: string, session: SessionRow, libraryItemI
   const scope = forFamily(familyId);
   const item = await loadLibraryItem(familyId, libraryItemId);
   if (!item || item.steps.length === 0) throw new Error("chosen block has no steps");
+
+  // ADR-037 ("Швидкість-1", Задача 1 Варіант 1): how many blocks of this
+  // topic this session had already used *before* this activation — read
+  // BEFORE inserting this activation's own `session_blocks` row below, so
+  // `usedCountAfterThis = usedCountBefore + 1` is computed in-memory instead
+  // of depending on a read-after-write of the row this same function is
+  // about to insert.
+  const { data: usedBeforeRows } = await scope.select("session_blocks", "library_item_id").eq("session_id", session.id).returns<{ library_item_id: string }[]>();
+  const usedCountBefore = (usedBeforeRows ?? []).length;
+
   const nextOrder = session.current_block_order + 1;
   const { error: blockError } = await scope.client.from("session_blocks").insert({
     family_id: familyId,
@@ -307,7 +317,44 @@ async function activateBlock(familyId: string, session: SessionRow, libraryItemI
     current_step_id: item.steps[0]!.id,
   }).eq("id", session.id);
   if (sessionError) throw new Error(`activating lesson block failed: ${sessionError.message}`);
+
+  // ADR-037: if this activation just consumed the LAST currently-available
+  // pre-generated candidate of the topic's pool, kick a background prefetch
+  // of block N+1 now — fire-and-forget, never awaited here, so it has the
+  // full time the child spends on THIS block (typically 5-10 min) to
+  // finish, instead of `nextSessionBlock` generating it synchronously later
+  // and producing the BUG-031/034 "Готуємо наступний крок…" wait. Same
+  // fire-and-forget pattern `startLessonSession` already uses for
+  // `warmAheadForSubject` — never blocks or fails this activation either way.
+  maybePrefetchNextBlock(familyId, session, usedCountBefore + 1).catch((e: Error) => console.error(`ADR-037 reactive prefetch failed: ${e.message}`));
+
   return item;
+}
+
+/**
+ * ADR-037: fires `prefetchNextBlock` exactly when `usedCountAfterThis`
+ * (the number of blocks of this topic used in this session, INCLUDING the
+ * one `activateBlock` just activated) reaches the size of the topic's
+ * current candidate pool — i.e. this activation was the pool's LAST unused
+ * candidate — and never earlier. A session with plenty of pre-generated
+ * candidates left (the common case) triggers nothing here.
+ */
+async function maybePrefetchNextBlock(familyId: string, session: SessionRow, usedCountAfterThis: number): Promise<void> {
+  const scope = forFamily(familyId);
+  const candidates = await loadCandidates(scope, session.topic_id, CANDIDATE_TARGET);
+  // Nothing to be "the last of" — shouldn't happen right after this session
+  // just activated one, but never worth throwing over.
+  if (candidates.length === 0) return;
+  // Unused candidates still remain in the pool — the common case, nothing to prefetch yet.
+  if (usedCountAfterThis < candidates.length) return;
+
+  const [{ data: subject }, { data: topic }] = await Promise.all([
+    scope.select("subjects", "id, name_uk, config").eq("id", session.subject_id).maybeSingle<{ id: string; name_uk: string; config: Record<string, unknown> }>(),
+    scope.select("topics", "id, title, grade").eq("id", session.topic_id).maybeSingle<TopicRow>(),
+  ]);
+  if (!subject || !topic) return;
+
+  await prefetchNextBlock(familyId, { id: subject.id, nameUk: subject.name_uk, config: subject.config }, { id: topic.id, title: topic.title, grade: topic.grade });
 }
 
 /** US-16.6 КП-1: the child picks one of the offered blocks; the lesson begins. */

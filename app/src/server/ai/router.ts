@@ -15,6 +15,7 @@ import {
   type ModelPrice,
   type ModelRef,
   type ModelRoute,
+  type PromptContent,
   type RouteParams,
   type Usage,
   type VisionDocument,
@@ -30,7 +31,7 @@ import {
 export interface ProviderAdapters {
   structured: Record<
     string,
-    (req: { model: string; system: string; prompt: string; schema: z.ZodType; params: RouteParams }) => Promise<{
+    (req: { model: string; system: string; prompt: PromptContent; schema: z.ZodType; params: RouteParams }) => Promise<{
       data: unknown;
       usage: Usage;
     }>
@@ -132,9 +133,14 @@ async function routed<T>(
       await deps.recordCall(ctx.familyId, {
         ...base,
         status: "ok",
-        input_tokens: usage.inputTokens + (usage.cacheWriteTokens ?? 0),
+        // ADR-033 (tracking gap fix): cache-write tokens are billed at their
+        // own (higher) rate and now stored in their own column — no longer
+        // folded into `input_tokens` before the write, so a later per-role
+        // token-usage read can tell a cache write apart from ordinary input.
+        input_tokens: usage.inputTokens,
         output_tokens: usage.outputTokens,
         cached_input_tokens: usage.cachedInputTokens ?? 0,
+        cache_write_tokens: usage.cacheWriteTokens ?? 0,
         cost_usd: costUsd,
         latency_ms: deps.now() - started,
       });
@@ -147,6 +153,7 @@ async function routed<T>(
           input_tokens: 0,
           output_tokens: 0,
           cached_input_tokens: 0,
+          cache_write_tokens: 0,
           cost_usd: 0,
           latency_ms: deps.now() - started,
           error: (e as Error).message.slice(0, 300),
@@ -171,7 +178,7 @@ async function routed<T>(
 /** Structured JSON answer validated by a Zod schema. */
 export async function callStructured<S extends z.ZodType>(
   role: string,
-  req: { system: string; prompt: string; schema: S },
+  req: { system: string; prompt: PromptContent; schema: S },
   ctx: CallContext,
   deps: RouterDeps = defaultRouterDeps,
 ): Promise<RoutedResult<z.infer<S>>> {

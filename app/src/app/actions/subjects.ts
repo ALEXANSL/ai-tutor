@@ -321,6 +321,18 @@ export async function confirmBulkWarmupAction(subjectId: string, topicIds: strin
     }
   }
 
+  // BUG (2026-09-30, PO): the only cron tick (`vercel.json`, `/api/jobs/tick`)
+  // runs once a day at 03:47 UTC — without an explicit kick, everything
+  // queued here sits untouched until then, which is exactly why this screen
+  // reads as "overnight" even though nothing about warm_topic jobs actually
+  // requires waiting. `run_after` is already `now()` on insert (enqueueWarmJob);
+  // one kick after the loop (not per-topic — same in-process run picks up
+  // every job just inserted) starts processing within this request's
+  // fire-and-forget `after()` window (~240s budget) instead of waiting up to
+  // 24h. A batch larger than the budget covers still finishes normally at
+  // the next tick — this only removes the *unconditional* wait, never a cap.
+  if (queuedCount > 0) kickJobs();
+
   revalidatePath(`/parent/subjects/${subjectId}`, "page");
   return { status: "ok", queuedCount };
 }

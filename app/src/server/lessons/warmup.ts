@@ -53,8 +53,20 @@ export type EnsureActiveLibraryBlockResult =
  * vs. the parent's own explicit, already-cost-confirmed bulk launch — purely
  * for reporting/де-дуплікація status (КП-5/КП-6); `registerLibraryWarmJobs`
  * behaves identically regardless of `source`.
+ *
+ * US-19.5 КП-2 (S38, D-114): `"child_initiated"` — the child's own
+ * "Підготувати" tap on a "Потрібна підготовка" topic card. Deliberately
+ * treated the SAME as `"auto"` for every budget purpose (ВП-66, confirmed
+ * closed — docs/05-backlog.md "US-19.5 КП-4 закрито"): it counts toward the
+ * existing daily $5 family warm-up soft cap like any other warm-up call, no
+ * separate uncapped path — `ensureActiveLibraryBlock` is called from the
+ * child action WITHOUT `bypassDailyBudget`, same as every `"auto"` trigger.
+ * Kept as its own tag (not folded into `"auto"`) purely for reporting — it
+ * lets a future dashboard tell "the child asked for this" apart from
+ * "the parent's `is_current` signal warmed it ahead of time" without any
+ * change to how it is throttled or spent.
  */
-export type WarmJobSource = "auto" | "manual_bulk";
+export type WarmJobSource = "auto" | "manual_bulk" | "child_initiated";
 
 interface WarmJobPayload {
   topicId: string;
@@ -98,28 +110,30 @@ export async function warmSpendTodayUsd(familyId: string): Promise<number> {
  * lets the normal `pg_cron` tick pick it up within a minute (the `is_current`
  * signal — "може почекати кілька секунд, не блокуюче").
  */
+export interface EnsureActiveLibraryBlockOpts {
+  immediate: boolean;
+  /** US-22.4 (D-108): defaults to `"auto"` — pass `"manual_bulk"` only from
+   * the confirmed bulk-launch action. */
+  source?: WarmJobSource;
+  /**
+   * US-22.4 §КП-3 (D-108, 12.28): the manual bulk launch's own cost-confirmation
+   * screen (КП-2) IS the spending safeguard for THIS path — a second, silent
+   * daily-cap check right after the parent already confirmed the exact
+   * amount adds no safety and only breaks the "все за ніч" promise into a
+   * silent partial run. `true` skips §Частина 1.6's daily soft cap
+   * (`LIBRARY_WARM_DAILY_BUDGET_USD`) for this one call; the monthly
+   * 80/100/110% budget states (ADR-012) still apply unchanged to every
+   * individual `callModel` call regardless of this flag — this only ever
+   * touches the DAILY soft cap, never the hard monthly thresholds.
+   */
+  bypassDailyBudget?: boolean;
+}
+
 export async function ensureActiveLibraryBlock(
   familyId: string,
   subject: WarmSubjectMeta,
   topic: WarmTopicMeta,
-  opts: {
-    immediate: boolean;
-    /** US-22.4 (D-108): defaults to `"auto"` — pass `"manual_bulk"` only from
-     * the confirmed bulk-launch action. */
-    source?: WarmJobSource;
-    /**
-     * US-22.4 §КП-3 (D-108, 12.28): the manual bulk launch's own cost-confirmation
-     * screen (КП-2) IS the spending safeguard for THIS path — a second, silent
-     * daily-cap check right after the parent already confirmed the exact
-     * amount adds no safety and only breaks the "все за ніч" promise into a
-     * silent partial run. `true` skips §Частина 1.6's daily soft cap
-     * (`LIBRARY_WARM_DAILY_BUDGET_USD`) for this one call; the monthly
-     * 80/100/110% budget states (ADR-012) still apply unchanged to every
-     * individual `callModel` call regardless of this flag — this only ever
-     * touches the DAILY soft cap, never the hard monthly thresholds.
-     */
-    bypassDailyBudget?: boolean;
-  },
+  opts: EnsureActiveLibraryBlockOpts,
 ): Promise<EnsureActiveLibraryBlockResult> {
   const scope = forFamily(familyId);
   const { count: activeCount } = await scope
@@ -129,6 +143,39 @@ export async function ensureActiveLibraryBlock(
     .eq("status", "active");
   if ((activeCount ?? 0) > 0) return { status: "active" };
 
+  return enqueueWarmJob(familyId, subject, topic, opts);
+}
+
+/**
+ * ADR-037 ("Швидкість-1", Задача 1 Варіант 1): reactive prefetch of a
+ * topic's NEXT block — triggered by `orchestrator.ts`'s `activateBlock` the
+ * moment the child activates the LAST remaining pre-generated candidate of
+ * the topic's pool (not block 1, not every block). Unlike
+ * `ensureActiveLibraryBlock`, this does **not** short-circuit on "topic
+ * already has an active block" — that's expected to be true here (the pool
+ * just isn't empty *yet*, it is about to run out within this same session)
+ * — so it goes straight to `enqueueWarmJob`, reusing exactly the same
+ * dedupe key (`warmDedupeKey`, requirement: no duplicate/wasted generation),
+ * daily soft-cap check (`LIBRARY_WARM_DAILY_BUDGET_USD`) and — once the job
+ * actually runs via `registerLibraryWarmJobs` below — the same concurrency
+ * cap (`LIBRARY_WARM_MAX_CONCURRENT`) as every other warm-up trigger. Always
+ * called fire-and-forget by its caller (never awaited in the request/
+ * response cycle serving the child's current block), the same pattern
+ * `startLessonSession` already uses for `warmAheadForSubject`.
+ *
+ * Deliberately goes through the `library.warm_topic` **job queue** rather
+ * than calling `generateOneBlock` directly from the request handler: a
+ * direct call would bypass the concurrency cap entirely (it is enforced
+ * inside the job handler by counting other *running* jobs) — going through
+ * the same queue as every other warm-up trigger is what keeps this new
+ * trigger point from bypassing the existing safety mechanisms.
+ */
+export async function prefetchNextBlock(familyId: string, subject: WarmSubjectMeta, topic: WarmTopicMeta): Promise<EnsureActiveLibraryBlockResult> {
+  return enqueueWarmJob(familyId, subject, topic, { immediate: false, source: "auto" });
+}
+
+/** Shared by `ensureActiveLibraryBlock` and `prefetchNextBlock` — see each for when it does/doesn't short-circuit first. */
+async function enqueueWarmJob(familyId: string, subject: WarmSubjectMeta, topic: WarmTopicMeta, opts: EnsureActiveLibraryBlockOpts): Promise<EnsureActiveLibraryBlockResult> {
   const db = createServiceClient();
   const dedupeKey = warmDedupeKey(topic.id);
 
