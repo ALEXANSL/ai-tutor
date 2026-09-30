@@ -141,8 +141,13 @@ async function runStructured<S extends z.ZodType>(
       // schema in the request body) only ever lived in the response body
       // the SDK parses onto `e.error`. Logged in full here, every time, so a
       // future 400 is never a dead end even if the DB column stays short.
-      console.error(`anthropic request error ${e.status}: ${safeJson(e.error ?? e.message)}`);
-      throw new ProviderError(`anthropic request error ${e.status}`, "anthropic", e.status ?? null, false);
+      const detail = safeJson(e.error ?? e.message);
+      console.error(`anthropic request error ${e.status}: ${detail}`);
+      // 2026-09-30: a caller (e.g. the literature-extraction admin panel)
+      // that surfaces this message straight to a parent had nothing but the
+      // bare status code to go on — include a short slice of the real
+      // detail too (still short enough for the 500-char DB columns above).
+      throw new ProviderError(`anthropic request error ${e.status}: ${detail.slice(0, 300)}`, "anthropic", e.status ?? null, false);
     }
     if (e instanceof Anthropic.APIError) {
       console.error(`anthropic error ${e.status ?? "network"}: ${safeJson((e as { error?: unknown }).error ?? e.message)}`);
