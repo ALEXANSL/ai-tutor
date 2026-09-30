@@ -19,7 +19,7 @@ import type { GeneratedStep, LessonBlockGenerated } from "./schema";
 
 export type ContentFieldKind = "prose" | "label";
 
-export type ContentQaFailureCode = "completeness" | "encoding" | "fidelity";
+export type ContentQaFailureCode = "completeness" | "encoding" | "fidelity" | "figure_reference";
 
 export interface ContentQaFailure {
   /** 0-based index of the step this field belongs to (fidelity checks on a
@@ -87,6 +87,16 @@ export function looksComplete(text: string, kind: ContentFieldKind = "prose"): b
 
   const rawLast = lastToken(trimmed);
   if (!rawLast) return true;
+
+  // BUG (P0, 2026-09-30): a bare list-item number ("4.", "12)") as the whole
+  // last line/segment is ALWAYS a truncation, regardless of `kind` — unlike a
+  // genuine standalone numeric answer/label ("42", "1/2", checked by rule c
+  // below only for `prose`), a list marker with nothing after it by
+  // definition had content following it in the source that got cut off. Only
+  // the exact "1-2 digits + . or )" shape counts, so a real short numeric
+  // label like "42" or a fraction like "1/2" is never affected.
+  const lastSegment = trimmed.includes("\n") ? trimmed.slice(trimmed.lastIndexOf("\n") + 1).trim() : trimmed;
+  if (/^\d{1,2}[.)]$/.test(lastSegment)) return false;
 
   // c) (prose only — a short numeric/fraction label like "1/2" or "42" is a
   // perfectly normal, complete label, not a truncation) a digits-only
@@ -204,6 +214,23 @@ export function isVerbatimSubstring(stepText: string, sourceText: string): boole
   return normalizeForCompare(sourceText).includes(needle);
 }
 
+// ---------------------------------------------------------------------------
+// 4. Figure/illustration placeholder (P0, 2026-09-30): the OCR/parsing
+//    pipeline marks a reference to an illustration the raw book text can't
+//    carry with an explicit `◄...►` marker (e.g. "◄Мал. 1.2►"). Our lesson
+//    viewer never renders the image itself, so a verbatim excerpt that keeps
+//    such a marker shows the child a dangling reference to a picture that
+//    isn't there. Scoped to the exact `◄...►` technical marker only — a
+//    normal in-prose mention of the word "малюнок"/"рисунок" (with no such
+//    marker) is legitimate text and must not be flagged.
+// ---------------------------------------------------------------------------
+
+const FIGURE_PLACEHOLDER_RE = /◄[^◄►\n]{1,80}►/u;
+
+export function containsFigurePlaceholder(text: string): boolean {
+  return FIGURE_PLACEHOLDER_RE.test(text);
+}
+
 export function checkVerbatimFidelity(stepText: string, sourceText: string, stepIndex = 0, field = "textUk"): ContentQaFailure | null {
   if (isVerbatimSubstring(stepText, sourceText)) return null;
   return {
@@ -283,6 +310,7 @@ export function contentQaFailureNoteUk(f: ContentQaFailure): string {
   const prefix = `Крок ${f.stepIndex + 1} (${f.field})`;
   if (f.code === "encoding") return `${prefix}: ${f.reason}. Перефразуй без цитування зіпсованих символів.`;
   if (f.code === "completeness") return `${prefix}: ${f.reason}. Перегенеруй з повним, завершеним текстом.`;
+  if (f.code === "figure_reference") return `${prefix}: ${f.reason}. Прибери посилання на малюнок або обери інший уривок.`;
   return `${prefix}: ${f.reason}.`;
 }
 
@@ -301,5 +329,13 @@ export function checkVerbatimExcerptContentQa(excerpt: string, sourceText: strin
   if (!enc.ok) failures.push({ stepIndex: 0, field: "excerpt", code: "encoding", reason: enc.reason! });
   const fidelity = checkVerbatimFidelity(excerpt, sourceText, 0, "excerpt");
   if (fidelity) failures.push(fidelity);
+  if (containsFigurePlaceholder(excerpt)) {
+    failures.push({
+      stepIndex: 0,
+      field: "excerpt",
+      code: "figure_reference",
+      reason: "уривок містить посилання на малюнок/рисунок (◄...►), якого переглядач уроку не показує",
+    });
+  }
   return { ok: failures.length === 0, failures };
 }

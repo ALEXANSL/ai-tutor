@@ -105,12 +105,31 @@ function splitLong(paragraph: string, maxChars: number): string[] {
  * word boundary (marked with an ellipsis) when no sentence end is close
  * enough to be worth keeping.
  */
+/**
+ * BUG (P0, 2026-09-30, real child-facing screenshot): a textbook list item
+ * ("3. Укажи дії...\n4. Порівняй...") formats its item numbers exactly like
+ * a sentence — a bare digit run followed by a period. When that "4." lands
+ * on the boundary of the truncation window, the old sentence-end regex
+ * happily treated it as a legitimate sentence end and cut the excerpt right
+ * there, leaving a naked list-item number ("...самостійно\n4.") as the last
+ * visible thing a child reads. A genuine sentence end is never JUST a 1-2
+ * digit number with nothing else since the start of its line — that shape is
+ * only ever a list-item marker, so it must not count as a place to stop.
+ */
+function isBareListItemNumber(slice: string, matchIndex: number): boolean {
+  const lineStart = slice.lastIndexOf("\n", matchIndex - 1) + 1;
+  const before = slice.slice(lineStart, matchIndex);
+  return /^\s{0,3}\d{1,2}$/.test(before);
+}
+
 export function truncateAtSentenceBoundary(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
   const slice = text.slice(0, maxChars);
   const minKeep = maxChars * 0.4;
 
-  const sentenceEnds = [...slice.matchAll(/[.!?…][»”")]*(?=\s|$)/gu)];
+  const sentenceEnds = [...slice.matchAll(/[.!?…][»”")]*(?=\s|$)/gu)].filter(
+    (m) => m.index === undefined || !isBareListItemNumber(slice, m.index),
+  );
   const lastSentence = sentenceEnds.at(-1);
   if (lastSentence && lastSentence.index !== undefined) {
     const cut = lastSentence.index + lastSentence[0].length;

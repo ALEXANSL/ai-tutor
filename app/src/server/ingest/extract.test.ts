@@ -227,4 +227,33 @@ describe("truncateAtSentenceBoundary (BUG fix: no more mid-word cuts)", () => {
     expect(out.length).toBeLessThanOrEqual(61); // 50 "а" + space + 9 "б" would be cut mid-word, so it backs off to the space
     expect(out).toBe(`${"а".repeat(50)}…`);
   });
+
+  it("BUG (P0, 2026-09-30, real child-facing screenshot): does not stop at a bare list-item number ('4.') and backs off to the previous real sentence end instead", () => {
+    // Reconstructed from the reported case: a textbook numbered list
+    // ("3. Укажи дії...\n4. ...") where the truncation window happened to
+    // end right after the "4." marker, before any of item 4's own text.
+    const before =
+      "Спочатку прочитай правило ще раз, щоб краще його зрозуміти. " +
+      "Тепер попрацюємо самостійно.\n" +
+      "3. Укажи дії, які потрібно виконати для розв'язання задачі.\n" +
+      "4.";
+    const rest = " Порівняй свою відповідь із зразком у підручнику та виправ помилки.";
+    const text = before + rest;
+    const out = truncateAtSentenceBoundary(text, before.length);
+    expect(out.endsWith("4.")).toBe(false);
+    expect(out.endsWith("Укажи дії, які потрібно виконати для розв'язання задачі.")).toBe(true);
+  });
+
+  it("still treats a genuine sentence end right after a number as a valid cut point (e.g. '...2024 році.')", () => {
+    const first = "У 2024 році відбулася важлива подія в історії науки.";
+    const text = `${first} Наступне речення продовжує розповідь далі, щоб бути довшим за половину вікна обрізки.`;
+    const out = truncateAtSentenceBoundary(text, first.length + 5);
+    expect(out).toBe(first);
+  });
+
+  it("still cuts at a normal sentence end that happens to immediately follow a numbered list item elsewhere in the window", () => {
+    const text = "1. Перший пункт списку тут повністю. Далі йде звичайне речення, яке буде обрізане десь посередині цього довгого продовження.";
+    const out = truncateAtSentenceBoundary(text, 40);
+    expect(out).toBe("1. Перший пункт списку тут повністю.");
+  });
 });

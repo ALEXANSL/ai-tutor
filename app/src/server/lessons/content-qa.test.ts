@@ -4,6 +4,7 @@ import {
   checkStepContentQa,
   checkVerbatimExcerptContentQa,
   checkVerbatimFidelity,
+  containsFigurePlaceholder,
   contentQaFailureNoteUk,
   isVerbatimSubstring,
   looksComplete,
@@ -84,6 +85,21 @@ describe("looksComplete (completeness check, generalizes truncateAtSentenceBound
 
   it("accepts text ending on an ellipsis (truncateAtSentenceBoundary's own word-boundary fallback marker)", () => {
     expect(looksComplete("Довгий опис якогось явища…", "prose")).toBe(true);
+  });
+
+  it("BUG (P0, 2026-09-30): rejects a bare list-item number ('4.') as the last line — the exact repro from the production screenshot", () => {
+    expect(looksComplete("Тепер попрацюємо самостійно\n4.", "prose")).toBe(false);
+  });
+
+  it("BUG (P0, 2026-09-30): the bare list-item number check applies regardless of `kind`, unlike rule (c)", () => {
+    expect(looksComplete("Тепер попрацюємо самостійно\n4.", "label")).toBe(false);
+    expect(looksComplete("12)", "label")).toBe(false);
+  });
+
+  it("BUG (P0, 2026-09-30): does NOT flag a genuine standalone numeric label/answer (no list-item terminator)", () => {
+    expect(looksComplete("42", "label")).toBe(true);
+    expect(looksComplete("1/2", "label")).toBe(true);
+    expect(looksComplete("Правильна відповідь: 42", "label")).toBe(true);
   });
 });
 
@@ -173,6 +189,32 @@ describe("verbatim-quote-vs-source fidelity", () => {
     const bad = checkVerbatimExcerptContentQa("Це джерело, з якого братиметься уривок для", source);
     expect(bad.ok).toBe(false);
     expect(bad.failures.map((f) => f.code)).toContain("completeness");
+  });
+});
+
+describe("containsFigurePlaceholder / figure-reference check (P0, 2026-09-30: '◄Мал. 1.2►' with no image shown)", () => {
+  it("detects the exact reported OCR marker for a figure reference", () => {
+    expect(containsFigurePlaceholder("Розглянь схему. ◄Мал. 1.2► Тепер поясни, що на ній зображено.")).toBe(true);
+  });
+
+  it("does not flag a normal in-prose mention of 'малюнок'/'рисунок' with no technical marker", () => {
+    expect(containsFigurePlaceholder("На цьому малюнку зображено будову клітини рослини.")).toBe(false);
+  });
+
+  it("does not flag plain text with no ◄...► marker at all", () => {
+    expect(containsFigurePlaceholder("Це звичайний текст підручника без жодних позначок.")).toBe(false);
+  });
+
+  it("checkVerbatimExcerptContentQa rejects an excerpt containing the figure marker with code 'figure_reference'", () => {
+    const source = "Розглянь схему. ◄Мал. 1.2► Тепер поясни, що на ній зображено.";
+    const res = checkVerbatimExcerptContentQa(source, source);
+    expect(res.ok).toBe(false);
+    expect(res.failures.map((f) => f.code)).toContain("figure_reference");
+  });
+
+  it("checkVerbatimExcerptContentQa passes a clean excerpt with no figure marker", () => {
+    const source = "Це джерело без жодних посилань на малюнки чи рисунки.";
+    expect(checkVerbatimExcerptContentQa(source, source).ok).toBe(true);
   });
 });
 

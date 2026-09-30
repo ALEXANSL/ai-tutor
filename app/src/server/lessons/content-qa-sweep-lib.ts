@@ -138,6 +138,7 @@ export function isHighConfidenceFailure(f: ContentQaFailure): boolean {
   if (f.code === "completeness") return true; // explicit truncation match (dangling word/mid-word cut)
   if (f.code === "fidelity") return true; // explicit, exact substring mismatch against the claimed source
   if (f.code === "encoding") return f.reason.includes("BUG-046"); // narrow ³/¿-next-to-Cyrillic signature only
+  if (f.code === "figure_reference") return true; // explicit ◄...► technical marker match, no ambiguity
   return false;
 }
 
