@@ -191,3 +191,111 @@ body {
     transition: none !important;
   }
 }
+
+/* S33 (PO decision 2026-09-30) — minimal literature-extraction lesson viewer. */
+.lit-lesson {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+  color: var(--text);
+  background: var(--bg);
+}
+.lit-lesson h1 {
+  font-family: "Nunito", sans-serif;
+  margin: 4px 0 12px;
+}
+.lit-lesson section {
+  margin-top: 28px;
+}
+.lit-eyebrow {
+  color: var(--text-muted);
+  font-weight: 600;
+  margin: 0;
+}
+.lit-pages,
+.lit-page-ref {
+  color: var(--text-muted);
+}
+.lit-note {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.lit-warning {
+  background: var(--warn);
+  color: #2b2a28;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+.lit-lesson blockquote {
+  border-left: 3px solid var(--accent-voice);
+  padding-left: 12px;
+  color: var(--text);
+  font-style: italic;
+}
+.lit-test-list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.lit-test-q {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+.lit-test-q-text {
+  font-weight: 600;
+  margin-top: 0;
+}
+.lit-test-options {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lit-test-options label.selected {
+  color: var(--primary);
+  font-weight: 600;
+}
+.lit-test-open {
+  width: 100%;
+  min-height: 60px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  padding: 8px;
+  font: inherit;
+}
+.lit-btn {
+  display: inline-block;
+  margin-top: 8px;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+.lit-btn:active {
+  background: var(--primary-press);
+}
+.lit-test-explain {
+  margin-top: 8px;
+  color: var(--text-muted);
+}
+.lit-test-score {
+  font-weight: 600;
+  margin-top: 12px;
+}
+.lit-full-text {
+  margin-top: 12px;
+  padding: 16px;
+  background: var(--surface-alt);
+  border-radius: 12px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
