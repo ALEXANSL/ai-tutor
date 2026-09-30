@@ -14,7 +14,7 @@
 | Агент | Роль | Результат |
 |---|---|---|
 | `product-manager` | Вимоги, user stories, обсяг MVP | `docs/01-requirements.md`, `docs/05-backlog.md` |
-| `architect` | Архітектура, стек, ресурси, вартість | `docs/02-architecture.md`, `docs/03-resources-and-costs.md`, `docs/adr/` |
+| `architect` | Архітектура, стек, ресурси, вартість. **Регулярний обов'язок (D-123):** після кожного продакшн-релізу зрізу й не рідше раз на місяць звіряти фактичні витрати з кошторисом `docs/03-resources-and-costs.md` (FinOps) | `docs/02-architecture.md`, `docs/03-resources-and-costs.md`, `docs/adr/` |
 | `designer` | Дизайн-система, макети екранів | `docs/04-design-system.md`, `docs/design/*.html` |
 | `developer` | Реалізація, міграції, деплой | код у `app/` (або структура від архітектора) |
 | `qa-tester` | Тест-план, автотести, баг-репорти | `docs/06-test-plan.md`, `tests/`, `docs/bugs/` |
