@@ -107,6 +107,9 @@ export async function runLiteratureExtractionAction(materialId: string): Promise
       subjectName: subject.name_uk,
       grade: material.grade,
     });
+    if (result.groups === 0) {
+      return { status: "error", message: "Ця книга ще не проіндексована (немає розпізнаних розділів/тексту) — спершу дочекайтесь індексації в «Моїх книгах»." };
+    }
 
     const active = result.topics.filter((t) => t.status === "active").length;
     const totalCostUsd = result.calls.reduce((sum, c) => sum + c.costUsd, 0);
@@ -125,7 +128,12 @@ export async function runLiteratureExtractionAction(materialId: string): Promise
       },
     };
   } catch (e) {
-    console.error(`runLiteratureExtractionAction failed: ${(e as Error).message}`);
-    return { status: "error", message: uk.common.error };
+    const detail = (e as Error).message;
+    console.error(`runLiteratureExtractionAction failed: ${detail}`);
+    // Admin-only panel (requireParentAccess) — showing the real technical
+    // reason (same as ContentQaSweepPanel/other admin panels today) beats
+    // a bare "щось пішло не так" the PO already flagged as hiding root
+    // causes he needs to see to know what to do next.
+    return { status: "error", message: `${uk.common.error} (${detail})` };
   }
 }

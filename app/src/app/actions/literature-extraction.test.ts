@@ -162,6 +162,20 @@ describe("runLiteratureExtractionAction", () => {
     });
   });
 
+  it("returns a clear error when the book has no indexed sections yet (groups === 0)", async () => {
+    materialSingle.mockResolvedValue({
+      data: { id: MATERIAL_ID, owner_family_id: "fam-book", subject_id: SUBJECT_ID, title: "Кобзар", name: "Кобзар", grade: 6 },
+      error: null,
+    });
+    subjectMaybeSingle.mockResolvedValue({ data: { id: SUBJECT_ID, name_uk: "Зарубіжна література" } });
+    runLiteratureExtraction.mockResolvedValue({ groups: 0, topics: [], calls: [], driveWriteFailures: [] });
+
+    const result = await runLiteratureExtractionAction(MATERIAL_ID);
+    expect(result.status).toBe("error");
+    if (result.status !== "error") throw new Error("unreachable");
+    expect(result.message).toMatch(/не проіндексована/);
+  });
+
   it("falls back to material.name when material.title is null", async () => {
     materialSingle.mockResolvedValue({
       data: { id: MATERIAL_ID, owner_family_id: "fam-book", subject_id: SUBJECT_ID, title: null, name: "Зарубіжна література 6", grade: 6 },
@@ -176,7 +190,7 @@ describe("runLiteratureExtractionAction", () => {
     expect(result.summary.materialTitle).toBe("Зарубіжна література 6");
   });
 
-  it("catches a thrown error from the extraction pipeline and returns a generic error", async () => {
+  it("catches a thrown error from the extraction pipeline and includes its real message (not just a bare generic string)", async () => {
     materialSingle.mockResolvedValue({
       data: { id: MATERIAL_ID, owner_family_id: "fam-book", subject_id: SUBJECT_ID, title: "Кобзар", name: "Кобзар", grade: 6 },
       error: null,
@@ -186,5 +200,7 @@ describe("runLiteratureExtractionAction", () => {
 
     const result = await runLiteratureExtractionAction(MATERIAL_ID);
     expect(result.status).toBe("error");
+    if (result.status !== "error") throw new Error("unreachable");
+    expect(result.message).toContain("AI provider down");
   });
 });
