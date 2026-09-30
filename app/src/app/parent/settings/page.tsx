@@ -1,3 +1,4 @@
+import { listLiteratureCandidateMaterials } from "@/app/actions/literature-extraction";
 import { ContentQaSweepPanel } from "@/components/parent/ContentQaSweepPanel";
 import { LiteratureExtractionPanel } from "@/components/parent/LiteratureExtractionPanel";
 import { GoogleDriveConnectPanel, type DriveConnectQueryStatus } from "@/components/parent/GoogleDriveConnectPanel";
@@ -24,11 +25,12 @@ export const maxDuration = 300;
 export default async function SettingsPage({ searchParams }: { searchParams: Search }) {
   const { familyId, via } = await requireParentAccess();
   const scope = forFamily(familyId);
-  const [settings, timeZone, drive, query] = await Promise.all([
+  const [settings, timeZone, drive, query, literatureMaterials] = await Promise.all([
     loadParentSettings(scope),
     getFamilyTimezone(scope),
     getDriveConnectionStatus(familyId),
     searchParams,
+    listLiteratureCandidateMaterials(familyId),
   ]);
   const t = uk.parent.settings;
   const queryStatus: DriveConnectQueryStatus =
@@ -81,7 +83,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
         <ContentQaSweepPanel />
       </Panel>
       <Panel title={t.literatureExtraction.title}>
-        <LiteratureExtractionPanel />
+        <LiteratureExtractionPanel materials={literatureMaterials} />
       </Panel>
     </>
   );

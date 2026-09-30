@@ -14,8 +14,8 @@ import { uk } from "@/i18n/uk";
  * `runLiteratureExtraction` (`literatureExtraction.ts`), previously only
  * reachable via `scripts/run-literature-extraction.ts`. Same call, same
  * inputs, no new logic here — just the parent-access gate + the same
- * material/subject lookups the CLI script does, reported back as a
- * summary instead of printed to a console the PO never opens.
+ * material lookup the CLI script does, reported back as a summary instead
+ * of printed to a console the PO never opens.
  *
  * Mirrors the CLI script's own family resolution: the acting family is the
  * BOOK'S owner family (`materials.owner_family_id`), not necessarily the
@@ -23,9 +23,33 @@ import { uk } from "@/i18n/uk";
  * `requireParentAccess()` only gates "is this caller a parent at all", same
  * access level as the rest of `/parent/settings` (see
  * `ContentQaSweepPanel`'s doc for the precedent).
+ *
+ * 2026-09-30 (PO: "хто ж ці id буде пам'ятати"): the caller no longer
+ * supplies `subjectId` by hand — every `materials` row already has its own
+ * `subject_id`, so it's read straight off the chosen book instead of typed
+ * separately. `listLiteratureCandidateMaterials` gives the settings page a
+ * name-based picker instead of raw UUIDs.
  */
 
 const UUID = z.string().uuid();
+
+export interface LiteratureCandidateMaterial {
+  id: string;
+  title: string;
+  subjectName: string | null;
+}
+
+/** Books with a subject attached, for the settings-page picker — no raw ids typed by hand. */
+export async function listLiteratureCandidateMaterials(familyId: string): Promise<LiteratureCandidateMaterial[]> {
+  const client = createServiceClient();
+  const { data } = await client
+    .from("materials")
+    .select("id, title, name, subjects(name_uk)")
+    .eq("owner_family_id", familyId)
+    .order("title", { ascending: true })
+    .returns<{ id: string; title: string | null; name: string; subjects: { name_uk: string } | null }[]>();
+  return (data ?? []).map((m) => ({ id: m.id, title: m.title ?? m.name, subjectName: m.subjects?.name_uk ?? null }));
+}
 
 export interface LiteratureExtractionTopicSummary {
   topicNo: number;
@@ -46,28 +70,30 @@ export interface LiteratureExtractionSummary {
 
 export type LiteratureExtractionState = { status: "ok"; summary: LiteratureExtractionSummary } | { status: "error"; message: string };
 
-export async function runLiteratureExtractionAction(materialId: string, subjectId: string): Promise<LiteratureExtractionState> {
+export async function runLiteratureExtractionAction(materialId: string): Promise<LiteratureExtractionState> {
   await requireParentAccess();
 
   const materialParsed = UUID.safeParse(materialId);
-  const subjectParsed = UUID.safeParse(subjectId);
-  if (!materialParsed.success || !subjectParsed.success) {
-    return { status: "error", message: "Невірний ідентифікатор підручника або предмета." };
+  if (!materialParsed.success) {
+    return { status: "error", message: "Невірний ідентифікатор підручника." };
   }
 
   try {
     const client = createServiceClient();
     const { data: material, error: materialError } = await client
       .from("materials")
-      .select("id, owner_family_id, title, name, grade")
+      .select("id, owner_family_id, subject_id, title, name, grade")
       .eq("id", materialParsed.data)
-      .single<{ id: string; owner_family_id: string; title: string | null; name: string; grade: number | null }>();
+      .single<{ id: string; owner_family_id: string; subject_id: string | null; title: string | null; name: string; grade: number | null }>();
     if (materialError || !material) {
       return { status: "error", message: "Підручник не знайдено." };
     }
+    if (!material.subject_id) {
+      return { status: "error", message: "Ця книга не прив'язана до предмета — спершу вкажіть предмет на сторінці книги." };
+    }
 
     const scope = forFamily(material.owner_family_id, client);
-    const { data: subject } = await scope.select("subjects", "id, name_uk").eq("id", subjectParsed.data).maybeSingle<{ id: string; name_uk: string }>();
+    const { data: subject } = await scope.select("subjects", "id, name_uk").eq("id", material.subject_id).maybeSingle<{ id: string; name_uk: string }>();
     if (!subject) {
       return { status: "error", message: "Предмет не знайдено для цієї родини." };
     }

@@ -6,6 +6,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * input validation, the material/subject lookup that mirrors the CLI
  * script's own family resolution, the summary shape built from the (mocked)
  * extraction result, and the error path. Never calls the real AI.
+ *
+ * 2026-09-30 (PO: "хто ж ці id буде пам'ятати"): the action takes only
+ * `materialId` now — `subjectId` is read off `materials.subject_id`.
  */
 
 vi.mock("@/server/auth/guards", () => ({
@@ -63,41 +66,58 @@ beforeEach(() => {
 });
 
 describe("runLiteratureExtractionAction", () => {
-  it("rejects non-uuid ids without touching the DB or the extraction pipeline", async () => {
-    const result = await runLiteratureExtractionAction("not-a-uuid", SUBJECT_ID);
+  it("rejects a non-uuid material id without touching the DB or the extraction pipeline", async () => {
+    const result = await runLiteratureExtractionAction("not-a-uuid");
     expect(result.status).toBe("error");
     expect(runLiteratureExtraction).not.toHaveBeenCalled();
   });
 
   it("gates on requireParentAccess before anything else", async () => {
-    materialSingle.mockResolvedValue({ data: { id: MATERIAL_ID, owner_family_id: "fam-book", title: "Кобзар", name: "Кобзар", grade: 6 }, error: null });
+    materialSingle.mockResolvedValue({
+      data: { id: MATERIAL_ID, owner_family_id: "fam-book", subject_id: SUBJECT_ID, title: "Кобзар", name: "Кобзар", grade: 6 },
+      error: null,
+    });
     subjectMaybeSingle.mockResolvedValue({ data: { id: SUBJECT_ID, name_uk: "Зарубіжна література" } });
     runLiteratureExtraction.mockResolvedValue({ groups: 1, topics: [], calls: [], driveWriteFailures: [] });
 
-    await runLiteratureExtractionAction(MATERIAL_ID, SUBJECT_ID);
+    await runLiteratureExtractionAction(MATERIAL_ID);
     expect(requireParentAccess).toHaveBeenCalledTimes(1);
   });
 
   it("returns an error when the material does not exist", async () => {
     materialSingle.mockResolvedValue({ data: null, error: { message: "not found" } });
 
-    const result = await runLiteratureExtractionAction(MATERIAL_ID, SUBJECT_ID);
+    const result = await runLiteratureExtractionAction(MATERIAL_ID);
+    expect(result.status).toBe("error");
+    expect(runLiteratureExtraction).not.toHaveBeenCalled();
+  });
+
+  it("returns an error when the book has no subject attached", async () => {
+    materialSingle.mockResolvedValue({
+      data: { id: MATERIAL_ID, owner_family_id: "fam-book", subject_id: null, title: "Кобзар", name: "Кобзар", grade: 6 },
+      error: null,
+    });
+
+    const result = await runLiteratureExtractionAction(MATERIAL_ID);
     expect(result.status).toBe("error");
     expect(runLiteratureExtraction).not.toHaveBeenCalled();
   });
 
   it("returns an error when the subject is not found for the book's family", async () => {
-    materialSingle.mockResolvedValue({ data: { id: MATERIAL_ID, owner_family_id: "fam-book", title: "Кобзар", name: "Кобзар", grade: 6 }, error: null });
+    materialSingle.mockResolvedValue({
+      data: { id: MATERIAL_ID, owner_family_id: "fam-book", subject_id: SUBJECT_ID, title: "Кобзар", name: "Кобзар", grade: 6 },
+      error: null,
+    });
     subjectMaybeSingle.mockResolvedValue({ data: null });
 
-    const result = await runLiteratureExtractionAction(MATERIAL_ID, SUBJECT_ID);
+    const result = await runLiteratureExtractionAction(MATERIAL_ID);
     expect(result.status).toBe("error");
     expect(runLiteratureExtraction).not.toHaveBeenCalled();
   });
 
-  it("runs extraction with the book's own owner_family_id (mirrors the CLI script) and summarizes the result", async () => {
+  it("runs extraction with the book's own owner_family_id and subject_id (mirrors the CLI script) and summarizes the result", async () => {
     materialSingle.mockResolvedValue({
-      data: { id: MATERIAL_ID, owner_family_id: "fam-book", title: "Кобзар", name: "fallback-name", grade: 6 },
+      data: { id: MATERIAL_ID, owner_family_id: "fam-book", subject_id: SUBJECT_ID, title: "Кобзар", name: "fallback-name", grade: 6 },
       error: null,
     });
     subjectMaybeSingle.mockResolvedValue({ data: { id: SUBJECT_ID, name_uk: "Зарубіжна література" } });
@@ -111,7 +131,7 @@ describe("runLiteratureExtractionAction", () => {
       driveWriteFailures: [{ topicNo: 2, reason: "Диск не підключено" }],
     });
 
-    const result = await runLiteratureExtractionAction(MATERIAL_ID, SUBJECT_ID);
+    const result = await runLiteratureExtractionAction(MATERIAL_ID);
 
     expect(result.status).toBe("ok");
     if (result.status !== "ok") throw new Error("unreachable");
@@ -144,13 +164,13 @@ describe("runLiteratureExtractionAction", () => {
 
   it("falls back to material.name when material.title is null", async () => {
     materialSingle.mockResolvedValue({
-      data: { id: MATERIAL_ID, owner_family_id: "fam-book", title: null, name: "Зарубіжна література 6", grade: 6 },
+      data: { id: MATERIAL_ID, owner_family_id: "fam-book", subject_id: SUBJECT_ID, title: null, name: "Зарубіжна література 6", grade: 6 },
       error: null,
     });
     subjectMaybeSingle.mockResolvedValue({ data: { id: SUBJECT_ID, name_uk: "Зарубіжна література" } });
     runLiteratureExtraction.mockResolvedValue({ groups: 1, topics: [], calls: [], driveWriteFailures: [] });
 
-    const result = await runLiteratureExtractionAction(MATERIAL_ID, SUBJECT_ID);
+    const result = await runLiteratureExtractionAction(MATERIAL_ID);
     expect(result.status).toBe("ok");
     if (result.status !== "ok") throw new Error("unreachable");
     expect(result.summary.materialTitle).toBe("Зарубіжна література 6");
@@ -158,13 +178,13 @@ describe("runLiteratureExtractionAction", () => {
 
   it("catches a thrown error from the extraction pipeline and returns a generic error", async () => {
     materialSingle.mockResolvedValue({
-      data: { id: MATERIAL_ID, owner_family_id: "fam-book", title: "Кобзар", name: "Кобзар", grade: 6 },
+      data: { id: MATERIAL_ID, owner_family_id: "fam-book", subject_id: SUBJECT_ID, title: "Кобзар", name: "Кобзар", grade: 6 },
       error: null,
     });
     subjectMaybeSingle.mockResolvedValue({ data: { id: SUBJECT_ID, name_uk: "Зарубіжна література" } });
     runLiteratureExtraction.mockRejectedValue(new Error("AI provider down"));
 
-    const result = await runLiteratureExtractionAction(MATERIAL_ID, SUBJECT_ID);
+    const result = await runLiteratureExtractionAction(MATERIAL_ID);
     expect(result.status).toBe("error");
   });
 });
