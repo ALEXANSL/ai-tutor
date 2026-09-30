@@ -1,0 +1,353 @@
+{
+  "course": "Зарубіжна література, 6 клас",
+  "textbook": "Ковбасенко Ю., Первак О., Дячок С. — Літера ЛТД, 2023",
+  "source_pdf": "6-klas-zarlit-kovbasenko-2023.pdf",
+  "pdf_page_offset": 1,
+  "topics": [
+    {
+      "topic": 1,
+      "id": "zarlit6-01",
+      "section": "Вступ",
+      "title": "Художня література і мистецтво. Роль перекладу",
+      "textbook_pages": [
+        4,
+        9
+      ],
+      "pdf_pages": [
+        5,
+        10
+      ],
+      "lessons": [
+        "1.1. Художня література і мистецтво",
+        "1.2. Роль перекладачів"
+      ],
+      "lesson_file": "lessons/01.md",
+      "test_file": "tests/01.json",
+      "questions": 7
+    },
+    {
+      "topic": 2,
+      "id": "zarlit6-02",
+      "section": "Міфи на всі часи",
+      "title": "Що таке міф. Цикли грецьких міфів",
+      "textbook_pages": [
+        10,
+        18
+      ],
+      "pdf_pages": [
+        11,
+        19
+      ],
+      "lessons": [
+        "2.1. Що таке міф",
+        "2.2. Цикли грецьких міфів"
+      ],
+      "lesson_file": "lessons/02.md",
+      "test_file": "tests/02.json",
+      "questions": 8
+    },
+    {
+      "topic": 3,
+      "id": "zarlit6-03",
+      "section": "Міфи на всі часи",
+      "title": "Міфи про Прометея",
+      "textbook_pages": [
+        19,
+        22
+      ],
+      "pdf_pages": [
+        20,
+        23
+      ],
+      "lessons": [
+        "3.1. Прометей"
+      ],
+      "lesson_file": "lessons/03.md",
+      "test_file": "tests/03.json",
+      "questions": 8
+    },
+    {
+      "topic": 4,
+      "id": "zarlit6-04",
+      "section": "Міфи на всі часи",
+      "title": "Міфи про Геракла",
+      "textbook_pages": [
+        23,
+        35
+      ],
+      "pdf_pages": [
+        24,
+        36
+      ],
+      "lessons": [
+        "4.1. Геракл"
+      ],
+      "lesson_file": "lessons/04.md",
+      "test_file": "tests/04.json",
+      "questions": 8
+    },
+    {
+      "topic": 5,
+      "id": "zarlit6-05",
+      "section": "Пригоди і фантастика",
+      "title": "Даніель Дефо. «Пригоди Робінзона Крузо»",
+      "textbook_pages": [
+        36,
+        75
+      ],
+      "pdf_pages": [
+        37,
+        76
+      ],
+      "lessons": [
+        "5.1. Даніель Дефо: життя і творчість",
+        "5.2. Перший рік на острові",
+        "5.3. Десять років на острові",
+        "5.4. П’ятниця. Повернення додому"
+      ],
+      "lesson_file": "lessons/05.md",
+      "test_file": "tests/05.json",
+      "questions": 9
+    },
+    {
+      "topic": 6,
+      "id": "zarlit6-06",
+      "section": "Пригоди і фантастика",
+      "title": "Чарльз Дікенс. «Різдвяна пісня в прозі»",
+      "textbook_pages": [
+        76,
+        106
+      ],
+      "pdf_pages": [
+        77,
+        107
+      ],
+      "lessons": [
+        "6.1. Чарльз Дікенс: життя і творчість",
+        "6.2. Скрудж і дух Марлі",
+        "6.3. Переродження Скруджа",
+        "6.4. Різдвяна повість як жанр"
+      ],
+      "lesson_file": "lessons/06.md",
+      "test_file": "tests/06.json",
+      "questions": 8
+    },
+    {
+      "topic": 7,
+      "id": "zarlit6-07",
+      "section": "Пригоди і фантастика",
+      "title": "Микола Гоголь. «Ніч перед Різдвом»",
+      "textbook_pages": [
+        107,
+        129
+      ],
+      "pdf_pages": [
+        108,
+        130
+      ],
+      "lessons": [
+        "7.1. Микола Гоголь і Україна",
+        "7.2. Святвечір у Диканьці",
+        "7.3. Вакула і Оксана"
+      ],
+      "lesson_file": "lessons/07.md",
+      "test_file": "tests/07.json",
+      "questions": 8
+    },
+    {
+      "topic": 8,
+      "id": "zarlit6-08",
+      "section": "Пригоди і фантастика",
+      "title": "Астрід Ліндґрен. «Міо, мій Міо»",
+      "textbook_pages": [
+        130,
+        161
+      ],
+      "pdf_pages": [
+        131,
+        162
+      ],
+      "lessons": [
+        "8.1. Астрід Ліндґрен",
+        "8.2. Буссе стає Міо",
+        "8.3. Перемога над Като"
+      ],
+      "lesson_file": "lessons/08.md",
+      "test_file": "tests/08.json",
+      "questions": 8
+    },
+    {
+      "topic": 9,
+      "id": "zarlit6-09",
+      "section": "Не здаватися в життєвих випробуваннях",
+      "title": "Джек Лондон. «Любов до життя»",
+      "textbook_pages": [
+        162,
+        185
+      ],
+      "pdf_pages": [
+        163,
+        186
+      ],
+      "lessons": [
+        "9.1. Джек Лондон",
+        "9.2. Боротьба за життя",
+        "9.3. Сила духу і зрада"
+      ],
+      "lesson_file": "lessons/09.md",
+      "test_file": "tests/09.json",
+      "questions": 8
+    },
+    {
+      "topic": 10,
+      "id": "zarlit6-10",
+      "section": "Не здаватися в життєвих випробуваннях",
+      "title": "Анна Ґавальда. «35 кіло надії»",
+      "textbook_pages": [
+        186,
+        207
+      ],
+      "pdf_pages": [
+        187,
+        208
+      ],
+      "lessons": [
+        "10.1. Анна Ґавальда",
+        "10.2. Ґрегуар і школа",
+        "10.3. Дідусь Леон і шлях до мрії"
+      ],
+      "lesson_file": "lessons/10.md",
+      "test_file": "tests/10.json",
+      "questions": 8
+    },
+    {
+      "topic": 11,
+      "id": "zarlit6-11",
+      "section": "Не здаватися в життєвих випробуваннях",
+      "title": "Крістіне Нестлінґер. «Конрад, або Дитина з бляшанки»",
+      "textbook_pages": [
+        208,
+        237
+      ],
+      "pdf_pages": [
+        209,
+        238
+      ],
+      "lessons": [
+        "11.1. Крістіне Нестлінґер",
+        "11.2. Дивна пані Бартолотті",
+        "11.3. Ідеальна дитина",
+        "11.4. Яким має бути Конрад?"
+      ],
+      "lesson_file": "lessons/11.md",
+      "test_file": "tests/11.json",
+      "questions": 8
+    },
+    {
+      "topic": 12,
+      "id": "zarlit6-12",
+      "section": "Барви світової поезії",
+      "title": "Мацуо Басьо. Хайку",
+      "textbook_pages": [
+        238,
+        243
+      ],
+      "pdf_pages": [
+        239,
+        244
+      ],
+      "lessons": [
+        "12.1. Мацуо Басьо",
+        "12.2. Хайку"
+      ],
+      "lesson_file": "lessons/12.md",
+      "test_file": "tests/12.json",
+      "questions": 8
+    },
+    {
+      "topic": 13,
+      "id": "zarlit6-13",
+      "section": "Барви світової поезії",
+      "title": "Роберт Бернс. «Моє серце в верховині…»",
+      "textbook_pages": [
+        244,
+        247
+      ],
+      "pdf_pages": [
+        245,
+        248
+      ],
+      "lessons": [
+        "13.1. Роберт Бернс",
+        "13.2. «Моє серце в верховині…»"
+      ],
+      "lesson_file": "lessons/13.md",
+      "test_file": "tests/13.json",
+      "questions": 8
+    },
+    {
+      "topic": 14,
+      "id": "zarlit6-14",
+      "section": "Барви світової поезії",
+      "title": "Генрі Лонгфелло. «Пісня про Гаявату»",
+      "textbook_pages": [
+        248,
+        259
+      ],
+      "pdf_pages": [
+        249,
+        260
+      ],
+      "lessons": [
+        "14.1. Генрі Лонгфелло",
+        "14.2. «Люлька миру»"
+      ],
+      "lesson_file": "lessons/14.md",
+      "test_file": "tests/14.json",
+      "questions": 8
+    },
+    {
+      "topic": 15,
+      "id": "zarlit6-15",
+      "section": "Замислюємося про майбутнє",
+      "title": "Рей Бредбері. «Усмішка»",
+      "textbook_pages": [
+        260,
+        269
+      ],
+      "pdf_pages": [
+        261,
+        270
+      ],
+      "lessons": [
+        "15.1. Рей Бредбері",
+        "15.2. «Усмішка»"
+      ],
+      "lesson_file": "lessons/15.md",
+      "test_file": "tests/15.json",
+      "questions": 8
+    },
+    {
+      "topic": 16,
+      "id": "zarlit6-16",
+      "section": "Замислюємося про майбутнє",
+      "title": "Роберт Шеклі. «Запах думки»",
+      "textbook_pages": [
+        270,
+        284
+      ],
+      "pdf_pages": [
+        271,
+        285
+      ],
+      "lessons": [
+        "16.1. Роберт Шеклі",
+        "16.2. Планета З-М-22",
+        "16.3. Лерой Кліві"
+      ],
+      "lesson_file": "lessons/16.md",
+      "test_file": "tests/16.json",
+      "questions": 8
+    }
+  ]
+}
