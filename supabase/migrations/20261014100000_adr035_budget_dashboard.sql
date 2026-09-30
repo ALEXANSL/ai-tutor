@@ -27,7 +27,7 @@ select
   ls.topic_id,
   t.title             as topic_title,
   ls.subject_id,
-  s.name              as subject_name,
+  s.name_uk           as subject_name,
   ls.mode,
   ls.status,
   ls.started_at,
@@ -40,7 +40,7 @@ from public.lesson_sessions ls
 join public.topics t on t.id = ls.topic_id
 join public.subjects s on s.id = ls.subject_id
 left join public.ai_calls ac on ac.session_id = ls.id
-group by ls.id, ls.family_id, ls.topic_id, t.title, ls.subject_id, s.name, ls.mode, ls.status, ls.started_at, ls.completed_at;
+group by ls.id, ls.family_id, ls.topic_id, t.title, ls.subject_id, s.name_uk, ls.mode, ls.status, ls.started_at, ls.completed_at;
 
 comment on view public.session_costs is
   'Cost per lesson session (ADR-012 note 2026-09-27, ADR-035): aggregates ai_calls by session_id. No new data, read-only representation.';
