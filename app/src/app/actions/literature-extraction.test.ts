@@ -71,7 +71,7 @@ describe("runLiteratureExtractionAction", () => {
 
   it("gates on requireParentAccess before anything else", async () => {
     materialSingle.mockResolvedValue({ data: { id: MATERIAL_ID, owner_family_id: "fam-book", title: "Кобзар", name: "Кобзар", grade: 6 }, error: null });
-    subjectMaybeSingle.mockResolvedValue({ data: { id: SUBJECT_ID, name: "Зарубіжна література" } });
+    subjectMaybeSingle.mockResolvedValue({ data: { id: SUBJECT_ID, name_uk: "Зарубіжна література" } });
     runLiteratureExtraction.mockResolvedValue({ groups: 1, topics: [], calls: [], driveWriteFailures: [] });
 
     await runLiteratureExtractionAction(MATERIAL_ID, SUBJECT_ID);
@@ -100,7 +100,7 @@ describe("runLiteratureExtractionAction", () => {
       data: { id: MATERIAL_ID, owner_family_id: "fam-book", title: "Кобзар", name: "fallback-name", grade: 6 },
       error: null,
     });
-    subjectMaybeSingle.mockResolvedValue({ data: { id: SUBJECT_ID, name: "Зарубіжна література" } });
+    subjectMaybeSingle.mockResolvedValue({ data: { id: SUBJECT_ID, name_uk: "Зарубіжна література" } });
     runLiteratureExtraction.mockResolvedValue({
       groups: 3,
       topics: [
@@ -147,7 +147,7 @@ describe("runLiteratureExtractionAction", () => {
       data: { id: MATERIAL_ID, owner_family_id: "fam-book", title: null, name: "Зарубіжна література 6", grade: 6 },
       error: null,
     });
-    subjectMaybeSingle.mockResolvedValue({ data: { id: SUBJECT_ID, name: "Зарубіжна література" } });
+    subjectMaybeSingle.mockResolvedValue({ data: { id: SUBJECT_ID, name_uk: "Зарубіжна література" } });
     runLiteratureExtraction.mockResolvedValue({ groups: 1, topics: [], calls: [], driveWriteFailures: [] });
 
     const result = await runLiteratureExtractionAction(MATERIAL_ID, SUBJECT_ID);
@@ -161,7 +161,7 @@ describe("runLiteratureExtractionAction", () => {
       data: { id: MATERIAL_ID, owner_family_id: "fam-book", title: "Кобзар", name: "Кобзар", grade: 6 },
       error: null,
     });
-    subjectMaybeSingle.mockResolvedValue({ data: { id: SUBJECT_ID, name: "Зарубіжна література" } });
+    subjectMaybeSingle.mockResolvedValue({ data: { id: SUBJECT_ID, name_uk: "Зарубіжна література" } });
     runLiteratureExtraction.mockRejectedValue(new Error("AI provider down"));
 
     const result = await runLiteratureExtractionAction(MATERIAL_ID, SUBJECT_ID);
