@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChildStartLessonButton } from "@/components/child/ChildStartLessonButton";
+import { PrepareTopicButton } from "@/components/child/PrepareTopicButton";
 import { uk } from "@/i18n/uk";
 import { requireChild } from "@/server/auth/guards";
 import { getTopicWarmupStatuses } from "@/server/lessons/warmup";
@@ -37,10 +38,11 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
   if (!subject || !subject.childVisible) notFound();
   const t = uk.child.today;
   const ts = uk.child.subject;
-  // US-19.5 КП-1: reuse the exact same "does this topic already have an
-  // active block?" fact the parent's bulk-warmup panel shows (US-22.4 КП-5)
-  // — only the two states КП-1 asks for (see uk.ts's `topicStatus` comment
-  // for why a third "generating" badge is not shown here yet).
+  // US-19.5 КП-1/КП-2: reuse the exact same "does this topic already have an
+  // active block, or is one being prepared?" fact the parent's bulk-warmup
+  // panel shows (US-22.4 КП-5) — now three child-facing states: ready /
+  // in-progress (queued or generating, incl. from КП-2's own "Підготувати")
+  // / needs preparing.
   const warmupStatuses = subject.topics.length > 0 ? await getTopicWarmupStatuses(ctx.familyId, subject.topics.map((tp) => tp.id)) : {};
 
   return (
@@ -63,16 +65,27 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
                   className={
                     warmupStatuses[topic.id] === "ready"
                       ? "rounded-full bg-secondary/10 px-2 py-0.5 text-xs font-bold text-secondary"
-                      : "rounded-full bg-surface-alt px-2 py-0.5 text-xs font-bold text-muted"
+                      : warmupStatuses[topic.id] === "queued" || warmupStatuses[topic.id] === "generating"
+                        ? "rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary"
+                        : "rounded-full bg-surface-alt px-2 py-0.5 text-xs font-bold text-muted"
                   }
                 >
-                  {warmupStatuses[topic.id] === "ready" ? ts.topicStatus.ready : ts.topicStatus.needsPrep}
+                  {warmupStatuses[topic.id] === "ready"
+                    ? ts.topicStatus.ready
+                    : warmupStatuses[topic.id] === "queued" || warmupStatuses[topic.id] === "generating"
+                      ? ts.topicStatus.inProgress
+                      : ts.topicStatus.needsPrep}
                 </span>
               </div>
               {topic.pageFrom != null && topic.pageTo != null && (
                 <p className="mb-3 text-sm text-muted">{ts.pages(topic.pageFrom, topic.pageTo)}</p>
               )}
-              <ChildStartLessonButton subjectId={subject.id} topicId={topic.id} />
+              <div className="flex flex-wrap items-center gap-2.5">
+                <ChildStartLessonButton subjectId={subject.id} topicId={topic.id} />
+                {warmupStatuses[topic.id] !== "ready" && warmupStatuses[topic.id] !== "queued" && warmupStatuses[topic.id] !== "generating" && (
+                  <PrepareTopicButton subjectId={subject.id} topicId={topic.id} />
+                )}
+              </div>
             </div>
           ))}
         </div>

@@ -164,16 +164,23 @@ export const uk = {
       topicsSubtitle: "Обери тему, з якої почнемо:",
       priorityBadge: "Пріоритет",
       pages: (from: number, to: number) => (from === to ? `стор. ${from}` : `стор. ${from}–${to}`),
-      // US-19.5 КП-1: the same "is there an active block?" fact the parent's
-      // bulk-warmup panel already shows (US-22.4 КП-5), now visible to the
-      // child too, in her own wording — no technical words like "у черзі"/
-      // "jobs" (КП-1's own explicit rule). Only the two states КП-1 actually
-      // asks for; a job already queued/generating in the background (e.g.
-      // from an automatic warm-ahead trigger) still reads as "Потрібна
-      // підготовка" here — there is no child-facing "start preparing"
-      // action yet (КП-2, not built — see the S38/US-19.5 status note in
-      // docs/05-backlog.md and this session's QA report).
-      topicStatus: { ready: "Готово", needsPrep: "Потрібна підготовка" },
+      // US-19.5 КП-1/КП-2: the same "is there an active block?" fact the
+      // parent's bulk-warmup panel already shows (US-22.4 КП-5), now visible
+      // to the child too, in her own wording — no technical words like
+      // "у черзі"/"jobs" (КП-1's own explicit rule). КП-2 adds the third
+      // state: a topic she (or an automatic trigger) already started
+      // preparing, distinct from one nobody has asked for yet.
+      topicStatus: { ready: "Готово", needsPrep: "Потрібна підготовка", inProgress: "Готуємо…" },
+      // US-19.5 КП-2 (S38): "Підготувати" on a "Потрібна підготовка" card —
+      // queues the same background generation as "Почати", but does NOT
+      // navigate away from the topic list (the whole point — no 5–6 хв
+      // full-screen wait). Warm, simple, no "черга"/"job" wording.
+      prepare: {
+        button: "Підготувати",
+        preparing: "Готуємо…",
+        confirmation: "Готуємо урок — зайди трохи пізніше 🙂",
+        error: "Не вдалося поставити урок на підготовку. Спробуй ще раз.",
+      },
     },
     // E-23 (US-23.1, D-105): reading + chat screen for one "Інше" material.
     material: {
@@ -537,6 +544,41 @@ export const uk = {
         unknown: "Подія",
       },
       nicknameHint: "Змініть, якщо схоже на справжнє ім'я.",
+    },
+    budget: {
+      // ADR-035: dashboard on our OWN recorded spend, never a provider
+      // account balance (no such API exists) — copy stays "скільки МИ
+      // витратили", not "скільки лишилось на рахунку".
+      title: "Бюджет",
+      monthPanelTitle: "Витрати на ШІ цього місяця",
+      monthPanelDesc: "Ліміт охоплює лише виклики ШІ. Це наш власний підрахунок за кожним викликом — не баланс рахунку в провайдера (такого провайдери не дають).",
+      spentOf: (spent: string, limit: string) => `${spent} з ${limit}`,
+      limitReserveHint: (limit: string) => `Максимум із запасом +10 %: ${limit}`,
+      forecastLabel: "Прогноз до кінця місяця",
+      forecastHint: (pct: number) => `за поточним темпом — ${pct}% ліміту`,
+      safetyOverLimit: (amount: string) => `Безпека понад ліміт: ${amount} (рахується окремо, ніколи не блокується)`,
+      states: {
+        normal: "У нормі",
+        warned: "80% ліміту — попередження активне",
+        budget: "Ліміт вичерпано — режим бюджету (економ-моделі)",
+        hard_stop: "Жорстка межа 110% — нові виклики призупинено",
+      },
+      byRoleTitle: "На що витрачено",
+      byRoleDesc: "Розбивка за видом роботи ШІ за цей місяць.",
+      byProviderTitle: "За провайдером",
+      byProviderDesc: "Розбивка за постачальником моделі за цей місяць.",
+      noCallsYet: "Викликів ШІ цього місяця ще не було.",
+      trendTitle: "Витрати по днях",
+      trendDesc: "Цей місяць, по днях.",
+      sessionsTitle: "Вартість уроків",
+      sessionsDesc: "Найдорожчі уроки цього місяця — щоб помітити незвично дорогий урок.",
+      noSessionsYet: "Уроків із витратами цього місяця ще не було.",
+      sessionsTable: { topic: "Тема", started: "Початок", cost: "Вартість", calls: "Викликів" },
+      errorsTitle: "Помилки й резервні моделі",
+      errorsDesc: "Скільки викликів ШІ цього місяця пройшли не з першої спроби.",
+      totalCallsLabel: "Усього викликів",
+      errorsLabel: "Помилок",
+      fallbackLabel: "На резервній моделі",
     },
     conversations: {
       title: "Розмови",
@@ -1048,6 +1090,32 @@ export const uk = {
           state: "Не вдалося підтвердити запит (застарілий або невірний). Спробуйте підключити ще раз.",
           failed: "Не вдалося підключити Google Drive. Спробуйте ще раз.",
         } as Record<string, string>,
+      },
+      // ADR-034 follow-up: the retroactive content_qa sweep, previously a
+      // developer-only CLI (`npm run content-qa:sweep`), as an in-cabinet
+      // button — the PO does not run terminal commands. Same dry-run-first
+      // safety as the CLI: "Перевірити" writes nothing, "Застосувати" is a
+      // separate, deliberate second click.
+      maintenance: {
+        title: "Обслуговування бібліотеки",
+        help: "Перевіряє вже готові уроки в бібліотеці на ті самі технічні дефекти, що ми сьогодні виправили — обірвані речення й «зламані» літери (кодування). Це не запит до ШІ — перевірка безкоштовна (0 грн) і йде за готовими правилами.",
+        checkButton: "Перевірити бібліотеку уроків",
+        checking: "Перевіряємо…",
+        applyButton: "Застосувати виправлення",
+        applying: "Застосовуємо…",
+        applyHint: "Позначить проблемні уроки як «потребують перегляду» — дитина їх поки не побачить; нічого не видаляється.",
+        error: "Не вдалося перевірити бібліотеку. Спробуйте ще раз.",
+        resultTitle: (mode: "dry_run" | "apply") => (mode === "apply" ? "Застосовано" : "Перевірено (нічого не змінено)"),
+        totals: (checked: number, flagged: number, autoFixed: number) =>
+          `Перевірено уроків: ${checked}. Знайдено проблем: ${flagged}. Автоматично позначено «потребують перегляду»: ${autoFixed}.`,
+        noneFlagged: "Проблем не знайдено — бібліотека в порядку.",
+        categoryLabels: {
+          fallback: "Резервні блоки (найвищий ризик)",
+          known_defect_book: "Уроки з уже відомої проблемної книги",
+          rest_active: "Решта активних уроків",
+        } as Record<string, string>,
+        flaggedListTitle: "Знайдені проблеми:",
+        rerunHint: "Це нічого не зіпсує — перевірку можна запускати повторно скільки завгодно.",
       },
     },
     placeholder: {

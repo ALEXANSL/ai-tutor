@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { uk } from "@/i18n/uk";
-import { requireLessonAccess } from "@/server/auth/guards";
+import { requireChild, requireLessonAccess } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
 import type { ChildProfileRow } from "@/server/db/types";
 import { kickJobs } from "@/server/jobs/kick";
@@ -29,6 +29,8 @@ import {
   type PreviousModuleView,
   type StartCandidate,
 } from "@/server/lessons/orchestrator";
+import { ensureActiveLibraryBlock, type EnsureActiveLibraryBlockResult } from "@/server/lessons/warmup";
+import { getSubjectForBulkWarmup } from "@/server/subjects/queries";
 import type { FormState } from "./state";
 
 // BUG (urgent, pre-D-65 demo fix): `startLessonAction` runs the full
@@ -362,6 +364,47 @@ export async function checkWarmupProgressAction(
     return { status: "ok", ready: progress.ready, stage: progress.stage, reviewPass: progress.reviewPass };
   } catch (e) {
     console.error(`checkWarmupProgressAction failed: ${(e as Error).message}`);
+    return { status: "error", message: uk.common.error };
+  }
+}
+
+/**
+ * US-19.5 КП-2 (S38, D-114): the child's own "Підготувати" tap on a
+ * "Потрібна підготовка" topic card (`/subject/[id]`) — queues background
+ * generation WITHOUT navigating her into the lesson/warming screen (that's
+ * the whole point of this entry point; the existing "Готуємо урок…"
+ * full-screen wait, D-66/ADR-023, is unchanged and still reachable via
+ * "Почати"). Reuses `ensureActiveLibraryBlock` exactly as every other warm-up
+ * trigger does — no new pipeline — tagged `source: "child_initiated"` and
+ * WITHOUT `bypassDailyBudget`, so it counts toward the same daily $5 family
+ * warm-up soft cap as any other warm-up call (ВП-66, confirmed closed).
+ *
+ * `immediate: false` on purpose: same "can wait a few seconds, not
+ * blocking" budget as the parent's `is_current` signal (§Частина 1.1) — the
+ * child is not staring at a spinner waiting for this call to return.
+ */
+export async function prepareTopicAction(
+  subjectId: string,
+  topicId: string,
+): Promise<{ status: "ok"; warmStatus: EnsureActiveLibraryBlockResult["status"] } | { status: "error"; message: string }> {
+  const { ctx } = await requireChild();
+  UUID.parse(subjectId);
+  UUID.parse(topicId);
+  try {
+    const subject = await getSubjectForBulkWarmup(ctx.familyId, subjectId, [topicId]);
+    const topic = subject?.topics.find((tp) => tp.id === topicId);
+    if (!subject || !topic) return { status: "error", message: uk.common.error };
+
+    const result = await ensureActiveLibraryBlock(
+      ctx.familyId,
+      { id: subject.id, nameUk: subject.nameUk, config: subject.config },
+      { id: topic.id, title: topic.title, grade: topic.grade },
+      { immediate: false, source: "child_initiated" },
+    );
+    revalidatePath(`/subject/${subjectId}`);
+    return { status: "ok", warmStatus: result.status };
+  } catch (e) {
+    console.error(`prepareTopicAction failed: ${(e as Error).message}`);
     return { status: "error", message: uk.common.error };
   }
 }
