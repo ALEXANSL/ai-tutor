@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { runLiteratureExtractionAction, type LiteratureCandidateMaterial, type LiteratureExtractionState } from "@/app/actions/literature-extraction";
+import { withBusySignal } from "@/lib/busy-signal";
 import { uk } from "@/i18n/uk";
 
 type Summary = Extract<LiteratureExtractionState, { status: "ok" }>["summary"];
@@ -28,7 +29,7 @@ export function LiteratureExtractionPanel({ materials }: { materials: Literature
     setError(null);
     setSummary(null);
     startRunning(async () => {
-      const result = await runLiteratureExtractionAction(materialId);
+      const result = await withBusySignal(() => runLiteratureExtractionAction(materialId));
       if (result.status === "error") {
         setError(result.message);
         return;

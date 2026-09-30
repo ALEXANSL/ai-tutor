@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { exitParentModeAction, touchParentModeAction } from "@/app/actions/parent-mode";
+import { isAppBusy } from "@/lib/busy-signal";
 
 const ACTIVITY_EVENTS = ["pointerdown", "keydown", "scroll", "touchstart"] as const;
 
@@ -10,6 +11,15 @@ const ACTIVITY_EVENTS = ["pointerdown", "keydown", "scroll", "touchstart"] as co
  * Parent mode on the tablet ends after N idle minutes (US-1.5 KP-3). The
  * server-side cookie has the same deadline and is extended only on activity,
  * so closing the tab or freezing JS cannot keep the cabinet open.
+ *
+ * BUG (2026-09-30, PO): a parent watching a known-long admin action run
+ * (content_qa sweep, literature extraction, bulk warmup confirm) without
+ * touching the screen used to get silently kicked to the child view mid-run
+ * — waiting on a pending request was never "activity". `isAppBusy()`
+ * (`@/lib/busy-signal`) is checked on every tick alongside the real DOM
+ * events: while any registered long-running panel marks itself busy, that
+ * counts as activity too, so the idle countdown simply pauses for the
+ * duration of the run instead of requiring the parent to keep clicking.
  */
 export function IdleWatcher({ idleMinutes }: { idleMinutes: number }) {
   const lastActivity = useRef(0);
@@ -29,6 +39,7 @@ export function IdleWatcher({ idleMinutes }: { idleMinutes: number }) {
     const timer = window.setInterval(async () => {
       if (exiting.current) return;
       const now = Date.now();
+      if (isAppBusy()) lastActivity.current = now;
       if (now - lastActivity.current >= idleMs) {
         exiting.current = true;
         await exitParentModeAction();

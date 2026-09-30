@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { confirmBulkWarmupAction, estimateBulkWarmupAction, getBulkWarmupStatusAction } from "@/app/actions/subjects";
+import { withBusySignal } from "@/lib/busy-signal";
 import { uk } from "@/i18n/uk";
 
 type TopicWarmStatus = "ready" | "queued" | "generating" | "error";
@@ -106,7 +107,7 @@ export function BulkWarmupPanel({ subjectId, topics, initialStatuses }: { subjec
   async function confirm() {
     setConfirming(true);
     const ids = Array.from(selected);
-    const result = await confirmBulkWarmupAction(subjectId, ids);
+    const result = await withBusySignal(() => confirmBulkWarmupAction(subjectId, ids));
     setConfirming(false);
     if (result.status === "budget_blocked") {
       setError(result.message);
