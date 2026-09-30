@@ -1,4 +1,5 @@
 import { ContentQaSweepPanel } from "@/components/parent/ContentQaSweepPanel";
+import { LiteratureExtractionPanel } from "@/components/parent/LiteratureExtractionPanel";
 import { GoogleDriveConnectPanel, type DriveConnectQueryStatus } from "@/components/parent/GoogleDriveConnectPanel";
 import { PinForm } from "@/components/parent/PinForm";
 import { UrgentChannelsPanel } from "@/components/parent/UrgentChannelsPanel";
@@ -78,6 +79,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
       </Panel>
       <Panel title={t.maintenance.title}>
         <ContentQaSweepPanel />
+      </Panel>
+      <Panel title={t.literatureExtraction.title}>
+        <LiteratureExtractionPanel />
       </Panel>
     </>
   );
