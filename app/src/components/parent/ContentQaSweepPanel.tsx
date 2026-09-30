@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { runContentQaSweepAction, type ContentQaSweepState } from "@/app/actions/content-qa-sweep";
+import { withBusySignal } from "@/lib/busy-signal";
 import { uk } from "@/i18n/uk";
 
 type Summary = Extract<ContentQaSweepState, { status: "ok" }>["summary"];
@@ -24,7 +25,7 @@ export function ContentQaSweepPanel() {
     setError(null);
     const start = apply ? startApplying : startChecking;
     start(async () => {
-      const result = await runContentQaSweepAction(apply);
+      const result = await withBusySignal(() => runContentQaSweepAction(apply));
       if (result.status === "error") {
         setError(result.message);
         return;
