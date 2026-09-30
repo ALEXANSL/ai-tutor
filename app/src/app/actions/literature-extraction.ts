@@ -67,7 +67,7 @@ export async function runLiteratureExtractionAction(materialId: string, subjectI
     }
 
     const scope = forFamily(material.owner_family_id, client);
-    const { data: subject } = await scope.select("subjects", "id, name").eq("id", subjectParsed.data).maybeSingle<{ id: string; name: string }>();
+    const { data: subject } = await scope.select("subjects", "id, name_uk").eq("id", subjectParsed.data).maybeSingle<{ id: string; name_uk: string }>();
     if (!subject) {
       return { status: "error", message: "Предмет не знайдено для цієї родини." };
     }
@@ -78,7 +78,7 @@ export async function runLiteratureExtractionAction(materialId: string, subjectI
       subjectId: subject.id,
       materialId: material.id,
       materialTitle,
-      subjectName: subject.name,
+      subjectName: subject.name_uk,
       grade: material.grade,
     });
 
@@ -89,7 +89,7 @@ export async function runLiteratureExtractionAction(materialId: string, subjectI
       status: "ok",
       summary: {
         materialTitle,
-        subjectName: subject.name,
+        subjectName: subject.name_uk,
         groups: result.groups,
         topics: result.topics.map((t) => ({ topicNo: t.topicNo, status: t.status, failuresCount: t.failures.length })),
         active,
