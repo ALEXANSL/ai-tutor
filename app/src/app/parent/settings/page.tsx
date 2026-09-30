@@ -1,6 +1,7 @@
 import { listLiteratureCandidateMaterials } from "@/app/actions/literature-extraction";
 import { ContentQaSweepPanel } from "@/components/parent/ContentQaSweepPanel";
 import { LiteratureExtractionPanel } from "@/components/parent/LiteratureExtractionPanel";
+import { LiteratureImportPanel } from "@/components/parent/LiteratureImportPanel";
 import { GoogleDriveConnectPanel, type DriveConnectQueryStatus } from "@/components/parent/GoogleDriveConnectPanel";
 import { PinForm } from "@/components/parent/PinForm";
 import { UrgentChannelsPanel } from "@/components/parent/UrgentChannelsPanel";
@@ -84,6 +85,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
       </Panel>
       <Panel title={t.literatureExtraction.title}>
         <LiteratureExtractionPanel materials={literatureMaterials} />
+      </Panel>
+      <Panel title={t.literatureImport.title}>
+        <LiteratureImportPanel materials={literatureMaterials} />
       </Panel>
     </>
   );
