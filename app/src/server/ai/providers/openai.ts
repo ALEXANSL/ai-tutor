@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { getServerSecret } from "../../env";
-import { AiNotConfiguredError, ProviderError, type AudioResult, type RouteParams, type Usage } from "../types";
+import { AiNotConfiguredError, ProviderError, type AudioResult, type PromptContent, type RouteParams, type Usage } from "../types";
 
 export interface EmbedRequest {
   model: string;
@@ -107,7 +107,15 @@ export async function openaiEmbed(req: EmbedRequest, fetchImpl: typeof fetch = f
 export interface OpenAiStructuredRequest<S extends z.ZodType> {
   model: string;
   system: string;
-  prompt: string;
+  /**
+   * ADR-033: the shared `ProviderAdapters.structured` router type also
+   * allows a cacheable block list (used today only for the Anthropic-routed
+   * `lesson_generation` role). OpenAI has no `cache_control` concept — a
+   * block list is flattened to plain text below; caching there is unaffected
+   * either way (ADR-033: OpenAI caches automatically on an identical prefix,
+   * no code change needed).
+   */
+  prompt: PromptContent;
   schema: S;
   params: RouteParams;
 }
@@ -153,6 +161,7 @@ export async function openaiStructured<S extends z.ZodType>(
   if (!key) throw new AiNotConfiguredError("OPENAI_API_KEY is not set");
 
   const jsonSchema = toStrictJsonSchema(z.toJSONSchema(req.schema, { target: "draft-7", io: "output" }));
+  const input = typeof req.prompt === "string" ? req.prompt : req.prompt.map((b) => b.text).join("\n\n");
 
   let res: Response;
   try {
@@ -162,7 +171,7 @@ export async function openaiStructured<S extends z.ZodType>(
       body: JSON.stringify({
         model: req.model,
         instructions: req.system,
-        input: req.prompt,
+        input,
         ...(req.params.effort ? { reasoning: { effort: req.params.effort === "xhigh" || req.params.effort === "max" ? "high" : req.params.effort } } : {}),
         max_output_tokens: req.params.max_tokens ?? 16000,
         text: { format: { type: "json_schema", name: "response", strict: true, schema: jsonSchema } },

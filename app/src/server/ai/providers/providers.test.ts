@@ -29,12 +29,23 @@ describe("anthropicStructured (mocked SDK)", () => {
       usage: { inputTokens: 1200, outputTokens: 300, cachedInputTokens: 0, cacheWriteTokens: 0 },
     });
     const [body] = parse.mock.calls[0]! as unknown as [{ output_config: { effort?: string; format?: unknown } }];
-    expect(body).toMatchObject({ model: "claude-opus-5-5", max_tokens: 9000, system: "sys" });
+    // ADR-033: system is now sent as one cache_control-marked text block (see the dedicated tests below).
+    expect(body).toMatchObject({ model: "claude-opus-5-5", max_tokens: 9000 });
     expect(body.output_config.effort).toBe("medium");
     expect(body.output_config.format).toBeDefined();
     // No sampling parameters or disabled thinking: rejected by current models.
     expect(body).not.toHaveProperty("temperature");
     expect(body).not.toHaveProperty("thinking");
+  });
+
+  it("captures cache read/write token counts from the SDK response (ADR-033)", async () => {
+    const usageWithCache = { input_tokens: 300, output_tokens: 50, cache_read_input_tokens: 9000, cache_creation_input_tokens: 1500 };
+    const parse = streamOf({ stop_reason: "end_turn", parsed_output: { title: "Т" }, usage: usageWithCache });
+    const res = await anthropicStructured(
+      { model: "m", system: "s", prompt: "p", schema, params: {} },
+      { messages: { stream: parse } } as never,
+    );
+    expect(res.usage).toEqual({ inputTokens: 300, outputTokens: 50, cachedInputTokens: 9000, cacheWriteTokens: 1500 });
   });
 
   it("treats a refusal as a non-retryable provider error", async () => {
@@ -83,6 +94,63 @@ describe("anthropicStructured (mocked SDK)", () => {
     await expect(anthropicStructured({ model: "m", system: "", prompt: "", schema, params: {} })).rejects.toBeInstanceOf(
       AiNotConfiguredError,
     );
+  });
+
+  /**
+   * ADR-033 item 3: every Anthropic call's system prompt gets ONE
+   * `cache_control` breakpoint — the cheap, systemwide win, applied here in
+   * the provider wrapper rather than at each of the ~10 call sites.
+   */
+  it("marks the system prompt with an ephemeral cache_control breakpoint (ADR-033)", async () => {
+    const parse = streamOf({ stop_reason: "end_turn", parsed_output: { title: "Т" }, usage });
+    await anthropicStructured(
+      { model: "m", system: "статичний системний промпт", prompt: "p", schema, params: {} },
+      { messages: { stream: parse } } as never,
+    );
+    const [body] = parse.mock.calls[0]! as unknown as [{ system: unknown }];
+    expect(body.system).toEqual([{ type: "text", text: "статичний системний промпт", cache_control: { type: "ephemeral" } }]);
+  });
+
+  it("sends no system field at all for an empty system prompt (no empty cache block)", async () => {
+    const parse = streamOf({ stop_reason: "end_turn", parsed_output: { title: "Т" }, usage });
+    await anthropicStructured({ model: "m", system: "", prompt: "p", schema, params: {} }, { messages: { stream: parse } } as never);
+    const [body] = parse.mock.calls[0]! as unknown as [{ system: unknown }];
+    expect(body.system).toBeUndefined();
+  });
+
+  /**
+   * ADR-033 item 1: `lesson_generation`'s pipeline builds `prompt` as a
+   * two-block array (shared, cacheable prefix + dynamic revision notes) —
+   * this is the boundary that turns those blocks into the SDK's content
+   * shape, carrying `cache_control` through on the marked block only.
+   */
+  it("turns a PromptContent block list into Anthropic text content blocks, cache_control included (ADR-033)", async () => {
+    const parse = streamOf({ stop_reason: "end_turn", parsed_output: { title: "Т" }, usage });
+    await anthropicStructured(
+      {
+        model: "m",
+        system: "sys",
+        prompt: [
+          { type: "text", text: "статична частина (план + фрагменти)", cache_control: { type: "ephemeral" } },
+          { type: "text", text: "зауваження рецензента (динамічне)" },
+        ],
+        schema,
+        params: {},
+      },
+      { messages: { stream: parse } } as never,
+    );
+    const [body] = parse.mock.calls[0]! as unknown as [{ messages: { content: unknown }[] }];
+    expect(body.messages[0]!.content).toEqual([
+      { type: "text", text: "статична частина (план + фрагменти)", cache_control: { type: "ephemeral" } },
+      { type: "text", text: "зауваження рецензента (динамічне)" },
+    ]);
+  });
+
+  it("still sends a plain string prompt unchanged (every role but lesson_generation)", async () => {
+    const parse = streamOf({ stop_reason: "end_turn", parsed_output: { title: "Т" }, usage });
+    await anthropicStructured({ model: "m", system: "sys", prompt: "hi", schema, params: {} }, { messages: { stream: parse } } as never);
+    const [body] = parse.mock.calls[0]! as unknown as [{ messages: { content: unknown }[] }];
+    expect(body.messages[0]!.content).toBe("hi");
   });
 });
 

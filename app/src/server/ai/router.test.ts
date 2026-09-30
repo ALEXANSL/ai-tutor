@@ -74,6 +74,19 @@ describe("estimateCostUsd (ADR-012)", () => {
     expect(estimateCostUsd(opus, { inputTokens: 0, outputTokens: 0, cacheWriteTokens: 1_000_000 })).toBeCloseTo(5);
   });
 
+  /**
+   * ADR-033: a realistic `lesson_generation` revision pass — a small dynamic
+   * (uncached) input alongside a large cache-read prefix and one cache-write
+   * elsewhere in the same call — sums the four components correctly. Kept
+   * as its own case so a future change to any one rate can't silently break
+   * the total without a test failing.
+   */
+  it("sums input + cache read + cache write + output for one call (ADR-033)", () => {
+    const usage = { inputTokens: 300, outputTokens: 800, cachedInputTokens: 9000, cacheWriteTokens: 400 };
+    const expected = (300 * 4 + 9000 * 0.2 + 400 * 5 + 800 * 20) / 1_000_000;
+    expect(estimateCostUsd(opus, usage)).toBeCloseTo(expected, 9);
+  });
+
   it("prices embeddings", () => {
     const emb = { input_usd_per_mtok: 0.13, output_usd_per_mtok: 0, cache_read_usd_per_mtok: null, cache_write_usd_per_mtok: null };
     expect(estimateCostUsd(emb, { inputTokens: 200_000, outputTokens: 0 })).toBeCloseTo(0.026, 6);
@@ -140,6 +153,26 @@ describe("callStructured / embedTexts (router)", () => {
       fallback_used: false,
     });
     expect(d.calls[0]!.latency_ms).toBeGreaterThan(0);
+  });
+
+  /**
+   * ADR-033 (tracking gap fix): `cache_write_tokens` gets its own column
+   * instead of being folded into `input_tokens` before the DB write —
+   * `input_tokens` must stay exactly what the provider reported as ordinary
+   * input, with the cache-write count recorded alongside it, not added in.
+   */
+  it("records cache_write_tokens separately, without folding it into input_tokens (ADR-033)", async () => {
+    const d = deps();
+    d.providers.structured.anthropic = async () => ({
+      data: { ok: true },
+      usage: { inputTokens: 200, outputTokens: 50, cachedInputTokens: 9000, cacheWriteTokens: 1500 },
+    });
+    await callStructured("indexing_structure", { system: "s", prompt: "p", schema }, ctx, d);
+    expect(d.calls[0]).toMatchObject({
+      input_tokens: 200,
+      cached_input_tokens: 9000,
+      cache_write_tokens: 1500,
+    });
   });
 
   it("falls back to the reserve provider, records both calls and tells the parent (US-13.2)", async () => {
