@@ -1117,6 +1117,28 @@ export const uk = {
         flaggedListTitle: "Знайдені проблеми:",
         rerunHint: "Це нічого не зіпсує — перевірку можна запускати повторно скільки завгодно.",
       },
+      // S33 follow-up: one-off admin trigger for the direct whole-book
+      // literature extraction path (previously CLI-only,
+      // `npm run literature:extract`) — the PO pastes the book/subject id
+      // from his own reference list and gets a button instead of a terminal.
+      literatureExtraction: {
+        title: "Генерація уроків літератури (з підручника)",
+        help: "Створює уроки одразу з тексту цілого підручника з художньої/зарубіжної літератури — окремий, простіший шлях для предметів, де підручник уже поділено на твори/параграфи. Може тривати кілька хвилин — не закривайте сторінку під час генерації.",
+        materialIdLabel: "ID підручника (materials.id)",
+        subjectIdLabel: "ID предмета (subjects.id)",
+        runButton: "Згенерувати уроки",
+        running: "Генеруємо… це може зайняти кілька хвилин.",
+        error: "Не вдалося згенерувати уроки. Спробуйте ще раз.",
+        resultTitle: "Готово",
+        summary: (materialTitle: string, subjectName: string, groups: number) =>
+          `«${materialTitle}» (${subjectName}). Підручник оброблено за ${groups} запит(ів) до ШІ.`,
+        totals: (total: number, active: number, needsReview: number) =>
+          `Тем збережено: ${total}. Активні: ${active}. Потребують перегляду: ${needsReview}.`,
+        needsReviewHint: "Теми «потребують перегляду» не видно дитині, поки їх не перевірить дорослий — перегляньте їх у бібліотеці.",
+        costLabel: (costUsd: number) => `Орієнтовна вартість запитів до ШІ: $${costUsd.toFixed(4)}.`,
+        driveFailuresTitle: "Повний текст твору не вдалося зберегти на Google Диск для деяких тем (урок все одно збережено):",
+        driveFailureLine: (topicNo: number, reason: string) => `Тема ${topicNo}: ${reason}`,
+      },
     },
     placeholder: {
       title: (name: string) => name,
