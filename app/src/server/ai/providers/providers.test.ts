@@ -83,7 +83,12 @@ describe("anthropicStructured (mocked SDK)", () => {
       { model: "m", system: "", prompt: "", schema, params: {} },
       { messages: { stream } } as never,
     ).catch((e) => e);
-    expect(err).toMatchObject({ name: "ProviderError", message: "anthropic request error 400", retryable: false });
+    expect(err).toMatchObject({ name: "ProviderError", retryable: false });
+    expect((err as Error).message).toContain("anthropic request error 400");
+    // 2026-09-30: the thrown message now carries a slice of the real detail
+    // too — not just the console log — so a caller that surfaces it (e.g.
+    // the literature-extraction admin panel) isn't stuck with a bare status code.
+    expect((err as Error).message).toContain("schema too complex");
     expect(spy).toHaveBeenCalledWith(expect.stringContaining("anthropic request error 400"));
     expect(spy).toHaveBeenCalledWith(expect.stringContaining("schema too complex"));
     spy.mockRestore();
