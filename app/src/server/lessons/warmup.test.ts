@@ -212,10 +212,10 @@ describe("ensureActiveLibraryBlock (ADR-023)", () => {
     expect(kickJobs).toHaveBeenCalledTimes(1);
   });
 
-  it("does NOT kick the runner for the non-blocking is_current signal (immediate: false)", async () => {
+  it("still kicks the runner for the non-blocking is_current signal (immediate: false) — 2026-10-01 incident: the only cron is once a day, kickJobs is cheap/safe to call always", async () => {
     await ensureActiveLibraryBlock("fam1", subject, topic, { immediate: false });
     expect(insertedJobs).toHaveLength(1);
-    expect(kickJobs).not.toHaveBeenCalled();
+    expect(kickJobs).toHaveBeenCalledTimes(1);
   });
 
   it("defers (no new job) once the daily warm-up budget (ADR-023 §1.6) is already spent", async () => {

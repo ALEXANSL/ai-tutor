@@ -105,10 +105,13 @@ export async function warmSpendTodayUsd(familyId: string): Promise<number> {
 /**
  * Ensures a topic has (or will soon have) at least one `active` block.
  * Never runs the pipeline itself — only enqueues/joins a `library.warm_topic`
- * job; `opts.immediate` controls whether it also nudges `run_after` to now
- * and calls `kickJobs()` in this same request (the "cold" case) or simply
- * lets the normal `pg_cron` tick pick it up within a minute (the `is_current`
- * signal — "може почекати кілька секунд, не блокуюче").
+ * job. `enqueueWarmJob` always calls `kickJobs()` once a job actually exists
+ * to run (2026-10-01 incident fix — the deployed Vercel cron fires only ONCE
+ * A DAY (`vercel.json`), not every minute as an earlier version of this
+ * comment assumed; a job with no in-request kick could sit queued for up to
+ * 24h). `opts.immediate` now only controls whether an EXISTING job's
+ * `run_after` is nudged to now (the "cold"/blocking case) vs left as-is (the
+ * `is_current` signal — "може почекати кілька секунд, не блокуюче").
  */
 export interface EnsureActiveLibraryBlockOpts {
   immediate: boolean;
@@ -189,8 +192,11 @@ async function enqueueWarmJob(familyId: string, subject: WarmSubjectMeta, topic:
   if (existing) {
     if (opts.immediate) {
       await db.from("jobs").update({ run_after: new Date().toISOString() }).eq("id", existing.id).eq("status", "queued");
-      kickJobs();
     }
+    // See the 2026-10-01 incident note below (new-job path) — kick
+    // unconditionally; cheap and safe, and the only alternative is the
+    // once-a-day cron picking up a job that may already be well past due.
+    kickJobs();
     return { status: existing.status === "running" ? "job_running" : "job_pending", jobId: existing.id };
   }
 
@@ -245,13 +251,24 @@ async function enqueueWarmJob(familyId: string, subject: WarmSubjectMeta, topic:
         .eq("dedupe_key", dedupeKey)
         .in("status", ["queued", "running"])
         .maybeSingle<{ id: string; status: string }>();
-      if (opts.immediate) kickJobs();
+      // 2026-10-01 incident: this used to only kick when `opts.immediate`
+      // was set, on the assumption that a frequent `pg_cron` tick would
+      // pick up a non-immediate job "within a minute" (see this file's
+      // earlier doc comments) — but the actual deployed Vercel cron
+      // (`vercel.json`) only fires ONCE A DAY, so `prepareTopicAction`'s
+      // "Підготувати" button and `prefetchNextBlock`'s look-ahead jobs sat
+      // queued for up to 24h with nothing to run them. `kickJobs()` is
+      // documented as safe/cheap to call often (SKIP LOCKED claim, runs
+      // after the response via `after()`, never blocks this request) — so
+      // call it unconditionally whenever a job actually exists to run,
+      // immediate or not.
+      kickJobs();
       return racedJob ? { status: racedJob.status === "running" ? "job_running" : "job_pending", jobId: racedJob.id } : { status: "job_pending", jobId: "" };
     }
     throw new Error(`enqueueing ${LIBRARY_WARM_JOB_TYPE} failed: ${insertError.message}`);
   }
 
-  if (opts.immediate) kickJobs();
+  kickJobs();
   return { status: "job_pending", jobId: inserted.id };
 }
 
