@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { getLiteratureWorkFullTextAction } from "@/app/actions/literature";
 import type { LiteratureLessonView, LiteratureTestQuestionView } from "@/server/lessons/literatureView";
 
@@ -19,7 +18,16 @@ import type { LiteratureLessonView, LiteratureTestQuestionView } from "@/server/
  * tracking) — a known, called-out simplification (see the handback report).
  */
 
-/** On-demand full-text reveal (PO correction 2026-09-30, 3rd/final): fetches the work's complete text from the family's own Drive only when the child asks, never eagerly. */
+/**
+ * On-demand full-text reveal (PO correction 2026-09-30, 3rd/final): fetches
+ * the work's complete text from the family's own Drive only when the child
+ * asks, never eagerly. This IS the app's one real "read the original book"
+ * affordance (PO feedback 2026-10-01: "немає читалки оригіналу") — there is
+ * no separate reader page, so it is deliberately made big and clear rather
+ * than a cramped inline toggle: once loaded, the text opens as a full-width
+ * panel with real reading typography (not the same small body copy as the
+ * rest of the lesson), so it reads like a book page, not a debug dump.
+ */
 function WorkFullTextReveal({ lessonId, available }: { lessonId: string; available: boolean }) {
   const [state, setState] = useState<{ status: "idle" | "loading" | "error" | "done"; text?: string; reason?: string }>({ status: "idle" });
 
@@ -35,13 +43,21 @@ function WorkFullTextReveal({ lessonId, available }: { lessonId: string; availab
   };
 
   if (state.status === "done") {
-    return <div className="lit-full-text" style={{ whiteSpace: "pre-wrap" }}>{state.text}</div>;
+    return (
+      <div className="lit-reader">
+        <p className="lit-reader-title">📖 Повний текст твору</p>
+        <div className="lit-reader-text">{state.text}</div>
+        <button type="button" className="lit-btn lit-btn-secondary" onClick={() => setState({ status: "idle" })}>
+          Згорнути
+        </button>
+      </div>
+    );
   }
 
   return (
     <div>
-      <button type="button" className="lit-btn" onClick={load} disabled={state.status === "loading"}>
-        {state.status === "loading" ? "Завантажуємо..." : "Читати повний текст твору"}
+      <button type="button" className="lit-btn lit-btn-reader" onClick={load} disabled={state.status === "loading"}>
+        {state.status === "loading" ? "Завантажуємо..." : "📖 Читати повний текст твору"}
       </button>
       {state.status === "error" && <p className="lit-warning">{state.reason}</p>}
     </div>
@@ -182,12 +198,6 @@ export function LiteratureLessonScreen({ lesson, allowSkipTests = false }: { les
         <p className="lit-pages">
           Підручник: <PageRef from={lesson.textbookPageFrom} to={lesson.textbookPageTo} />
           {lesson.pdfPageFrom != null && <span className="lit-page-ref"> (PDF {lesson.pdfPageFrom}{lesson.pdfPageTo && lesson.pdfPageTo !== lesson.pdfPageFrom ? `–${lesson.pdfPageTo}` : ""})</span>}
-        </p>
-        {/* PO feedback 2026-10-01: "немає читалки оригіналу" — a visible link to the full-book reader page, which existed but had no entry point from here. */}
-        <p className="lit-pages">
-          <Link href={`/literature/book/${lesson.materialId}`} className="lit-btn lit-btn-link">
-            📖 Читати книгу
-          </Link>
         </p>
         {lesson.status === "needs_review" && <p className="lit-warning">Цей урок ще потребує перевірки дорослого — деякі частини могли обірватися при генерації.</p>}
       </header>

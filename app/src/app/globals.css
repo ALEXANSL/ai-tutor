@@ -283,10 +283,6 @@ body {
 .lit-btn:active {
   background: var(--primary-press);
 }
-/* PO feedback 2026-10-01: "Читати книгу" link in the lesson header. */
-.lit-btn-link {
-  margin-top: 4px;
-}
 /* PO feedback 2026-10-01: parent-settings-gated "Пропустити" test button, next to "Перевірити". */
 .lit-test-actions {
   display: flex;
@@ -306,11 +302,35 @@ body {
   font-weight: 600;
   margin-top: 12px;
 }
-.lit-full-text {
-  margin-top: 12px;
-  padding: 16px;
+/*
+ * PO feedback 2026-10-01: "немає читалки оригіналу" — this IS the app's one
+ * real "read the original book" affordance (there is no separate reader
+ * page). Made big and clear rather than a cramped inline toggle: a
+ * full-bleed-feeling panel (negative margins reclaim the lesson's own side
+ * padding) with real reading typography (serif, larger size/line-height
+ * than the rest of the lesson) so it reads like a book page.
+ */
+.lit-reader {
+  margin: 16px -16px 0;
+  padding: 20px 16px;
   background: var(--surface-alt);
   border-radius: 12px;
-  max-height: 60vh;
+}
+.lit-reader-title {
+  margin: 0 0 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.lit-reader-text {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 17px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  max-height: 70vh;
   overflow-y: auto;
+  padding-right: 4px;
+}
+.lit-btn-reader {
+  font-size: 16px;
+  padding: 12px 20px;
 }

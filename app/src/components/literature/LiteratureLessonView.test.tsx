@@ -15,7 +15,7 @@ vi.mock("@/app/actions/literature", () => ({
   getLiteratureWorkFullTextAction: vi.fn(),
 }));
 
-const { LiteratureTest } = await import("./LiteratureLessonView");
+const { LiteratureTest, LiteratureLessonScreen } = await import("./LiteratureLessonView");
 
 const questions = [
   {
@@ -81,5 +81,63 @@ describe("LiteratureTest skip button (PO feedback 2026-10-01)", () => {
       checkBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     expect(el.textContent).toContain("Правильно: 1 з 1");
+  });
+});
+
+/**
+ * PO correction 2026-10-01: `/literature/book/[materialId]` is just a bare
+ * topic list, not a "read the book" page — the lesson screen must NOT link
+ * to it as a reader. The inline `WorkFullTextReveal` (fed from the family's
+ * own Drive) is the one real full-text affordance, now a bigger, clearer
+ * "📖 Читати повний текст твору" panel rather than a cramped toggle.
+ */
+describe("LiteratureLessonScreen full-text reveal (PO correction 2026-10-01)", () => {
+  const baseLesson = {
+    id: "lesson-1",
+    materialId: "material-42",
+    topicNo: 1,
+    sectionTitle: null,
+    title: "Микола Гоголь. «Ніч перед Різдвом»",
+    textbookPageFrom: 10,
+    textbookPageTo: 20,
+    pdfPageFrom: null,
+    pdfPageTo: null,
+    goalUk: "Ознайомити з повістю.",
+    keyConcepts: [],
+    explanationMd: "Матеріал для пояснення.",
+    work: {
+      titleUk: "Ніч перед Різдвом",
+      excerptsUk: "«Останній день перед Різдвом минув.»",
+      summaryUk: "Коротко про сюжет.",
+      charactersUk: null,
+      ideaUk: null,
+      authorBioUk: null,
+      otherWorksUk: null,
+    },
+    sublessons: [],
+    teacherNoteUk: "",
+    status: "active" as const,
+    test: [],
+    workFullTextDriveFileId: "drive-file-1",
+  };
+
+  function renderScreen() {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => {
+      root!.render(<LiteratureLessonScreen lesson={baseLesson} />);
+    });
+    return container!;
+  }
+
+  it("never links to /literature/book/[materialId] as a reader", () => {
+    const el = renderScreen();
+    expect(el.innerHTML).not.toContain(`/literature/book/${baseLesson.materialId}`);
+  });
+
+  it("shows the big 'Читати повний текст твору' button when the Drive file is available", () => {
+    const el = renderScreen();
+    expect(Array.from(el.querySelectorAll("button")).some((b) => b.textContent?.includes("Читати повний текст твору"))).toBe(true);
   });
 });
