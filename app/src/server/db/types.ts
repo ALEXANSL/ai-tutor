@@ -47,6 +47,8 @@ export interface ParentSettingsRow {
   tutor_name_options: TutorNameOptions;
   persona_child_editable: PersonaEditable;
   telegram_linked_at: string | null;
+  /** PO feedback 2026-10-01: general setting — show a "Пропустити" (skip) button on quiz/test questions. Defaults to off. */
+  allow_skip_tests: boolean;
 }
 
 /** US-12.1 (ADR-009): one flagged reply, parent-only (the quote never leaves this row). */

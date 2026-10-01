@@ -181,6 +181,8 @@ export function checkLiteratureTopicContentQa(topic: LiteratureTopicOut): Litera
   if (topic.work) {
     check("work.excerptsUk", topic.work.excerptsUk);
     check("work.summaryUk", topic.work.summaryUk);
+    if (topic.work.authorBioUk) check("work.authorBioUk", topic.work.authorBioUk);
+    if (topic.work.otherWorksUk) check("work.otherWorksUk", topic.work.otherWorksUk);
   }
   topic.sublessons.forEach((sl, i) => {
     sl.questionGroups.forEach((g, j) => {
@@ -304,6 +306,8 @@ export async function persistLiteratureTopic(
     work_summary_uk: topic.work?.summaryUk ?? null,
     work_characters_uk: topic.work?.charactersUk ?? null,
     work_idea_uk: topic.work?.ideaUk ?? null,
+    work_author_bio_uk: topic.work?.authorBioUk ?? null,
+    work_other_works_uk: topic.work?.otherWorksUk ?? null,
     work_full_text_drive_file_id: workFullTextDriveFileId,
     sublessons: topic.sublessons,
     teacher_note_uk: topic.teacherNoteUk ?? "",

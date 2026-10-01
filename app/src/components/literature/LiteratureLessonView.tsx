@@ -18,7 +18,16 @@ import type { LiteratureLessonView, LiteratureTestQuestionView } from "@/server/
  * tracking) — a known, called-out simplification (see the handback report).
  */
 
-/** On-demand full-text reveal (PO correction 2026-09-30, 3rd/final): fetches the work's complete text from the family's own Drive only when the child asks, never eagerly. */
+/**
+ * On-demand full-text reveal (PO correction 2026-09-30, 3rd/final): fetches
+ * the work's complete text from the family's own Drive only when the child
+ * asks, never eagerly. This IS the app's one real "read the original book"
+ * affordance (PO feedback 2026-10-01: "немає читалки оригіналу") — there is
+ * no separate reader page, so it is deliberately made big and clear rather
+ * than a cramped inline toggle: once loaded, the text opens as a full-width
+ * panel with real reading typography (not the same small body copy as the
+ * rest of the lesson), so it reads like a book page, not a debug dump.
+ */
 function WorkFullTextReveal({ lessonId, available }: { lessonId: string; available: boolean }) {
   const [state, setState] = useState<{ status: "idle" | "loading" | "error" | "done"; text?: string; reason?: string }>({ status: "idle" });
 
@@ -34,13 +43,21 @@ function WorkFullTextReveal({ lessonId, available }: { lessonId: string; availab
   };
 
   if (state.status === "done") {
-    return <div className="lit-full-text" style={{ whiteSpace: "pre-wrap" }}>{state.text}</div>;
+    return (
+      <div className="lit-reader">
+        <p className="lit-reader-title">📖 Повний текст твору</p>
+        <div className="lit-reader-text">{state.text}</div>
+        <button type="button" className="lit-btn lit-btn-secondary" onClick={() => setState({ status: "idle" })}>
+          Згорнути
+        </button>
+      </div>
+    );
   }
 
   return (
     <div>
-      <button type="button" className="lit-btn" onClick={load} disabled={state.status === "loading"}>
-        {state.status === "loading" ? "Завантажуємо..." : "Читати повний текст твору"}
+      <button type="button" className="lit-btn lit-btn-reader" onClick={load} disabled={state.status === "loading"}>
+        {state.status === "loading" ? "Завантажуємо..." : "📖 Читати повний текст твору"}
       </button>
       {state.status === "error" && <p className="lit-warning">{state.reason}</p>}
     </div>
@@ -52,7 +69,15 @@ function PageRef({ from, to }: { from: number | null; to: number | null }) {
   return <span className="lit-page-ref">{to != null && to !== from ? `с. ${from}–${to}` : `с. ${from}`}</span>;
 }
 
-function TestQuestion({ q, onAnswered }: { q: LiteratureTestQuestionView; onAnswered: (correct: boolean | null) => void }) {
+function TestQuestion({
+  q,
+  onAnswered,
+  allowSkip,
+}: {
+  q: LiteratureTestQuestionView;
+  onAnswered: (correct: boolean | null) => void;
+  allowSkip: boolean;
+}) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [openText, setOpenText] = useState("");
   const [revealed, setRevealed] = useState(false);
@@ -79,6 +104,12 @@ function TestQuestion({ q, onAnswered }: { q: LiteratureTestQuestionView; onAnsw
     const expected = new Set(Array.isArray(q.answer) ? (q.answer as number[]) : q.answer != null ? [q.answer as number] : []);
     const correct = selected.size === expected.size && [...selected].every((i) => expected.has(i));
     onAnswered(correct);
+  };
+
+  /** Parent-settings-gated skip (PO feedback 2026-10-01): reveals the explanation without scoring, same no-verdict path as `open`/`match`/`order`. */
+  const skip = () => {
+    setRevealed(true);
+    onAnswered(null);
   };
 
   return (
@@ -110,9 +141,16 @@ function TestQuestion({ q, onAnswered }: { q: LiteratureTestQuestionView; onAnsw
         <textarea className="lit-test-open" value={openText} onChange={(e) => setOpenText(e.target.value)} disabled={revealed} placeholder="Твоя відповідь..." />
       )}
       {!revealed ? (
-        <button type="button" className="lit-btn" onClick={check}>
-          Перевірити
-        </button>
+        <div className="lit-test-actions">
+          <button type="button" className="lit-btn" onClick={check}>
+            Перевірити
+          </button>
+          {allowSkip && (
+            <button type="button" className="lit-btn lit-btn-secondary" onClick={skip}>
+              Пропустити
+            </button>
+          )}
+        </div>
       ) : (
         <p className="lit-test-explain">{q.explanationUk}</p>
       )}
@@ -120,7 +158,7 @@ function TestQuestion({ q, onAnswered }: { q: LiteratureTestQuestionView; onAnsw
   );
 }
 
-export function LiteratureTest({ questions }: { questions: LiteratureTestQuestionView[] }) {
+export function LiteratureTest({ questions, allowSkip = false }: { questions: LiteratureTestQuestionView[]; allowSkip?: boolean }) {
   const [results, setResults] = useState<Record<string, boolean | null>>({});
   const scored = useMemo(() => Object.values(results).filter((v) => v != null), [results]);
   const correctCount = useMemo(() => scored.filter(Boolean).length, [scored]);
@@ -131,7 +169,12 @@ export function LiteratureTest({ questions }: { questions: LiteratureTestQuestio
     <div>
       <ol className="lit-test-list">
         {questions.map((q) => (
-          <TestQuestion key={q.id} q={q} onAnswered={(correct) => setResults((prev) => ({ ...prev, [q.id]: correct }))} />
+          <TestQuestion
+            key={q.id}
+            q={q}
+            allowSkip={allowSkip}
+            onAnswered={(correct) => setResults((prev) => ({ ...prev, [q.id]: correct }))}
+          />
         ))}
       </ol>
       {scored.length > 0 && (
@@ -143,7 +186,7 @@ export function LiteratureTest({ questions }: { questions: LiteratureTestQuestio
   );
 }
 
-export function LiteratureLessonScreen({ lesson }: { lesson: LiteratureLessonView }) {
+export function LiteratureLessonScreen({ lesson, allowSkipTests = false }: { lesson: LiteratureLessonView; allowSkipTests?: boolean }) {
   return (
     <article className="lit-lesson">
       <header>
@@ -201,6 +244,18 @@ export function LiteratureLessonScreen({ lesson }: { lesson: LiteratureLessonVie
               <strong>Ідея:</strong> {lesson.work.ideaUk}
             </p>
           )}
+          {lesson.work.authorBioUk && (
+            <div>
+              <h3>Про автора</h3>
+              <p style={{ whiteSpace: "pre-wrap" }}>{lesson.work.authorBioUk}</p>
+            </div>
+          )}
+          {lesson.work.otherWorksUk && (
+            <div>
+              <h3>Інші твори автора</h3>
+              <p style={{ whiteSpace: "pre-wrap" }}>{lesson.work.otherWorksUk}</p>
+            </div>
+          )}
         </section>
       )}
 
@@ -235,7 +290,7 @@ export function LiteratureLessonScreen({ lesson }: { lesson: LiteratureLessonVie
 
       <section>
         <h2>Тест</h2>
-        <LiteratureTest questions={lesson.test} />
+        <LiteratureTest questions={lesson.test} allowSkip={allowSkipTests} />
       </section>
     </article>
   );

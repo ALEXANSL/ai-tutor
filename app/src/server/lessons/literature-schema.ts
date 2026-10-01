@@ -64,6 +64,21 @@ export const literatureTopicSchema = z.object({
       summaryUk: z.string().min(1).max(3000),
       charactersUk: z.string().max(1000).optional(),
       ideaUk: z.string().max(1000).optional(),
+      /**
+       * PO feedback 2026-10-01 (first real lesson, Гоголь): the textbook
+       * itself carries a real biography of the work's author — leaving it
+       * out made the lesson feel thin. A real, substantive paragraph of
+       * biographical facts, ONLY when the source text actually covers the
+       * author's life (never invented — same rule as everywhere else in
+       * this schema, rules 1/4 of the prompt).
+       */
+      authorBioUk: z.string().max(2000).optional(),
+      /**
+       * PO feedback 2026-10-01: mentions of the author's OTHER well-known
+       * works, ONLY if the source text itself mentions them — never
+       * invented, never a general-knowledge list the model already "knows".
+       */
+      otherWorksUk: z.string().max(800).optional(),
     })
     .nullable(),
   sublessons: z.array(sublessonSchema).min(1).max(10),

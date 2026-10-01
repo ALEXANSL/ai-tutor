@@ -1058,6 +1058,13 @@ export const uk = {
       pinLockedUntil: (time: string) => `Введення PIN на планшеті заблоковано до ${time}`,
       policy: (attempts: number, lockMin: number, idleMin: number) =>
         `Після ${attempts} неправильних спроб — блокування на ${lockMin} хв. Автовихід з режиму тата — після ${idleMin} хв без дій.`,
+      // PO feedback 2026-10-01: "зроби кнопку яку можна показувати/ховати з
+      // налаштувань - пропустити тести" — a general (not literature-only)
+      // toggle for the quiz/test "Пропустити" button.
+      testsTitle: "Тести в уроках",
+      testsHelp: "Якщо увімкнено, дитина бачить кнопку «Пропустити» біля кожного тестового запитання — можна пройти тест без відповіді на всі питання.",
+      allowSkipTestsLabel: "Дозволити дитині пропускати тестові запитання",
+      save: "Зберегти",
       // S4 (ADR-010, US-11.7): urgent e-mail + Telegram channel status.
       urgentTitle: "Термінові сповіщення",
       urgentHelp: "Лише для термінових тривожних сигналів (US-12.1) — не для будь-яких інших подій (D-12).",

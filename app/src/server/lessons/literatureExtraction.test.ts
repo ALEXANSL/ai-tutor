@@ -157,6 +157,27 @@ describe("checkLiteratureTopicContentQa", () => {
     const result = checkLiteratureTopicContentQa(topic({ work: null }));
     expect(result.ok).toBe(true);
   });
+
+  it("passes when optional work.authorBioUk/otherWorksUk are absent", () => {
+    const result = checkLiteratureTopicContentQa(topic());
+    expect(result.ok).toBe(true);
+  });
+
+  it("flags a truncated work.authorBioUk when present", () => {
+    const result = checkLiteratureTopicContentQa(
+      topic({ work: { ...topic().work!, authorBioUk: "Дефо народився у" } }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.failures.some((f) => f.field === "work.authorBioUk")).toBe(true);
+  });
+
+  it("flags a truncated work.otherWorksUk when present", () => {
+    const result = checkLiteratureTopicContentQa(
+      topic({ work: { ...topic().work!, otherWorksUk: "Дефо також написав і" } }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.failures.some((f) => f.field === "work.otherWorksUk")).toBe(true);
+  });
 });
 
 describe("extractTopicsForGroup", () => {
@@ -260,6 +281,26 @@ describe("persistLiteratureTopic", () => {
     });
     expect(JSON.stringify(inserted.literature_lessons)).not.toContain("Уривок"); // sanity: no full-work-text field ever leaks into the DB row
     expect(inserted.literature_lesson_tests).toMatchObject({ lesson_id: "lesson-1", questions: topic().test.questions });
+  });
+
+  it("writes work_author_bio_uk/work_other_works_uk when the topic provides them, and null when it doesn't (PO feedback 2026-10-01)", async () => {
+    const { scope, inserted } = makeScope({ existingLesson: null });
+    const withBio = topic({
+      work: { ...topic().work!, authorBioUk: "Дефо народився 1660 р. у родині торговця.", otherWorksUk: "Також написав «Щоденник чумного року»." },
+    });
+    await persistLiteratureTopic(scope as never, { subjectId: "subj1", materialId: "mat1", grade: 6 }, withBio, 3, "claude-opus-5-5");
+
+    expect(inserted.literature_lessons).toMatchObject({
+      work_author_bio_uk: "Дефо народився 1660 р. у родині торговця.",
+      work_other_works_uk: "Також написав «Щоденник чумного року».",
+    });
+  });
+
+  it("defaults work_author_bio_uk/work_other_works_uk to null when the topic omits them", async () => {
+    const { scope, inserted } = makeScope({ existingLesson: null });
+    await persistLiteratureTopic(scope as never, { subjectId: "subj1", materialId: "mat1", grade: 6 }, topic(), 3, "claude-opus-5-5");
+
+    expect(inserted.literature_lessons).toMatchObject({ work_author_bio_uk: null, work_other_works_uk: null });
   });
 
   it("defaults work_full_text_drive_file_id to null when the caller passes none (e.g. topic has no work, or the Drive write failed)", async () => {

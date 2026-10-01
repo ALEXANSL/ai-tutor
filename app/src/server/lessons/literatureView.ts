@@ -32,6 +32,8 @@ export interface LiteratureTestQuestionView {
 }
 export interface LiteratureLessonView {
   id: string;
+  /** PO feedback 2026-10-01: id of the book this lesson belongs to — lets the UI link to the full-book reader (`/literature/book/[materialId]`), which previously had no entry point from the lesson screen. */
+  materialId: string;
   topicNo: number;
   sectionTitle: string | null;
   title: string;
@@ -42,7 +44,17 @@ export interface LiteratureLessonView {
   goalUk: string;
   keyConcepts: string[];
   explanationMd: string;
-  work: { titleUk: string; excerptsUk: string; summaryUk: string; charactersUk: string | null; ideaUk: string | null } | null;
+  work: {
+    titleUk: string;
+    excerptsUk: string;
+    summaryUk: string;
+    charactersUk: string | null;
+    ideaUk: string | null;
+    /** PO feedback 2026-10-01: a real author-biography paragraph, when the source text covers one — never invented. */
+    authorBioUk: string | null;
+    /** PO feedback 2026-10-01: other works of the author the source text itself mentions — never invented. */
+    otherWorksUk: string | null;
+  } | null;
   sublessons: LiteratureSublessonView[];
   teacherNoteUk: string;
   status: "active" | "needs_review";
@@ -79,6 +91,8 @@ interface LessonRow {
   work_summary_uk: string | null;
   work_characters_uk: string | null;
   work_idea_uk: string | null;
+  work_author_bio_uk: string | null;
+  work_other_works_uk: string | null;
   work_full_text_drive_file_id: string | null;
   sublessons: LiteratureSublessonView[];
   teacher_note_uk: string;
@@ -94,7 +108,7 @@ export async function getLiteratureLessonView(familyId: string, lessonId: string
     scope
       .select(
         "literature_lessons",
-        "id, material_id, topic_no, section_title, title, textbook_page_from, textbook_page_to, pdf_page_from, pdf_page_to, goal_uk, key_concepts, explanation_md, work_title_uk, work_excerpts_uk, work_summary_uk, work_characters_uk, work_idea_uk, work_full_text_drive_file_id, sublessons, teacher_note_uk, status",
+        "id, material_id, topic_no, section_title, title, textbook_page_from, textbook_page_to, pdf_page_from, pdf_page_to, goal_uk, key_concepts, explanation_md, work_title_uk, work_excerpts_uk, work_summary_uk, work_characters_uk, work_idea_uk, work_author_bio_uk, work_other_works_uk, work_full_text_drive_file_id, sublessons, teacher_note_uk, status",
       )
       .eq("id", lessonId)
       .maybeSingle<LessonRow>(),
@@ -104,6 +118,7 @@ export async function getLiteratureLessonView(familyId: string, lessonId: string
 
   return {
     id: lesson.id,
+    materialId: lesson.material_id,
     topicNo: lesson.topic_no,
     sectionTitle: lesson.section_title,
     title: lesson.title,
@@ -121,6 +136,8 @@ export async function getLiteratureLessonView(familyId: string, lessonId: string
           summaryUk: lesson.work_summary_uk ?? "",
           charactersUk: lesson.work_characters_uk,
           ideaUk: lesson.work_idea_uk,
+          authorBioUk: lesson.work_author_bio_uk,
+          otherWorksUk: lesson.work_other_works_uk,
         }
       : null,
     sublessons: lesson.sublessons ?? [],
