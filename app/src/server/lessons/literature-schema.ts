@@ -66,17 +66,22 @@ export const literatureTopicSchema = z.object({
       ideaUk: z.string().max(1000).optional(),
       /**
        * PO feedback 2026-10-01 (first real lesson, Гоголь): the textbook
-       * itself carries a real biography of the work's author — leaving it
-       * out made the lesson feel thin. A real, substantive paragraph of
-       * biographical facts, ONLY when the source text actually covers the
-       * author's life (never invented — same rule as everywhere else in
-       * this schema, rules 1/4 of the prompt).
+       * alone made the lesson feel thin. PO correction, same day (2nd):
+       * the textbook is a FLOOR, not a ceiling — the model actively
+       * supplements this from its own well-established knowledge when the
+       * source text doesn't fully cover the author's life, under the
+       * confidence/vagueness-over-invention guardrails in the prompt's
+       * rule 6 (never for the work's own text — rule 4 stays absolute).
+       * Empty only when the model has no confident knowledge of this
+       * author (e.g. obscure/anonymous).
        */
       authorBioUk: z.string().max(2000).optional(),
       /**
-       * PO feedback 2026-10-01: mentions of the author's OTHER well-known
-       * works, ONLY if the source text itself mentions them — never
-       * invented, never a general-knowledge list the model already "knows".
+       * PO feedback 2026-10-01 (2nd correction): the author's OTHER
+       * well-known works — drawn from the source text when present, else
+       * from the model's own well-established knowledge (same rule-6
+       * guardrails as `authorBioUk` above; never invented titles it isn't
+       * confident about).
        */
       otherWorksUk: z.string().max(800).optional(),
     })
