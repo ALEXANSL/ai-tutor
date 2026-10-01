@@ -129,7 +129,20 @@ async function routed<T>(
     };
     try {
       const { value, usage } = await run(model, route.params);
-      const costUsd = estimateCostUsd(await deps.loadPrice(model.provider, model.model), usage);
+      const price = await deps.loadPrice(model.provider, model.model);
+      if (!price) {
+        // 2026-10-01 incident: a missing `model_prices` row silently made
+        // EVERY call to that model look free (`estimateCostUsd` returns 0
+        // for `price === null`) — confirmed root cause of a real gap
+        // between this app's cost dashboard and the family's actual
+        // provider bills (`lesson_review`'s `gpt-5.6-sol` had no price row
+        // since the role was created). A loud log is the minimum fix so
+        // this is never silently invisible again — it does NOT recover the
+        // already-lost tracking for past calls, and does not replace
+        // actually adding the missing price row.
+        console.error(`model_prices missing for ${model.provider}/${model.model} (role "${role}") — this call's cost_usd will be recorded as 0, NOT actually free`);
+      }
+      const costUsd = estimateCostUsd(price, usage);
       await deps.recordCall(ctx.familyId, {
         ...base,
         status: "ok",
