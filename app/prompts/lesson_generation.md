@@ -12,6 +12,10 @@ passes — moving it back earlier would still work correctly, just without the
 cache benefit on revision passes.
 Structured output (JSON schema, see app/src/server/lessons/schema.ts) is
 enforced by the provider — this text is the system+user framing around it.
+An `interactive` step's `props` is a JSON-TEXT field in that schema (not a
+nested object) by design (prod incident 2026-09-29/30, "compiled grammar
+too large") — validated against the chosen component's own schema as a
+second step right after generation, in `component-validator.ts`.
 
 NFR-PRIV-2 / NFR-SAFE-8: only the subject, topic, textbook fragments, plan
 and activity rules are sent. The child's nickname, name, e-mail, and the
@@ -27,7 +31,7 @@ block has no idea who will study it or who "teaches" it.
 3. Блок — короткий цикл «пояснення → дія → відгук» (не лише читання): щонайменше 2 різні типи кроків із дозволеного списку типів.
 4. Один крок `slide` вміщується на один екран планшета (≤ 900 символів) і читається вголос за ≤ 90 секунд — коротко, з одним прикладом.
 5. Контрольні кроки (`choice`, `open`) мають чітку правильну відповідь/еталон і одне речення пояснення при помилці — тепле, без осуду, конкретне («не 3, бо…»), НІКОЛИ не "ти помилилась" чи оцінку особистості. Прив'яжи їх до `comprehensionChecksUk` з плану.
-6. Якщо тема це дозволяє і в списку дозволених компонентів є хоча б один — додай щонайменше один крок `interactive` з цим компонентом. Компонент — лише один із дозволеного списку нижче, з даними за його схемою; НІКОЛИ не повертай HTML, JavaScript, SVG-розмітку чи посилання (URL) у жодному текстовому полі.
+6. Якщо тема це дозволяє і в списку дозволених компонентів є хоча б один — додай щонайменше один крок `interactive` з цим компонентом. `component` — лише один ключ із дозволеного списку нижче. `props` — рядок із дійсним JSON (не вкладений об'єкт!), що відповідає схемі саме цього компонента, описаній нижче для нього; сервер розбере й перевірить цей JSON окремим кроком одразу після генерації. НІКОЛИ не повертай HTML, JavaScript, SVG-розмітку чи посилання (URL) у жодному текстовому полі, зокрема всередині цього JSON.
 7. `techniquesUsed` — щонайменше 2 ключі з тих, що обрав план (`techniques`), і кроки блоку справді їх застосовують (не лише називають).
 8. `visibleOutcomeUk` — те саме формулювання результату з плану (можеш трохи відшліфувати формулювання, зміст не міняй).
 9. Не обіцяй нагород, балів понад систему, не згадуй гроші чи бюджет, не грай роль психолога — лише навчальний зміст.

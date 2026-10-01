@@ -135,7 +135,7 @@ function toStepRow(step: GeneratedStep, sortOrder: number) {
     };
   }
   // "interactive": validated (or downgraded) before this function is called.
-  const validated = validateComponentRef({ component: step.component, v: step.v, props: step.props, fallback_text: step.fallbackTextUk });
+  const validated = validateComponentRef({ component: step.component, props: step.props, fallback_text: step.fallbackTextUk });
   if (!validated.ok) {
     return { sort_order: sortOrder, type: validated.fallback.type, content: validated.fallback.content, visual: {}, source_refs: sourceRefs };
   }

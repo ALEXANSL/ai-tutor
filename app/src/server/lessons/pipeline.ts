@@ -9,7 +9,7 @@ import { fillTemplate, splitPrompt } from "@/server/ingest/structure";
 import { safetyPreambleGenericUk } from "@/server/safety/preamble";
 import { checkBlockContentQa, contentQaFailureNoteUk, type ContentQaResult } from "./content-qa";
 import { pedagogyCatalogForPrompt, REVIEW_CRITERION_LABELS_UK } from "./pedagogy";
-import { buildLessonBlockSchema, planSchema, reviewSchema, type GeneratedStep, type LessonBlockGenerated, type LessonPlan, type ReviewOutput } from "./schema";
+import { buildLessonBlockSchema, materializeInteractiveProps, planSchema, reviewSchema, type GeneratedStep, type LessonBlockGenerated, type LessonPlan, type ReviewOutput } from "./schema";
 
 /**
  * The pedagogical pipeline (ADR-022, D-55): `lesson_planning` (Claude Opus
@@ -323,7 +323,7 @@ async function generateDraft(
   );
   const system2 = `${safetyPreambleGenericUk()}\n\n${system}`;
   const res = await callStructured("lesson_generation", { system: system2, prompt, schema }, { familyId: input.familyId, ref: { table: "topics", id: input.topicId }, jobId });
-  return { block: res.result, call: { role: "lesson_generation", provider: res.model.provider, model: res.model.model, costUsd: res.costUsd } };
+  return { block: materializeInteractiveProps(res.result), call: { role: "lesson_generation", provider: res.model.provider, model: res.model.model, costUsd: res.costUsd } };
 }
 
 async function reviewDraft(

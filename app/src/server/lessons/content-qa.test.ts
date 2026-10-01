@@ -298,7 +298,6 @@ describe("checkStepContentQa / checkBlockContentQa (per-field, per-step orchestr
     const step: LessonBlockGenerated["steps"][number] = {
       type: "interactive",
       component: "drag_sort",
-      v: 1,
       props: {},
       fallbackTextUk: "Якщо гра не завантажилась, онови сторінку і",
       sourceRefs: [],

@@ -80,7 +80,6 @@ export interface OpenStepOut {
 export interface InteractiveStepOut {
   type: "interactive";
   component: string;
-  v: number;
   props: unknown;
   fallbackTextUk: string;
   sourceRefs: SourceRefOut[];
@@ -219,18 +218,53 @@ const openStep = z.object({
   ...baseStep,
 });
 
-export function buildLessonBlockSchema(allowedComponents: LessonComponentDefinition<never, never>[]): z.ZodType<LessonBlockGenerated> {
-  const interactiveVariants = allowedComponents.map((def) =>
-    z.object({
-      type: z.literal("interactive"),
-      component: z.literal(def.key),
-      v: z.literal(def.v),
-      props: def.propsSchema as z.ZodType,
-      fallbackTextUk: z.string().min(1).max(300),
-      ...baseStep,
-    }),
-  );
-  const stepSchema = z.discriminatedUnion("type", [slideStep, choiceStep, openStep, ...interactiveVariants] as never);
+/**
+ * Prod incident (`03568fce-…`, 34h stuck, 2026-09-29/30): Anthropic rejected
+ * `lesson_generation` calls for Математика with `400 … The compiled grammar
+ * is too large … reduce the number of strict tools`. The old schema put one
+ * FULL branch per allowed interactive component straight into the
+ * model-facing `steps` discriminated union — literal `component`, literal
+ * `v`, and the component's own (possibly deeply nested: arrays of objects,
+ * records, nested enums) `propsSchema` — inside an array allowed up to 10
+ * items. That makes the compiled structured-output grammar grow with BOTH
+ * the number of registered components (`registry.ts` says plainly "a new
+ * component = a new folder here", i.e. this was only going to get worse) AND
+ * the shape complexity of each one's own props — and even a single
+ * component (`drag_sort`, the only one registered today) already tipped
+ * Математика over the limit, while every other subject (zero allowed
+ * components) stayed under it by having no interactive branch at all.
+ *
+ * Fix: the union offered to the model always has AT MOST one `interactive`
+ * branch, independent of `allowedComponents.length` or any one component's
+ * own schema size — `component` is a flat enum of allowed keys, and `props`
+ * is plain JSON **text** (opaque to this schema) rather than a nested
+ * object. The component-specific shape is enforced as a strict SECOND step,
+ * entirely after generation: `materializeInteractiveProps` parses that text
+ * and `component-validator.ts`'s `validateComponentRef` runs the exact same
+ * `propsSchema`/`validateSemantics` checks as before (unchanged, still
+ * authoritative) — this only moves *when* that validation happens, never
+ * weakens it. An unparsable or schema-invalid value degrades to the same
+ * safe fallback step as always (NFR-SAFE-15).
+ */
+export function buildLessonBlockSchema(allowedComponents: LessonComponentDefinition<never, never>[]): z.ZodType<RawGeneratedBlock> {
+  const allowedKeys = allowedComponents.map((d) => d.key);
+  const interactiveVariant =
+    allowedKeys.length > 0
+      ? [
+          z.object({
+            type: z.literal("interactive"),
+            component: z.enum(allowedKeys as [string, ...string[]]),
+            // Model-authored JSON text describing this component's props —
+            // parsed and validated against the NAMED component's own schema
+            // only after generation (see the function doc above). Never a
+            // nested object here, by design.
+            props: z.string().min(1).max(4000),
+            fallbackTextUk: z.string().min(1).max(300),
+            ...baseStep,
+          }),
+        ]
+      : [];
+  const stepSchema = z.discriminatedUnion("type", [slideStep, choiceStep, openStep, ...interactiveVariant] as never);
 
   return z.object({
     titleUk: z.string().min(1).max(150),
@@ -241,5 +275,41 @@ export function buildLessonBlockSchema(allowedComponents: LessonComponentDefinit
     // NFR-SAFE-8 / US-19.1 КП-2: the model is never told the nickname; if it
     // reaches for one anyway, the validator below catches the placeholder.
     steps: z.array(stepSchema).min(3).max(10),
-  }) as unknown as z.ZodType<LessonBlockGenerated>;
+  }) as unknown as z.ZodType<RawGeneratedBlock>;
+}
+
+/**
+ * Same shape as a generated block, except an `interactive` step's `props`
+ * is still the model's raw JSON-text form (see `buildLessonBlockSchema`'s
+ * doc) rather than the parsed/validated value `GeneratedStep` promises.
+ * `callStructured("lesson_generation", …)` returns exactly this — callers
+ * must run it through `materializeInteractiveProps` before treating it as a
+ * `LessonBlockGenerated`.
+ */
+export type RawGeneratedBlock = Omit<LessonBlockGenerated, "steps"> & {
+  steps: (Exclude<GeneratedStep, InteractiveStepOut> | (Omit<InteractiveStepOut, "props"> & { props: string }))[];
+};
+
+/**
+ * Parses each `interactive` step's JSON-text `props` into a plain value —
+ * the second half of the two-step validation described on
+ * `buildLessonBlockSchema`. Never throws: a malformed JSON string becomes
+ * `null`, which `component-validator.ts`'s `validateComponentRef` rejects
+ * exactly like any other schema mismatch, degrading to a safe fallback step
+ * (NFR-SAFE-15) instead of failing the whole block generation.
+ */
+export function materializeInteractiveProps(raw: RawGeneratedBlock): LessonBlockGenerated {
+  return {
+    ...raw,
+    steps: raw.steps.map((s): GeneratedStep => {
+      if (s.type !== "interactive") return s;
+      let props: unknown = null;
+      try {
+        props = JSON.parse(s.props);
+      } catch {
+        props = null;
+      }
+      return { ...s, props };
+    }),
+  };
 }
