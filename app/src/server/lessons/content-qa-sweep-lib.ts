@@ -68,7 +68,6 @@ export function toGeneratedStep(row: RawStepRow): GeneratedStep | null {
       return {
         type: "interactive",
         component: String(v.component ?? ""),
-        v: Number(v.v ?? 1),
         props: v.props,
         fallbackTextUk: String(v.fallback_text ?? ""),
         sourceRefs,
