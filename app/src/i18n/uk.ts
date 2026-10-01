@@ -171,6 +171,11 @@ export const uk = {
       // state: a topic she (or an automatic trigger) already started
       // preparing, distinct from one nobody has asked for yet.
       topicStatus: { ready: "Готово", needsPrep: "Потрібна підготовка", inProgress: "Готуємо…" },
+      // S33/D-123: a topic already covered by the extraction-pipeline
+      // ("literature lessons") path links straight into its own viewer
+      // instead of the old "Почати"/generation flow — see
+      // `getSubjectDetail`'s `literatureLessonId` doc comment.
+      openLesson: "Відкрити урок",
       // US-19.5 КП-2 (S38): "Підготувати" on a "Потрібна підготовка" card —
       // queues the same background generation as "Почати", but does NOT
       // navigate away from the topic list (the whole point — no 5–6 хв
