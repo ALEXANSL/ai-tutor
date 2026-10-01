@@ -99,6 +99,59 @@ describe("getSubjectDetail (D-65)", () => {
 });
 
 /**
+ * S33/D-123 (production bug fix): the old pipeline (`pipeline.ts`) can get a
+ * `needs_review` block permanently stuck for paragraph-structured subjects
+ * (literature, history, ...) — after `MAX_REVISIONS` failed passes there is
+ * no way for it to ever reach `active`. For those topics, an `active`
+ * `literature_lessons` row now takes over as the child's entry point
+ * instead. `literatureLessonId` is the purely data-driven (no subject name
+ * check) flag the child screen branches on.
+ */
+describe("getSubjectDetail: literatureLessonId (S33/D-123)", () => {
+  it("carries the literature_lessons id for a topic that has an ACTIVE row", async () => {
+    scopeState.tables = {
+      subjects: { id: "subj-lit", code: "lit", name_uk: "Зарубіжна література", active: true, is_stub: false },
+      materials: [],
+      topics: [{ id: "t1", subject_id: "subj-lit", title: "Розділ 1", page_from: 1, page_to: 10, sort_order: 1, is_current: false }],
+      literature_lessons: [{ id: "ll-1", topic_id: "t1", status: "active" }],
+    };
+
+    const detail = await getSubjectDetail("fam-1", "subj-lit");
+
+    expect(detail?.topics).toEqual([{ id: "t1", title: "Розділ 1", pageFrom: 1, pageTo: 10, literatureLessonId: "ll-1" }]);
+  });
+
+  it("falls through to the old flow (literatureLessonId: null) when no literature_lessons row exists at all", async () => {
+    scopeState.tables = {
+      subjects: { id: "subj-math", code: "math", name_uk: "Математика", active: true, is_stub: false },
+      materials: [],
+      topics: [{ id: "t2", subject_id: "subj-math", title: "Дроби", page_from: 10, page_to: 20, sort_order: 1, is_current: false }],
+      literature_lessons: [],
+    };
+
+    const detail = await getSubjectDetail("fam-1", "subj-math");
+
+    expect(detail?.topics[0]).toMatchObject({ id: "t2", literatureLessonId: null });
+  });
+
+  it("falls through to the old flow (literatureLessonId: null) when the only row for the topic is needs_review", async () => {
+    scopeState.tables = {
+      subjects: { id: "subj-lit2", code: "lit2", name_uk: "Історія", active: true, is_stub: false },
+      materials: [],
+      topics: [{ id: "t3", subject_id: "subj-lit2", title: "Розділ 2", page_from: 11, page_to: 20, sort_order: 1, is_current: false }],
+      // The DB row exists but hasn't passed content QA yet — must behave
+      // exactly like "no row found", never be surfaced to the child
+      // (mirrors the RLS policy that blocks the child from reading it at all).
+      literature_lessons: [{ id: "ll-2", topic_id: "t3", status: "needs_review" }],
+    };
+
+    const detail = await getSubjectDetail("fam-1", "subj-lit2");
+
+    expect(detail?.topics[0]).toMatchObject({ id: "t3", literatureLessonId: null });
+  });
+});
+
+/**
  * E-22 (US-22.1/22.2/22.3, ADR-030, VP-52): a school subject stays visible
  * to the child (grey tile) purely by `active`; a course is only reachable
  * when BOTH itself and (if it belongs to one) its group are active.

@@ -115,6 +115,22 @@ export interface SubjectTopicOption {
   title: string;
   pageFrom: number | null;
   pageTo: number | null;
+  /**
+   * S33/D-123 integration: the `literature_lessons` row's id when this topic
+   * already has an `active` (QA-passed) extraction-pipeline lesson — `null`
+   * otherwise, including when a `needs_review` row exists for it (never
+   * surfaced to the child, same rule as the DB's own
+   * `literature_lessons_select_child` RLS policy, mirrored here explicitly
+   * because this query runs for the parent cabinet too, where RLS would
+   * otherwise also return `needs_review` rows). The child screen uses this
+   * to link straight into `/literature/[lessonId]` instead of the old
+   * generation pipeline, which has no way to ever finish for a
+   * paragraph-structured subject's topics (see `pipeline.ts`'s
+   * `MAX_REVISIONS` comment and the 2026-09-30 PO decision). Deliberately
+   * keyed on nothing but "does an active row exist for this topic_id" — no
+   * subject-name check — so any future S33 subject picks this up for free.
+   */
+  literatureLessonId: string | null;
 }
 
 export interface SubjectDetail {
@@ -185,6 +201,22 @@ export async function getSubjectDetail(familyId: string, subjectId: string): Pro
 
   const topicList = topics ?? [];
   const kind = subject.kind ?? "school_subject";
+
+  // S33/D-123: look up which of this subject's topics already have an
+  // `active` extraction-pipeline lesson (see `SubjectTopicOption.literatureLessonId`
+  // doc comment above). Explicitly filtered to `status = 'active'` here
+  // (not left to RLS) because this same query also serves the PARENT
+  // cabinet, where RLS would return `needs_review` rows too.
+  const topicIds = topicList.map((t) => t.id);
+  const { data: literatureLessons } = topicIds.length
+    ? await scope
+        .select("literature_lessons", "id, topic_id")
+        .in("topic_id", topicIds)
+        .eq("status", "active")
+        .returns<{ id: string; topic_id: string }[]>()
+    : { data: [] as { id: string; topic_id: string }[] };
+  const literatureLessonByTopic = new Map((literatureLessons ?? []).map((l) => [l.topic_id, l.id]));
+
   return {
     id: subject.id,
     code: subject.code,
@@ -192,7 +224,13 @@ export async function getSubjectDetail(familyId: string, subjectId: string): Pro
     active: subject.active,
     hasTextbook: !!textbook,
     textbookTitle: textbook ? (textbook.title ?? textbook.name) : null,
-    topics: topicList.map((t) => ({ id: t.id, title: t.title, pageFrom: t.page_from, pageTo: t.page_to })),
+    topics: topicList.map((t) => ({
+      id: t.id,
+      title: t.title,
+      pageFrom: t.page_from,
+      pageTo: t.page_to,
+      literatureLessonId: literatureLessonByTopic.get(t.id) ?? null,
+    })),
     currentTopicId: topicList.find((t) => t.is_current)?.id ?? null,
     kind,
     groupId: subject.group_id ?? null,

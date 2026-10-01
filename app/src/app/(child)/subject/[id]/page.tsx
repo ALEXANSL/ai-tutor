@@ -61,29 +61,53 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
                 {topic.id === subject.currentTopicId && (
                   <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">{ts.priorityBadge}</span>
                 )}
-                <span
-                  className={
-                    warmupStatuses[topic.id] === "ready"
-                      ? "rounded-full bg-secondary/10 px-2 py-0.5 text-xs font-bold text-secondary"
+                {/* S33/D-123: this badge reports the OLD pipeline's
+                    `library_items` warm-up state, which is meaningless for a
+                    topic already served by its own `literature_lessons` row
+                    — omit it there rather than show a misleading "Потрібна
+                    підготовка"/"Готуємо…" next to an already-ready lesson. */}
+                {!topic.literatureLessonId && (
+                  <span
+                    className={
+                      warmupStatuses[topic.id] === "ready"
+                        ? "rounded-full bg-secondary/10 px-2 py-0.5 text-xs font-bold text-secondary"
+                        : warmupStatuses[topic.id] === "queued" || warmupStatuses[topic.id] === "generating"
+                          ? "rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary"
+                          : "rounded-full bg-surface-alt px-2 py-0.5 text-xs font-bold text-muted"
+                    }
+                  >
+                    {warmupStatuses[topic.id] === "ready"
+                      ? ts.topicStatus.ready
                       : warmupStatuses[topic.id] === "queued" || warmupStatuses[topic.id] === "generating"
-                        ? "rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary"
-                        : "rounded-full bg-surface-alt px-2 py-0.5 text-xs font-bold text-muted"
-                  }
-                >
-                  {warmupStatuses[topic.id] === "ready"
-                    ? ts.topicStatus.ready
-                    : warmupStatuses[topic.id] === "queued" || warmupStatuses[topic.id] === "generating"
-                      ? ts.topicStatus.inProgress
-                      : ts.topicStatus.needsPrep}
-                </span>
+                        ? ts.topicStatus.inProgress
+                        : ts.topicStatus.needsPrep}
+                  </span>
+                )}
               </div>
               {topic.pageFrom != null && topic.pageTo != null && (
                 <p className="mb-3 text-sm text-muted">{ts.pages(topic.pageFrom, topic.pageTo)}</p>
               )}
               <div className="flex flex-wrap items-center gap-2.5">
-                <ChildStartLessonButton subjectId={subject.id} topicId={topic.id} />
-                {warmupStatuses[topic.id] !== "ready" && warmupStatuses[topic.id] !== "queued" && warmupStatuses[topic.id] !== "generating" && (
-                  <PrepareTopicButton subjectId={subject.id} topicId={topic.id} />
+                {topic.literatureLessonId ? (
+                  // S33/D-123: this topic already has an active
+                  // extraction-pipeline lesson — link straight to its own
+                  // viewer. The old pipeline is never offered for it: for a
+                  // paragraph-structured subject it has no way to ever reach
+                  // `active` (see `pipeline.ts`'s `MAX_REVISIONS` comment),
+                  // so showing it here would just be a dead end.
+                  <Link
+                    href={`/literature/${topic.literatureLessonId}`}
+                    className="inline-flex min-h-12 items-center rounded-2xl bg-primary px-5 text-base font-bold text-white"
+                  >
+                    {ts.openLesson}
+                  </Link>
+                ) : (
+                  <>
+                    <ChildStartLessonButton subjectId={subject.id} topicId={topic.id} />
+                    {warmupStatuses[topic.id] !== "ready" && warmupStatuses[topic.id] !== "queued" && warmupStatuses[topic.id] !== "generating" && (
+                      <PrepareTopicButton subjectId={subject.id} topicId={topic.id} />
+                    )}
+                  </>
                 )}
               </div>
             </div>
