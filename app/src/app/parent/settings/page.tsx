@@ -6,13 +6,14 @@ import { GoogleDriveConnectPanel, type DriveConnectQueryStatus } from "@/compone
 import { PinForm } from "@/components/parent/PinForm";
 import { UrgentChannelsPanel } from "@/components/parent/UrgentChannelsPanel";
 import { uk } from "@/i18n/uk";
+import { parentSetAllowSkipTestsAction } from "@/app/actions/parent";
 import { requireParentAccess } from "@/server/auth/guards";
 import { forFamily, getFamilyTimezone } from "@/server/db/family-scope";
 import { getDriveConnectionStatus } from "@/server/drive/oauth";
 import { DRIVE_OAUTH_NOT_CONFIGURED_MESSAGE, DRIVE_UPLOADS_FOLDER_PASTE_HINT } from "@/lib/drive-connect-messages";
 import { isEmailConfigured } from "@/server/notify/email";
 import { loadParentSettings } from "@/server/persona/service";
-import { PageTitle, Panel } from "../ui";
+import { PageTitle, Panel, parentButton } from "../ui";
 
 type Search = Promise<{ drive?: string; drive_error?: string }>;
 const KNOWN_ERRORS: DriveConnectQueryStatus[] = ["denied", "state", "not_configured", "failed"];
@@ -61,6 +62,23 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
           {t.policy(settings.pin_max_attempts, settings.pin_lock_minutes, settings.parent_mode_idle_min)}
         </p>
         {via === "account" ? <PinForm /> : <p className="text-sm">{t.pinOnlyOwnAccount}</p>}
+      </Panel>
+      <Panel title={t.testsTitle}>
+        <p className="mb-3 text-[13px] text-p-muted">{t.testsHelp}</p>
+        <form action={parentSetAllowSkipTestsAction} className="flex flex-wrap items-center gap-3">
+          <label className="flex min-h-11 flex-1 items-center gap-2.5 text-[14px]">
+            <input
+              type="checkbox"
+              name="allowSkipTests"
+              defaultChecked={settings.allow_skip_tests}
+              className="h-5 w-5 accent-[var(--p-primary)]"
+            />
+            {t.allowSkipTestsLabel}
+          </label>
+          <button type="submit" className={parentButton}>
+            {t.save}
+          </button>
+        </form>
       </Panel>
       <Panel title={t.urgentTitle}>
         <p className="mb-3 text-[13px] text-p-muted">{t.urgentHelp}</p>

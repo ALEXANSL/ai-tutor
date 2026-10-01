@@ -11,7 +11,7 @@ import { TELEGRAM_NOT_CONFIGURED_MESSAGE, TEST_NOTIFICATION_NOT_CONFIGURED_MESSA
 import { kickJobs } from "@/server/jobs/kick";
 import { sendTestUrgentNotification } from "@/server/notify/urgent";
 import { createLinkCode, getLinkedChatId, getTelegramBotUsername, unlinkChatId } from "@/server/notify/telegram";
-import { changeNickname, changeTutorName, setPersonaChildEditable } from "@/server/persona/service";
+import { changeNickname, changeTutorName, setAllowSkipTests, setPersonaChildEditable } from "@/server/persona/service";
 import type { FormState } from "./state";
 
 export async function parentSaveNicknameAction(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -48,6 +48,13 @@ export async function parentSetPersonaEditableAction(formData: FormData): Promis
   const { familyId } = await requireParentAccess();
   await setPersonaChildEditable(familyId, formData.get("editable") === "on");
   revalidatePath("/parent/child");
+}
+
+/** PO feedback 2026-10-01: parent-settings toggle for the test "Пропустити" button. */
+export async function parentSetAllowSkipTestsAction(formData: FormData): Promise<void> {
+  const { familyId } = await requireParentAccess();
+  await setAllowSkipTests(familyId, formData.get("allowSkipTests") === "on");
+  revalidatePath("/parent/settings");
 }
 
 export async function markAllNotificationsReadAction(): Promise<void> {

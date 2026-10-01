@@ -125,3 +125,15 @@ export async function setPersonaChildEditable(familyId: string, editable: boolea
   });
   if (error) throw new Error(`persona_child_editable update failed: ${error.message}`);
 }
+
+/**
+ * PO feedback 2026-10-01 (first real lesson, Гоголь): "у нас 3-4 слайди з
+ * коротким текстом та тестами які не можна пропустити" — a general,
+ * parent-controlled toggle (not literature-specific) for a "Пропустити"
+ * button on quiz/test questions. Defaults to off (`parent_settings.allow_skip_tests`).
+ */
+export async function setAllowSkipTests(familyId: string, allow: boolean): Promise<void> {
+  const scope = forFamily(familyId);
+  const { error } = await scope.update("parent_settings", { allow_skip_tests: allow });
+  if (error) throw new Error(`allow_skip_tests update failed: ${error.message}`);
+}

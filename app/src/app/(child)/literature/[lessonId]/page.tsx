@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { LiteratureLessonScreen } from "@/components/literature/LiteratureLessonView";
 import { requireChild } from "@/server/auth/guards";
+import { forFamily } from "@/server/db/family-scope";
 import { getLiteratureLessonView } from "@/server/lessons/literatureView";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -16,8 +17,11 @@ export default async function LiteratureLessonPage({ params }: { params: Promise
   const { lessonId } = await params;
   if (!UUID.test(lessonId)) notFound();
   const { ctx } = await requireChild();
-  const lesson = await getLiteratureLessonView(ctx.familyId, lessonId);
+  const [lesson, { data: settings }] = await Promise.all([
+    getLiteratureLessonView(ctx.familyId, lessonId),
+    forFamily(ctx.familyId).select("parent_settings", "allow_skip_tests").maybeSingle<{ allow_skip_tests: boolean }>(),
+  ]);
   if (!lesson) notFound();
 
-  return <LiteratureLessonScreen lesson={lesson} />;
+  return <LiteratureLessonScreen lesson={lesson} allowSkipTests={settings?.allow_skip_tests ?? false} />;
 }

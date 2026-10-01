@@ -283,6 +283,21 @@ body {
 .lit-btn:active {
   background: var(--primary-press);
 }
+/* PO feedback 2026-10-01: "Читати книгу" link in the lesson header. */
+.lit-btn-link {
+  margin-top: 4px;
+}
+/* PO feedback 2026-10-01: parent-settings-gated "Пропустити" test button, next to "Перевірити". */
+.lit-test-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.lit-btn-secondary {
+  background: var(--surface-alt);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
 .lit-test-explain {
   margin-top: 8px;
   color: var(--text-muted);

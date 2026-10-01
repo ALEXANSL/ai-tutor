@@ -1,0 +1,85 @@
+// @vitest-environment jsdom
+import { act } from "react-dom/test-utils";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+/**
+ * PO feedback 2026-10-01: "зроби кнопку яку можна показувати/ховати з
+ * налаштувань - пропустити тести" — the `allowSkip` prop on `LiteratureTest`
+ * gates a "Пропустити" button next to "Перевірити" on every question. A
+ * real interactive (jsdom) test, same style as `LessonRunner.test.tsx`: it
+ * clicks the actual button and asserts the explanation reveals without a
+ * correct/incorrect verdict (same no-verdict path as `open`/`match`/`order`).
+ */
+vi.mock("@/app/actions/literature", () => ({
+  getLiteratureWorkFullTextAction: vi.fn(),
+}));
+
+const { LiteratureTest } = await import("./LiteratureLessonView");
+
+const questions = [
+  {
+    id: "q1",
+    type: "single" as const,
+    questionUk: "Хто написав «Ніч перед Різдвом»?",
+    options: ["Гоголь", "Шевченко"],
+    answer: 0,
+    explanationUk: "Автор — Микола Гоголь.",
+  },
+];
+
+let container: HTMLDivElement | null = null;
+let root: Root | null = null;
+
+afterEach(() => {
+  act(() => root?.unmount());
+  container?.remove();
+  container = null;
+  root = null;
+});
+
+function render(allowSkip: boolean) {
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  act(() => {
+    root!.render(<LiteratureTest questions={questions} allowSkip={allowSkip} />);
+  });
+  return container!;
+}
+
+describe("LiteratureTest skip button (PO feedback 2026-10-01)", () => {
+  it("does not render a skip button when allowSkip is false (default)", () => {
+    const el = render(false);
+    expect(Array.from(el.querySelectorAll("button")).some((b) => b.textContent === "Пропустити")).toBe(false);
+  });
+
+  it("renders a skip button when allowSkip is true", () => {
+    const el = render(true);
+    expect(Array.from(el.querySelectorAll("button")).some((b) => b.textContent === "Пропустити")).toBe(true);
+  });
+
+  it("clicking skip reveals the explanation without scoring it as right/wrong", () => {
+    const el = render(true);
+    const skipBtn = Array.from(el.querySelectorAll("button")).find((b) => b.textContent === "Пропустити")!;
+    act(() => {
+      skipBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(el.textContent).toContain("Автор — Микола Гоголь.");
+    // No score line should appear — `scored` only grows from a verdict, not from a skip (onAnswered(null)).
+    expect(el.textContent).not.toContain("Правильно:");
+  });
+
+  it("checking a correct answer still shows the score line (sanity: skip ≠ regular check)", () => {
+    const el = render(true);
+    const radio = el.querySelector('input[type="radio"]') as HTMLInputElement;
+    act(() => {
+      radio.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const checkBtn = Array.from(el.querySelectorAll("button")).find((b) => b.textContent === "Перевірити")!;
+    act(() => {
+      checkBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(el.textContent).toContain("Правильно: 1 з 1");
+  });
+});
