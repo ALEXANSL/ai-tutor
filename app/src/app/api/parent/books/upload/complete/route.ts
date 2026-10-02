@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireParentAccess } from "@/server/auth/guards";
+import { forFamily } from "@/server/db/family-scope";
 import { DriveError } from "@/server/drive/google";
 import { confirmUpload } from "@/server/drive/upload";
 import { ingestUploadedMaterial } from "@/server/ingest/pipeline";
@@ -27,17 +28,51 @@ function errorCodeOf(e: unknown): UploadErrorCode {
 
 interface CompleteUploadBody {
   driveFileId?: unknown;
+  /**
+   * PO instruction 2026-10-02 ("в кабінеті зроби імпорт матеріалів по
+   * предмету: … дроп-даун 'предмет' - дроп-даун 'категорія'"): optional
+   * fields from the new "Завантажити матеріали" panel
+   * (`MaterialsImportPanel.tsx`) for the "Додаткові посібники"/"Інше"
+   * categories, which reuse this exact same Drive-upload mechanism, just
+   * tagging the resulting `materials` row with the parent's own
+   * subject/category choice instead of leaving it to auto-detection.
+   * Absent for the plain "Мої книги" upload (`UploadBookButton.tsx`) —
+   * behaviour there is unchanged.
+   */
+  subjectId?: unknown;
+  category?: unknown;
 }
+
+const CATEGORY_TO_KIND: Record<string, string> = {
+  additional_guide: "reference",
+  other: "other",
+};
 
 export async function POST(request: NextRequest) {
   const { familyId } = await requireParentAccess();
   const body = (await request.json().catch(() => null)) as CompleteUploadBody | null;
   const driveFileId = typeof body?.driveFileId === "string" ? body.driveFileId : null;
   if (!driveFileId) return NextResponse.json({ error: "failed" satisfies UploadErrorCode }, { status: 400 });
+  const subjectId = typeof body?.subjectId === "string" ? body.subjectId : null;
+  const category = typeof body?.category === "string" ? body.category : null;
+  const kind = category ? CATEGORY_TO_KIND[category] : undefined;
 
   try {
     const file = await confirmUpload({ familyId, driveFileId });
-    const { status } = await ingestUploadedMaterial(familyId, file);
+    const { materialId, status } = await ingestUploadedMaterial(familyId, file);
+    if (subjectId || kind) {
+      const scope = forFamily(familyId);
+      const update: Record<string, unknown> = {};
+      if (subjectId) {
+        update.subject_id = subjectId;
+        update.subject_manual = true;
+      }
+      if (kind) {
+        update.kind = kind;
+        update.kind_manual = true;
+      }
+      await scope.update("materials", update).eq("id", materialId);
+    }
     if (status === "queued") kickJobs();
     return NextResponse.json({ ok: true, status });
   } catch (e) {

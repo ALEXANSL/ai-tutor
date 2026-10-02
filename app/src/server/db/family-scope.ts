@@ -21,6 +21,12 @@ const FAMILY_COLUMN: Record<string, string> = {
   library_items: "owner_family_id",
   library_steps: "owner_family_id",
   library_item_reviews: "owner_family_id",
+  // S34 ($0 course-package importer, see supabase/migrations/20261016100000_s34_course_import.sql).
+  course_packages: "owner_family_id",
+  course_package_assets: "owner_family_id",
+  course_lessons: "owner_family_id",
+  course_lesson_tests: "owner_family_id",
+  course_exercises: "owner_family_id",
 };
 
 export function familyColumn(table: string): string {
