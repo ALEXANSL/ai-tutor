@@ -2,6 +2,8 @@
 
 import { useMemo } from "react";
 import { LiteratureTest } from "@/components/literature/LiteratureLessonView";
+import { LessonNavBar } from "@/components/shared/LessonNavBar";
+import { MathText } from "@/components/shared/MathText";
 import type { LiteratureTestQuestionView } from "@/server/lessons/literatureView";
 import type { CourseLessonView, CourseSourceImageView } from "@/server/lessons/courseView";
 
@@ -11,10 +13,10 @@ import type { CourseLessonView, CourseSourceImageView } from "@/server/lessons/c
  * similar image-anchored packages). Deliberately small, mirroring
  * `LiteratureLessonView.tsx`'s own "demonstrable today" scope:
  *
- * - `teacherNotesMd` is shown as PLAIN TEXT (whitespace preserved), not
- *   rendered as LaTeX/Markdown — no `katex`/`react-katex`/markdown renderer
- *   is a dependency yet. Deferred on purpose (see the handback report);
- *   the raw `$...$`/`$$...$$` source is still fully readable as text.
+ * - `teacherNotesMd` is rendered through `MathText` (2026-10-02 fix — the
+ *   raw `$...$`/`$$...$$` source used to be shown verbatim, unreadable:
+ *   "Обчисли $2-\frac12:\frac14$." — real `katex` is now wired in, see
+ *   `components/shared/MathText.tsx`).
  * - The test reuses `LiteratureTest` AS-IS (not a re-implementation): this
  *   package's `automatic_questions` (single_choice, exactly 4 options,
  *   `correct_option_id`) maps cleanly onto `LiteratureTest`'s `single`
@@ -44,15 +46,33 @@ function toLiteratureTestQuestions(lesson: CourseLessonView): LiteratureTestQues
   });
 }
 
+/**
+ * PO correction 2026-10-02: "текст на малюнках він є ж в тестовому вигляді,
+ * його можна прочитати, роби щось з дизайном, таке навіть дорослий читати
+ * не буде" — the recognized text (`searchTextOcr`) is the actual readable
+ * content; the photo itself is now a secondary, collapsed "original page"
+ * reference rather than the primary (and largely unreadable-at-screen-size)
+ * thing shown. The OCR text is still only an aid (never treated as the
+ * authoritative condition — see the file header), so the real page stays
+ * one tap away.
+ */
 function SourceImage({ img }: { img: CourseSourceImageView }) {
-  if (!img.url) {
-    return <p className="course-note">(зображення тимчасово недоступне — спробуйте оновити сторінку)</p>;
-  }
   return (
-    <figure className="course-source-image">
-      {/* eslint-disable-next-line @next/next/no-img-element -- short-lived signed Supabase Storage URL, not a static asset next/image can optimize */}
-      <img src={img.url} alt={img.searchTextOcr ? img.searchTextOcr.slice(0, 120) : "Сторінка підручника"} loading="lazy" />
-      {img.printedPage != null && <figcaption className="course-page-ref">с. {img.printedPage}</figcaption>}
+    <figure className="course-source-block">
+      {img.searchTextOcr ? (
+        <p className="course-source-text">
+          <MathText text={img.searchTextOcr} />
+        </p>
+      ) : (
+        <p className="course-note">(текст не розпізнано — дивись фото сторінки нижче)</p>
+      )}
+      {img.url && (
+        <details className="course-source-photo">
+          <summary>Показати фото сторінки{img.printedPage != null ? ` (с. ${img.printedPage})` : ""}</summary>
+          {/* eslint-disable-next-line @next/next/no-img-element -- short-lived signed Supabase Storage URL, not a static asset next/image can optimize */}
+          <img src={img.url} alt={img.searchTextOcr ? img.searchTextOcr.slice(0, 120) : "Сторінка підручника"} loading="lazy" />
+        </details>
+      )}
     </figure>
   );
 }
@@ -82,6 +102,7 @@ export function CourseLessonScreen({ lesson }: { lesson: CourseLessonView }) {
 
   return (
     <article className="course-lesson">
+      <LessonNavBar subjectId={lesson.subjectId} />
       <header>
         <p className="course-eyebrow">
           {KIND_LABEL[lesson.kind]} · {lesson.packageTitle}
@@ -103,7 +124,9 @@ export function CourseLessonScreen({ lesson }: { lesson: CourseLessonView }) {
         <p className="course-note">
           Це лише коротка адаптація, а не заміна підручника — повна умова, формули й приклади є на зображеннях нижче.
         </p>
-        <p style={{ whiteSpace: "pre-wrap" }}>{lesson.teacherNotesMd}</p>
+        <p style={{ whiteSpace: "pre-wrap" }}>
+          <MathText text={lesson.teacherNotesMd} />
+        </p>
       </section>
 
       {lesson.sourceImages.length > 0 && (

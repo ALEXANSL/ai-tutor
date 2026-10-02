@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { LessonNavBar } from "@/components/shared/LessonNavBar";
+import { MathText } from "@/components/shared/MathText";
 import type { LiteratureLessonView, LiteratureTestQuestionView } from "@/server/lessons/literatureView";
 
 /**
@@ -91,14 +93,16 @@ function TestQuestion({
 
   return (
     <li className="lit-test-q">
-      <p className="lit-test-q-text">{q.questionUk}</p>
+      <p className="lit-test-q-text">
+        <MathText text={q.questionUk} />
+      </p>
       {(q.type === "single" || q.type === "multiple" || q.type === "truefalse") && q.options && (
         <ul className="lit-test-options">
           {q.options.map((opt, i) => (
             <li key={i}>
               <label className={selected.has(i) ? "selected" : ""}>
                 <input type={q.type === "multiple" ? "checkbox" : "radio"} checked={selected.has(i)} onChange={() => toggle(i)} disabled={revealed} />
-                {opt}
+                <MathText text={opt} />
               </label>
             </li>
           ))}
@@ -108,12 +112,20 @@ function TestQuestion({
         <ul className="lit-test-pairs">
           {q.pairs.map((p, i) => (
             <li key={i}>
-              {p.leftUk} → {p.rightUk}
+              <MathText text={p.leftUk} /> → <MathText text={p.rightUk} />
             </li>
           ))}
         </ul>
       )}
-      {q.type === "order" && q.options && <ol className="lit-test-options">{q.options.map((opt, i) => <li key={i}>{opt}</li>)}</ol>}
+      {q.type === "order" && q.options && (
+        <ol className="lit-test-options">
+          {q.options.map((opt, i) => (
+            <li key={i}>
+              <MathText text={opt} />
+            </li>
+          ))}
+        </ol>
+      )}
       {q.type === "open" && (
         <textarea className="lit-test-open" value={openText} onChange={(e) => setOpenText(e.target.value)} disabled={revealed} placeholder="Твоя відповідь..." />
       )}
@@ -127,7 +139,9 @@ function TestQuestion({
           </button>
         </div>
       ) : (
-        <p className="lit-test-explain">{q.explanationUk}</p>
+        <p className="lit-test-explain">
+          <MathText text={q.explanationUk} />
+        </p>
       )}
     </li>
   );
@@ -163,6 +177,7 @@ export function LiteratureTest({ questions }: { questions: LiteratureTestQuestio
 export function LiteratureLessonScreen({ lesson }: { lesson: LiteratureLessonView }) {
   return (
     <article className="lit-lesson">
+      <LessonNavBar subjectId={lesson.subjectId} />
       <header>
         <p className="lit-eyebrow">
           Тема {lesson.topicNo}

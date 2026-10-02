@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "katex/dist/katex.min.css";
 
 /* Theme switch: data-theme on <html> (manual) or system preference (auto). */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
@@ -333,4 +334,100 @@ body {
 .lit-btn-reader {
   font-size: 16px;
   padding: 12px 20px;
+}
+
+/*
+ * S34 ($0 course-package importer) — these classes were used by
+ * `CourseLessonView.tsx` from day one but never actually defined, which is
+ * why the screen rendered as plain unstyled text with images (PO feedback
+ * 2026-10-02: "відкриває тупо файл з картинками, без відступу зліва").
+ * Deliberately mirrors `.lit-*` above (same container width/padding,
+ * surface/border tokens, button styles) so both lesson viewers read as one
+ * consistent app, not two different half-built screens.
+ */
+.course-lesson {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+  color: var(--text);
+  background: var(--bg);
+}
+.course-lesson h1 {
+  font-family: "Nunito", sans-serif;
+  margin: 4px 0 12px;
+}
+.course-lesson section {
+  margin-top: 28px;
+}
+.course-eyebrow {
+  color: var(--text-muted);
+  font-weight: 600;
+  margin: 0;
+}
+.course-pages,
+.course-page-ref {
+  color: var(--text-muted);
+}
+.course-note {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.course-warning {
+  background: var(--warn);
+  color: #2b2a28;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+/*
+ * PO correction 2026-10-02: the recognized page text is the readable
+ * content and comes first; the photo is a secondary, collapsed reference
+ * (`<details>`) rather than the primary thing shown.
+ */
+.course-source-images,
+.course-exercise-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  list-style: none;
+  padding: 0;
+}
+.course-source-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 0;
+}
+.course-source-text {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 17px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  margin: 0;
+}
+.course-source-photo {
+  margin-top: 12px;
+}
+.course-source-photo summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 14px;
+}
+.course-source-photo img {
+  display: block;
+  max-width: 100%;
+  margin-top: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.course-exercise-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+}
+.course-exercise-number {
+  font-weight: 700;
+  margin: 0 0 8px;
 }

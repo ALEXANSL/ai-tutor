@@ -14,6 +14,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * and asserts the explanation reveals without a correct/incorrect verdict
  * (same no-verdict path as `open`/`match`/`order`).
  */
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: () => {} }),
+}));
+
 const { LiteratureTest, LiteratureLessonScreen } = await import("./LiteratureLessonView");
 
 const questions = [
@@ -103,6 +107,7 @@ describe("LiteratureTest skip button (PO correction 2026-10-02)", () => {
 describe("LiteratureLessonScreen read-the-book link (PO corrections 2026-10-01/02)", () => {
   const baseLesson = {
     id: "lesson-1",
+    subjectId: "subject-1",
     materialId: "material-42",
     topicNo: 1,
     sectionTitle: null,
