@@ -42,6 +42,24 @@ alter default privileges in schema public grant all on tables to anon, authentic
 alter default privileges in schema public grant all on sequences to anon, authenticated, service_role;
 alter default privileges in schema public grant execute on functions to anon, authenticated, service_role;
 
+-- Minimal Storage shim (S34: `insert into storage.buckets` in migrations).
+-- Real Supabase's `storage` schema has far more columns/tables (objects,
+-- RLS policies, etc.) — only enough to let `storage.buckets` inserts in
+-- migrations run is stubbed here; no app code queries `storage.*` tables
+-- directly (all Storage access goes through the Supabase client library
+-- against the real project, never raw SQL on this table).
+create schema storage;
+grant usage on schema storage to anon, authenticated, service_role;
+create table storage.buckets (
+  id                  text primary key,
+  name                text not null,
+  public              boolean not null default false,
+  file_size_limit     bigint,
+  allowed_mime_types  text[],
+  created_at          timestamptz not null default now(),
+  updated_at          timestamptz not null default now()
+);
+
 -- Supabase installs extensions into the `extensions` schema, which is on the
 -- default search_path (S1: pgvector, pg_trgm).
 create schema extensions;
