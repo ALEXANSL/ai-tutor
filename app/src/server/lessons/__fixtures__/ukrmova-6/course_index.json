@@ -1,0 +1,2048 @@
+{
+  "course": "Українська мова, 6 клас",
+  "source_pdf": "6-klas-ukrmova-semenog-2023.pdf",
+  "pdf_page_offset": 0,
+  "note": "§§ 126–131 (мовленнєвий практикум) подано в підручнику лише за QR-кодом",
+  "paragraphs": [
+    {
+      "paragraph": "§ 1–2",
+      "id": "ukrmova6-p1-2",
+      "section": "Вступ. Краса і багатство української мови",
+      "title": "Краса звучання української мови",
+      "lessons": 2,
+      "type": "lesson",
+      "textbook_pages": [
+        10,
+        15
+      ],
+      "pdf_pages": [
+        10,
+        15
+      ],
+      "lesson_file": "lessons/p1-2.md",
+      "test_file": "tests/p1-2.json",
+      "exercises": 18,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 3",
+      "id": "ukrmova6-p3",
+      "section": "Вступ. Краса і багатство української мови",
+      "title": "Багатство української мови",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        16,
+        20
+      ],
+      "pdf_pages": [
+        16,
+        20
+      ],
+      "lesson_file": "lessons/p3.md",
+      "test_file": "tests/p3.json",
+      "exercises": 8,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 4",
+      "id": "ukrmova6-p4",
+      "section": "Будова слова. Орфографія",
+      "title": "Повторення вивченого про будову слова, форми слова й спільнокореневі слова, значущі частини слова",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        21,
+        24
+      ],
+      "pdf_pages": [
+        21,
+        24
+      ],
+      "lesson_file": "lessons/p4.md",
+      "test_file": "tests/p4.json",
+      "exercises": 11,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 5",
+      "id": "ukrmova6-p5",
+      "section": "Будова слова. Орфографія",
+      "title": "Спільнокореневі слова й форми слова. Спільнокореневі слова як засіб зв’язку речень у тексті",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        25,
+        28
+      ],
+      "pdf_pages": [
+        25,
+        28
+      ],
+      "lesson_file": "lessons/p5.md",
+      "test_file": "tests/p5.json",
+      "exercises": 13,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 6",
+      "id": "ukrmova6-p6",
+      "section": "Будова слова. Орфографія",
+      "title": "Основа й закінчення — значущі частини слова",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        29,
+        32
+      ],
+      "pdf_pages": [
+        29,
+        32
+      ],
+      "lesson_file": "lessons/p6.md",
+      "test_file": "tests/p6.json",
+      "exercises": 10,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 7",
+      "id": "ukrmova6-p7",
+      "section": "Будова слова. Орфографія",
+      "title": "Написання префіксів з-, зі-, с-, роз-, без-",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        33,
+        36
+      ],
+      "pdf_pages": [
+        33,
+        36
+      ],
+      "lesson_file": "lessons/p7.md",
+      "test_file": "tests/p7.json",
+      "exercises": 12,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 8",
+      "id": "ukrmova6-p8",
+      "section": "Будова слова. Орфографія",
+      "title": "Написання префіксів пре-, при-, прі-",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        37,
+        39
+      ],
+      "pdf_pages": [
+        37,
+        39
+      ],
+      "lesson_file": "lessons/p8.md",
+      "test_file": "tests/p8.json",
+      "exercises": 12,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 9",
+      "id": "ukrmova6-p9",
+      "section": "Будова слова. Орфографія",
+      "title": "Правила написання букв е, и, і в суфіксах -ечок-, -ечк-, -ичок-, -ичк-",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        40,
+        41
+      ],
+      "pdf_pages": [
+        40,
+        41
+      ],
+      "lesson_file": "lessons/p9.md",
+      "test_file": "tests/p9.json",
+      "exercises": 10,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 10",
+      "id": "ukrmova6-p10",
+      "section": "Будова слова. Орфографія",
+      "title": "Правила написання букв е, и, і, в суфіксах -інн(я), -енн(я), -инн(я), -ив-(о), -ев-(о)",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        42,
+        44
+      ],
+      "pdf_pages": [
+        42,
+        44
+      ],
+      "lesson_file": "lessons/p10.md",
+      "test_file": "tests/p10.json",
+      "exercises": 8,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 11",
+      "id": "ukrmova6-p11",
+      "section": "Будова слова. Орфографія",
+      "title": "Букви е, о, и, і в прикметникових суфіксах -ев- (-єв-), -ов-, -ин-, -їн-, -ичн-, -ічн-",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        45,
+        49
+      ],
+      "pdf_pages": [
+        45,
+        49
+      ],
+      "lesson_file": "lessons/p11.md",
+      "test_file": "tests/p11.json",
+      "exercises": 14,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 12",
+      "id": "ukrmova6-p12",
+      "section": "Будова слова. Орфографія",
+      "title": "Антонімічні префікси й суфікси",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        50,
+        52
+      ],
+      "pdf_pages": [
+        50,
+        52
+      ],
+      "lesson_file": "lessons/p12.md",
+      "test_file": "tests/p12.json",
+      "exercises": 10,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 13",
+      "id": "ukrmova6-p13",
+      "section": "Будова слова. Орфографія",
+      "title": "Незмінні й змінні слова. Складні слова",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        53,
+        55
+      ],
+      "pdf_pages": [
+        53,
+        55
+      ],
+      "lesson_file": "lessons/p13.md",
+      "test_file": "tests/p13.json",
+      "exercises": 11,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 14",
+      "id": "ukrmova6-p14",
+      "section": "Будова слова. Орфографія",
+      "title": "Аналіз слова за будовою. Повторення та узагальнення з теми «Будова слова. Орфографія»",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        56,
+        59
+      ],
+      "pdf_pages": [
+        56,
+        59
+      ],
+      "lesson_file": "lessons/p14.md",
+      "test_file": "tests/p14.json",
+      "exercises": 9,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 15",
+      "id": "ukrmova6-p15",
+      "section": "Будова слова. Орфографія",
+      "title": "Діагностувальна робота. Будова слова. Орфографія",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        60,
+        60
+      ],
+      "pdf_pages": [
+        60,
+        60
+      ],
+      "lesson_file": "lessons/p15.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 16",
+      "id": "ukrmova6-p16",
+      "section": "Будова слова. Орфографія",
+      "title": "Аналіз діагностувальної роботи. Корекція знань, умінь і навичок. Оголошення як інформація про подію",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        60,
+        61
+      ],
+      "pdf_pages": [
+        60,
+        61
+      ],
+      "lesson_file": "lessons/p16.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 17",
+      "id": "ukrmova6-p17",
+      "section": "Словотвір. Орфографія",
+      "title": "Повторення вивченого з теми «Словотвір. Орфографія»",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        62,
+        64
+      ],
+      "pdf_pages": [
+        62,
+        64
+      ],
+      "lesson_file": "lessons/p17.md",
+      "test_file": "tests/p17.json",
+      "exercises": 11,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 18",
+      "id": "ukrmova6-p18",
+      "section": "Словотвір. Орфографія",
+      "title": "Словотвір — джерело збагачення мови. Змінювання і творення слів. Твірне слово",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        65,
+        68
+      ],
+      "pdf_pages": [
+        65,
+        68
+      ],
+      "lesson_file": "lessons/p18.md",
+      "test_file": "tests/p18.json",
+      "exercises": 9,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 19",
+      "id": "ukrmova6-p19",
+      "section": "Словотвір. Орфографія",
+      "title": "Основні способи словотворення",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        69,
+        72
+      ],
+      "pdf_pages": [
+        69,
+        72
+      ],
+      "lesson_file": "lessons/p19.md",
+      "test_file": "tests/p19.json",
+      "exercises": 13,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 20",
+      "id": "ukrmova6-p20",
+      "section": "Словотвір. Орфографія",
+      "title": "Творення та правопис складноскорочених слів",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        73,
+        75
+      ],
+      "pdf_pages": [
+        73,
+        75
+      ],
+      "lesson_file": "lessons/p20.md",
+      "test_file": "tests/p20.json",
+      "exercises": 10,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 21",
+      "id": "ukrmova6-p21",
+      "section": "Словотвір. Орфографія",
+      "title": "Складні слова. Сполучні о, е в складних словах",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        76,
+        78
+      ],
+      "pdf_pages": [
+        76,
+        78
+      ],
+      "lesson_file": "lessons/p21.md",
+      "test_file": "tests/p21.json",
+      "exercises": 9,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 22",
+      "id": "ukrmova6-p22",
+      "section": "Словотвір. Орфографія",
+      "title": "Правопис складних слів разом, із дефісом, окремо. Написання слів із пів",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        79,
+        84
+      ],
+      "pdf_pages": [
+        79,
+        84
+      ],
+      "lesson_file": "lessons/p22.md",
+      "test_file": "tests/p22.json",
+      "exercises": 15,
+      "questions": 5
+    },
+    {
+      "paragraph": "§ 23",
+      "id": "ukrmova6-p23",
+      "section": "Словотвір. Орфографія",
+      "title": "Словотвірний ланцюжок",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        85,
+        88
+      ],
+      "pdf_pages": [
+        85,
+        88
+      ],
+      "lesson_file": "lessons/p23.md",
+      "test_file": "tests/p23.json",
+      "exercises": 12,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 24",
+      "id": "ukrmova6-p24",
+      "section": "Словотвір. Орфографія",
+      "title": "Зміни приголосних під час творення іменників із суфіксом -ин-(а) від прикметників на -ський, -цький",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        89,
+        92
+      ],
+      "pdf_pages": [
+        89,
+        92
+      ],
+      "lesson_file": "lessons/p24.md",
+      "test_file": "tests/p24.json",
+      "exercises": 10,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 25",
+      "id": "ukrmova6-p25",
+      "section": "Словотвір. Орфографія",
+      "title": "Зміни приголосних під час творення іменників із суфіксами -ств-(о), -зтв-(о), -цтв-(о); прикметників із суфіксами -ськ-, -зьк-, -цьк-",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        93,
+        97
+      ],
+      "pdf_pages": [
+        93,
+        97
+      ],
+      "lesson_file": "lessons/p25.md",
+      "test_file": "tests/p25.json",
+      "exercises": 13,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 26",
+      "id": "ukrmova6-p26",
+      "section": "Словотвір. Орфографія",
+      "title": "Словотвірний аналіз слова",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        98,
+        101
+      ],
+      "pdf_pages": [
+        98,
+        101
+      ],
+      "lesson_file": "lessons/p26.md",
+      "test_file": "tests/p26.json",
+      "exercises": 10,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 27",
+      "id": "ukrmova6-p27",
+      "section": "Словотвір. Орфографія",
+      "title": "Повторення та узагальнення з теми «Словотвір. Орфографія»",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        102,
+        103
+      ],
+      "pdf_pages": [
+        102,
+        103
+      ],
+      "lesson_file": "lessons/p27.md",
+      "test_file": "tests/p27.json",
+      "exercises": 10,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 28",
+      "id": "ukrmova6-p28",
+      "section": "Словотвір. Орфографія",
+      "title": "Діагностувальна робота. Словотвір. Орфографія",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        104,
+        104
+      ],
+      "pdf_pages": [
+        104,
+        104
+      ],
+      "lesson_file": "lessons/p28.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 29",
+      "id": "ukrmova6-p29",
+      "section": "Словотвір. Орфографія",
+      "title": "Аналіз діагностувальної роботи. Корекція знань, умінь і навичок",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        104,
+        105
+      ],
+      "pdf_pages": [
+        104,
+        105
+      ],
+      "lesson_file": "lessons/p29.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 30",
+      "id": "ukrmova6-p30",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Повторення вивченого про самостійні частини мови",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        106,
+        108
+      ],
+      "pdf_pages": [
+        106,
+        108
+      ],
+      "lesson_file": "lessons/p30.md",
+      "test_file": "tests/p30.json",
+      "exercises": 8,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 31",
+      "id": "ukrmova6-p31",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Повторення вивченого з теми «Іменник»",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        109,
+        112
+      ],
+      "pdf_pages": [
+        109,
+        112
+      ],
+      "lesson_file": "lessons/p31.md",
+      "test_file": "tests/p31.json",
+      "exercises": 11,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 32",
+      "id": "ukrmova6-p32",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Іменник як частина мови",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        113,
+        114
+      ],
+      "pdf_pages": [
+        113,
+        114
+      ],
+      "lesson_file": "lessons/p32.md",
+      "test_file": "tests/p32.json",
+      "exercises": 13,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 33",
+      "id": "ukrmova6-p33",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Номінативна функція іменника. Іменники загальні й власні, конкретні й абстрактні",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        115,
+        118
+      ],
+      "pdf_pages": [
+        115,
+        118
+      ],
+      "lesson_file": "lessons/p33.md",
+      "test_file": "tests/p33.json",
+      "exercises": 5,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 34–35",
+      "id": "ukrmova6-p34-35",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Велика буква та лапки у власних назвах",
+      "lessons": 2,
+      "type": "lesson",
+      "textbook_pages": [
+        119,
+        124
+      ],
+      "pdf_pages": [
+        119,
+        124
+      ],
+      "lesson_file": "lessons/p34-35.md",
+      "test_file": "tests/p34-35.json",
+      "exercises": 4,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 36",
+      "id": "ukrmova6-p36",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Підготовка до діагностувальної роботи: письмовий переказ тексту-розповіді з елементами опису природи",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        125,
+        125
+      ],
+      "pdf_pages": [
+        125,
+        125
+      ],
+      "lesson_file": "lessons/p36.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 37",
+      "id": "ukrmova6-p37",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Діагностувальна робота: письмовий переказ тексту-розповіді з елементами опису природи",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        125,
+        125
+      ],
+      "pdf_pages": [
+        125,
+        125
+      ],
+      "lesson_file": "lessons/p37.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 38",
+      "id": "ukrmova6-p38",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Аналіз діагностувальної роботи",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        125,
+        125
+      ],
+      "pdf_pages": [
+        125,
+        125
+      ],
+      "lesson_file": "lessons/p38.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 39",
+      "id": "ukrmova6-p39",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Збірні іменники",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        126,
+        128
+      ],
+      "pdf_pages": [
+        126,
+        128
+      ],
+      "lesson_file": "lessons/p39.md",
+      "test_file": "tests/p39.json",
+      "exercises": 11,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 40",
+      "id": "ukrmova6-p40",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Рід іменників",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        129,
+        132
+      ],
+      "pdf_pages": [
+        129,
+        132
+      ],
+      "lesson_file": "lessons/p40.md",
+      "test_file": "tests/p40.json",
+      "exercises": 5,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 41",
+      "id": "ukrmova6-p41",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Рід іменників. Іменники спільного роду",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        133,
+        135
+      ],
+      "pdf_pages": [
+        133,
+        135
+      ],
+      "lesson_file": "lessons/p41.md",
+      "test_file": "tests/p41.json",
+      "exercises": 5,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 42–43",
+      "id": "ukrmova6-p42-43",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Число іменників. Іменники, що мають форми тільки однини або тільки множини",
+      "lessons": 2,
+      "type": "lesson",
+      "textbook_pages": [
+        136,
+        140
+      ],
+      "pdf_pages": [
+        136,
+        140
+      ],
+      "lesson_file": "lessons/p42-43.md",
+      "test_file": "tests/p42-43.json",
+      "exercises": 15,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 44–45",
+      "id": "ukrmova6-p44-45",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Відмінки іменників. Кличний відмінок",
+      "lessons": 2,
+      "type": "lesson",
+      "textbook_pages": [
+        141,
+        145
+      ],
+      "pdf_pages": [
+        141,
+        145
+      ],
+      "lesson_file": "lessons/p44-45.md",
+      "test_file": "tests/p44-45.json",
+      "exercises": 18,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 46",
+      "id": "ukrmova6-p46",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Особливості написання іменників у кличному відмінку",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        146,
+        149
+      ],
+      "pdf_pages": [
+        146,
+        149
+      ],
+      "lesson_file": "lessons/p46.md",
+      "test_file": "tests/p46.json",
+      "exercises": 11,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 47",
+      "id": "ukrmova6-p47",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Відмінювання іменників, що мають форму лише множини",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        150,
+        152
+      ],
+      "pdf_pages": [
+        150,
+        152
+      ],
+      "lesson_file": "lessons/p47.md",
+      "test_file": "tests/p47.json",
+      "exercises": 12,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 48–49",
+      "id": "ukrmova6-p48-49",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Незмінювані іменники. Рід незмінюваних іменників",
+      "lessons": 2,
+      "type": "lesson",
+      "textbook_pages": [
+        153,
+        159
+      ],
+      "pdf_pages": [
+        153,
+        159
+      ],
+      "lesson_file": "lessons/p48-49.md",
+      "test_file": "tests/p48-49.json",
+      "exercises": 20,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 50",
+      "id": "ukrmova6-p50",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Написання й відмінювання чоловічих і жіночих прізвищ, імен по батькові",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        160,
+        163
+      ],
+      "pdf_pages": [
+        160,
+        163
+      ],
+      "lesson_file": "lessons/p50.md",
+      "test_file": "tests/p50.json",
+      "exercises": 9,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 51",
+      "id": "ukrmova6-p51",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Повторення та узагальнення вивченого з І частини теми «Іменник»",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        164,
+        167
+      ],
+      "pdf_pages": [
+        164,
+        167
+      ],
+      "lesson_file": "lessons/p51.md",
+      "test_file": "tests/p51.json",
+      "exercises": 11,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 52",
+      "id": "ukrmova6-p52",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Діагностувальна робота",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        168,
+        168
+      ],
+      "pdf_pages": [
+        168,
+        168
+      ],
+      "lesson_file": "lessons/p52.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 53",
+      "id": "ukrmova6-p53",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Аналіз діагностувальної роботи. Корекція знань, умінь і навичок",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        168,
+        168
+      ],
+      "pdf_pages": [
+        168,
+        168
+      ],
+      "lesson_file": "lessons/p53.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 54",
+      "id": "ukrmova6-p54",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Поділ іменників на відміни й групи",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        168,
+        172
+      ],
+      "pdf_pages": [
+        168,
+        172
+      ],
+      "lesson_file": "lessons/p54.md",
+      "test_file": "tests/p54.json",
+      "exercises": 12,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 55",
+      "id": "ukrmova6-p55",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Відмінювання іменників першої відміни",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        173,
+        176
+      ],
+      "pdf_pages": [
+        173,
+        176
+      ],
+      "lesson_file": "lessons/p55.md",
+      "test_file": "tests/p55.json",
+      "exercises": 11,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 56",
+      "id": "ukrmova6-p56",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Відмінювання іменників другої відміни",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        177,
+        180
+      ],
+      "pdf_pages": [
+        177,
+        180
+      ],
+      "lesson_file": "lessons/p56.md",
+      "test_file": "tests/p56.json",
+      "exercises": 9,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 57",
+      "id": "ukrmova6-p57",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Особливості відмінювання іменників чоловічого роду в родовому відмінку",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        181,
+        183
+      ],
+      "pdf_pages": [
+        181,
+        183
+      ],
+      "lesson_file": "lessons/p57.md",
+      "test_file": "tests/p57.json",
+      "exercises": 10,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 58",
+      "id": "ukrmova6-p58",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Діагностувальна робота. Говоріння / діалог",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        184,
+        184
+      ],
+      "pdf_pages": [
+        184,
+        184
+      ],
+      "lesson_file": "lessons/p58.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 59",
+      "id": "ukrmova6-p59",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Відмінювання іменників ІІІ та ІV відмін",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        185,
+        187
+      ],
+      "pdf_pages": [
+        185,
+        187
+      ],
+      "lesson_file": "lessons/p59.md",
+      "test_file": "tests/p59.json",
+      "exercises": 10,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 60",
+      "id": "ukrmova6-p60",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "НЕ з іменниками",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        188,
+        189
+      ],
+      "pdf_pages": [
+        188,
+        189
+      ],
+      "lesson_file": "lessons/p60.md",
+      "test_file": "tests/p60.json",
+      "exercises": 9,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 61",
+      "id": "ukrmova6-p61",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Правопис складних іменників",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        190,
+        192
+      ],
+      "pdf_pages": [
+        190,
+        192
+      ],
+      "lesson_file": "lessons/p61.md",
+      "test_file": "tests/p61.json",
+      "exercises": 9,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 62–63",
+      "id": "ukrmova6-p62-63",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Морфологічний аналіз іменника. Повторення та узагальнення вивченого з ІІ частини теми «Іменник». Діагностувальна робота",
+      "lessons": 2,
+      "type": "qr",
+      "textbook_pages": [
+        193,
+        193
+      ],
+      "pdf_pages": [
+        193,
+        193
+      ],
+      "lesson_file": "lessons/p62-63.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 64",
+      "id": "ukrmova6-p64",
+      "section": "Морфологія. Іменник. Орфографія",
+      "title": "Аналіз діагностувальної роботи. Корекція знань, умінь і навичок",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        193,
+        194
+      ],
+      "pdf_pages": [
+        193,
+        194
+      ],
+      "lesson_file": "lessons/p64.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 65–66",
+      "id": "ukrmova6-p65-66",
+      "section": "Прикметник",
+      "title": "Прикметник: загальне значення, морфологічні ознаки, синтаксична роль",
+      "lessons": 2,
+      "type": "lesson",
+      "textbook_pages": [
+        195,
+        199
+      ],
+      "pdf_pages": [
+        195,
+        199
+      ],
+      "lesson_file": "lessons/p65-66.md",
+      "test_file": "tests/p65-66.json",
+      "exercises": 14,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 67–68",
+      "id": "ukrmova6-p67-68",
+      "section": "Прикметник",
+      "title": "Групи прикметників за значенням: якісні, відносні, присвійні",
+      "lessons": 2,
+      "type": "lesson",
+      "textbook_pages": [
+        200,
+        203
+      ],
+      "pdf_pages": [
+        200,
+        203
+      ],
+      "lesson_file": "lessons/p67-68.md",
+      "test_file": "tests/p67-68.json",
+      "exercises": 11,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 69–71",
+      "id": "ukrmova6-p69-71",
+      "section": "Прикметник",
+      "title": "Ступені порівняння якісних прикметників, способи їх творення",
+      "lessons": 3,
+      "type": "lesson",
+      "textbook_pages": [
+        204,
+        208
+      ],
+      "pdf_pages": [
+        204,
+        208
+      ],
+      "lesson_file": "lessons/p69-71.md",
+      "test_file": "tests/p69-71.json",
+      "exercises": 15,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 72–73",
+      "id": "ukrmova6-p72-73",
+      "section": "Прикметник",
+      "title": "Прикметники твердої та м’якої груп. Відмінювання прикметників",
+      "lessons": 2,
+      "type": "lesson",
+      "textbook_pages": [
+        209,
+        213
+      ],
+      "pdf_pages": [
+        209,
+        213
+      ],
+      "lesson_file": "lessons/p72-73.md",
+      "test_file": "tests/p72-73.json",
+      "exercises": 10,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 74",
+      "id": "ukrmova6-p74",
+      "section": "Прикметник",
+      "title": "Творення прикметників. Перехід прикметників в іменники",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        214,
+        215
+      ],
+      "pdf_pages": [
+        214,
+        215
+      ],
+      "lesson_file": "lessons/p74.md",
+      "test_file": "tests/p74.json",
+      "exercises": 6,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 75",
+      "id": "ukrmova6-p75",
+      "section": "Прикметник",
+      "title": "Підготовка до діагностувальної роботи з теми «Прикметник»",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        216,
+        216
+      ],
+      "pdf_pages": [
+        216,
+        216
+      ],
+      "lesson_file": "lessons/p75.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 76",
+      "id": "ukrmova6-p76",
+      "section": "Прикметник",
+      "title": "Діагностувальна робота з теми «Прикметник»",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        216,
+        216
+      ],
+      "pdf_pages": [
+        216,
+        216
+      ],
+      "lesson_file": "lessons/p76.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 77",
+      "id": "ukrmova6-p77",
+      "section": "Прикметник",
+      "title": "Аналіз діагностувальної роботи з мовної, мовленнєвої теми. Корекція знань, умінь, навичок",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        216,
+        216
+      ],
+      "pdf_pages": [
+        216,
+        216
+      ],
+      "lesson_file": "lessons/p77.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 78",
+      "id": "ukrmova6-p78",
+      "section": "Прикметник",
+      "title": "Написання прикметників із суфіксами: -ськ-, -цьк-, -зьк-, -еньк-, -есеньк-, -ісіньк-, -юсіньк-",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        216,
+        218
+      ],
+      "pdf_pages": [
+        216,
+        218
+      ],
+      "lesson_file": "lessons/p78.md",
+      "test_file": "tests/p78.json",
+      "exercises": 9,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 79–80",
+      "id": "ukrmova6-p79-80",
+      "section": "Прикметник",
+      "title": "Букви е, и, о в прикметникових суфіксах -ев-(-єв-), -ов-(-йов-, -ьов-), -ин-, -ін-, -ичн-",
+      "lessons": 2,
+      "type": "lesson",
+      "textbook_pages": [
+        219,
+        222
+      ],
+      "pdf_pages": [
+        219,
+        222
+      ],
+      "lesson_file": "lessons/p79-80.md",
+      "test_file": "tests/p79-80.json",
+      "exercises": 10,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 81–82",
+      "id": "ukrmova6-p81-82",
+      "section": "Прикметник",
+      "title": "Написання НЕ з прикметниками",
+      "lessons": 2,
+      "type": "lesson",
+      "textbook_pages": [
+        223,
+        223
+      ],
+      "pdf_pages": [
+        223,
+        223
+      ],
+      "lesson_file": "lessons/p81-82.md",
+      "test_file": "tests/p81-82.json",
+      "exercises": 9,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 83–84",
+      "id": "ukrmova6-p83-84",
+      "section": "Прикметник",
+      "title": "Написання -н- і -нн- у прикметниках",
+      "lessons": 2,
+      "type": "lesson",
+      "textbook_pages": [
+        224,
+        226
+      ],
+      "pdf_pages": [
+        224,
+        226
+      ],
+      "lesson_file": "lessons/p83-84.md",
+      "test_file": "tests/p83-84.json",
+      "exercises": 10,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 85–86",
+      "id": "ukrmova6-p85-86",
+      "section": "Прикметник",
+      "title": "Написання складних прикметників разом і з дефісом",
+      "lessons": 2,
+      "type": "lesson",
+      "textbook_pages": [
+        227,
+        229
+      ],
+      "pdf_pages": [
+        227,
+        229
+      ],
+      "lesson_file": "lessons/p85-86.md",
+      "test_file": "tests/p85-86.json",
+      "exercises": 11,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 87",
+      "id": "ukrmova6-p87",
+      "section": "Прикметник",
+      "title": "Написання прізвищ прикметникової форми",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        230,
+        230
+      ],
+      "pdf_pages": [
+        230,
+        230
+      ],
+      "lesson_file": "lessons/p87.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 88",
+      "id": "ukrmova6-p88",
+      "section": "Прикметник",
+      "title": "Морфологічний аналіз прикметника. Узагальнення й систематизація вивченого з теми «Прикметник»",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        230,
+        232
+      ],
+      "pdf_pages": [
+        230,
+        232
+      ],
+      "lesson_file": "lessons/p88.md",
+      "test_file": "tests/p88.json",
+      "exercises": 8,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 89",
+      "id": "ukrmova6-p89",
+      "section": "Прикметник",
+      "title": "Діагностувальна робота з теми «Прикметник. Текст. Інформація. Спілкування. Комбіновані тести»",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        233,
+        233
+      ],
+      "pdf_pages": [
+        233,
+        233
+      ],
+      "lesson_file": "lessons/p89.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 90",
+      "id": "ukrmova6-p90",
+      "section": "Прикметник",
+      "title": "Аналіз діагностувальної роботи з мовної теми. Корекція знань, умінь, навичок",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        233,
+        234
+      ],
+      "pdf_pages": [
+        233,
+        234
+      ],
+      "lesson_file": "lessons/p90.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 91",
+      "id": "ukrmova6-p91",
+      "section": "Числівник",
+      "title": "Числівник. Повторення вивченого",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        235,
+        236
+      ],
+      "pdf_pages": [
+        235,
+        236
+      ],
+      "lesson_file": "lessons/p91.md",
+      "test_file": "tests/p91.json",
+      "exercises": 9,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 92",
+      "id": "ukrmova6-p92",
+      "section": "Числівник",
+      "title": "Числівник: загальне значення, морфологічні ознаки, синтаксична роль",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        237,
+        239
+      ],
+      "pdf_pages": [
+        237,
+        239
+      ],
+      "lesson_file": "lessons/p92.md",
+      "test_file": "tests/p92.json",
+      "exercises": 8,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 93–94",
+      "id": "ukrmova6-p93-94",
+      "section": "Числівник",
+      "title": "Числівники кількісні та порядкові. Числівники прості, складні та складені",
+      "lessons": 2,
+      "type": "lesson",
+      "textbook_pages": [
+        240,
+        243
+      ],
+      "pdf_pages": [
+        240,
+        243
+      ],
+      "lesson_file": "lessons/p93-94.md",
+      "test_file": "tests/p93-94.json",
+      "exercises": 11,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 95–97",
+      "id": "ukrmova6-p95-97",
+      "section": "Числівник",
+      "title": "Відмінювання кількісних числівників. Буква ь наприкінці числівників і перед закінченням у непрямих відмінках",
+      "lessons": 3,
+      "type": "lesson",
+      "textbook_pages": [
+        244,
+        248
+      ],
+      "pdf_pages": [
+        244,
+        248
+      ],
+      "lesson_file": "lessons/p95-97.md",
+      "test_file": "tests/p95-97.json",
+      "exercises": 5,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 98",
+      "id": "ukrmova6-p98",
+      "section": "Числівник",
+      "title": "Відмінювання порядкових числівників. Написання разом порядкових числівників із -сотий, -тисячний, -мільйонний, -мільярдний",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        249,
+        251
+      ],
+      "pdf_pages": [
+        249,
+        251
+      ],
+      "lesson_file": "lessons/p98.md",
+      "test_file": "tests/p98.json",
+      "exercises": 4,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 99",
+      "id": "ukrmova6-p99",
+      "section": "Числівник",
+      "title": "Підготовка до діагностувального диктанту",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        252,
+        252
+      ],
+      "pdf_pages": [
+        252,
+        252
+      ],
+      "lesson_file": "lessons/p99.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 100",
+      "id": "ukrmova6-p100",
+      "section": "Числівник",
+      "title": "Діагностувальний диктант",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        252,
+        252
+      ],
+      "pdf_pages": [
+        252,
+        252
+      ],
+      "lesson_file": "lessons/p100.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 101",
+      "id": "ukrmova6-p101",
+      "section": "Числівник",
+      "title": "Аналіз діагностувального диктанту. Корекція знань, умінь, навичок",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        252,
+        252
+      ],
+      "pdf_pages": [
+        252,
+        252
+      ],
+      "lesson_file": "lessons/p101.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 102–103",
+      "id": "ukrmova6-p102-103",
+      "section": "Числівник",
+      "title": "Узгодження числівників з іменниками",
+      "lessons": 2,
+      "type": "lesson",
+      "textbook_pages": [
+        252,
+        257
+      ],
+      "pdf_pages": [
+        252,
+        257
+      ],
+      "lesson_file": "lessons/p102-103.md",
+      "test_file": "tests/p102-103.json",
+      "exercises": 19,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 104–105",
+      "id": "ukrmova6-p104-105",
+      "section": "Числівник",
+      "title": "Правильне вживання числівників. Уживання числівників на позначення дат Уживання числівників на позначення часу",
+      "lessons": 2,
+      "type": "qr",
+      "textbook_pages": [
+        258,
+        258
+      ],
+      "pdf_pages": [
+        258,
+        258
+      ],
+      "lesson_file": "lessons/p104-105.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 106",
+      "id": "ukrmova6-p106",
+      "section": "Числівник",
+      "title": "Морфологічний аналіз числівників. Узагальнення й систематизація вивченого з теми «Числівник». Підготовка до діагностувальної роботи",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        258,
+        258
+      ],
+      "pdf_pages": [
+        258,
+        258
+      ],
+      "lesson_file": "lessons/p106.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 107",
+      "id": "ukrmova6-p107",
+      "section": "Числівник",
+      "title": "Діагностувальна робота з теми «Числівник. Текст. Інформація. Спілкування. Комбіновані тести»",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        258,
+        258
+      ],
+      "pdf_pages": [
+        258,
+        258
+      ],
+      "lesson_file": "lessons/p107.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 108",
+      "id": "ukrmova6-p108",
+      "section": "Числівник",
+      "title": "Аналіз діагностувальної роботи. Корекція знань, умінь, навичок",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        258,
+        259
+      ],
+      "pdf_pages": [
+        258,
+        259
+      ],
+      "lesson_file": "lessons/p108.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 109",
+      "id": "ukrmova6-p109",
+      "section": "Займенник",
+      "title": "Займенник. Повторення вивченого",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        260,
+        262
+      ],
+      "pdf_pages": [
+        260,
+        262
+      ],
+      "lesson_file": "lessons/p109.md",
+      "test_file": "tests/p109.json",
+      "exercises": 13,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 110",
+      "id": "ukrmova6-p110",
+      "section": "Займенник",
+      "title": "Займенник: загальне значення, морфологічні ознаки, синтаксична роль",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        263,
+        266
+      ],
+      "pdf_pages": [
+        263,
+        266
+      ],
+      "lesson_file": "lessons/p110.md",
+      "test_file": "tests/p110.json",
+      "exercises": 9,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 111",
+      "id": "ukrmova6-p111",
+      "section": "Займенник",
+      "title": "Розряди займенників за значенням",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        267,
+        270
+      ],
+      "pdf_pages": [
+        267,
+        270
+      ],
+      "lesson_file": "lessons/p111.md",
+      "test_file": "tests/p111.json",
+      "exercises": 10,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 112",
+      "id": "ukrmova6-p112",
+      "section": "Займенник",
+      "title": "Відмінювання особових і зворотного займенників, приставний н у формах особових займенників. Етикетні функції займенників ти і ви",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        271,
+        274
+      ],
+      "pdf_pages": [
+        271,
+        274
+      ],
+      "lesson_file": "lessons/p112.md",
+      "test_file": "tests/p112.json",
+      "exercises": 15,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 113",
+      "id": "ukrmova6-p113",
+      "section": "Займенник",
+      "title": "Питальні й відносні займенники",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        275,
+        278
+      ],
+      "pdf_pages": [
+        275,
+        278
+      ],
+      "lesson_file": "lessons/p113.md",
+      "test_file": "tests/p113.json",
+      "exercises": 4,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 114",
+      "id": "ukrmova6-p114",
+      "section": "Займенник",
+      "title": "Заперечні займенники. Правопис заперечних займенників",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        279,
+        281
+      ],
+      "pdf_pages": [
+        279,
+        281
+      ],
+      "lesson_file": "lessons/p114.md",
+      "test_file": "tests/p114.json",
+      "exercises": 4,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 115–116",
+      "id": "ukrmova6-p115-116",
+      "section": "Займенник",
+      "title": "Неозначені займенники. Написання разом і з дефісом неозначених займенників",
+      "lessons": 2,
+      "type": "lesson",
+      "textbook_pages": [
+        282,
+        286
+      ],
+      "pdf_pages": [
+        282,
+        286
+      ],
+      "lesson_file": "lessons/p115-116.md",
+      "test_file": "tests/p115-116.json",
+      "exercises": 14,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 117",
+      "id": "ukrmova6-p117",
+      "section": "Займенник",
+      "title": "Написання займенників із прийменниками",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        287,
+        289
+      ],
+      "pdf_pages": [
+        287,
+        289
+      ],
+      "lesson_file": "lessons/p117.md",
+      "test_file": "tests/p117.json",
+      "exercises": 10,
+      "questions": 3
+    },
+    {
+      "paragraph": "§ 118–119",
+      "id": "ukrmova6-p118-119",
+      "section": "Займенник",
+      "title": "Діагностувальна робота з мовленнєвої теми. Письмовий переказ тексту-розповіді з елементами роздуму",
+      "lessons": 2,
+      "type": "qr",
+      "textbook_pages": [
+        290,
+        290
+      ],
+      "pdf_pages": [
+        290,
+        290
+      ],
+      "lesson_file": "lessons/p118-119.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 120",
+      "id": "ukrmova6-p120",
+      "section": "Займенник",
+      "title": "Аналіз діагностувальної роботи з мовленнєвої теми. Корекція знань, умінь, навичок",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        290,
+        290
+      ],
+      "pdf_pages": [
+        290,
+        290
+      ],
+      "lesson_file": "lessons/p120.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 121–122",
+      "id": "ukrmova6-p121-122",
+      "section": "Займенник",
+      "title": "Присвійні, вказівні й означальні займенники. Відмінювання присвійних, вказівних та означальних займенників",
+      "lessons": 2,
+      "type": "lesson",
+      "textbook_pages": [
+        290,
+        298
+      ],
+      "pdf_pages": [
+        290,
+        298
+      ],
+      "lesson_file": "lessons/p121-122.md",
+      "test_file": "tests/p121-122.json",
+      "exercises": 16,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 123",
+      "id": "ukrmova6-p123",
+      "section": "Займенник",
+      "title": "Морфологічний аналіз займенника. Узагальнення й систематизація вивченого з теми «Займенник». Підготовка до діагностувальної роботи",
+      "lessons": 1,
+      "type": "lesson",
+      "textbook_pages": [
+        299,
+        301
+      ],
+      "pdf_pages": [
+        299,
+        301
+      ],
+      "lesson_file": "lessons/p123.md",
+      "test_file": "tests/p123.json",
+      "exercises": 9,
+      "questions": 4
+    },
+    {
+      "paragraph": "§ 124",
+      "id": "ukrmova6-p124",
+      "section": "Займенник",
+      "title": "Діагностувальна робота",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        302,
+        302
+      ],
+      "pdf_pages": [
+        302,
+        302
+      ],
+      "lesson_file": "lessons/p124.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    },
+    {
+      "paragraph": "§ 125",
+      "id": "ukrmova6-p125",
+      "section": "Займенник",
+      "title": "Аналіз діагностувальної роботи. Корекція знань, умінь і навичок",
+      "lessons": 1,
+      "type": "qr",
+      "textbook_pages": [
+        302,
+        304
+      ],
+      "pdf_pages": [
+        302,
+        304
+      ],
+      "lesson_file": "lessons/p125.md",
+      "test_file": null,
+      "exercises": 0,
+      "questions": 0
+    }
+  ]
+}
