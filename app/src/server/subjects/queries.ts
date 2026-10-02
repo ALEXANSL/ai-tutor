@@ -236,6 +236,23 @@ export async function getSubjectDetail(familyId: string, subjectId: string): Pro
     : { data: [] as { id: string; topic_id: string }[] };
   const courseLessonByTopic = new Map((courseLessons ?? []).map((l) => [l.topic_id, l.id]));
 
+  // 2026-10-02 incident: a course-package import (S34, same as S33's
+  // literature_lessons before it) creates its OWN fresh `topics` rows
+  // rather than attaching to whatever topics the subject already had from
+  // the old generation pipeline — so right after importing 38 math lessons,
+  // the child's topic list mixed those 38 in with the pre-existing (and
+  // confirmed-broken) old-pipeline topics, interleaved by sort_order with
+  // no visual distinction. The PO clicked an old one and got the old
+  // "Крок N" runner with no skip button and no textbook images — "оперує
+  // старими даними". Once a subject has ANY actively-imported topic, the
+  // old pipeline is not coming back for it (today's whole direction:
+  // PO-prepared imports replace AI generation) — so filter the old,
+  // import-less topics out entirely rather than showing a confusing mix.
+  const hasAnyImportedTopic = literatureLessonByTopic.size > 0 || courseLessonByTopic.size > 0;
+  const visibleTopics = hasAnyImportedTopic
+    ? topicList.filter((t) => literatureLessonByTopic.has(t.id) || courseLessonByTopic.has(t.id))
+    : topicList;
+
   return {
     id: subject.id,
     code: subject.code,
@@ -243,7 +260,7 @@ export async function getSubjectDetail(familyId: string, subjectId: string): Pro
     active: subject.active,
     hasTextbook: !!textbook,
     textbookTitle: textbook ? (textbook.title ?? textbook.name) : null,
-    topics: topicList.map((t) => ({
+    topics: visibleTopics.map((t) => ({
       id: t.id,
       title: t.title,
       pageFrom: t.page_from,
@@ -251,7 +268,7 @@ export async function getSubjectDetail(familyId: string, subjectId: string): Pro
       literatureLessonId: literatureLessonByTopic.get(t.id) ?? null,
       courseLessonId: courseLessonByTopic.get(t.id) ?? null,
     })),
-    currentTopicId: topicList.find((t) => t.is_current)?.id ?? null,
+    currentTopicId: visibleTopics.find((t) => t.is_current)?.id ?? null,
     kind,
     groupId: subject.group_id ?? null,
     groupName: group?.name_uk ?? null,

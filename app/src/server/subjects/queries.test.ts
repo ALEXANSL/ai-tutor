@@ -149,6 +149,46 @@ describe("getSubjectDetail: literatureLessonId (S33/D-123)", () => {
 
     expect(detail?.topics[0]).toMatchObject({ id: "t3", literatureLessonId: null });
   });
+
+  /**
+   * 2026-10-02 incident: a course-package import (S34) creates its own
+   * fresh `topics` rows rather than attaching to the subject's pre-existing
+   * (old-pipeline) ones — so right after importing, the child's topic list
+   * mixed the new, working topics in with old, broken ones with no visual
+   * distinction ("оперує старими даними", no skip button, no textbook
+   * images — the PO had clicked an old one). Once a subject has ANY
+   * actively-imported topic, the old ones are filtered out entirely.
+   */
+  it("hides old (non-imported) topics once the subject has at least one imported topic (S34 incident)", async () => {
+    scopeState.tables = {
+      subjects: { id: "subj-math2", code: "math2", name_uk: "Математика", active: true, is_stub: false },
+      materials: [],
+      topics: [
+        { id: "old-1", subject_id: "subj-math2", title: "Старий розділ (AI)", page_from: 1, page_to: 5, sort_order: 1, is_current: false },
+        { id: "new-1", subject_id: "subj-math2", title: "§ 1. Відсотки", page_from: 10, page_to: 20, sort_order: 2, is_current: false },
+      ],
+      course_lessons: [{ id: "cl-1", topic_id: "new-1", status: "active" }],
+    };
+
+    const detail = await getSubjectDetail("fam-1", "subj-math2");
+
+    expect(detail?.topics.map((t) => t.id)).toEqual(["new-1"]);
+  });
+
+  it("keeps every topic when none of them are imported yet (no regression for untouched subjects)", async () => {
+    scopeState.tables = {
+      subjects: { id: "subj-math3", code: "math3", name_uk: "Математика", active: true, is_stub: false },
+      materials: [],
+      topics: [
+        { id: "a", subject_id: "subj-math3", title: "Тема А", page_from: 1, page_to: 5, sort_order: 1, is_current: false },
+        { id: "b", subject_id: "subj-math3", title: "Тема Б", page_from: 6, page_to: 10, sort_order: 2, is_current: false },
+      ],
+    };
+
+    const detail = await getSubjectDetail("fam-1", "subj-math3");
+
+    expect(detail?.topics.map((t) => t.id)).toEqual(["a", "b"]);
+  });
 });
 
 /**
