@@ -72,11 +72,9 @@ function PageRef({ from, to }: { from: number | null; to: number | null }) {
 function TestQuestion({
   q,
   onAnswered,
-  allowSkip,
 }: {
   q: LiteratureTestQuestionView;
   onAnswered: (correct: boolean | null) => void;
-  allowSkip: boolean;
 }) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [openText, setOpenText] = useState("");
@@ -106,8 +104,16 @@ function TestQuestion({
     onAnswered(correct);
   };
 
-  /** Parent-settings-gated skip (PO feedback 2026-10-01): reveals the explanation without scoring, same no-verdict path as `open`/`match`/`order`. */
+  /**
+   * Mandatory skip button (PO correction 2026-10-02: "обов'язково кнопка
+   * пропустити завдання в уроці, з нагадуванням, що урок не буде
+   * зараховано") — always available, no longer gated by
+   * `parent_settings.allow_skip_tests`. Warns before skipping that the
+   * lesson won't count as completed; only skips on confirmation. Reveals
+   * the explanation without scoring, same no-verdict path as `open`/`match`/`order`.
+   */
   const skip = () => {
+    if (!window.confirm("Якщо пропустиш — цей урок не буде зараховано як пройдений. Пропустити?")) return;
     setRevealed(true);
     onAnswered(null);
   };
@@ -145,11 +151,9 @@ function TestQuestion({
           <button type="button" className="lit-btn" onClick={check}>
             Перевірити
           </button>
-          {allowSkip && (
-            <button type="button" className="lit-btn lit-btn-secondary" onClick={skip}>
-              Пропустити
-            </button>
-          )}
+          <button type="button" className="lit-btn lit-btn-secondary" onClick={skip}>
+            Пропустити
+          </button>
         </div>
       ) : (
         <p className="lit-test-explain">{q.explanationUk}</p>
@@ -158,7 +162,7 @@ function TestQuestion({
   );
 }
 
-export function LiteratureTest({ questions, allowSkip = false }: { questions: LiteratureTestQuestionView[]; allowSkip?: boolean }) {
+export function LiteratureTest({ questions }: { questions: LiteratureTestQuestionView[] }) {
   const [results, setResults] = useState<Record<string, boolean | null>>({});
   const scored = useMemo(() => Object.values(results).filter((v) => v != null), [results]);
   const correctCount = useMemo(() => scored.filter(Boolean).length, [scored]);
@@ -172,7 +176,6 @@ export function LiteratureTest({ questions, allowSkip = false }: { questions: Li
           <TestQuestion
             key={q.id}
             q={q}
-            allowSkip={allowSkip}
             onAnswered={(correct) => setResults((prev) => ({ ...prev, [q.id]: correct }))}
           />
         ))}
@@ -186,7 +189,7 @@ export function LiteratureTest({ questions, allowSkip = false }: { questions: Li
   );
 }
 
-export function LiteratureLessonScreen({ lesson, allowSkipTests = false }: { lesson: LiteratureLessonView; allowSkipTests?: boolean }) {
+export function LiteratureLessonScreen({ lesson }: { lesson: LiteratureLessonView }) {
   return (
     <article className="lit-lesson">
       <header>
@@ -290,7 +293,7 @@ export function LiteratureLessonScreen({ lesson, allowSkipTests = false }: { les
 
       <section>
         <h2>Тест</h2>
-        <LiteratureTest questions={lesson.test} allowSkip={allowSkipTests} />
+        <LiteratureTest questions={lesson.test} />
       </section>
     </article>
   );
