@@ -379,9 +379,11 @@ body {
   border-radius: 8px;
 }
 /*
- * PO correction 2026-10-02: the recognized page text is the readable
- * content and comes first; the photo is a secondary, collapsed reference
- * (`<details>`) rather than the primary thing shown.
+ * PO correction 2026-10-02, reverted same day ("це кошмар" — see
+ * `CourseLessonView.tsx`'s `SourceImage` doc comment): the photographed
+ * textbook page is the primary, authoritative content; the raw OCR text is
+ * only a small, collapsed, explicitly-labelled "can be wrong" hint under
+ * it, never the main paragraph.
  */
 .course-source-images,
 .course-exercise-list {
@@ -391,35 +393,32 @@ body {
   list-style: none;
   padding: 0;
 }
-.course-source-block {
+.course-source-image {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 16px;
   margin: 0;
 }
-.course-source-text {
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 17px;
-  line-height: 1.7;
-  white-space: pre-wrap;
-  margin: 0;
+.course-source-image img {
+  display: block;
+  max-width: 100%;
+  border-radius: 8px;
 }
-.course-source-photo {
+.course-ocr-hint {
   margin-top: 12px;
 }
-.course-source-photo summary {
+.course-ocr-hint summary {
   cursor: pointer;
   color: var(--text-muted);
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
 }
-.course-source-photo img {
-  display: block;
-  max-width: 100%;
-  margin-top: 8px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
+.course-ocr-hint-text {
+  font-size: 14px;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  margin: 8px 0 0;
 }
 .course-exercise-card {
   background: var(--surface);

@@ -47,30 +47,32 @@ function toLiteratureTestQuestions(lesson: CourseLessonView): LiteratureTestQues
 }
 
 /**
- * PO correction 2026-10-02: "текст на малюнках він є ж в тестовому вигляді,
- * його можна прочитати, роби щось з дизайном, таке навіть дорослий читати
- * не буде" — the recognized text (`searchTextOcr`) is the actual readable
- * content; the photo itself is now a secondary, collapsed "original page"
- * reference rather than the primary (and largely unreadable-at-screen-size)
- * thing shown. The OCR text is still only an aid (never treated as the
- * authoritative condition — see the file header), so the real page stays
- * one tap away.
+ * PO correction 2026-10-02, reverted same day after seeing it live
+ * ("це кошмар"): a prior change here showed `searchTextOcr` as the primary
+ * readable paragraph. The course package's OWN spec (`README.md`/
+ * `IMPORT.md` from the ChatGPT-prepared export) says explicitly this text
+ * is raw, unproofread OCR of a whole photographed page — garbled for
+ * fractions/exponents/tables, never a reliable transcription, "не слід
+ * показувати як точну умову". On real data it really is garbled ("Banana",
+ * random Latin letters, scrambled fraction notation) — showing it as the
+ * main text was actively worse than the photo. Image stays primary; the
+ * OCR text, when present, is only a small, explicitly-labelled "can be
+ * wrong" caption under it — useful for a text search, never shown as if it
+ * were the real condition.
  */
 function SourceImage({ img }: { img: CourseSourceImageView }) {
+  if (!img.url) {
+    return <p className="course-note">(зображення тимчасово недоступне — спробуйте оновити сторінку)</p>;
+  }
   return (
-    <figure className="course-source-block">
-      {img.searchTextOcr ? (
-        <p className="course-source-text">
-          <MathText text={img.searchTextOcr} />
-        </p>
-      ) : (
-        <p className="course-note">(текст не розпізнано — дивись фото сторінки нижче)</p>
-      )}
-      {img.url && (
-        <details className="course-source-photo">
-          <summary>Показати фото сторінки{img.printedPage != null ? ` (с. ${img.printedPage})` : ""}</summary>
-          {/* eslint-disable-next-line @next/next/no-img-element -- short-lived signed Supabase Storage URL, not a static asset next/image can optimize */}
-          <img src={img.url} alt={img.searchTextOcr ? img.searchTextOcr.slice(0, 120) : "Сторінка підручника"} loading="lazy" />
+    <figure className="course-source-image">
+      {/* eslint-disable-next-line @next/next/no-img-element -- short-lived signed Supabase Storage URL, not a static asset next/image can optimize */}
+      <img src={img.url} alt={img.printedPage != null ? `Сторінка підручника ${img.printedPage}` : "Сторінка підручника"} loading="lazy" />
+      {img.printedPage != null && <figcaption className="course-page-ref">с. {img.printedPage}</figcaption>}
+      {img.searchTextOcr && (
+        <details className="course-ocr-hint">
+          <summary>Розпізнаний текст (може містити помилки, особливо в дробах і степенях)</summary>
+          <p className="course-ocr-hint-text">{img.searchTextOcr}</p>
         </details>
       )}
     </figure>
