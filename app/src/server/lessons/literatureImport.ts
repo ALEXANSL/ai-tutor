@@ -25,6 +25,29 @@ import type { LiteratureTopicOut } from "./literature-schema";
  * parsing (the source format is simple enough — `key: value` frontmatter,
  * `##`/`###`/`####` headings, `-`/numbered lists — that a full YAML/Markdown
  * parser would be more surface than the format needs).
+ *
+ * Second source shape (2026-10-02, Українська мова 6 кл.): same zip
+ * architecture (`course_index.json` is still never read — we scan
+ * `lessons/*.md` directly and follow each lesson's own `test_file`), but:
+ *   - lesson filenames are `lessons/p<N>[-<M>].md` (not pure-digit `NN.md`);
+ *   - frontmatter has no numeric `topic:` field, only `paragraph: "§ N[–M]"`
+ *     (a string) — `topicNo` is the leading number parsed out of
+ *     `paragraph` (the textbook's own "§" number), never an invented
+ *     sequence index, and the full `"§ N–M"` label is kept (prefixed onto
+ *     `titleUk`) so nothing about the original numbering is lost;
+ *   - the body has no `## Мета`/`## Ключові поняття`/`## Матеріал для
+ *     пояснення`/`## Уроки`/`## Твір` sections — `## Правило (стисло)` is
+ *     accepted as an alternate `## Ключові поняття` heading, and (when
+ *     there's no separate `## Матеріал для пояснення`) its text doubles as
+ *     `explanationMdUk` too, flagged with a warning; `## Вправи підручника`
+ *     (a `| № | Сторінка | Тип | Примітка |` table) becomes the topic's one
+ *     sublesson's one question group, each row's page folded into its own
+ *     `textUk` (the schema's `questionGroup` only carries a single
+ *     page/pdfPage for the whole group, so a per-row page can't live
+ *     anywhere else without inventing a schema field).
+ * Both shapes auto-detect (by the presence of `paragraph:` in frontmatter
+ * and of `## Правило (стисло)`/`## Вправи підручника` in the body) — same
+ * function, same `LiteratureTopicOut` output, no caller-supplied flag.
  */
 
 export interface ImportWarning {
@@ -115,6 +138,12 @@ function section(body: string, heading: string): string | null {
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** First integer run in a string (e.g. `"§ 34–35"` → `34`), or `null` if there isn't one. Never invents a number — only extracts one already printed in the source. */
+function parseLeadingNumber(label: string): number | null {
+  const m = /(\d+)/.exec(label);
+  return m ? Number(m[1]) : null;
 }
 
 /**
@@ -222,6 +251,57 @@ function parseSublessons(lessonsSection: string): ParsedSublesson[] {
   return sublessons;
 }
 
+interface ParsedExerciseRow {
+  number: string;
+  page: number;
+  typeUk: string;
+  noteUk: string;
+}
+
+/**
+ * The Ukrainian-language-course shape's `## Вправи підручника` table
+ * (`| № | Сторінка | Тип | Примітка |`) — the only "question-like" content
+ * this format has (no textbook question text, just number/page/type/note).
+ * Skips the header and `|---|---|---|---|` divider rows (their first cell
+ * isn't a leading digit).
+ */
+function parseExerciseTable(text: string): ParsedExerciseRow[] {
+  const rows: ParsedExerciseRow[] = [];
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trim();
+    if (!line.startsWith("|") || !line.endsWith("|")) continue;
+    const cells = line
+      .slice(1, -1)
+      .split("|")
+      .map((c) => c.trim());
+    if (cells.length < 3) continue;
+    const [numberCell, pageCell, typeCell, noteCell] = cells;
+    if (!numberCell || !/^\d/.test(numberCell)) continue; // header ("№") or "---" divider
+    const page = Number(pageCell);
+    if (!Number.isFinite(page)) continue;
+    rows.push({ number: numberCell, page, typeUk: typeCell ?? "", noteUk: noteCell ?? "" });
+  }
+  return rows;
+}
+
+/**
+ * One sublesson built from the exercise table — the schema's `questionGroup`
+ * carries a single `page`/`pdfPage` for the whole group (not per item), so
+ * each row's own page is folded into its `textUk` instead of being dropped.
+ */
+function buildExerciseSublesson(rows: ParsedExerciseRow[], titleUk: string, textbookPageFrom: number | null, pdfPageFrom: number | null): LiteratureTopicOut["sublessons"][number] {
+  const items: ParsedQuestionItem[] = rows.map((r) => {
+    const typeLabel = r.typeUk || "(тип не вказано)";
+    const textUk = r.noteUk ? `${typeLabel} — с. ${r.page} (${r.noteUk})` : `${typeLabel} — с. ${r.page}`;
+    return { number: r.number, textUk };
+  });
+  return {
+    no: "1",
+    titleUk,
+    questionGroups: [{ labelUk: "Вправи підручника", page: textbookPageFrom, pdfPage: pdfPageFrom, items }],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // One `lessons/NN.md` → LiteratureTopicOut (minus `test`, added separately).
 // ---------------------------------------------------------------------------
@@ -229,11 +309,18 @@ function parseSublessons(lessonsSection: string): ParsedSublesson[] {
 export function parseLessonMarkdown(raw: string, warn: (field: string, message: string) => void): Omit<LiteratureTopicOut, "test"> {
   const { data, body } = parseFrontmatter(raw);
 
-  const topicNo = fmNumber(data, "topic") ?? 0;
-  if (!topicNo) warn("topicNo", "не вдалося прочитати номер теми (`topic:`) у frontmatter — використано 0");
+  // Ukrainian-language-course shape has no numeric `topic:` field — only a
+  // `paragraph: "§ N[–M]"` string. Its leading number IS the textbook's own
+  // numbering (not an invented sequence), so it's used as `topicNo` as-is;
+  // the full "§ N–M" label is kept too (prefixed onto `titleUk` below) so
+  // a range like "§ 34–35" isn't silently collapsed to just "34".
+  const paragraphLabel = fmString(data, "paragraph");
+  const topicNo = fmNumber(data, "topic") ?? (paragraphLabel ? parseLeadingNumber(paragraphLabel) : null) ?? 0;
+  if (!topicNo) warn("topicNo", "не вдалося визначити номер теми (ні `topic:`, ні числа з `paragraph:`) — використано 0");
 
-  const titleUk = fmString(data, "title") ?? "(тема без назви)";
-  if (!fmString(data, "title")) warn("titleUk", "не вказано `title:` у frontmatter");
+  const rawTitle = fmString(data, "title");
+  const titleUk = rawTitle ? (paragraphLabel ? `${paragraphLabel}. ${rawTitle}` : rawTitle) : "(тема без назви)";
+  if (!rawTitle) warn("titleUk", "не вказано `title:` у frontmatter");
 
   const [textbookPageFrom, textbookPageTo] = fmPageRange(data, "textbook_pages");
   const [pdfPageFrom, pdfPageTo] = fmPageRange(data, "pdf_pages");
@@ -242,13 +329,28 @@ export function parseLessonMarkdown(raw: string, warn: (field: string, message: 
   const goalUk = goalSection ? stripMarkdownEmphasis(goalSection) : "Мета уроку буде уточнена пізніше.";
   if (!goalSection) warn("goalUk", "розділ «## Мета» відсутній — використано заглушку");
 
-  const conceptsText = section(body, "Ключові поняття");
+  // Ukrainian-language-course shape has no "## Ключові поняття" — its
+  // "## Правило (стисло)" bullet list serves the same purpose (a concise
+  // rule statement), so it's accepted as an alternate heading.
+  const conceptsText = section(body, "Ключові поняття") ?? section(body, "Правило (стисло)");
   const keyConceptsUk = conceptsText ? bulletItems(conceptsText) : [];
-  if (keyConceptsUk.length === 0) warn("keyConceptsUk", "розділ «## Ключові поняття» відсутній або порожній");
+  if (keyConceptsUk.length === 0) warn("keyConceptsUk", "розділ «## Ключові поняття» (або «## Правило (стисло)») відсутній або порожній");
 
   const explanationSection = section(body, "Матеріал для пояснення");
-  const explanationMdUk = explanationSection && explanationSection.length > 0 ? explanationSection : "Матеріал для пояснення буде додано пізніше.";
-  if (!explanationSection) warn("explanationMdUk", "розділ «## Матеріал для пояснення» відсутній — використано заглушку");
+  let explanationMdUk: string;
+  if (explanationSection && explanationSection.length > 0) {
+    explanationMdUk = explanationSection;
+  } else if (conceptsText) {
+    // No separate explanation section in this shape — the concise rule text
+    // is the real (sourced, not invented) explanatory content, just filed
+    // under a different heading, so it's reused here instead of a "буде
+    // додано пізніше" placeholder that would misstate the material as missing.
+    explanationMdUk = conceptsText;
+    warn("explanationMdUk", "розділ «## Матеріал для пояснення» відсутній — використано текст «## Правило (стисло)» як пояснення");
+  } else {
+    explanationMdUk = "Матеріал для пояснення буде додано пізніше.";
+    warn("explanationMdUk", "розділ «## Матеріал для пояснення» відсутній — використано заглушку");
+  }
 
   const workSection = section(body, "Твір");
   let work: LiteratureTopicOut["work"] = null;
@@ -280,20 +382,29 @@ export function parseLessonMarkdown(raw: string, warn: (field: string, message: 
 
   const lessonsSection = section(body, "Уроки") ?? "";
   const parsedSublessons = parseSublessons(lessonsSection);
-  const sublessons: LiteratureTopicOut["sublessons"] =
-    parsedSublessons.length > 0
-      ? parsedSublessons.map((sl) => ({
-          no: sl.no,
-          titleUk: sl.titleUk,
-          questionGroups: sl.questionGroups.map((g) => ({
-            labelUk: g.labelUk,
-            page: g.page,
-            pdfPage: g.pdfPage,
-            items: g.items,
-          })),
-        }))
-      : [{ no: "1", titleUk, questionGroups: [] }];
-  if (parsedSublessons.length === 0) warn("sublessons", "розділ «## Уроки» не розпізнано — створено один заглушковий підурок без запитань");
+  // Ukrainian-language-course shape has no "## Уроки" (sub-lessons with
+  // numbered questions) — its "## Вправи підручника" exercise table is the
+  // nearest equivalent content, so it's used as a fallback source.
+  const exerciseRows = parsedSublessons.length === 0 ? parseExerciseTable(section(body, "Вправи підручника") ?? "") : [];
+
+  let sublessons: LiteratureTopicOut["sublessons"];
+  if (parsedSublessons.length > 0) {
+    sublessons = parsedSublessons.map((sl) => ({
+      no: sl.no,
+      titleUk: sl.titleUk,
+      questionGroups: sl.questionGroups.map((g) => ({
+        labelUk: g.labelUk,
+        page: g.page,
+        pdfPage: g.pdfPage,
+        items: g.items,
+      })),
+    }));
+  } else if (exerciseRows.length > 0) {
+    sublessons = [buildExerciseSublesson(exerciseRows, titleUk, textbookPageFrom, pdfPageFrom)];
+  } else {
+    sublessons = [{ no: "1", titleUk, questionGroups: [] }];
+    warn("sublessons", "не знайдено ні розділу «## Уроки», ні таблиці «## Вправи підручника» — створено один заглушковий підурок без запитань");
+  }
 
   const teacherNoteUk = section(body, "Для вчителя / ШІ-репетитора") ?? undefined;
 
@@ -411,7 +522,16 @@ export function parseTestJson(raw: string, topicNo: number, warn: (field: string
 // Whole-course zip.
 // ---------------------------------------------------------------------------
 
-const LESSON_PATH_RE = /(^|\/)lessons\/(\d+)\.md$/;
+// Matches both the zarlit-6 shape (`lessons/01.md`, pure digits) and the
+// Ukrainian-language-course shape (`lessons/p1-2.md`, optional `p` prefix
+// and `-M` range suffix). Group 2 is the filename stem, used verbatim as
+// the `tests/<stem>.json` fallback name when `test_file` isn't given.
+const LESSON_PATH_RE = /(^|\/)lessons\/([A-Za-z0-9]+(?:-[A-Za-z0-9]+)?)\.md$/;
+
+/** Leading integer of a lesson filename stem (`"01"` → 1, `"p34-35"` → 34), for sort order. */
+function lessonStemSortKey(stem: string): number {
+  return parseLeadingNumber(stem) ?? 0;
+}
 
 /** The zip entry key ending in `suffix` (path-segment aware — never matches a shorter filename that happens to end with the same characters). */
 function findEntryBySuffix(entries: Record<string, Uint8Array>, suffix: string): string | null {
@@ -438,29 +558,30 @@ export function parseLiteratureCourseZip(zipBytes: Uint8Array): ParsedCourseResu
   const lessonKeys = Object.keys(entries)
     .map((key) => ({ key, m: LESSON_PATH_RE.exec(key) }))
     .filter((e): e is { key: string; m: RegExpExecArray } => e.m != null)
-    .sort((a, b) => Number(a.m[2]) - Number(b.m[2]));
+    .sort((a, b) => lessonStemSortKey(a.m[2]!) - lessonStemSortKey(b.m[2]!));
 
   if (lessonKeys.length === 0) {
-    warnings.push({ topicNo: null, field: "lessons", message: "у архіві не знайдено жодного файлу lessons/NN.md — перевірте структуру zip" });
+    warnings.push({ topicNo: null, field: "lessons", message: "у архіві не знайдено жодного файлу lessons/NN.md (або lessons/pN[-M].md) — перевірте структуру zip" });
     return { topics, warnings };
   }
 
   for (const { key } of lessonKeys) {
     const raw = strFromU8(entries[key]!);
     const { data: fm } = parseFrontmatter(raw);
-    let topicNo = fmNumber(fm, "topic") ?? 0;
+    const fmParagraph = fmString(fm, "paragraph");
+    let topicNo = fmNumber(fm, "topic") ?? (fmParagraph ? parseLeadingNumber(fmParagraph) : null) ?? 0;
     const localWarn = (field: string, message: string) => warnings.push({ topicNo, field, message });
 
     const partial = parseLessonMarkdown(raw, localWarn);
     topicNo = partial.topicNo;
 
     const testFileRef = fmString(fm, "test_file");
-    const nn = LESSON_PATH_RE.exec(key)![2];
-    const testKey = (testFileRef && findEntryBySuffix(entries, testFileRef)) ?? findEntryBySuffix(entries, `tests/${nn}.json`);
+    const stem = LESSON_PATH_RE.exec(key)![2];
+    const testKey = (testFileRef && findEntryBySuffix(entries, testFileRef)) ?? findEntryBySuffix(entries, `tests/${stem}.json`);
 
     let test: LiteratureTopicOut["test"];
     if (!testKey) {
-      warnings.push({ topicNo, field: "test", message: `файл тесту не знайдено (очікувався ${testFileRef ?? `tests/${nn}.json`}) — тема буде без тесту` });
+      warnings.push({ topicNo, field: "test", message: `файл тесту не знайдено (очікувався ${testFileRef ?? `tests/${stem}.json`}) — тема буде без тесту` });
       test = { questions: [] };
       for (let i = 0; i < 3; i++) {
         test.questions.push({
