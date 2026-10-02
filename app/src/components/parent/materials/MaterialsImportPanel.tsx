@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { importCoursePackageAction, type CourseImportSummary } from "@/app/actions/course-import";
 import { uk } from "@/i18n/uk";
+import { withBusySignal } from "@/lib/busy-signal";
 import { getBrowserSupabaseStorageClient } from "@/lib/supabase-browser";
 import { MAX_COURSE_ZIP_BYTES, MAX_UPLOAD_BYTES } from "@/lib/upload-limits";
 import type { SubjectOption } from "@/server/books/queries";
@@ -146,14 +147,20 @@ export function MaterialsImportPanel({ subjects, uploadEnabled }: { subjects: Su
         setState({ status: "error", message: t.zipRequired });
         return;
       }
-      await uploadCoursePackage(file);
+      // 2026-10-02 incident: a large course-package import (~1500 images,
+      // several minutes) ran long enough that IdleWatcher kicked the parent
+      // to the child view mid-upload — same root cause busy-signal.ts was
+      // built for (bulk warmup, content_qa sweep). The parent just watching
+      // a progress bar was never "activity" by IdleWatcher's own real-DOM-
+      // event definition.
+      await withBusySignal(() => uploadCoursePackage(file));
     } else {
       const ok = /\.(pdf|epub)$/i.test(file.name);
       if (!ok) {
         setState({ status: "error", message: t.pdfEpubRequired });
         return;
       }
-      await uploadGuideOrOther(file);
+      await withBusySignal(() => uploadGuideOrOther(file));
     }
   }
 
