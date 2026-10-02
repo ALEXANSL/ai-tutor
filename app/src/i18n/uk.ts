@@ -501,6 +501,7 @@ export const uk = {
       subjects: "Предмети",
       courses: "Курси",
       books: "Мої книги",
+      materials: "Завантажити матеріали",
       settings: "Налаштування",
       modulesSoon: "Модулі (скоро)",
     },
@@ -1002,6 +1003,43 @@ export const uk = {
         ocrUnreadable: "Розпізнано не повністю",
         ocrUnreadableValue: (n: number) => `${n} ${ukPlural(n, "сторінку", "сторінки", "сторінок")} не вдалося розпізнати — можливо, скан нечіткий.`,
       },
+    },
+    // S34 (PO instruction 2026-10-02): "завантажити матеріали - дроп-даун
+    // 'предмет' - дроп-даун 'категорія' (книга/уроки, додаткові посібники,
+    // інше)". "Книга/уроки" runs the $0 course-package import
+    // (courseImport.ts/coursePersist.ts) — zero AI calls, image-anchored
+    // content. "Додаткові посібники"/"Інше" reuse the existing Drive
+    // book-upload mechanism (see MaterialsImportPanel.tsx for exactly what
+    // level of handling each category gets).
+    materials: {
+      title: "Завантажити матеріали",
+      intro: "Оберіть предмет і категорію, потім файл.",
+      subjectLabel: "Предмет",
+      subjectPlaceholder: "Оберіть предмет…",
+      categoryLabel: "Категорія",
+      category: {
+        book_lessons: "Книга/уроки",
+        additional_guide: "Додаткові посібники",
+        other: "Інше",
+      } as Record<string, string>,
+      categoryHint: {
+        book_lessons: "ZIP-пакет готового курсу (зображення сторінок підручника, короткі пояснення, тест) — підготований вами, без ШІ-генерації з нашого боку.",
+        additional_guide: "PDF або EPUB — додатковий посібник чи довідник до предмета.",
+        other: "PDF або EPUB — будь-який інший матеріал до предмета.",
+      } as Record<string, string>,
+      fileLabel: "Файл",
+      submit: "Завантажити",
+      uploading: "Завантажується…",
+      processing: "Обробляємо пакет…",
+      chooseSubjectFirst: "Спершу оберіть предмет.",
+      zipRequired: "Для категорії «Книга/уроки» потрібен ZIP-файл.",
+      pdfEpubRequired: "Підтримуються лише файли PDF або EPUB.",
+      failed: "Не вдалося завантажити файл. Спробуйте ще раз.",
+      courseDone: (lessons: number, tests: number) => `Готово: імпортовано ${lessons} уроків, ${tests} тестів.`,
+      guideDone: "Готово! Матеріал додано і вже індексується.",
+      errorsTitle: "Помилки (файли, що не вдалося імпортувати)",
+      warningsTitle: "Попередження",
+      missingAssetsTitle: "Зображення, згадані в пакеті, але відсутні в архіві",
     },
     // ADR-031 §3: ZIP з кількома предметними теками (напр. від сторонньої
     // "розкладки" підручника) — "Розібрати архів" -> перегляд/правка
