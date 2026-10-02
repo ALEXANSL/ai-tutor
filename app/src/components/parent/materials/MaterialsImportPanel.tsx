@@ -54,7 +54,10 @@ export function MaterialsImportPanel({ subjects, uploadEnabled }: { subjects: Su
 
   async function uploadCoursePackage(file: File) {
     if (file.size > MAX_COURSE_ZIP_BYTES) {
-      setState({ status: "error", message: t.failed });
+      setState({
+        status: "error",
+        message: `Файл завеликий: ${(file.size / 1024 / 1024).toFixed(1)} МБ, максимум ${MAX_COURSE_ZIP_BYTES / 1024 / 1024} МБ.`,
+      });
       return;
     }
     setState({ status: "uploading" });
@@ -64,19 +67,20 @@ export function MaterialsImportPanel({ subjects, uploadEnabled }: { subjects: Su
       body: JSON.stringify({ fileName: file.name, size: file.size }),
     });
     if (!initRes.ok) {
-      setState({ status: "error", message: t.failed });
+      const detail = await initRes.text().catch(() => "");
+      setState({ status: "error", message: `${t.failed} (крок 1/3, код ${initRes.status}${detail ? `: ${detail.slice(0, 300)}` : ""})` });
       return;
     }
     const { token, path } = (await initRes.json()) as { signedUrl: string; token: string; path: string };
 
     const client = getBrowserSupabaseStorageClient();
     if (!client) {
-      setState({ status: "error", message: t.failed });
+      setState({ status: "error", message: `${t.failed} (крок 2/3: сховище Supabase не налаштоване в браузері — перевір env-змінні)` });
       return;
     }
     const { error: uploadErr } = await client.storage.from("course_import_staging").uploadToSignedUrl(path, token, file);
     if (uploadErr) {
-      setState({ status: "error", message: t.failed });
+      setState({ status: "error", message: `${t.failed} (крок 2/3: ${uploadErr.message})` });
       return;
     }
 
@@ -88,7 +92,10 @@ export function MaterialsImportPanel({ subjects, uploadEnabled }: { subjects: Su
 
   async function uploadGuideOrOther(file: File) {
     if (file.size > MAX_UPLOAD_BYTES) {
-      setState({ status: "error", message: t.failed });
+      setState({
+        status: "error",
+        message: `Файл завеликий: ${(file.size / 1024 / 1024).toFixed(1)} МБ, максимум ${MAX_UPLOAD_BYTES / 1024 / 1024} МБ.`,
+      });
       return;
     }
     setState({ status: "uploading" });
@@ -99,13 +106,15 @@ export function MaterialsImportPanel({ subjects, uploadEnabled }: { subjects: Su
         body: JSON.stringify({ fileName: file.name, mimeType: file.type || "application/octet-stream", size: file.size }),
       });
       if (!initRes.ok) {
-        setState({ status: "error", message: t.failed });
+        const detail = await initRes.text().catch(() => "");
+        setState({ status: "error", message: `${t.failed} (крок 1/3, код ${initRes.status}${detail ? `: ${detail.slice(0, 300)}` : ""})` });
         return;
       }
       const { sessionUrl } = (await initRes.json()) as { sessionUrl: string };
       const putRes = await fetch(sessionUrl, { method: "PUT", headers: { "content-type": file.type || "application/octet-stream" }, body: file });
       if (!putRes.ok) {
-        setState({ status: "error", message: t.failed });
+        const detail = await putRes.text().catch(() => "");
+        setState({ status: "error", message: `${t.failed} (крок 2/3, код ${putRes.status}${detail ? `: ${detail.slice(0, 300)}` : ""})` });
         return;
       }
       const uploaded = (await putRes.json()) as { id: string };
@@ -117,12 +126,13 @@ export function MaterialsImportPanel({ subjects, uploadEnabled }: { subjects: Su
         body: JSON.stringify({ driveFileId: uploaded.id, subjectId, category }),
       });
       if (!completeRes.ok) {
-        setState({ status: "error", message: t.failed });
+        const detail = await completeRes.text().catch(() => "");
+        setState({ status: "error", message: `${t.failed} (крок 3/3, код ${completeRes.status}${detail ? `: ${detail.slice(0, 300)}` : ""})` });
         return;
       }
       setState({ status: "guide_done" });
-    } catch {
-      setState({ status: "error", message: t.failed });
+    } catch (e) {
+      setState({ status: "error", message: `${t.failed} (${(e as Error).message})` });
     }
   }
 

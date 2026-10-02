@@ -61,7 +61,18 @@ export async function importCoursePackageAction(input: { subjectId: string; stor
   const client = createServiceClient();
   const scope = forFamily(familyId, client);
 
-  const { data: subject } = await scope.select("subjects", "id, name_uk, grade").eq("id", subjectParsed.data).maybeSingle<{ id: string; name_uk: string; grade: number | null }>();
+  // 2026-10-02 incident: this used to select a `grade` column that does not
+  // exist on `public.subjects` (it's a `materials` column, see
+  // `literature-extraction.ts`) — the query errored, the error was
+  // discarded (only `data` destructured), and the real subject got reported
+  // as "не знайдено" even though it existed. Same bug class as the earlier
+  // `subjects.name` vs `name_uk` incidents this week: never destructure
+  // only `data` from a query whose shape you aren't 100% sure of.
+  // `grade` isn't actually needed from the subject anyway — every lesson in
+  // the package already carries its own `grade` field (`lesson.grade` below
+  // in `persistCoursePackage`), this was only ever a fallback.
+  const { data: subject, error: subjectErr } = await scope.select("subjects", "id, name_uk").eq("id", subjectParsed.data).maybeSingle<{ id: string; name_uk: string }>();
+  if (subjectErr) return { status: "error", message: `Не вдалося перевірити предмет: ${subjectErr.message}` };
   if (!subject) return { status: "error", message: "Предмет не знайдено." };
 
   try {
@@ -82,7 +93,7 @@ export async function importCoursePackageAction(input: { subjectId: string; stor
       return { status: "error", message: "У архіві не знайдено жодного придатного уроку (lessons/*.json) — перевірте структуру пакета." };
     }
 
-    const summary = await persistCoursePackage(scope, { subjectId: subject.id, grade: subject.grade }, parsed);
+    const summary = await persistCoursePackage(scope, { subjectId: subject.id, grade: null }, parsed);
 
     return {
       status: "ok",
