@@ -13,6 +13,10 @@ app/public/sw.js
 app/public/sw.js.map
 app/public/swe-worker-*.js
 
+# pdf.js worker, copied from node_modules at dev/build time (PDF reader) —
+# scripts/copy-pdf-worker.mjs
+app/public/pdf.worker.min.mjs
+
 # Secrets: never commit real env files (NFR-PRIV-3, NFR-PRIV-8)
 .env
 .env.local
