@@ -160,8 +160,14 @@ export async function importCoursePackageAction(input: { subjectId: string; stor
         exercisesImported: summary.exercisesImported,
         assetsUploaded: summary.assetsUploaded,
         assetsMissingFromZip: summary.assetsMissingFromZip,
+        // 2026-10-02 incident: a transient Storage 502 on one image no
+        // longer aborts the whole import (coursePersist.ts retries, then
+        // records a per-asset failure instead of throwing) — surfaced here
+        // as a warning (not an error) since the lesson/test data itself did
+        // persist fine; the parent can re-upload the same zip later to
+        // retry just the missing images (upsert, same package_key).
         errors: parsed.errors,
-        warnings: parsed.warnings,
+        warnings: [...parsed.warnings, ...summary.assetUploadFailures.map((f) => ({ file: f.path, field: "upload", message: f.message }))],
       },
     };
   } catch (e) {
