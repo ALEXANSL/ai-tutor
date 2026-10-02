@@ -220,3 +220,109 @@ describe("parseLiteratureCourseZip (end-to-end, real fixtures zipped)", () => {
     expect(topics[0]!.test.questions.length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * Second real source shape (2026-10-02, "Українська мова, 6 клас" — see
+ * `literatureImport.ts`'s module doc): `lessons/p<N>[-<M>].md` filenames,
+ * `paragraph: "§ N[–M]"` instead of a numeric `topic:`, and a body with
+ * `## Правило (стисло)` + `## Вправи підручника` instead of
+ * `## Мета`/`## Ключові поняття`/`## Матеріал для пояснення`/`## Уроки`/
+ * `## Твір`. Real sample files from the PO (`__fixtures__/ukrmova-6/`),
+ * never invented fixtures — proves auto-detection against the actual format,
+ * not a guess at it, and that it doesn't regress the zarlit-6 shape above.
+ */
+const UKRMOVA_FIXTURES = join(__dirname, "__fixtures__", "ukrmova-6");
+function readUkrmovaFixture(path: string): string {
+  return readFileSync(join(UKRMOVA_FIXTURES, path), "utf8");
+}
+
+function zipUkrmovaFixtureCourse(): Uint8Array {
+  return zipSync({
+    "README.md": strToU8(readUkrmovaFixture("README.md")),
+    "course_index.json": strToU8(readUkrmovaFixture("course_index.json")),
+    "lessons/p1-2.md": strToU8(readUkrmovaFixture("lessons/p1-2.md")),
+    "lessons/p3.md": strToU8(readUkrmovaFixture("lessons/p3.md")),
+    "lessons/p5.md": strToU8(readUkrmovaFixture("lessons/p5.md")),
+    "tests/p1-2.json": strToU8(readUkrmovaFixture("tests/p1-2.json")),
+    "tests/p5.json": strToU8(readUkrmovaFixture("tests/p5.json")),
+  });
+}
+
+describe("parseLessonMarkdown (real ukrmova-6 fixtures — second source shape)", () => {
+  it("parses § 1–2 — no numeric `topic:`, derives topicNo from `paragraph:`, builds sublessons from the exercise table", () => {
+    const warnings: string[] = [];
+    const topic = parseLessonMarkdown(readUkrmovaFixture("lessons/p1-2.md"), (f, m) => warnings.push(`${f}: ${m}`));
+
+    // topicNo is the textbook's own "§" number — parsed from `paragraph: "§ 1–2"`, not an invented sequence index.
+    expect(topic.topicNo).toBe(1);
+    // The full "§ 1–2" range label is kept (not collapsed to just "1") by prefixing titleUk.
+    expect(topic.titleUk).toBe("§ 1–2. Краса звучання української мови");
+    expect(topic.sectionTitleUk).toBe("Вступ. Краса і багатство української мови");
+    expect(topic.textbookPageFrom).toBe(10);
+    expect(topic.textbookPageTo).toBe(15);
+    expect(topic.pdfPageFrom).toBe(10);
+    expect(topic.pdfPageTo).toBe(15);
+
+    // "## Правило (стисло)" is accepted as an alternate "## Ключові поняття" heading.
+    expect(topic.keyConceptsUk.length).toBeGreaterThanOrEqual(3);
+    expect(topic.keyConceptsUk[0]).toContain("Українська мова");
+
+    // No separate "## Матеріал для пояснення" — the rule text doubles as explanationMdUk, flagged.
+    expect(topic.explanationMdUk).toContain("Милозвучність");
+    expect(warnings.some((w) => w.startsWith("explanationMdUk:"))).toBe(true);
+
+    // No "## Твір" — this is a language course, not literature.
+    expect(topic.work).toBeNull();
+
+    // No "## Уроки" — the "## Вправи підручника" table becomes one sublesson/group.
+    expect(topic.sublessons).toHaveLength(1);
+    expect(topic.sublessons[0]!.no).toBe("1");
+    expect(topic.sublessons[0]!.questionGroups).toHaveLength(1);
+    const group = topic.sublessons[0]!.questionGroups[0]!;
+    expect(group.labelUk).toBe("Вправи підручника");
+    expect(group.page).toBe(10);
+    expect(group.pdfPage).toBe(10);
+    expect(group.items).toHaveLength(18); // 18 rows in the real table
+    expect(group.items[0]).toEqual({ number: "1", textUk: "читання й аналіз тексту — с. 10" });
+    // A row with a "Примітка" note keeps it, folded into textUk (schema has no per-item page/note field).
+    expect(group.items[15]).toEqual({ number: "16", textUk: "письмове завдання — с. 16 (позначена * у підручнику)" });
+
+    // No "## Уроки" fallback warning — the exercise table WAS found and used.
+    expect(warnings.some((w) => w.startsWith("sublessons:"))).toBe(false);
+  });
+
+  it("parses § 5 — a smaller topic (13 exercises, 2 key-concept bullets)", () => {
+    const warnings: string[] = [];
+    const topic = parseLessonMarkdown(readUkrmovaFixture("lessons/p5.md"), (f, m) => warnings.push(`${f}: ${m}`));
+
+    expect(topic.topicNo).toBe(5);
+    expect(topic.titleUk).toBe("§ 5. Спільнокореневі слова й форми слова. Спільнокореневі слова як засіб зв’язку речень у тексті");
+    expect(topic.keyConceptsUk).toHaveLength(2);
+    expect(topic.sublessons[0]!.questionGroups[0]!.items).toHaveLength(13);
+  });
+});
+
+describe("parseLiteratureCourseZip (real ukrmova-6 fixtures, end-to-end)", () => {
+  it("parses all 3 fixture lessons in § order, each matched to its own test by `test_file`", () => {
+    const { topics, warnings } = parseLiteratureCourseZip(zipUkrmovaFixtureCourse());
+
+    expect(topics.map((t) => t.topicNo)).toEqual([1, 3, 5]);
+    expect(topics[0]!.test.questions).toHaveLength(4); // p1-2.json has 4 questions
+    expect(topics[2]!.test.questions).toHaveLength(3); // p5.json has 3 questions
+
+    // § 3 has no tests/p3.json in this fixture subset — matched as missing (not a crash), with a warning.
+    expect(topics[1]!.test.questions.length).toBeGreaterThanOrEqual(3);
+    expect(warnings.some((w) => w.field === "test" && w.topicNo === 3)).toBe(true);
+  });
+
+  it("maps the real test JSON's `question`/`options`/`answer`/`type` fields (single/open) correctly", () => {
+    const { topics } = parseLiteratureCourseZip(zipUkrmovaFixtureCourse());
+    const [q1, q2, q3, q4] = topics[0]!.test.questions;
+    expect(q1).toMatchObject({ id: "p1-2-q1", type: "single", questionUk: "Яке речення милозвучне?", answer: 0 });
+    expect(q2).toMatchObject({ id: "p1-2-q2", type: "single", answer: 1 });
+    expect(q3).toMatchObject({ id: "p1-2-q3", type: "single", answer: 1 });
+    expect(q4).toMatchObject({ id: "p1-2-q4", type: "open" });
+    // The real fixture has no "explanation" field anywhere — every question gets the generic placeholder + a warning.
+    expect(q4!.explanationUk).toBeTruthy();
+  });
+});
