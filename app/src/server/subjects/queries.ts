@@ -131,6 +131,15 @@ export interface SubjectTopicOption {
    * subject-name check — so any future S33 subject picks this up for free.
    */
   literatureLessonId: string | null;
+  /**
+   * S34/D-123 integration: the `course_lessons` row's id when this topic
+   * already has an `active` imported course-package lesson — same role as
+   * `literatureLessonId` above, for the parallel $0 image-anchored import
+   * path (`courseImport.ts`). Deliberately keyed on nothing but "does an
+   * active row exist for this topic_id", same reasoning as
+   * `literatureLessonId`'s own doc comment.
+   */
+  courseLessonId: string | null;
 }
 
 export interface SubjectDetail {
@@ -217,6 +226,16 @@ export async function getSubjectDetail(familyId: string, subjectId: string): Pro
     : { data: [] as { id: string; topic_id: string }[] };
   const literatureLessonByTopic = new Map((literatureLessons ?? []).map((l) => [l.topic_id, l.id]));
 
+  // S34: same lookup, parallel table (see `SubjectTopicOption.courseLessonId`).
+  const { data: courseLessons } = topicIds.length
+    ? await scope
+        .select("course_lessons", "id, topic_id")
+        .in("topic_id", topicIds)
+        .eq("status", "active")
+        .returns<{ id: string; topic_id: string }[]>()
+    : { data: [] as { id: string; topic_id: string }[] };
+  const courseLessonByTopic = new Map((courseLessons ?? []).map((l) => [l.topic_id, l.id]));
+
   return {
     id: subject.id,
     code: subject.code,
@@ -230,6 +249,7 @@ export async function getSubjectDetail(familyId: string, subjectId: string): Pro
       pageFrom: t.page_from,
       pageTo: t.page_to,
       literatureLessonId: literatureLessonByTopic.get(t.id) ?? null,
+      courseLessonId: courseLessonByTopic.get(t.id) ?? null,
     })),
     currentTopicId: topicList.find((t) => t.is_current)?.id ?? null,
     kind,

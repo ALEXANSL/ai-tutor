@@ -66,7 +66,7 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
                     topic already served by its own `literature_lessons` row
                     — omit it there rather than show a misleading "Потрібна
                     підготовка"/"Готуємо…" next to an already-ready lesson. */}
-                {!topic.literatureLessonId && (
+                {!topic.literatureLessonId && !topic.courseLessonId && (
                   <span
                     className={
                       warmupStatuses[topic.id] === "ready"
@@ -97,6 +97,16 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
                   // so showing it here would just be a dead end.
                   <Link
                     href={`/literature/${topic.literatureLessonId}`}
+                    className="inline-flex min-h-12 items-center rounded-2xl bg-primary px-5 text-base font-bold text-white"
+                  >
+                    {ts.openLesson}
+                  </Link>
+                ) : topic.courseLessonId ? (
+                  // S34/D-123: same idea, parallel $0 image-anchored
+                  // course-package import (courseImport.ts) — a topic
+                  // resolves to whichever system has active content for it.
+                  <Link
+                    href={`/course-lesson/${topic.courseLessonId}`}
                     className="inline-flex min-h-12 items-center rounded-2xl bg-primary px-5 text-base font-bold text-white"
                   >
                     {ts.openLesson}
