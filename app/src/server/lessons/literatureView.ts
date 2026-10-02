@@ -148,6 +148,31 @@ export async function getLiteratureLessonView(familyId: string, lessonId: string
   };
 }
 
+/**
+ * 2026-10-02 incident: the child reached the OLD step-runner
+ * (`/lesson/[sessionId]`) for a topic that already has an `active` S33
+ * literature lesson — the owner's own screenshot showed the generic
+ * "Крок 1 з 7" UI for "Микола Гоголь. «Ніч перед Різдвом»", which should be
+ * unreachable via a *fresh* `/subject/[id]` click now that that page links
+ * straight to `/literature/[lessonId]` for such topics (2026-10-01 fix).
+ * The only way to still land on the old runner is a stale path into it: an
+ * already-existing `lesson_sessions` row from before that fix, a bookmarked/
+ * reopened old URL, a cached page, etc. Rather than trying to prevent every
+ * such path, `/lesson/[sessionId]/page.tsx` calls this once up front and
+ * redirects — so no matter how the child got to a `lesson_sessions` row,
+ * she never sees the old flow for a topic S33 has already taken over.
+ */
+export async function getActiveLiteratureLessonIdForTopic(familyId: string, topicId: string): Promise<string | null> {
+  const scope = forFamily(familyId);
+  const { data } = await scope
+    .select("literature_lessons", "id")
+    .eq("topic_id", topicId)
+    .eq("status", "active")
+    .limit(1)
+    .maybeSingle<{ id: string }>();
+  return data?.id ?? null;
+}
+
 export interface LiteratureLessonListItem {
   id: string;
   topicNo: number;

@@ -1,7 +1,7 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
-import { getLiteratureWorkFullTextAction } from "@/app/actions/literature";
 import type { LiteratureLessonView, LiteratureTestQuestionView } from "@/server/lessons/literatureView";
 
 /**
@@ -19,48 +19,19 @@ import type { LiteratureLessonView, LiteratureTestQuestionView } from "@/server/
  */
 
 /**
- * On-demand full-text reveal (PO correction 2026-09-30, 3rd/final): fetches
- * the work's complete text from the family's own Drive only when the child
- * asks, never eagerly. This IS the app's one real "read the original book"
- * affordance (PO feedback 2026-10-01: "немає читалки оригіналу") — there is
- * no separate reader page, so it is deliberately made big and clear rather
- * than a cramped inline toggle: once loaded, the text opens as a full-width
- * panel with real reading typography (not the same small body copy as the
- * rest of the lesson), so it reads like a book page, not a debug dump.
+ * PO correction 2026-10-02: reading the book must be a fully SEPARATE
+ * action, not something embedded inside the lesson screen ("кнопка читати
+ * книгу з гугл диска до самого уроку, це окремий виклик і не має
+ * відношення до уроку"). The real PDF reader now exists at `/book/[materialId]`
+ * (page-jump + search, built 2026-10-02) — this is just a plain navigation
+ * link out of the lesson to that separate page, replacing the old inline
+ * "reveal the full text here" panel that used to live inside this screen.
  */
-function WorkFullTextReveal({ lessonId, available }: { lessonId: string; available: boolean }) {
-  const [state, setState] = useState<{ status: "idle" | "loading" | "error" | "done"; text?: string; reason?: string }>({ status: "idle" });
-
-  if (!available) {
-    return <p className="lit-note">(повний текст твору ще не готовий — з&rsquo;явиться, коли книга буде підключена через Google Drive)</p>;
-  }
-
-  const load = async () => {
-    setState({ status: "loading" });
-    const result = await getLiteratureWorkFullTextAction(lessonId);
-    if (result.ok) setState({ status: "done", text: result.text });
-    else setState({ status: "error", reason: result.reason });
-  };
-
-  if (state.status === "done") {
-    return (
-      <div className="lit-reader">
-        <p className="lit-reader-title">📖 Повний текст твору</p>
-        <div className="lit-reader-text">{state.text}</div>
-        <button type="button" className="lit-btn lit-btn-secondary" onClick={() => setState({ status: "idle" })}>
-          Згорнути
-        </button>
-      </div>
-    );
-  }
-
+function ReadBookLink({ materialId }: { materialId: string }) {
   return (
-    <div>
-      <button type="button" className="lit-btn lit-btn-reader" onClick={load} disabled={state.status === "loading"}>
-        {state.status === "loading" ? "Завантажуємо..." : "📖 Читати повний текст твору"}
-      </button>
-      {state.status === "error" && <p className="lit-warning">{state.reason}</p>}
-    </div>
+    <Link href={`/book/${materialId}`} className="lit-btn lit-btn-reader">
+      📖 Читати книгу
+    </Link>
   );
 }
 
@@ -236,7 +207,7 @@ export function LiteratureLessonScreen({ lesson }: { lesson: LiteratureLessonVie
           </p>
           <p style={{ whiteSpace: "pre-wrap" }}>{lesson.work.summaryUk}</p>
           <blockquote style={{ whiteSpace: "pre-wrap" }}>{lesson.work.excerptsUk}</blockquote>
-          <WorkFullTextReveal lessonId={lesson.id} available={lesson.workFullTextDriveFileId != null} />
+          <ReadBookLink materialId={lesson.materialId} />
           {lesson.work.charactersUk && (
             <p>
               <strong>Персонажі:</strong> {lesson.work.charactersUk}
