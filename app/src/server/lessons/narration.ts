@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import { callAudio } from "@/server/ai/router";
 import { AiNotConfiguredError, BudgetBlockedError, ProviderError } from "@/server/ai/types";
 
@@ -33,6 +34,19 @@ export function readableTextForStep(step: { type: string; content: Record<string
 export interface NarrationAudio {
   audioBase64: string;
   mimeType: string;
+}
+
+/**
+ * Cache key for a step's narration audio (PO complaint 2026-10-02: no
+ * caching at all meant every view/replay/revisit re-synthesized from
+ * scratch). Hashes the EXACT text that would be sent to TTS (post-trim, same
+ * `MAX_NARRATION_CHARS` cutoff as `synthesizeStepNarration`) so a later edit
+ * to the step's content correctly invalidates the cached audio — see
+ * `library_steps.narration_text_hash` (migration
+ * `20261015100000_tts_narration_cache.sql`).
+ */
+export function narrationTextHash(text: string): string {
+  return createHash("sha256").update(text.trim().slice(0, MAX_NARRATION_CHARS)).digest("hex");
 }
 
 /**

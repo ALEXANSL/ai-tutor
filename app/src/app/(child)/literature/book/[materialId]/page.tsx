@@ -21,6 +21,9 @@ export default async function LiteratureBookIndexPage({ params }: { params: Prom
   return (
     <main style={{ padding: 24 }}>
       <h1>Теми</h1>
+      <p>
+        <Link href={`/book/${materialId}`}>📖 Читати оригінал книги (PDF)</Link>
+      </p>
       {lessons.length === 0 && <p>Ще немає жодної згенерованої теми для цієї книги.</p>}
       <ol>
         {lessons.map((l) => (

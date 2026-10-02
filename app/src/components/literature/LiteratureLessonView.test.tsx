@@ -4,12 +4,15 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 /**
- * PO feedback 2026-10-01: "зроби кнопку яку можна показувати/ховати з
- * налаштувань - пропустити тести" — the `allowSkip` prop on `LiteratureTest`
- * gates a "Пропустити" button next to "Перевірити" on every question. A
- * real interactive (jsdom) test, same style as `LessonRunner.test.tsx`: it
- * clicks the actual button and asserts the explanation reveals without a
- * correct/incorrect verdict (same no-verdict path as `open`/`match`/`order`).
+ * PO correction 2026-10-02: "обов'язково кнопка пропустити завдання в
+ * уроці, з нагадуванням, що урок не буде зараховано" — the "Пропустити"
+ * button on `LiteratureTest` is now ALWAYS shown next to "Перевірити" on
+ * every question (no longer gated by a parent-settings toggle), and clicking
+ * it must first show a confirmation warning that the lesson won't count; it
+ * only skips when that confirmation is accepted. A real interactive (jsdom)
+ * test, same style as `LessonRunner.test.tsx`: it clicks the actual button
+ * and asserts the explanation reveals without a correct/incorrect verdict
+ * (same no-verdict path as `open`/`match`/`order`).
  */
 vi.mock("@/app/actions/literature", () => ({
   getLiteratureWorkFullTextAction: vi.fn(),
@@ -38,40 +41,50 @@ afterEach(() => {
   root = null;
 });
 
-function render(allowSkip: boolean) {
+function render() {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root!.render(<LiteratureTest questions={questions} allowSkip={allowSkip} />);
+    root!.render(<LiteratureTest questions={questions} />);
   });
   return container!;
 }
 
-describe("LiteratureTest skip button (PO feedback 2026-10-01)", () => {
-  it("does not render a skip button when allowSkip is false (default)", () => {
-    const el = render(false);
-    expect(Array.from(el.querySelectorAll("button")).some((b) => b.textContent === "Пропустити")).toBe(false);
-  });
-
-  it("renders a skip button when allowSkip is true", () => {
-    const el = render(true);
+describe("LiteratureTest skip button (PO correction 2026-10-02)", () => {
+  it("always renders a skip button (not gated by any setting)", () => {
+    const el = render();
     expect(Array.from(el.querySelectorAll("button")).some((b) => b.textContent === "Пропустити")).toBe(true);
   });
 
-  it("clicking skip reveals the explanation without scoring it as right/wrong", () => {
-    const el = render(true);
+  it("does nothing when the skip warning is not confirmed", () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const el = render();
     const skipBtn = Array.from(el.querySelectorAll("button")).find((b) => b.textContent === "Пропустити")!;
     act(() => {
       skipBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
+    expect(confirmSpy).toHaveBeenCalledWith("Якщо пропустиш — цей урок не буде зараховано як пройдений. Пропустити?");
+    expect(el.textContent).not.toContain("Автор — Микола Гоголь.");
+    confirmSpy.mockRestore();
+  });
+
+  it("clicking skip warns, then (once confirmed) reveals the explanation without scoring it as right/wrong", () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const el = render();
+    const skipBtn = Array.from(el.querySelectorAll("button")).find((b) => b.textContent === "Пропустити")!;
+    act(() => {
+      skipBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(confirmSpy).toHaveBeenCalledWith("Якщо пропустиш — цей урок не буде зараховано як пройдений. Пропустити?");
     expect(el.textContent).toContain("Автор — Микола Гоголь.");
     // No score line should appear — `scored` only grows from a verdict, not from a skip (onAnswered(null)).
     expect(el.textContent).not.toContain("Правильно:");
+    confirmSpy.mockRestore();
   });
 
   it("checking a correct answer still shows the score line (sanity: skip ≠ regular check)", () => {
-    const el = render(true);
+    const el = render();
     const radio = el.querySelector('input[type="radio"]') as HTMLInputElement;
     act(() => {
       radio.dispatchEvent(new MouseEvent("click", { bubbles: true }));

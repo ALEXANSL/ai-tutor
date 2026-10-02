@@ -13,6 +13,7 @@ import {
   getPreviousModuleAction,
   goToPreviousStepAction,
   pauseLessonAction,
+  prefetchNextStepNarrationAction,
   setPresentationModeAction,
   skipLessonBreakAction,
   submitBlockFeedbackAction,
@@ -225,6 +226,17 @@ export function LessonRunner({
       .finally(() => setPrevModuleBusy(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, step.stepNumber]);
+
+  // PO complaint 2026-10-02 ("перемикаюсь на голос... кожен під модуль
+  // займає до 30 секунд"): fire-and-forget warm-up of the LIKELY next
+  // step's narration as soon as the current step is shown — regardless of
+  // presentation mode, so it's already cached by the time the child reaches
+  // or switches that step to voice. Read-only/best-effort — see
+  // `prefetchNextStepNarrationAction`'s doc comment for why a wrong guess
+  // (a branching step) is harmless.
+  useEffect(() => {
+    prefetchNextStepNarrationAction(sessionId, step.stepId).catch(() => {});
+  }, [sessionId, step.stepId]);
 
   // US-6.16 КП-1 ("Пояснити"): the quick tutor_chat path (D-77), not the
   // heavy planning/generation/review pipeline — posts straight into the chat
