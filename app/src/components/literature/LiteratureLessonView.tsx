@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { MathText } from "@/components/shared/MathText";
 import type { LiteratureLessonView, LiteratureTestQuestionView } from "@/server/lessons/literatureView";
 
@@ -176,6 +177,7 @@ export function LiteratureTest({ questions }: { questions: LiteratureTestQuestio
 export function LiteratureLessonScreen({ lesson }: { lesson: LiteratureLessonView }) {
   return (
     <article className="lit-lesson">
+      <LessonNavBar subjectId={lesson.subjectId} />
       <header>
         <p className="lit-eyebrow">
           Тема {lesson.topicNo}

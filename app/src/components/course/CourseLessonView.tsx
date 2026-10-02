@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { LiteratureTest } from "@/components/literature/LiteratureLessonView";
+import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { MathText } from "@/components/shared/MathText";
 import type { LiteratureTestQuestionView } from "@/server/lessons/literatureView";
 import type { CourseLessonView, CourseSourceImageView } from "@/server/lessons/courseView";
@@ -45,15 +46,33 @@ function toLiteratureTestQuestions(lesson: CourseLessonView): LiteratureTestQues
   });
 }
 
+/**
+ * PO correction 2026-10-02: "текст на малюнках він є ж в тестовому вигляді,
+ * його можна прочитати, роби щось з дизайном, таке навіть дорослий читати
+ * не буде" — the recognized text (`searchTextOcr`) is the actual readable
+ * content; the photo itself is now a secondary, collapsed "original page"
+ * reference rather than the primary (and largely unreadable-at-screen-size)
+ * thing shown. The OCR text is still only an aid (never treated as the
+ * authoritative condition — see the file header), so the real page stays
+ * one tap away.
+ */
 function SourceImage({ img }: { img: CourseSourceImageView }) {
-  if (!img.url) {
-    return <p className="course-note">(зображення тимчасово недоступне — спробуйте оновити сторінку)</p>;
-  }
   return (
-    <figure className="course-source-image">
-      {/* eslint-disable-next-line @next/next/no-img-element -- short-lived signed Supabase Storage URL, not a static asset next/image can optimize */}
-      <img src={img.url} alt={img.searchTextOcr ? img.searchTextOcr.slice(0, 120) : "Сторінка підручника"} loading="lazy" />
-      {img.printedPage != null && <figcaption className="course-page-ref">с. {img.printedPage}</figcaption>}
+    <figure className="course-source-block">
+      {img.searchTextOcr ? (
+        <p className="course-source-text">
+          <MathText text={img.searchTextOcr} />
+        </p>
+      ) : (
+        <p className="course-note">(текст не розпізнано — дивись фото сторінки нижче)</p>
+      )}
+      {img.url && (
+        <details className="course-source-photo">
+          <summary>Показати фото сторінки{img.printedPage != null ? ` (с. ${img.printedPage})` : ""}</summary>
+          {/* eslint-disable-next-line @next/next/no-img-element -- short-lived signed Supabase Storage URL, not a static asset next/image can optimize */}
+          <img src={img.url} alt={img.searchTextOcr ? img.searchTextOcr.slice(0, 120) : "Сторінка підручника"} loading="lazy" />
+        </details>
+      )}
     </figure>
   );
 }
@@ -83,6 +102,7 @@ export function CourseLessonScreen({ lesson }: { lesson: CourseLessonView }) {
 
   return (
     <article className="course-lesson">
+      <LessonNavBar subjectId={lesson.subjectId} />
       <header>
         <p className="course-eyebrow">
           {KIND_LABEL[lesson.kind]} · {lesson.packageTitle}
