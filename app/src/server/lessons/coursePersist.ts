@@ -28,6 +28,39 @@ export interface CoursePersistSummary {
   exercisesImported: number;
   assetsUploaded: number;
   assetsMissingFromZip: string[];
+  /**
+   * 2026-10-02 incident: a real package has ~1500 images uploaded one at a
+   * time, sequentially — a single transient Supabase Storage blip (502 Bad
+   * Gateway, confirmed live) used to `throw` and abort the ENTIRE import,
+   * discarding every lesson/test even though the asset upload loop had
+   * already succeeded for most of them. Each upload now retries transient-
+   * looking failures a few times before giving up on that ONE asset; a
+   * permanent failure is recorded here (path + message) and the import
+   * continues — the parent sees exactly which images didn't make it rather
+   * than losing the whole course over one flaky request.
+   */
+  assetUploadFailures: { path: string; message: string }[];
+}
+
+const RETRYABLE_ERROR_RE = /bad gateway|502|503|504|gateway timeout|network|fetch failed|ECONNRESET|ETIMEDOUT/i;
+
+/** Retries a transient-looking Storage failure a few times (short backoff) before giving up on this one asset. */
+async function uploadAssetWithRetry(
+  scope: FamilyScope,
+  storagePath: string,
+  bytes: Uint8Array,
+  mimeType: string,
+): Promise<{ error: { message: string } | null }> {
+  const delays = [300, 1000, 3000];
+  let lastError: { message: string } | null = null;
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    const { error } = await scope.client.storage.from(COURSE_ASSETS_BUCKET).upload(storagePath, bytes, { contentType: mimeType, upsert: true });
+    if (!error) return { error: null };
+    lastError = error;
+    if (attempt === delays.length || !RETRYABLE_ERROR_RE.test(error.message)) break;
+    await new Promise((resolve) => setTimeout(resolve, delays[attempt]));
+  }
+  return { error: lastError };
 }
 
 /** Every asset path a lesson/exercise references (source_material, full_page_image_paths, exercise content, figure_paths) — the only files actually worth uploading. */
@@ -69,9 +102,14 @@ function mimeTypeFor(path: string): string {
  * that were NOT found among the zip's `assets/*` files — reported to the
  * parent, never silently skipped (PO: no more silent failures).
  */
-async function persistAssets(scope: FamilyScope, packageId: string, parsed: ParsedCoursePackage): Promise<{ uploaded: number; missing: string[] }> {
+async function persistAssets(
+  scope: FamilyScope,
+  packageId: string,
+  parsed: ParsedCoursePackage,
+): Promise<{ uploaded: number; missing: string[]; uploadFailures: { path: string; message: string }[] }> {
   const referenced = collectReferencedAssetPaths(parsed);
   const missing: string[] = [];
+  const uploadFailures: { path: string; message: string }[] = [];
   let uploaded = 0;
 
   // Reverse-index assets/index.json entries by path (when present) so a
@@ -90,11 +128,14 @@ async function persistAssets(scope: FamilyScope, packageId: string, parsed: Pars
     const storagePath = `${packageId}/${path}`;
     const mimeType = indexEntry?.mimeType ?? mimeTypeFor(path);
 
-    const { error: uploadErr } = await scope.client.storage.from(COURSE_ASSETS_BUCKET).upload(storagePath, bytes, {
-      contentType: mimeType,
-      upsert: true,
-    });
-    if (uploadErr) throw new Error(`course_assets upload failed for ${path}: ${uploadErr.message}`);
+    const { error: uploadErr } = await uploadAssetWithRetry(scope, storagePath, bytes, mimeType);
+    if (uploadErr) {
+      // One flaky image must never sink the other ~1500 (2026-10-02
+      // incident) — record it and move on; the parent sees exactly which
+      // asset to re-try rather than losing the whole import.
+      uploadFailures.push({ path, message: uploadErr.message });
+      continue;
+    }
 
     const { error: rowErr } = await scope.client
       .from("course_package_assets")
@@ -122,7 +163,7 @@ async function persistAssets(scope: FamilyScope, packageId: string, parsed: Pars
     uploaded += 1;
   }
 
-  return { uploaded, missing };
+  return { uploaded, missing, uploadFailures };
 }
 
 export async function persistCoursePackage(
@@ -160,7 +201,7 @@ export async function persistCoursePackage(
   if (pkgErr) throw new Error(`course_packages upsert failed: ${pkgErr.message}`);
   const packageId = pkg.id;
 
-  const { uploaded, missing } = await persistAssets(scope, packageId, parsed);
+  const { uploaded, missing, uploadFailures } = await persistAssets(scope, packageId, parsed);
 
   let lessonsImported = 0;
   let lessonsNeedingReview = 0;
@@ -296,5 +337,6 @@ export async function persistCoursePackage(
     exercisesImported,
     assetsUploaded: uploaded,
     assetsMissingFromZip: missing,
+    assetUploadFailures: uploadFailures,
   };
 }
