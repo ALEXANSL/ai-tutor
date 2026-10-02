@@ -1,0 +1,74 @@
+{
+  "schema_version": "1.0.0",
+  "id": "homework_1",
+  "order": 2,
+  "kind": "assessment",
+  "title": "Домашня самостійна робота № 1",
+  "language": "uk",
+  "grade": 6,
+  "part": 1,
+  "source": {
+    "textbook_id": "ister_2023_math6_part1",
+    "paragraph": null,
+    "printed_pages": [
+      13,
+      14
+    ],
+    "pdf_pages": [
+      13,
+      14
+    ],
+    "start": {
+      "page": 13,
+      "y_pt": 395
+    },
+    "end_exclusive": {
+      "page": 15,
+      "y_pt": 40
+    }
+  },
+  "teacher_notes_md": "Виконай завдання в оригінальній послідовності. Умови, рисунки та номери наведені у фрагментах підручника. Для завдань із вибором відповіді обери один варіант; для відкритих — запиши розв’язання.",
+  "teacher_notes_origin": "teacher_adaptation",
+  "source_material": [
+    {
+      "type": "source_image",
+      "asset_id": "homework_1_theory_p013",
+      "path": "assets/fragments/homework_1_theory_p013.webp",
+      "source": {
+        "printed_page": 13,
+        "pdf_page": 13,
+        "bbox_pt": [
+          30,
+          385,
+          428,
+          463.4
+        ]
+      },
+      "page_image_path": "assets/pages/page_013.webp",
+      "search_text_ocr": "ДОМАШНЯ САМОСТІЙНА РОБОТА N2 1\nКожне завдання має по чотири варіанти відповіді (А-Г), серед\nяких лише один правильний. Обери правильний варіант відповіді.\n(22 1. Укажи дріб, що більший за дріб з",
+      "text_status": "unverified_ocr",
+      "authoritative_representation": "image"
+    }
+  ],
+  "exercise_ids": [
+    "homework_1_ex_001",
+    "homework_1_ex_002",
+    "homework_1_ex_003",
+    "homework_1_ex_004",
+    "homework_1_ex_005",
+    "homework_1_ex_006",
+    "homework_1_ex_007",
+    "homework_1_ex_008",
+    "homework_1_ex_009",
+    "homework_1_ex_010",
+    "homework_1_ex_011",
+    "homework_1_ex_012"
+  ],
+  "exercise_count": 12,
+  "test_path": "tests/homework_1.json",
+  "full_page_image_paths": [
+    "assets/pages/page_013.webp",
+    "assets/pages/page_014.webp"
+  ],
+  "source_text_policy": "Images are authoritative; OCR is an unverified search aid. Teacher notes are a separate adaptation, not a verbatim transcription."
+}

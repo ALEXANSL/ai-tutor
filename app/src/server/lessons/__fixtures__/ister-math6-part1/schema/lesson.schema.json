@@ -1,0 +1,156 @@
+{
+  "required": [
+    "schema_version",
+    "id",
+    "order",
+    "kind",
+    "title",
+    "source",
+    "teacher_notes_md",
+    "source_material",
+    "exercise_ids",
+    "test_path"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "id": {
+      "type": "string"
+    },
+    "order": {
+      "type": "integer"
+    },
+    "kind": {
+      "enum": [
+        "lesson",
+        "review",
+        "assessment"
+      ]
+    },
+    "title": {
+      "type": "string"
+    },
+    "language": {
+      "const": "uk"
+    },
+    "grade": {
+      "const": 6
+    },
+    "part": {
+      "const": 1
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "printed_pages",
+        "pdf_pages"
+      ],
+      "properties": {
+        "paragraph": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "printed_pages": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "pdf_pages": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "teacher_notes_md": {
+      "type": "string"
+    },
+    "source_material": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "type",
+          "path",
+          "source",
+          "text_status",
+          "authoritative_representation"
+        ],
+        "properties": {
+          "type": {
+            "const": "source_image"
+          },
+          "path": {
+            "type": "string"
+          },
+          "asset_id": {
+            "type": "string"
+          },
+          "page_image_path": {
+            "type": "string"
+          },
+          "search_text_ocr": {
+            "type": "string"
+          },
+          "text_status": {
+            "const": "unverified_ocr"
+          },
+          "authoritative_representation": {
+            "const": "image"
+          },
+          "source": {
+            "type": "object",
+            "required": [
+              "printed_page",
+              "pdf_page",
+              "bbox_pt"
+            ],
+            "properties": {
+              "printed_page": {
+                "type": "integer"
+              },
+              "pdf_page": {
+                "type": "integer"
+              },
+              "bbox_pt": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 4,
+                "maxItems": 4
+              }
+            }
+          }
+        }
+      }
+    },
+    "exercise_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "exercise_count": {
+      "type": "integer"
+    },
+    "test_path": {
+      "type": "string"
+    },
+    "full_page_image_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "lesson v1.0.0",
+  "type": "object",
+  "additionalProperties": true
+}

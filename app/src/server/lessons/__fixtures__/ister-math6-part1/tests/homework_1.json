@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0.0",
+  "id": "homework_1_test",
+  "lesson_id": "homework_1",
+  "title": "Тест: Домашня самостійна робота № 1",
+  "language": "uk",
+  "source": {
+    "textbook_id": "ister_2023_math6_part1",
+    "paragraph": null,
+    "printed_pages": [
+      13,
+      14
+    ],
+    "pdf_pages": [
+      13,
+      14
+    ],
+    "start": {
+      "page": 13,
+      "y_pt": 395
+    },
+    "end_exclusive": {
+      "page": 15,
+      "y_pt": 40
+    }
+  },
+  "automatic_questions": [],
+  "source_exercise_ids": [
+    "homework_1_ex_001",
+    "homework_1_ex_002",
+    "homework_1_ex_003",
+    "homework_1_ex_004",
+    "homework_1_ex_005",
+    "homework_1_ex_006",
+    "homework_1_ex_007",
+    "homework_1_ex_008",
+    "homework_1_ex_009",
+    "homework_1_ex_010",
+    "homework_1_ex_011",
+    "homework_1_ex_012"
+  ],
+  "source_exercises_grading": "manual_or_tutor_review",
+  "source_keys_resource": "source/answers.json",
+  "automatic_max_points": 0,
+  "grading_policy": "Only automatic_questions have verified automatic answer keys. Do not grade from search_text_ocr. Original tasks retain their numbers and visual conditions."
+}

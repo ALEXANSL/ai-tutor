@@ -1,6 +1,8 @@
+import { redirect } from "next/navigation";
 import { requireLessonAccess } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
 import { loadLibraryItemTitles } from "@/server/lessons/generate";
+import { getActiveLiteratureLessonIdForTopic } from "@/server/lessons/literatureView";
 import { getLessonView } from "@/server/lessons/orchestrator";
 import { LessonPicker } from "@/components/lesson/LessonPicker";
 import { LessonRunner } from "@/components/lesson/LessonRunner";
@@ -24,6 +26,14 @@ export default async function LessonPage({ params }: { params: Promise<{ session
   const { sessionId } = await params;
   const { familyId } = await requireLessonAccess();
   const { session, step, remediation } = await getLessonView(familyId, sessionId);
+
+  // 2026-10-02 incident: redirect ANY way of landing here (stale session,
+  // bookmarked URL, cached page) straight to the S33 literature lesson if
+  // this topic now has one — the old step-runner below must never be the
+  // thing the child sees for such a topic again (see
+  // `getActiveLiteratureLessonIdForTopic`'s doc comment).
+  const literatureLessonId = await getActiveLiteratureLessonIdForTopic(familyId, session.topic_id);
+  if (literatureLessonId) redirect(`/literature/${literatureLessonId}`);
 
   // ADR-023 (D-76): a "cold" topic (zero active blocks at start) lands here
   // with no candidates yet — a `library.warm_topic` job is producing the

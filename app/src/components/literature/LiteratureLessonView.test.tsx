@@ -14,10 +14,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  * and asserts the explanation reveals without a correct/incorrect verdict
  * (same no-verdict path as `open`/`match`/`order`).
  */
-vi.mock("@/app/actions/literature", () => ({
-  getLiteratureWorkFullTextAction: vi.fn(),
-}));
-
 const { LiteratureTest, LiteratureLessonScreen } = await import("./LiteratureLessonView");
 
 const questions = [
@@ -99,12 +95,12 @@ describe("LiteratureTest skip button (PO correction 2026-10-02)", () => {
 
 /**
  * PO correction 2026-10-01: `/literature/book/[materialId]` is just a bare
- * topic list, not a "read the book" page — the lesson screen must NOT link
- * to it as a reader. The inline `WorkFullTextReveal` (fed from the family's
- * own Drive) is the one real full-text affordance, now a bigger, clearer
- * "📖 Читати повний текст твору" panel rather than a cramped toggle.
+ * topic list, not a "read the book" page. PO correction 2026-10-02: reading
+ * the book must be a fully SEPARATE action, not embedded inside the lesson
+ * screen — the lesson now just links out to the real reader at
+ * `/book/[materialId]`, replacing the old inline full-text-reveal panel.
  */
-describe("LiteratureLessonScreen full-text reveal (PO correction 2026-10-01)", () => {
+describe("LiteratureLessonScreen read-the-book link (PO corrections 2026-10-01/02)", () => {
   const baseLesson = {
     id: "lesson-1",
     materialId: "material-42",
@@ -149,8 +145,9 @@ describe("LiteratureLessonScreen full-text reveal (PO correction 2026-10-01)", (
     expect(el.innerHTML).not.toContain(`/literature/book/${baseLesson.materialId}`);
   });
 
-  it("shows the big 'Читати повний текст твору' button when the Drive file is available", () => {
+  it("links out to the real PDF reader at /book/[materialId]", () => {
     const el = renderScreen();
-    expect(Array.from(el.querySelectorAll("button")).some((b) => b.textContent?.includes("Читати повний текст твору"))).toBe(true);
+    const link = Array.from(el.querySelectorAll("a")).find((a) => a.textContent?.includes("Читати книгу"));
+    expect(link?.getAttribute("href")).toBe(`/book/${baseLesson.materialId}`);
   });
 });
