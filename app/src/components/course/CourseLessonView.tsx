@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { LiteratureTest } from "@/components/literature/LiteratureLessonView";
+import { MathText } from "@/components/shared/MathText";
 import type { LiteratureTestQuestionView } from "@/server/lessons/literatureView";
 import type { CourseLessonView, CourseSourceImageView } from "@/server/lessons/courseView";
 
@@ -11,10 +12,10 @@ import type { CourseLessonView, CourseSourceImageView } from "@/server/lessons/c
  * similar image-anchored packages). Deliberately small, mirroring
  * `LiteratureLessonView.tsx`'s own "demonstrable today" scope:
  *
- * - `teacherNotesMd` is shown as PLAIN TEXT (whitespace preserved), not
- *   rendered as LaTeX/Markdown — no `katex`/`react-katex`/markdown renderer
- *   is a dependency yet. Deferred on purpose (see the handback report);
- *   the raw `$...$`/`$$...$$` source is still fully readable as text.
+ * - `teacherNotesMd` is rendered through `MathText` (2026-10-02 fix — the
+ *   raw `$...$`/`$$...$$` source used to be shown verbatim, unreadable:
+ *   "Обчисли $2-\frac12:\frac14$." — real `katex` is now wired in, see
+ *   `components/shared/MathText.tsx`).
  * - The test reuses `LiteratureTest` AS-IS (not a re-implementation): this
  *   package's `automatic_questions` (single_choice, exactly 4 options,
  *   `correct_option_id`) maps cleanly onto `LiteratureTest`'s `single`
@@ -103,7 +104,9 @@ export function CourseLessonScreen({ lesson }: { lesson: CourseLessonView }) {
         <p className="course-note">
           Це лише коротка адаптація, а не заміна підручника — повна умова, формули й приклади є на зображеннях нижче.
         </p>
-        <p style={{ whiteSpace: "pre-wrap" }}>{lesson.teacherNotesMd}</p>
+        <p style={{ whiteSpace: "pre-wrap" }}>
+          <MathText text={lesson.teacherNotesMd} />
+        </p>
       </section>
 
       {lesson.sourceImages.length > 0 && (
