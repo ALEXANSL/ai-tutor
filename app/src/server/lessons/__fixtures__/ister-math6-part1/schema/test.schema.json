@@ -1,0 +1,127 @@
+{
+  "required": [
+    "schema_version",
+    "id",
+    "lesson_id",
+    "title",
+    "automatic_questions",
+    "source_exercise_ids",
+    "automatic_max_points"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "id": {
+      "type": "string"
+    },
+    "lesson_id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "printed_pages",
+        "pdf_pages"
+      ],
+      "properties": {
+        "paragraph": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "printed_pages": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "pdf_pages": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "automatic_questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "origin",
+          "prompt_md",
+          "options",
+          "correct_option_id",
+          "explanation_md",
+          "max_points"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "const": "single_choice"
+          },
+          "origin": {
+            "const": "teacher_adaptation"
+          },
+          "prompt_md": {
+            "type": "string"
+          },
+          "options": {
+            "type": "array",
+            "minItems": 4,
+            "maxItems": 4,
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "text_md"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "text_md": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "correct_option_id": {
+            "type": "string"
+          },
+          "explanation_md": {
+            "type": "string"
+          },
+          "max_points": {
+            "const": 1
+          }
+        }
+      }
+    },
+    "source_exercise_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "automatic_max_points": {
+      "type": "integer"
+    },
+    "source_keys_resource": {
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "test v1.0.0",
+  "type": "object",
+  "additionalProperties": true
+}

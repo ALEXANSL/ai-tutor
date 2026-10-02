@@ -1,0 +1,402 @@
+{
+  "schema_version": "1.0.0",
+  "id": "p01_test",
+  "lesson_id": "p01",
+  "title": "Тест: Відсотки. Знаходження відсотків від числа",
+  "language": "uk",
+  "source": {
+    "textbook_id": "ister_2023_math6_part1",
+    "paragraph": 1,
+    "printed_pages": [
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24
+    ],
+    "pdf_pages": [
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24
+    ],
+    "start": {
+      "page": 16,
+      "y_pt": 40
+    },
+    "end_exclusive": {
+      "page": 24,
+      "y_pt": 155
+    }
+  },
+  "automatic_questions": [
+    {
+      "id": "p01_q01",
+      "type": "single_choice",
+      "origin": "teacher_adaptation",
+      "prompt_md": "Запиши 7 % десятковим дробом.",
+      "options": [
+        {
+          "id": "A",
+          "text_md": "7"
+        },
+        {
+          "id": "B",
+          "text_md": "0,007"
+        },
+        {
+          "id": "C",
+          "text_md": "0,07"
+        },
+        {
+          "id": "D",
+          "text_md": "0,7"
+        }
+      ],
+      "correct_option_id": "C",
+      "explanation_md": "7:100=0,07.",
+      "max_points": 1,
+      "source_topic": {
+        "textbook_id": "ister_2023_math6_part1",
+        "paragraph": 1,
+        "printed_pages": [
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24
+        ],
+        "pdf_pages": [
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24
+        ],
+        "start": {
+          "page": 16,
+          "y_pt": 40
+        },
+        "end_exclusive": {
+          "page": 24,
+          "y_pt": 155
+        }
+      }
+    },
+    {
+      "id": "p01_q02",
+      "type": "single_choice",
+      "origin": "teacher_adaptation",
+      "prompt_md": "Запиши 0,35 у відсотках.",
+      "options": [
+        {
+          "id": "A",
+          "text_md": "350 %"
+        },
+        {
+          "id": "B",
+          "text_md": "35 %"
+        },
+        {
+          "id": "C",
+          "text_md": "0,35 %"
+        },
+        {
+          "id": "D",
+          "text_md": "3,5 %"
+        }
+      ],
+      "correct_option_id": "B",
+      "explanation_md": "0,35·100 %=35 %.",
+      "max_points": 1,
+      "source_topic": {
+        "textbook_id": "ister_2023_math6_part1",
+        "paragraph": 1,
+        "printed_pages": [
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24
+        ],
+        "pdf_pages": [
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24
+        ],
+        "start": {
+          "page": 16,
+          "y_pt": 40
+        },
+        "end_exclusive": {
+          "page": 24,
+          "y_pt": 155
+        }
+      }
+    },
+    {
+      "id": "p01_q03",
+      "type": "single_choice",
+      "origin": "teacher_adaptation",
+      "prompt_md": "Знайди 15 % від 200.",
+      "options": [
+        {
+          "id": "A",
+          "text_md": "20"
+        },
+        {
+          "id": "B",
+          "text_md": "30"
+        },
+        {
+          "id": "C",
+          "text_md": "15"
+        },
+        {
+          "id": "D",
+          "text_md": "300"
+        }
+      ],
+      "correct_option_id": "B",
+      "explanation_md": "200·0,15=30.",
+      "max_points": 1,
+      "source_topic": {
+        "textbook_id": "ister_2023_math6_part1",
+        "paragraph": 1,
+        "printed_pages": [
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24
+        ],
+        "pdf_pages": [
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24
+        ],
+        "start": {
+          "page": 16,
+          "y_pt": 40
+        },
+        "end_exclusive": {
+          "page": 24,
+          "y_pt": 155
+        }
+      }
+    },
+    {
+      "id": "p01_q04",
+      "type": "single_choice",
+      "origin": "teacher_adaptation",
+      "prompt_md": "Знайди 125 % від 80.",
+      "options": [
+        {
+          "id": "A",
+          "text_md": "64"
+        },
+        {
+          "id": "B",
+          "text_md": "10"
+        },
+        {
+          "id": "C",
+          "text_md": "180"
+        },
+        {
+          "id": "D",
+          "text_md": "100"
+        }
+      ],
+      "correct_option_id": "D",
+      "explanation_md": "80·1,25=100.",
+      "max_points": 1,
+      "source_topic": {
+        "textbook_id": "ister_2023_math6_part1",
+        "paragraph": 1,
+        "printed_pages": [
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24
+        ],
+        "pdf_pages": [
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24
+        ],
+        "start": {
+          "page": 16,
+          "y_pt": 40
+        },
+        "end_exclusive": {
+          "page": 24,
+          "y_pt": 155
+        }
+      }
+    },
+    {
+      "id": "p01_q05",
+      "type": "single_choice",
+      "origin": "teacher_adaptation",
+      "prompt_md": "Товар коштує 240 грн. Яка сума знижки 25 %?",
+      "options": [
+        {
+          "id": "A",
+          "text_md": "60 грн"
+        },
+        {
+          "id": "B",
+          "text_md": "180 грн"
+        },
+        {
+          "id": "C",
+          "text_md": "96 грн"
+        },
+        {
+          "id": "D",
+          "text_md": "25 грн"
+        }
+      ],
+      "correct_option_id": "A",
+      "explanation_md": "240:4=60 грн — саме сума знижки.",
+      "max_points": 1,
+      "source_topic": {
+        "textbook_id": "ister_2023_math6_part1",
+        "paragraph": 1,
+        "printed_pages": [
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24
+        ],
+        "pdf_pages": [
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24
+        ],
+        "start": {
+          "page": 16,
+          "y_pt": 40
+        },
+        "end_exclusive": {
+          "page": 24,
+          "y_pt": 155
+        }
+      }
+    }
+  ],
+  "source_exercise_ids": [
+    "p01_ex_092",
+    "p01_ex_093",
+    "p01_ex_094",
+    "p01_ex_095",
+    "p01_ex_096",
+    "p01_ex_097",
+    "p01_ex_098",
+    "p01_ex_099",
+    "p01_ex_100",
+    "p01_ex_101",
+    "p01_ex_102",
+    "p01_ex_103",
+    "p01_ex_104",
+    "p01_ex_105",
+    "p01_ex_106",
+    "p01_ex_107",
+    "p01_ex_108",
+    "p01_ex_109",
+    "p01_ex_110",
+    "p01_ex_111",
+    "p01_ex_112",
+    "p01_ex_113",
+    "p01_ex_114",
+    "p01_ex_115",
+    "p01_ex_116",
+    "p01_ex_117",
+    "p01_ex_118",
+    "p01_ex_119",
+    "p01_ex_120",
+    "p01_ex_121",
+    "p01_ex_122",
+    "p01_ex_123",
+    "p01_ex_124",
+    "p01_ex_125",
+    "p01_ex_126",
+    "p01_ex_127",
+    "p01_ex_128",
+    "p01_ex_129",
+    "p01_ex_130",
+    "p01_ex_131",
+    "p01_ex_132",
+    "p01_ex_133",
+    "p01_ex_134",
+    "p01_ex_135",
+    "p01_ex_136",
+    "p01_ex_137",
+    "p01_ex_138",
+    "p01_ex_139"
+  ],
+  "source_exercises_grading": "manual_or_tutor_review",
+  "source_keys_resource": "source/answers.json",
+  "automatic_max_points": 5,
+  "grading_policy": "Only automatic_questions have verified automatic answer keys. Do not grade from search_text_ocr. Original tasks retain their numbers and visual conditions."
+}

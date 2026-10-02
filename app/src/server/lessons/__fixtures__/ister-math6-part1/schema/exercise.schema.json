@@ -1,0 +1,153 @@
+{
+  "required": [
+    "id",
+    "lesson_id",
+    "origin",
+    "original_number",
+    "source",
+    "content",
+    "figure_ids",
+    "grading"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "lesson_id": {
+      "type": "string"
+    },
+    "origin": {
+      "const": "textbook"
+    },
+    "original_number": {
+      "type": "string"
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "printed_pages",
+        "pdf_pages"
+      ],
+      "properties": {
+        "paragraph": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "printed_pages": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "pdf_pages": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "content": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "type",
+          "path",
+          "source",
+          "text_status",
+          "authoritative_representation"
+        ],
+        "properties": {
+          "type": {
+            "const": "source_image"
+          },
+          "path": {
+            "type": "string"
+          },
+          "asset_id": {
+            "type": "string"
+          },
+          "page_image_path": {
+            "type": "string"
+          },
+          "search_text_ocr": {
+            "type": "string"
+          },
+          "text_status": {
+            "const": "unverified_ocr"
+          },
+          "authoritative_representation": {
+            "const": "image"
+          },
+          "source": {
+            "type": "object",
+            "required": [
+              "printed_page",
+              "pdf_page",
+              "bbox_pt"
+            ],
+            "properties": {
+              "printed_page": {
+                "type": "integer"
+              },
+              "pdf_page": {
+                "type": "integer"
+              },
+              "bbox_pt": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 4,
+                "maxItems": 4
+              }
+            }
+          }
+        }
+      }
+    },
+    "figure_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "figure_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "search_text_ocr": {
+      "type": "string"
+    },
+    "text_status": {
+      "const": "unverified_ocr"
+    },
+    "response_type": {
+      "const": "open_response"
+    },
+    "grading": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "const": "manual_or_tutor_review"
+        },
+        "answer_key": {
+          "type": "null"
+        }
+      }
+    },
+    "measurement_warning": {
+      "type": "boolean"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "exercise v1.0.0",
+  "type": "object",
+  "additionalProperties": true
+}
