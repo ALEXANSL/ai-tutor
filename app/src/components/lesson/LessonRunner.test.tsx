@@ -35,6 +35,7 @@ vi.mock("@/app/actions/lesson", () => ({
   getPreviousModuleAction: (...a: unknown[]) => getPreviousModuleAction(...a),
   goToPreviousStepAction: (...a: unknown[]) => goToPreviousStepAction(...a),
   pauseLessonAction: (...a: unknown[]) => pauseLessonAction(...a),
+  prefetchNextStepNarrationAction: vi.fn().mockResolvedValue(undefined),
   setPresentationModeAction: vi.fn().mockResolvedValue(undefined),
   skipLessonBreakAction: vi.fn(),
   submitBlockFeedbackAction: vi.fn(),

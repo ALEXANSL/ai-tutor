@@ -9,7 +9,8 @@ import type { ChildProfileRow } from "@/server/db/types";
 import { kickJobs } from "@/server/jobs/kick";
 import { askTopicChat, explainStepAgain } from "@/server/lessons/chat";
 import { recordChildFeedback, type ChildFeedbackKind } from "@/server/lessons/generate";
-import { readableTextForStep, synthesizeStepNarration } from "@/server/lessons/narration";
+import { readableTextForStep } from "@/server/lessons/narration";
+import { getOrSynthesizeStepNarration } from "@/server/lessons/narrationCache";
 import {
   acknowledgeSlide,
   checkWarmupProgress,
@@ -302,10 +303,23 @@ export async function setPresentationModeAction(sessionId: string, mode: string)
   return { status: "ok" };
 }
 
+const NARRATION_STEP_COLUMNS = "id, type, content, narration_text_hash, narration_audio_base64, narration_audio_mime";
+type NarrationStepRow = {
+  id: string;
+  type: string;
+  content: Record<string, unknown>;
+  narration_text_hash: string | null;
+  narration_audio_base64: string | null;
+  narration_audio_mime: string | null;
+};
+
 /**
- * US-6.16 КП-5 (режим «Вголос»): synthesizes narration for the current
- * step's own text. Never a hard failure for the child — see
- * `synthesizeStepNarration`'s doc comment.
+ * US-6.16 КП-5 (режим «Вголос»): synthesizes (or returns already-cached)
+ * narration for the current step's own text. Never a hard failure for the
+ * child — see `synthesizeStepNarration`'s doc comment. PO complaint
+ * 2026-10-02 ("до 30 секунд поки ШІ починає читати вголос"): this used to
+ * call the TTS provider fresh on EVERY call, with no caching at all — see
+ * `narrationCache.ts`'s doc comment for the fix.
  */
 export async function synthesizeNarrationAction(
   sessionId: string,
@@ -317,13 +331,46 @@ export async function synthesizeNarrationAction(
   const scope = forFamily(familyId);
   const [{ data: session }, { data: stepRow }] = await Promise.all([
     scope.select("lesson_sessions", "current_step_id").eq("id", sessionId).maybeSingle<{ current_step_id: string | null }>(),
-    scope.select("library_steps", "type, content").eq("id", stepId).maybeSingle<{ type: string; content: Record<string, unknown> }>(),
+    scope.select("library_steps", NARRATION_STEP_COLUMNS).eq("id", stepId).maybeSingle<NarrationStepRow>(),
   ]);
   if (!session || session.current_step_id !== stepId || !stepRow) return { status: "unavailable" };
-  const text = readableTextForStep(stepRow);
-  const audio = await synthesizeStepNarration(familyId, sessionId, text);
+  const audio = await getOrSynthesizeStepNarration(familyId, sessionId, stepRow);
   if (!audio) return { status: "unavailable" };
   return { status: "ok", ...audio };
+}
+
+/**
+ * PO complaint 2026-10-02 (candidate fix (a), narration latency): fires the
+ * SAME cache-or-synthesize path as `synthesizeNarrationAction` above, but
+ * for the step that would come immediately after `afterStepId` within its
+ * own block (`library_steps.sort_order + 1`, same `item_id`) — called as
+ * soon as the CURRENT step is shown, regardless of presentation mode, so
+ * narration for the likely-next step is already warmed by the time the
+ * child reaches or switches it to voice. Read-only w.r.t. lesson progress
+ * (never advances `current_step_id`, never mutates `lesson_sessions`) and
+ * best-effort: the real "next" step the orchestrator actually serves can
+ * differ for a branching (e.g. remediation) step, in which case this simply
+ * warmed a step that wasn't needed yet — harmless, since the cache write is
+ * keyed by that step's own id/text hash and will just sit there until (if
+ * ever) that step is actually shown.
+ */
+export async function prefetchNextStepNarrationAction(sessionId: string, afterStepId: string): Promise<void> {
+  const { familyId } = await requireLessonAccess();
+  UUID.parse(sessionId);
+  UUID.parse(afterStepId);
+  const scope = forFamily(familyId);
+  const { data: current } = await scope
+    .select("library_steps", "item_id, sort_order")
+    .eq("id", afterStepId)
+    .maybeSingle<{ item_id: string; sort_order: number }>();
+  if (!current) return;
+  const { data: nextStep } = await scope
+    .select("library_steps", NARRATION_STEP_COLUMNS)
+    .eq("item_id", current.item_id)
+    .eq("sort_order", current.sort_order + 1)
+    .maybeSingle<NarrationStepRow>();
+  if (!nextStep) return;
+  await getOrSynthesizeStepNarration(familyId, sessionId, nextStep);
 }
 
 /** US-6.16 КП-2: read-only preview of the block completed just before the current one. */
