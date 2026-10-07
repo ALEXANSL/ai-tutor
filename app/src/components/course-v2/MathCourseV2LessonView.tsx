@@ -32,12 +32,42 @@ const VOICE_MODE_STORAGE_KEY = "mathCourseV2VoiceMode";
  *    repeated here.
  */
 
+// PO complaint 2026-10-07: "якщо увімкнути голосовий режим потім натиснути
+// кілька кнопок слухати, то всі модулі читаються підряд і одночасно" — each
+// `ListenButton` owned its own independent `Audio`, so nothing ever stopped
+// a previous one before a new one started (voice-mode autoplay moving to
+// the next screen while an earlier exercise's manual click was still
+// playing is the most common way to trigger it). Module-level (not React
+// state — these buttons are siblings with no shared parent state) "only one
+// thing plays at a time": starting a new one always stops whatever else is
+// currently playing first, and tells it to reset its own button back to idle.
+let currentlyPlayingAudio: HTMLAudioElement | null = null;
+let onCurrentlyPlayingStopped: (() => void) | null = null;
+
+function stopCurrentlyPlaying() {
+  currentlyPlayingAudio?.pause();
+  currentlyPlayingAudio = null;
+  onCurrentlyPlayingStopped?.();
+  onCurrentlyPlayingStopped = null;
+}
+
 function ListenButton({ refTable, refId, field, text, autoPlay }: { refTable: string; refId: string; field: string; text: string; autoPlay?: boolean }) {
   const [state, setState] = useState<"idle" | "loading" | "playing" | "unavailable">("idle");
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  // If this button's own audio is the one currently "playing" when it
+  // unmounts (e.g. voice mode already moved to the next screen), stop it
+  // too rather than leaving it to play on in the background.
+  useEffect(
+    () => () => {
+      if (currentlyPlayingAudio === audioRef.current) stopCurrentlyPlaying();
+    },
+    [],
+  );
+
   async function play() {
     if (state === "loading") return;
+    stopCurrentlyPlaying();
     setState("loading");
     try {
       const res = await narrateMathCourseV2Action({ refTable, refId, field, text });
@@ -47,7 +77,15 @@ function ListenButton({ refTable, refId, field, text, autoPlay }: { refTable: st
       }
       const audio = new Audio(`data:${res.audioMime};base64,${res.audioBase64}`);
       audioRef.current = audio;
-      audio.onended = () => setState("idle");
+      currentlyPlayingAudio = audio;
+      onCurrentlyPlayingStopped = () => setState("idle");
+      audio.onended = () => {
+        setState("idle");
+        if (currentlyPlayingAudio === audio) {
+          currentlyPlayingAudio = null;
+          onCurrentlyPlayingStopped = null;
+        }
+      };
       setState("playing");
       void audio.play().catch(() => setState("idle"));
     } catch {
