@@ -140,6 +140,13 @@ export interface SubjectTopicOption {
    * `literatureLessonId`'s own doc comment.
    */
   courseLessonId: string | null;
+  /**
+   * S35/D-123: same idea as `courseLessonId`, for the third parallel $0
+   * import path (`mathCourseV2Import.ts` — full-text package, no page
+   * images). A topic resolves to whichever of the three systems has
+   * active content for it; see `page.tsx`'s link-priority comment.
+   */
+  mathCourseV2LessonId: string | null;
 }
 
 export interface SubjectDetail {
@@ -236,6 +243,16 @@ export async function getSubjectDetail(familyId: string, subjectId: string): Pro
     : { data: [] as { id: string; topic_id: string }[] };
   const courseLessonByTopic = new Map((courseLessons ?? []).map((l) => [l.topic_id, l.id]));
 
+  // S35: same lookup, third parallel table (see `SubjectTopicOption.mathCourseV2LessonId`).
+  const { data: mathCourseV2Lessons } = topicIds.length
+    ? await scope
+        .select("course_v2_lessons", "id, topic_id")
+        .in("topic_id", topicIds)
+        .eq("status", "active")
+        .returns<{ id: string; topic_id: string }[]>()
+    : { data: [] as { id: string; topic_id: string }[] };
+  const mathCourseV2LessonByTopic = new Map((mathCourseV2Lessons ?? []).map((l) => [l.topic_id, l.id]));
+
   // 2026-10-02 incident: a course-package import (S34, same as S33's
   // literature_lessons before it) creates its OWN fresh `topics` rows
   // rather than attaching to whatever topics the subject already had from
@@ -248,9 +265,9 @@ export async function getSubjectDetail(familyId: string, subjectId: string): Pro
   // old pipeline is not coming back for it (today's whole direction:
   // PO-prepared imports replace AI generation) — so filter the old,
   // import-less topics out entirely rather than showing a confusing mix.
-  const hasAnyImportedTopic = literatureLessonByTopic.size > 0 || courseLessonByTopic.size > 0;
+  const hasAnyImportedTopic = literatureLessonByTopic.size > 0 || courseLessonByTopic.size > 0 || mathCourseV2LessonByTopic.size > 0;
   const visibleTopics = hasAnyImportedTopic
-    ? topicList.filter((t) => literatureLessonByTopic.has(t.id) || courseLessonByTopic.has(t.id))
+    ? topicList.filter((t) => literatureLessonByTopic.has(t.id) || courseLessonByTopic.has(t.id) || mathCourseV2LessonByTopic.has(t.id))
     : topicList;
 
   return {
@@ -267,6 +284,7 @@ export async function getSubjectDetail(familyId: string, subjectId: string): Pro
       pageTo: t.page_to,
       literatureLessonId: literatureLessonByTopic.get(t.id) ?? null,
       courseLessonId: courseLessonByTopic.get(t.id) ?? null,
+      mathCourseV2LessonId: mathCourseV2LessonByTopic.get(t.id) ?? null,
     })),
     currentTopicId: visibleTopics.find((t) => t.is_current)?.id ?? null,
     kind,
