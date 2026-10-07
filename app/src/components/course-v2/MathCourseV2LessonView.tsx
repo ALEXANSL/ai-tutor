@@ -15,6 +15,7 @@ import {
 import type { MathV2ExerciseView, MathV2LessonView, MathV2QuestionView } from "@/server/lessons/mathCourseV2View";
 
 const VOICE_MODE_STORAGE_KEY = "mathCourseV2VoiceMode";
+const AUTO_ADVANCE_STORAGE_KEY = "mathCourseV2AutoAdvance";
 
 /**
  * S35 — child-facing viewer for one `course_v2_lessons` row (Істер math6
@@ -51,7 +52,24 @@ function stopCurrentlyPlaying() {
   onCurrentlyPlayingStopped = null;
 }
 
-function ListenButton({ refTable, refId, field, text, autoPlay }: { refTable: string; refId: string; field: string; text: string; autoPlay?: boolean }) {
+function ListenButton({
+  refTable,
+  refId,
+  field,
+  text,
+  autoPlay,
+  onEnded,
+}: {
+  refTable: string;
+  refId: string;
+  field: string;
+  text: string;
+  autoPlay?: boolean;
+  /** PO request 2026-10-07: "режим автовідтворення" — lets the caller
+   * (`ScreenNav`) advance to the next screen once THIS screen's narration
+   * finishes, instead of requiring a manual "Далі" click for every screen. */
+  onEnded?: () => void;
+}) {
   const [state, setState] = useState<"idle" | "loading" | "playing" | "unavailable">("idle");
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -85,6 +103,7 @@ function ListenButton({ refTable, refId, field, text, autoPlay }: { refTable: st
           currentlyPlayingAudio = null;
           onCurrentlyPlayingStopped = null;
         }
+        onEnded?.();
       };
       setState("playing");
       void audio.play().catch(() => setState("idle"));
@@ -174,10 +193,28 @@ function ExplainButton({
   );
 }
 
-function ScreenNav({ lesson, voiceMode, chatRef }: { lesson: MathV2LessonView; voiceMode: boolean; chatRef: RefObject<LessonTopicChatHandle | null> }) {
+function ScreenNav({
+  lesson,
+  voiceMode,
+  autoAdvance,
+  chatRef,
+}: {
+  lesson: MathV2LessonView;
+  voiceMode: boolean;
+  autoAdvance: boolean;
+  chatRef: RefObject<LessonTopicChatHandle | null>;
+}) {
   const [index, setIndex] = useState(0);
   const screen = lesson.screens[index];
   if (!screen) return <p className="course-note">Екранів ще немає.</p>;
+
+  const isLast = index >= lesson.screens.length - 1;
+  // PO request 2026-10-07: "урок... вимагає ручного перимикання «далі»,
+  // давай додамо можливість увімкнення режиму автовідтворення" — only
+  // meaningful together with voice mode (there is nothing to wait for
+  // otherwise, and auto-advancing silent text the child hasn't had time to
+  // read would be worse, not better).
+  const onNarrationEnded = voiceMode && autoAdvance && !isLast ? () => setIndex((i) => Math.min(lesson.screens.length - 1, i + 1)) : undefined;
 
   return (
     <section>
@@ -186,7 +223,15 @@ function ScreenNav({ lesson, voiceMode, chatRef }: { lesson: MathV2LessonView; v
         <MathText text={screen.displayMd} />
       </p>
       <div className="mt-2 flex flex-wrap gap-2">
-        <ListenButton key={screen.id} refTable="course_v2_screens" refId={screen.id} field="narration" text={screen.narration} autoPlay={voiceMode} />
+        <ListenButton
+          key={screen.id}
+          refTable="course_v2_screens"
+          refId={screen.id}
+          field="narration"
+          text={screen.narration}
+          autoPlay={voiceMode}
+          onEnded={onNarrationEnded}
+        />
         <ExplainButton subjectId={lesson.subjectId} topicId={lesson.topicId} stepText={screen.displayMd} chatRef={chatRef} />
       </div>
       {/* PO feedback 2026-10-07: "надпис екран х з у краще показувати біля
@@ -224,6 +269,25 @@ function VoiceModeToggle({ voiceMode, onChange }: { voiceMode: boolean; onChange
       className={`min-h-11 rounded-full border-2 px-3.5 text-sm font-bold ${voiceMode ? "border-primary bg-primary/10 text-primary" : "border-line bg-surface"}`}
     >
       {voiceMode ? "🔊 Голосовий режим: увімкнено" : "🔈 Голосовий режим: вимкнено"}
+    </button>
+  );
+}
+
+/** PO request 2026-10-07: "урок... вимагає ручного перимикання «далі», давай
+ * додамо... режим автовідтворення" — advances past a screen on its own once
+ * voice mode finishes narrating it. Only enabled together with voice mode
+ * (see `ScreenNav`'s `onNarrationEnded` — nothing to wait for otherwise). */
+function AutoAdvanceToggle({ autoAdvance, voiceMode, onChange }: { autoAdvance: boolean; voiceMode: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!autoAdvance)}
+      disabled={!voiceMode}
+      aria-pressed={autoAdvance}
+      title={voiceMode ? undefined : "Спершу увімкни голосовий режим"}
+      className={`min-h-11 rounded-full border-2 px-3.5 text-sm font-bold disabled:opacity-40 ${autoAdvance && voiceMode ? "border-primary bg-primary/10 text-primary" : "border-line bg-surface"}`}
+    >
+      {autoAdvance ? "▶️ Автовідтворення: увімкнено" : "⏸️ Автовідтворення: вимкнено"}
     </button>
   );
 }
@@ -549,9 +613,9 @@ const KIND_LABEL: Record<MathV2LessonView["kind"], string> = {
   assessment: "Самостійна/перевірочна робота",
 };
 
-function readStoredVoiceMode(): boolean {
+function readStoredFlag(key: string): boolean {
   try {
-    return window.localStorage.getItem(VOICE_MODE_STORAGE_KEY) === "1";
+    return window.localStorage.getItem(key) === "1";
   } catch {
     return false;
   }
@@ -560,13 +624,16 @@ function readStoredVoiceMode(): boolean {
 export function MathCourseV2LessonScreen({ lesson }: { lesson: MathV2LessonView }) {
   const chatRef = useRef<LessonTopicChatHandle>(null);
   const [voiceMode, setVoiceMode] = useState(false);
+  const [autoAdvance, setAutoAdvance] = useState(false);
   // Lazy-read from localStorage only after mount (avoids a server/client
   // render mismatch — `window` doesn't exist during SSR). Deferred into a
   // microtask, same reasoning as `ListenButton`'s autoplay effect above.
   useEffect(() => {
     let cancelled = false;
     Promise.resolve().then(() => {
-      if (!cancelled) setVoiceMode(readStoredVoiceMode());
+      if (cancelled) return;
+      setVoiceMode(readStoredFlag(VOICE_MODE_STORAGE_KEY));
+      setAutoAdvance(readStoredFlag(AUTO_ADVANCE_STORAGE_KEY));
     });
     return () => {
       cancelled = true;
@@ -577,6 +644,15 @@ export function MathCourseV2LessonScreen({ lesson }: { lesson: MathV2LessonView 
     setVoiceMode(v);
     try {
       window.localStorage.setItem(VOICE_MODE_STORAGE_KEY, v ? "1" : "0");
+    } catch {
+      // per-device convenience only — fine to drop silently
+    }
+  }
+
+  function changeAutoAdvance(v: boolean) {
+    setAutoAdvance(v);
+    try {
+      window.localStorage.setItem(AUTO_ADVANCE_STORAGE_KEY, v ? "1" : "0");
     } catch {
       // per-device convenience only — fine to drop silently
     }
@@ -603,6 +679,7 @@ export function MathCourseV2LessonScreen({ lesson }: { lesson: MathV2LessonView 
         {lesson.status === "needs_review" && <p className="course-warning">Цей урок ще потребує перевірки дорослого.</p>}
         <div className="mt-2 flex flex-wrap gap-2">
           <VoiceModeToggle voiceMode={voiceMode} onChange={changeVoiceMode} />
+          <AutoAdvanceToggle autoAdvance={autoAdvance} voiceMode={voiceMode} onChange={changeAutoAdvance} />
           {textbook && (
             <OpenTextbookPageButton
               materialId={textbook.materialId}
@@ -627,7 +704,7 @@ export function MathCourseV2LessonScreen({ lesson }: { lesson: MathV2LessonView 
         </section>
       )}
 
-      <ScreenNav lesson={lesson} voiceMode={voiceMode} chatRef={chatRef} />
+      <ScreenNav lesson={lesson} voiceMode={voiceMode} autoAdvance={autoAdvance} chatRef={chatRef} />
 
       {lesson.topicId && <LessonTopicChat ref={chatRef} subjectId={lesson.subjectId} topicId={lesson.topicId} />}
 
