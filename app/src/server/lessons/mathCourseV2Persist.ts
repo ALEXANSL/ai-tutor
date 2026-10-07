@@ -272,7 +272,11 @@ export async function persistMathCourseV2Package(
           explanation_narration: key.explanation_narration,
           option_feedback: key.option_feedback,
           equations_latex: key.equations_latex,
-          certificate: key.certificate,
+          // `course_v2_question_keys.certificate` is NOT NULL (default
+          // '{}') — the package's own data legitimately sends `null` for a
+          // question with no single checkable numeric answer, which Postgres
+          // would reject as-is.
+          certificate: key.certificate ?? {},
         },
         { onConflict: "question_id" },
       );

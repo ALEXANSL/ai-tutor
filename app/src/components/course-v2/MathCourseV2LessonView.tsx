@@ -217,6 +217,46 @@ function ExerciseCard({ exercise }: { exercise: MathV2ExerciseView }) {
   );
 }
 
+const EXERCISES_PER_PAGE = 10;
+
+/** PO feedback 2026-10-07: a lesson can have 90+ linked exercises — rendered
+ * as one long scroll, this was exactly the "гортання 10 сторінок" problem
+ * the nav bar/pagination work was meant to avoid, just for exercises
+ * instead of textbook-page images this time. Same windowed-index pattern
+ * as `ScreenNav` above. */
+function ExerciseList({ exercises }: { exercises: MathV2ExerciseView[] }) {
+  const [page, setPage] = useState(0);
+  const pageCount = Math.ceil(exercises.length / EXERCISES_PER_PAGE);
+  const start = page * EXERCISES_PER_PAGE;
+  const visible = exercises.slice(start, start + EXERCISES_PER_PAGE);
+
+  return (
+    <>
+      <p className="course-eyebrow">
+        Сторінка {page + 1} з {pageCount} (вправи {start + 1}–{Math.min(start + EXERCISES_PER_PAGE, exercises.length)} з {exercises.length})
+      </p>
+      <ol className="course-exercise-list" start={start + 1}>
+        {visible.map((e) => (
+          <ExerciseCard key={e.exerciseKey} exercise={e} />
+        ))}
+      </ol>
+      <div className="mt-3 flex gap-2">
+        <button type="button" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-40">
+          ← Назад
+        </button>
+        <button
+          type="button"
+          disabled={page >= pageCount - 1}
+          onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+          className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-40"
+        >
+          Далі →
+        </button>
+      </div>
+    </>
+  );
+}
+
 const KIND_LABEL: Record<MathV2LessonView["kind"], string> = {
   lesson: "Параграф",
   review: "Повторення",
@@ -257,11 +297,7 @@ export function MathCourseV2LessonScreen({ lesson }: { lesson: MathV2LessonView 
       {lesson.exercises.length > 0 && (
         <section>
           <h2>Вправи з підручника</h2>
-          <ol className="course-exercise-list">
-            {lesson.exercises.map((e) => (
-              <ExerciseCard key={e.exerciseKey} exercise={e} />
-            ))}
-          </ol>
+          <ExerciseList exercises={lesson.exercises} />
         </section>
       )}
 

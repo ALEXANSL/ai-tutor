@@ -178,7 +178,6 @@ export async function getMathCourseV2LessonView(familyId: string, lessonId: stri
     scope
       .select("course_v2_exercises", "id, exercise_key, original_number, display_md, narration, asset_ids, has_construction_template, has_source_issue")
       .eq("lesson_id", lessonId)
-      .order("original_number")
       .returns<ExerciseRow[]>(),
   ]);
 
@@ -202,7 +201,20 @@ export async function getMathCourseV2LessonView(familyId: string, lessonId: stri
       }));
   }
 
-  const assetKeys = (exerciseRows ?? []).flatMap((e) => e.asset_ids);
+  // PO feedback 2026-10-07: exercises rendered as "№1, №10, №11, №12…,
+  // №2, №20…" — `original_number` is TEXT (it is a textbook number, can in
+  // principle be non-numeric), so a plain DB `.order()` sorted it
+  // alphabetically. Sort numerically here, falling back to the original
+  // (already-imported) order for anything that doesn't parse as a plain
+  // integer rather than silently misplacing it.
+  const sortedExerciseRows = [...(exerciseRows ?? [])].sort((a, b) => {
+    const an = Number.parseInt(a.original_number, 10);
+    const bn = Number.parseInt(b.original_number, 10);
+    if (Number.isNaN(an) || Number.isNaN(bn)) return a.original_number.localeCompare(b.original_number);
+    return an - bn;
+  });
+
+  const assetKeys = sortedExerciseRows.flatMap((e) => e.asset_ids);
   const assetByKey = await signAssets(scope.client, lesson.package_id, assetKeys);
 
   return {
@@ -219,7 +231,7 @@ export async function getMathCourseV2LessonView(familyId: string, lessonId: stri
     screens: (screens ?? []).map((s) => ({ id: s.id, order: s.order_no, role: s.role, title: s.title, displayMd: s.display_md, narration: s.narration, pauseAfter: s.pause_after })),
     quizTitle: quiz?.title ?? null,
     quizQuestions,
-    exercises: (exerciseRows ?? []).map((e) => ({
+    exercises: sortedExerciseRows.map((e) => ({
       id: e.id,
       exerciseKey: e.exercise_key,
       originalNumber: e.original_number,

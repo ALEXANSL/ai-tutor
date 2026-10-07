@@ -163,7 +163,11 @@ const zQuestionKey = z.object({
   hint_narration: z.string().default(""),
   explanation_md: z.string().default(""),
   explanation_narration: z.string().default(""),
-  certificate: z.record(z.string(), z.unknown()).default({}),
+  // Null for a question with no automatically-checkable numeric answer
+  // (e.g. a reasoning/open-ended pick among options) — the package's own
+  // contract never guarantees one; `correct_option_id` above is the only
+  // thing `submitQuestionAnswerAction` actually needs to grade.
+  certificate: z.record(z.string(), z.unknown()).nullable().default({}),
   option_feedback: z.array(zOptionFeedback).default([]),
   equations_latex: z.array(z.unknown()).default([]),
 });
@@ -175,7 +179,9 @@ const zSolutionPart = z.object({
   answer_md: z.string(),
   answer_narration: z.string(),
   equations_latex: z.array(z.unknown()).default([]),
-  certificate: z.record(z.string(), z.unknown()).optional(),
+  // Same as `zQuestionKey.certificate` above — null for a solution part with
+  // no single checkable numeric answer (a construction/measurement step).
+  certificate: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 const zExerciseSolution = z.object({
