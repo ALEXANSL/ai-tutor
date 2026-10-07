@@ -5,6 +5,7 @@ import { PrepareTopicButton } from "@/components/child/PrepareTopicButton";
 import { MathCourseV2Search } from "@/components/course-v2/MathCourseV2Search";
 import { uk } from "@/i18n/uk";
 import { requireChild } from "@/server/auth/guards";
+import { getMathCourseV2TextbookForSubject } from "@/server/lessons/mathCourseV2Search";
 import { getTopicWarmupStatuses } from "@/server/lessons/warmup";
 import { getSubjectDetail } from "@/server/subjects/queries";
 
@@ -44,7 +45,11 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
   // panel shows (US-22.4 КП-5) — now three child-facing states: ready /
   // in-progress (queued or generating, incl. from КП-2's own "Підготувати")
   // / needs preparing.
-  const warmupStatuses = subject.topics.length > 0 ? await getTopicWarmupStatuses(ctx.familyId, subject.topics.map((tp) => tp.id)) : {};
+  const hasMathCourseV2 = subject.topics.some((t) => t.mathCourseV2LessonId);
+  const [warmupStatuses, textbook] = await Promise.all([
+    subject.topics.length > 0 ? getTopicWarmupStatuses(ctx.familyId, subject.topics.map((tp) => tp.id)) : Promise.resolve({} as Awaited<ReturnType<typeof getTopicWarmupStatuses>>),
+    hasMathCourseV2 ? getMathCourseV2TextbookForSubject(ctx.familyId, subject.id) : Promise.resolve(null),
+  ]);
 
   return (
     <div className="px-6 pt-5 pb-10">
@@ -52,7 +57,7 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
         {uk.child.lesson.backToToday}
       </Link>
       <h1 className="mb-4 text-2xl font-extrabold">{subject.name}</h1>
-      {subject.topics.some((t) => t.mathCourseV2LessonId) && <MathCourseV2Search subjectId={subject.id} />}
+      {hasMathCourseV2 && <MathCourseV2Search subjectId={subject.id} textbook={textbook} />}
       {subject.topics.length > 0 ? (
         <div className="space-y-3">
           <p className="text-sm text-muted">{ts.topicsSubtitle}</p>
