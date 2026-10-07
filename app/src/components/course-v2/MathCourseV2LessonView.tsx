@@ -348,7 +348,9 @@ function ExerciseCard({ exercise, textbook }: { exercise: MathV2ExerciseView; te
             {busy ? "…" : "Показати розв'язання"}
           </button>
         )}
-        {textbook && <OpenTextbookPageButton materialId={textbook.materialId} title={textbook.title} pageCount={textbook.pageCount} page={exercise.printedPage} />}
+        {textbook && (
+          <OpenTextbookPageButton materialId={textbook.materialId} title={textbook.title} pageCount={textbook.pageCount} page={exercise.printedPage} numberKeywordHint="вправа" />
+        )}
       </div>
       {error && (
         <p role="alert" className="mt-1 text-xs font-bold text-danger">
@@ -479,7 +481,14 @@ export function MathCourseV2LessonScreen({ lesson }: { lesson: MathV2LessonView 
         <div className="mt-2 flex flex-wrap gap-2">
           <VoiceModeToggle voiceMode={voiceMode} onChange={changeVoiceMode} />
           {textbook && (
-            <OpenTextbookPageButton materialId={textbook.materialId} title={textbook.title} pageCount={textbook.pageCount} page={lesson.printedPageFrom} label="📖 Відкрити підручник" />
+            <OpenTextbookPageButton
+              materialId={textbook.materialId}
+              title={textbook.title}
+              pageCount={textbook.pageCount}
+              page={lesson.printedPageFrom}
+              label="📖 Відкрити підручник"
+              numberKeywordHint="вправа"
+            />
           )}
         </div>
       </header>
