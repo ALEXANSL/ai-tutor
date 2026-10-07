@@ -1,8 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { MathText } from "@/components/shared/MathText";
+import { OpenTextbookPageButton } from "@/components/shared/BookPageModal";
+import { askTopicChatAction } from "@/app/actions/lesson";
 import {
   narrateMathCourseV2Action,
   revealExerciseSolutionAction,
@@ -10,6 +12,8 @@ import {
   type QuestionAnswerResult,
 } from "@/app/actions/math-course-v2";
 import type { MathV2ExerciseView, MathV2LessonView, MathV2QuestionView } from "@/server/lessons/mathCourseV2View";
+
+const VOICE_MODE_STORAGE_KEY = "mathCourseV2VoiceMode";
 
 /**
  * S35 — child-facing viewer for one `course_v2_lessons` row (Істер math6
@@ -27,7 +31,7 @@ import type { MathV2ExerciseView, MathV2LessonView, MathV2QuestionView } from "@
  *    repeated here.
  */
 
-function ListenButton({ refTable, refId, field, text }: { refTable: string; refId: string; field: string; text: string }) {
+function ListenButton({ refTable, refId, field, text, autoPlay }: { refTable: string; refId: string; field: string; text: string; autoPlay?: boolean }) {
   const [state, setState] = useState<"idle" | "loading" | "playing" | "unavailable">("idle");
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -53,6 +57,28 @@ function ListenButton({ refTable, refId, field, text }: { refTable: string; refI
     }
   }
 
+  // PO complaint 2026-10-07: "озвучка на кожному екрані переривається, тобто
+  // я маю вмикати голосовий режим щоразу" — narration used to need a manual
+  // click on every single screen. The parent mounts this with a fresh `key`
+  // per screen/exercise/question (see `ScreenNav` below), so this effect
+  // firing once on mount is exactly "narrate the thing I was just shown",
+  // not a loop. `play()`'s first line calls `setState` — deferred into a
+  // microtask (same pattern as `LessonRunner.tsx`'s `NarrationPlayer`) so it
+  // isn't a direct synchronous setState-in-effect.
+  useEffect(() => {
+    if (!autoPlay || !text.trim()) return;
+    let cancelled = false;
+    Promise.resolve().then(() => {
+      if (!cancelled) void play();
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally only on mount (fresh per screen/exercise/question via
+    // the caller's `key`) — not on every `text`/`autoPlay` change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (!text.trim()) return null;
   return (
     <button
@@ -66,24 +92,27 @@ function ListenButton({ refTable, refId, field, text }: { refTable: string; refI
   );
 }
 
-function ScreenNav({ lesson }: { lesson: MathV2LessonView }) {
+function ScreenNav({ lesson, voiceMode }: { lesson: MathV2LessonView; voiceMode: boolean }) {
   const [index, setIndex] = useState(0);
   const screen = lesson.screens[index];
   if (!screen) return <p className="course-note">Екранів ще немає.</p>;
 
   return (
     <section>
-      <p className="course-eyebrow">
-        Екран {index + 1} з {lesson.screens.length}
-      </p>
       {screen.title && <h3>{screen.title}</h3>}
       <p style={{ whiteSpace: "pre-wrap" }}>
         <MathText text={screen.displayMd} />
       </p>
       <div className="mt-2">
-        <ListenButton refTable="course_v2_screens" refId={screen.id} field="narration" text={screen.narration} />
+        <ListenButton key={screen.id} refTable="course_v2_screens" refId={screen.id} field="narration" text={screen.narration} autoPlay={voiceMode} />
       </div>
-      <div className="mt-3 flex gap-2">
+      {/* PO feedback 2026-10-07: "надпис екран х з у краще показувати біля
+          кнопок навігації" — moved from above the content down to right
+          next to Назад/Далі, where it reads as part of the nav control. */}
+      <p className="course-eyebrow mt-3">
+        Екран {index + 1} з {lesson.screens.length}
+      </p>
+      <div className="mt-1 flex gap-2">
         <button type="button" disabled={index === 0} onClick={() => setIndex((i) => Math.max(0, i - 1))} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-40">
           ← Назад
         </button>
@@ -96,6 +125,93 @@ function ScreenNav({ lesson }: { lesson: MathV2LessonView }) {
           Далі →
         </button>
       </div>
+    </section>
+  );
+}
+
+/** PO complaint 2026-10-07: narration needed a manual click on every screen.
+ * A simple persisted (per-device, `localStorage`) toggle: while on, every
+ * freshly-mounted `ListenButton` on a lesson screen auto-plays once. */
+function VoiceModeToggle({ voiceMode, onChange }: { voiceMode: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!voiceMode)}
+      aria-pressed={voiceMode}
+      className={`min-h-11 rounded-full border-2 px-3.5 text-sm font-bold ${voiceMode ? "border-primary bg-primary/10 text-primary" : "border-line bg-surface"}`}
+    >
+      {voiceMode ? "🔊 Голосовий режим: увімкнено" : "🔈 Голосовий режим: вимкнено"}
+    </button>
+  );
+}
+
+/** PO complaint 2026-10-07: "у нас зник ШІ діалог... не можу попросити
+ * пояснити завдання чи задачу". Reuses the EXISTING paid tutor-chat path
+ * (`askTopicChatAction` — same role/cost as every other topic chat in the
+ * app, nothing new) rather than building a parallel chat system; it only
+ * needs a topic, no `lesson_sessions` row (its `sessionId` param is already
+ * optional — used solely for moderation-event context). */
+function LessonTopicChat({ subjectId, topicId }: { subjectId: string; topicId: string }) {
+  const [open, setOpen] = useState(false);
+  const [question, setQuestion] = useState("");
+  const [messages, setMessages] = useState<{ author: "child" | "ai"; content: string }[]>([]);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function send() {
+    const q = question.trim();
+    if (!q || pending) return;
+    setMessages((prev) => [...prev, { author: "child", content: q }]);
+    setQuestion("");
+    setPending(true);
+    setError(null);
+    try {
+      const res = await askTopicChatAction(null, subjectId, topicId, q);
+      if (res.status === "ok") setMessages((prev) => [...prev, { author: "ai", content: res.message.content }]);
+      else setError("Не вдалося надіслати запитання. Спробуй ще раз.");
+    } catch (e) {
+      setError(`Не вдалося надіслати запитання (${(e as Error).message}). Спробуй ще раз.`);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <section className="mt-6">
+      <button type="button" onClick={() => setOpen((v) => !v)} className="text-sm font-bold text-muted underline">
+        💬 Запитати репетитора про цю тему
+      </button>
+      {open && (
+        <div className="mt-2 rounded-2xl border border-line bg-surface p-3.5">
+          {messages.length > 0 && (
+            <div className="mb-2 flex max-h-40 flex-col gap-1.5 overflow-y-auto text-sm">
+              {messages.map((m, i) => (
+                <p key={i} className={m.author === "child" ? "font-bold" : "text-muted"}>
+                  <MathText text={m.content} />
+                </p>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <input
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void send()}
+              placeholder="Поясни цю задачу…"
+              disabled={pending}
+              className="min-h-11 flex-1 rounded-xl border-2 border-line bg-surface px-3 text-sm"
+            />
+            <button type="button" onClick={() => void send()} disabled={pending || !question.trim()} className="min-h-11 rounded-full bg-primary px-4 text-sm font-bold text-white disabled:opacity-60">
+              {pending ? "…" : "Надіслати"}
+            </button>
+          </div>
+          {error && (
+            <p role="alert" className="mt-1.5 text-xs font-bold text-danger">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
     </section>
   );
 }
@@ -183,7 +299,13 @@ function QuestionCard({ question }: { question: MathV2QuestionView }) {
   );
 }
 
-function ExerciseCard({ exercise }: { exercise: MathV2ExerciseView }) {
+interface TextbookRef {
+  materialId: string;
+  title: string;
+  pageCount: number | null;
+}
+
+function ExerciseCard({ exercise, textbook }: { exercise: MathV2ExerciseView; textbook: TextbookRef | null }) {
   const [revealed, setRevealed] = useState<{ hint: string; parts: { label: string; stepsMd: string[]; answerMd: string }[]; sourceIssueWarning: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -219,13 +341,14 @@ function ExerciseCard({ exercise }: { exercise: MathV2ExerciseView }) {
           <img key={a.assetKey} src={a.url} alt={a.alt} className="course-exercise-asset" style={{ maxWidth: "100%", height: "auto" }} />
         ) : null,
       )}
-      <div className="mt-1 flex items-center gap-2">
+      <div className="mt-1 flex flex-wrap items-center gap-2">
         <ListenButton refTable="course_v2_exercises" refId={exercise.id} field="narration" text={exercise.narration} />
         {!revealed && (
           <button type="button" onClick={reveal} disabled={busy} className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold disabled:opacity-60">
             {busy ? "…" : "Показати розв'язання"}
           </button>
         )}
+        {textbook && <OpenTextbookPageButton materialId={textbook.materialId} title={textbook.title} pageCount={textbook.pageCount} page={exercise.printedPage} />}
       </div>
       {error && (
         <p role="alert" className="mt-1 text-xs font-bold text-danger">
@@ -263,7 +386,7 @@ const EXERCISES_PER_PAGE = 10;
  * the nav bar/pagination work was meant to avoid, just for exercises
  * instead of textbook-page images this time. Same windowed-index pattern
  * as `ScreenNav` above. */
-function ExerciseList({ exercises }: { exercises: MathV2ExerciseView[] }) {
+function ExerciseList({ exercises, textbook }: { exercises: MathV2ExerciseView[]; textbook: TextbookRef | null }) {
   const [page, setPage] = useState(0);
   const pageCount = Math.ceil(exercises.length / EXERCISES_PER_PAGE);
   const start = page * EXERCISES_PER_PAGE;
@@ -276,7 +399,7 @@ function ExerciseList({ exercises }: { exercises: MathV2ExerciseView[] }) {
       </p>
       <ol className="course-exercise-list" start={start + 1}>
         {visible.map((e) => (
-          <ExerciseCard key={e.exerciseKey} exercise={e} />
+          <ExerciseCard key={e.exerciseKey} exercise={e} textbook={textbook} />
         ))}
       </ol>
       <div className="mt-3 flex gap-2">
@@ -302,7 +425,42 @@ const KIND_LABEL: Record<MathV2LessonView["kind"], string> = {
   assessment: "Самостійна/перевірочна робота",
 };
 
+function readStoredVoiceMode(): boolean {
+  try {
+    return window.localStorage.getItem(VOICE_MODE_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export function MathCourseV2LessonScreen({ lesson }: { lesson: MathV2LessonView }) {
+  const [voiceMode, setVoiceMode] = useState(false);
+  // Lazy-read from localStorage only after mount (avoids a server/client
+  // render mismatch — `window` doesn't exist during SSR). Deferred into a
+  // microtask, same reasoning as `ListenButton`'s autoplay effect above.
+  useEffect(() => {
+    let cancelled = false;
+    Promise.resolve().then(() => {
+      if (!cancelled) setVoiceMode(readStoredVoiceMode());
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function changeVoiceMode(v: boolean) {
+    setVoiceMode(v);
+    try {
+      window.localStorage.setItem(VOICE_MODE_STORAGE_KEY, v ? "1" : "0");
+    } catch {
+      // per-device convenience only — fine to drop silently
+    }
+  }
+
+  const textbook: TextbookRef | null = lesson.textbookMaterialId
+    ? { materialId: lesson.textbookMaterialId, title: lesson.textbookTitle ?? lesson.packageTitle, pageCount: lesson.textbookPageCount }
+    : null;
+
   return (
     <article className="course-lesson">
       <LessonNavBar subjectId={lesson.subjectId} />
@@ -318,6 +476,12 @@ export function MathCourseV2LessonScreen({ lesson }: { lesson: MathV2LessonView 
           </p>
         )}
         {lesson.status === "needs_review" && <p className="course-warning">Цей урок ще потребує перевірки дорослого.</p>}
+        <div className="mt-2 flex flex-wrap gap-2">
+          <VoiceModeToggle voiceMode={voiceMode} onChange={changeVoiceMode} />
+          {textbook && (
+            <OpenTextbookPageButton materialId={textbook.materialId} title={textbook.title} pageCount={textbook.pageCount} page={lesson.printedPageFrom} label="📖 Відкрити підручник" />
+          )}
+        </div>
       </header>
 
       {lesson.objectives.length > 0 && (
@@ -331,12 +495,14 @@ export function MathCourseV2LessonScreen({ lesson }: { lesson: MathV2LessonView 
         </section>
       )}
 
-      <ScreenNav lesson={lesson} />
+      <ScreenNav lesson={lesson} voiceMode={voiceMode} />
+
+      {lesson.topicId && <LessonTopicChat subjectId={lesson.subjectId} topicId={lesson.topicId} />}
 
       {lesson.exercises.length > 0 && (
         <section>
           <h2>Вправи з підручника</h2>
-          <ExerciseList exercises={lesson.exercises} />
+          <ExerciseList exercises={lesson.exercises} textbook={textbook} />
         </section>
       )}
 

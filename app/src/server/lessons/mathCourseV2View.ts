@@ -60,11 +60,16 @@ export interface MathV2ExerciseView {
   assets: MathV2AssetView[];
   hasConstructionTemplate: boolean;
   hasSourceIssue: boolean;
+  printedPage: number | null;
 }
 
 export interface MathV2LessonView {
   id: string;
   subjectId: string;
+  /** For the on-demand tutor chat ("поясни задачу/урок") — null only if the
+   * importer couldn't attach a topic (never expected in practice, see
+   * `mathCourseV2Persist.ts`). */
+  topicId: string | null;
   packageId: string;
   packageTitle: string;
   lessonKey: string;
@@ -73,6 +78,12 @@ export interface MathV2LessonView {
   objectives: string[];
   printedPageFrom: number | null;
   printedPageTo: number | null;
+  /** The uploaded PDF `materials` row these page numbers map to — null until
+   * a parent links it (see `20261019100000_s35_textbook_page_link.sql`),
+   * in which case "Відкрити сторінку підручника" simply doesn't render. */
+  textbookMaterialId: string | null;
+  textbookTitle: string | null;
+  textbookPageCount: number | null;
   screens: MathV2ScreenView[];
   quizTitle: string | null;
   quizQuestions: MathV2QuestionView[];
@@ -83,6 +94,7 @@ export interface MathV2LessonView {
 interface LessonRow {
   id: string;
   subject_id: string;
+  topic_id: string | null;
   package_id: string;
   lesson_key: string;
   kind: "lesson" | "review" | "assessment";
@@ -123,6 +135,7 @@ interface ExerciseRow {
   asset_ids: string[];
   has_construction_template: boolean;
   has_source_issue: boolean;
+  printed_page: number | null;
 }
 interface AssetRow {
   asset_key: string;
@@ -166,20 +179,33 @@ async function signAssets(client: ReturnType<typeof forFamily>["client"], packag
 export async function getMathCourseV2LessonView(familyId: string, lessonId: string): Promise<MathV2LessonView | null> {
   const scope = forFamily(familyId);
   const { data: lesson } = await scope
-    .select("course_v2_lessons", "id, subject_id, package_id, lesson_key, kind, title, objectives, printed_page_from, printed_page_to, status")
+    .select("course_v2_lessons", "id, subject_id, topic_id, package_id, lesson_key, kind, title, objectives, printed_page_from, printed_page_to, status")
     .eq("id", lessonId)
     .maybeSingle<LessonRow>();
   if (!lesson) return null;
 
   const [{ data: pkg }, { data: screens }, { data: quiz }, { data: exerciseRows }] = await Promise.all([
-    scope.select("course_v2_packages", "title").eq("id", lesson.package_id).maybeSingle<{ title: string }>(),
+    scope.select("course_v2_packages", "title, textbook_material_id").eq("id", lesson.package_id).maybeSingle<{ title: string; textbook_material_id: string | null }>(),
     scope.select("course_v2_screens", "id, screen_key, order_no, role, title, display_md, narration, pause_after").eq("lesson_id", lessonId).order("order_no").returns<ScreenRow[]>(),
     scope.select("course_v2_quizzes", "id, title").eq("lesson_id", lessonId).maybeSingle<QuizRow>(),
     scope
-      .select("course_v2_exercises", "id, exercise_key, original_number, display_md, narration, asset_ids, has_construction_template, has_source_issue")
+      .select("course_v2_exercises", "id, exercise_key, original_number, display_md, narration, asset_ids, has_construction_template, has_source_issue, printed_page")
       .eq("lesson_id", lessonId)
       .returns<ExerciseRow[]>(),
   ]);
+
+  let textbookTitle: string | null = null;
+  let textbookPageCount: number | null = null;
+  if (pkg?.textbook_material_id) {
+    const { data: material } = await scope
+      .select("materials", "title, name, page_count")
+      .eq("id", pkg.textbook_material_id)
+      .maybeSingle<{ title: string | null; name: string; page_count: number | null }>();
+    if (material) {
+      textbookTitle = material.title ?? material.name;
+      textbookPageCount = material.page_count;
+    }
+  }
 
   let quizQuestions: MathV2QuestionView[] = [];
   if (quiz) {
@@ -220,6 +246,7 @@ export async function getMathCourseV2LessonView(familyId: string, lessonId: stri
   return {
     id: lesson.id,
     subjectId: lesson.subject_id,
+    topicId: lesson.topic_id,
     packageId: lesson.package_id,
     packageTitle: pkg?.title ?? "",
     lessonKey: lesson.lesson_key,
@@ -228,6 +255,9 @@ export async function getMathCourseV2LessonView(familyId: string, lessonId: stri
     objectives: lesson.objectives ?? [],
     printedPageFrom: lesson.printed_page_from,
     printedPageTo: lesson.printed_page_to,
+    textbookMaterialId: pkg?.textbook_material_id ?? null,
+    textbookTitle,
+    textbookPageCount,
     screens: (screens ?? []).map((s) => ({ id: s.id, order: s.order_no, role: s.role, title: s.title, displayMd: s.display_md, narration: s.narration, pauseAfter: s.pause_after })),
     quizTitle: quiz?.title ?? null,
     quizQuestions,
@@ -240,6 +270,7 @@ export async function getMathCourseV2LessonView(familyId: string, lessonId: stri
       assets: e.asset_ids.map((id) => assetByKey.get(id)).filter((a): a is MathV2AssetView => a != null),
       hasConstructionTemplate: e.has_construction_template,
       hasSourceIssue: e.has_source_issue,
+      printedPage: e.printed_page,
     })),
     status: lesson.status,
   };

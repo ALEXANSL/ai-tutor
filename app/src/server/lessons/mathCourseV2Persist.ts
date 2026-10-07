@@ -348,6 +348,8 @@ export async function persistMathCourseV2Package(
           grading_mode: ex.grading_mode,
           has_construction_template: hasConstructionTemplate,
           has_source_issue: exerciseIdsWithIssue.has(ex.id),
+          printed_page: ex.source.printed_pages[0] ?? null,
+          pdf_page: ex.source.pdf_pages[0] ?? null,
         },
         { onConflict: "package_id,exercise_key" },
       )
