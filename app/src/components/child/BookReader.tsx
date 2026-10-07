@@ -47,6 +47,36 @@ interface SearchHit {
 
 const MAX_RENDER_WIDTH = 760;
 
+/**
+ * PO complaint 2026-10-07 ("сторінка уроку все ще падає в релоад після
+ * читання книги") persisted even after the per-page `cleanup()` fix below.
+ * Root cause this targets: every "Відкрити підручник" modal open/close
+ * cycle (`BookPageModal`) fully re-fetched the whole PDF as bytes,
+ * re-parsed it via `pdfjsLib.getDocument(...)`, then `destroy()`-ed it on
+ * close — repeated several times in one lesson session (search, close,
+ * open another exercise's page, close...). That churn is a separate,
+ * heavier memory-pressure source than the single-page accumulation already
+ * fixed. Caching the parsed document per `materialId` across mounts means
+ * reopening the same book reuses it instead of repeating the full
+ * fetch+parse, and the doc is never destroyed while the tab lives.
+ */
+const pdfDocCache = new Map<string, Promise<PdfDocumentProxyLike>>();
+
+function loadPdfDocument(materialId: string): Promise<PdfDocumentProxyLike> {
+  const cached = pdfDocCache.get(materialId);
+  if (cached) return cached;
+  const promise = (async () => {
+    const [pdfjsLib, res] = await Promise.all([import("pdfjs-dist"), fetch(`/api/book/${materialId}/file`)]);
+    if (!res.ok) throw new Error(`file ${res.status}`);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+    return (await pdfjsLib.getDocument({ data: bytes }).promise) as unknown as PdfDocumentProxyLike;
+  })();
+  promise.catch(() => pdfDocCache.delete(materialId));
+  pdfDocCache.set(materialId, promise);
+  return promise;
+}
+
 export function BookReader({
   materialId,
   title,
@@ -91,19 +121,8 @@ export function BookReader({
     let cancelled = false;
     (async () => {
       try {
-        const [pdfjsLib, res] = await Promise.all([import("pdfjs-dist"), fetch(`/api/book/${materialId}/file`)]);
-        if (!res.ok) throw new Error(`file ${res.status}`);
-        const bytes = new Uint8Array(await res.arrayBuffer());
-        // Served as a plain static file, copied from the installed
-        // `pdfjs-dist` package by `scripts/copy-pdf-worker.mjs`
-        // (`predev`/`prebuild`) — see that script for why not the usual
-        // `new URL(..., import.meta.url)` bundler trick.
-        pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
-        const doc = (await pdfjsLib.getDocument({ data: bytes }).promise) as unknown as PdfDocumentProxyLike;
-        if (cancelled) {
-          doc.destroy();
-          return;
-        }
+        const doc = await loadPdfDocument(materialId);
+        if (cancelled) return;
         docRef.current = doc;
         setPageCount(doc.numPages);
         setPage((p) => Math.min(p, doc.numPages));
@@ -114,7 +133,9 @@ export function BookReader({
     })();
     return () => {
       cancelled = true;
-      docRef.current?.destroy();
+      // The parsed document lives in `pdfDocCache` now (keyed by
+      // `materialId`), shared across modal open/close cycles — only drop
+      // this component's own references, never `destroy()` it here.
       docRef.current = null;
       prevPageRef.current = null;
     };
