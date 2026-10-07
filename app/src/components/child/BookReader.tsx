@@ -26,9 +26,13 @@ interface PdfDocumentProxyLike {
   getPage(n: number): Promise<PdfPageProxyLike>;
   destroy(): void;
 }
+interface PdfRenderTaskLike {
+  promise: Promise<void>;
+  cancel(): void;
+}
 interface PdfPageProxyLike {
   getViewport(opts: { scale: number }): { width: number; height: number };
-  render(opts: { canvasContext: CanvasRenderingContext2D; viewport: unknown }): { promise: Promise<void> };
+  render(opts: { canvasContext: CanvasRenderingContext2D; viewport: unknown }): PdfRenderTaskLike;
 }
 
 interface SearchHit {
@@ -44,6 +48,7 @@ export function BookReader({
   title,
   initialPageCount,
   initialPage,
+  numberKeywordHint,
 }: {
   materialId: string;
   title: string;
@@ -52,9 +57,15 @@ export function BookReader({
    * сторінку" — jump straight to a page (an exercise's or a lesson's own
    * printed page) instead of always opening at page 1. */
   initialPage?: number;
+  /** PO complaint 2026-10-07: a bare number typed in search used to always
+   * fall back to full-text search. When the caller knows what a bare number
+   * means here (e.g. "вправа" for a math course), pass that word and a bare
+   * numeric query is treated as that keyword + number — see `runSearch`. */
+  numberKeywordHint?: string;
 }) {
   const t = uk.child.book;
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const renderTaskRef = useRef<PdfRenderTaskLike | null>(null);
   const docRef = useRef<PdfDocumentProxyLike | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [page, setPage] = useState(initialPage && initialPage > 0 ? initialPage : 1);
@@ -110,6 +121,15 @@ export function BookReader({
     setRenderError(false);
     (async () => {
       try {
+        // PO complaint 2026-10-07 ("Не вдалося показати цю сторінку", right
+        // after jumping straight to a search hit): pdf.js throws "Cannot use
+        // the same canvas during multiple render() operations" if a
+        // previous page's render() is still in flight on this same
+        // `<canvas>` when a new page change fires this effect again — a
+        // fast jump (search result, Далі spam) raced the still-rendering
+        // old page. Cancel it first instead of letting two renders fight
+        // over one canvas.
+        renderTaskRef.current?.cancel();
         const doc = docRef.current!;
         const pdfPage = await doc.getPage(page);
         const base = pdfPage.getViewport({ scale: 1 });
@@ -120,9 +140,18 @@ export function BookReader({
         canvas.height = viewport.height;
         const ctx = canvas.getContext("2d");
         if (!ctx || cancelled) return;
-        await pdfPage.render({ canvasContext: ctx, viewport }).promise;
-      } catch {
-        if (!cancelled) setRenderError(true);
+        const task = pdfPage.render({ canvasContext: ctx, viewport });
+        renderTaskRef.current = task;
+        await task.promise;
+        renderTaskRef.current = null;
+      } catch (e) {
+        // A render we cancelled ourselves (above) rejects too — that is
+        // expected and silent, not a real failure to report.
+        if ((e as { name?: string } | null)?.name === "RenderingCancelledException") return;
+        if (!cancelled) {
+          console.error(`BookReader: page ${page} render failed: ${(e as Error)?.message ?? e}`);
+          setRenderError(true);
+        }
       }
     })();
     return () => {
@@ -156,7 +185,19 @@ export function BookReader({
     setSearchError(false);
     setActiveSnippet(null);
     try {
-      const res = await fetch(`/api/book/${materialId}/search?q=${encodeURIComponent(q)}`);
+      // PO complaint 2026-10-07: "пошук шукає по всім матеріалам а не по
+      // номеру ... задачі" — a BARE number ("107") is deliberately NOT
+      // treated as an item-number query server-side (`parseNumberQuery`'s
+      // own comment: ambiguous between "page" and "item" for a generic
+      // book), so it fell through to plain full-text search and matched the
+      // digits anywhere in the book. When this reader is opened from a
+      // context that already knows what kind of item its numbers are
+      // (e.g. math exercises — "вправа"), prepend that keyword to a bare
+      // numeric query before it ever reaches the server, so the EXISTING
+      // keyword-matching regex picks it up exactly like typing "вправа 107"
+      // by hand would.
+      const effectiveQuery = numberKeywordHint && /^\d{1,4}[a-zа-яіїєґ]?$/iu.test(q) ? `${numberKeywordHint} ${q}` : q;
+      const res = await fetch(`/api/book/${materialId}/search?q=${encodeURIComponent(effectiveQuery)}`);
       if (!res.ok) throw new Error(String(res.status));
       const data = (await res.json()) as { hits: SearchHit[]; matchedAs: { label: string; number: string } | null };
       setHits(data.hits);
@@ -239,7 +280,18 @@ export function BookReader({
         {status === "ready" && (
           <>
             <div className="flex items-center justify-center overflow-x-auto rounded-2xl border border-line bg-surface p-2">
-              {renderError ? <p className="p-6 text-sm text-danger">{t.renderError}</p> : <canvas ref={canvasRef} />}
+              {renderError ? (
+                <p className="p-6 text-sm text-danger">{t.renderError}</p>
+              ) : (
+                // PO complaint 2026-10-07 (opened inside the narrower
+                // "Відкрити підручник" modal): the canvas's pixel buffer
+                // stays at full render quality (MAX_RENDER_WIDTH), but its
+                // CSS size now shrinks to fit the container instead of
+                // overflowing it sideways — a fixed-width canvas used to
+                // push the left part of the page out of view, forcing a
+                // horizontal scroll just to see the whole page.
+                <canvas ref={canvasRef} style={{ maxWidth: "100%", height: "auto" }} />
+              )}
             </div>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
               <button
