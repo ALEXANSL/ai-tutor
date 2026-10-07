@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChildStartLessonButton } from "@/components/child/ChildStartLessonButton";
 import { PrepareTopicButton } from "@/components/child/PrepareTopicButton";
+import { MathCourseV2Search } from "@/components/course-v2/MathCourseV2Search";
 import { uk } from "@/i18n/uk";
 import { requireChild } from "@/server/auth/guards";
 import { getTopicWarmupStatuses } from "@/server/lessons/warmup";
@@ -51,6 +52,7 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
         {uk.child.lesson.backToToday}
       </Link>
       <h1 className="mb-4 text-2xl font-extrabold">{subject.name}</h1>
+      {subject.topics.some((t) => t.mathCourseV2LessonId) && <MathCourseV2Search subjectId={subject.id} />}
       {subject.topics.length > 0 ? (
         <div className="space-y-3">
           <p className="text-sm text-muted">{ts.topicsSubtitle}</p>

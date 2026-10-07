@@ -6,6 +6,7 @@ import { forFamily } from "@/server/db/family-scope";
 import { narrationTextHash, synthesizeNarration } from "@/server/lessons/narration";
 import { combineMathCourseV2Package, parseMathCourseV2Private, parseMathCourseV2Public, type ImportIssue } from "@/server/lessons/mathCourseV2Import";
 import { persistMathCourseV2Package } from "@/server/lessons/mathCourseV2Persist";
+import { searchMathCourseV2, type MathCourseV2SearchResult } from "@/server/lessons/mathCourseV2Search";
 import { createServiceClient } from "@/server/supabase/clients";
 import { unzipSync } from "fflate";
 
@@ -299,4 +300,28 @@ export async function importMathCourseV2Action(input: { subjectId: string; publi
       .remove(toCleanup)
       .catch(() => {});
   }
+}
+
+// ---------------------------------------------------------------------------
+// searchMathCourseV2Action — "пошук уроків за сторінкою в книзі або за
+// номером задачі" (PO request 2026-10-07). No PDF/page images to search in
+// this package — searches the already-imported lesson/exercise metadata.
+// ---------------------------------------------------------------------------
+
+export type MathCourseV2SearchState = { status: "ok"; result: MathCourseV2SearchResult } | { status: "error"; message: string };
+
+export async function searchMathCourseV2Action(input: { subjectId: string; page?: string; exerciseNumber?: string }): Promise<MathCourseV2SearchState> {
+  const { ctx } = await requireChild();
+  const subjectParsed = UUID.safeParse(input.subjectId);
+  if (!subjectParsed.success) return { status: "error", message: "Невірний ідентифікатор предмета." };
+
+  const pageTrimmed = input.page?.trim();
+  const page = pageTrimmed ? Number.parseInt(pageTrimmed, 10) : undefined;
+  if (pageTrimmed && (page == null || Number.isNaN(page))) return { status: "error", message: "Сторінка має бути числом." };
+
+  const exerciseNumber = input.exerciseNumber?.trim() || undefined;
+  if (!page && !exerciseNumber) return { status: "error", message: "Вкажи сторінку або номер задачі." };
+
+  const result = await searchMathCourseV2(ctx.familyId, subjectParsed.data, { page, exerciseNumber });
+  return { status: "ok", result };
 }
