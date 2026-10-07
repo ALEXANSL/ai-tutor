@@ -28,6 +28,22 @@ describe("parseMathCourseV2Public / parseMathCourseV2Private (real fixture subse
     expect(data.assets.map((a) => a.id).sort()).toEqual(["figure_03", "p03_ex_193_ray_blank", "p03_ex_194_ray_blank"]);
   });
 
+  // Real-import incident (2026-10-07): the real package legitimately sends
+  // `certificate: null` for a question/solution part with no single
+  // checkable numeric answer — the schema used to require a record, so
+  // EVERY such key/part failed validation and silently vanished (171 errors,
+  // 52 questions left without a working key on the real import).
+  it("accepts certificate: null on a question key and a solution-part step, same as the real package sends", () => {
+    const raw = readJson("private/teacher.json") as { question_keys: { certificate: unknown }[]; exercise_solutions: { parts: { certificate: unknown }[] }[] };
+    raw.question_keys[0]!.certificate = null;
+    raw.exercise_solutions[0]!.parts[0]!.certificate = null;
+
+    const priv = parseMathCourseV2Private(raw);
+    expect(priv.errors).toEqual([]);
+    expect(priv.questionKeys[0]!.certificate).toBeNull();
+    expect(priv.exerciseSolutions[0]!.parts[0]!.certificate).toBeNull();
+  });
+
   it("parses the trimmed private teacher.json with no errors", () => {
     const priv = parseMathCourseV2Private(readJson("private/teacher.json"));
     expect(priv.errors).toEqual([]);
