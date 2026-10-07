@@ -43,18 +43,23 @@ export function BookReader({
   materialId,
   title,
   initialPageCount,
+  initialPage,
 }: {
   materialId: string;
   title: string;
   initialPageCount: number | null;
+  /** PO request 2026-10-07: "кнопка відкрити підручник покаже конкретну
+   * сторінку" — jump straight to a page (an exercise's or a lesson's own
+   * printed page) instead of always opening at page 1. */
+  initialPage?: number;
 }) {
   const t = uk.child.book;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const docRef = useRef<PdfDocumentProxyLike | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(initialPage && initialPage > 0 ? initialPage : 1);
   const [pageCount, setPageCount] = useState(initialPageCount ?? 0);
-  const [pageInput, setPageInput] = useState("1");
+  const [pageInput, setPageInput] = useState(String(initialPage && initialPage > 0 ? initialPage : 1));
   const [pageError, setPageError] = useState<string | null>(null);
   const [renderError, setRenderError] = useState(false);
 
@@ -85,6 +90,7 @@ export function BookReader({
         }
         docRef.current = doc;
         setPageCount(doc.numPages);
+        setPage((p) => Math.min(p, doc.numPages));
         setStatus("ready");
       } catch {
         if (!cancelled) setStatus("error");

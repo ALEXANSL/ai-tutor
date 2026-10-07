@@ -147,6 +147,15 @@ const zExercise = z.object({
   asset_ids: z.array(z.string()).default([]),
   status: z.string().default(""),
   grading_mode: z.string().default(""),
+  // PO request 2026-10-07: "Відкрити сторінку підручника" per exercise —
+  // needs this exercise's OWN page, not just the lesson's whole range.
+  source: z
+    .object({
+      printed_pages: z.array(z.number().int()).optional().default([]),
+      pdf_pages: z.array(z.number().int()).optional().default([]),
+    })
+    .optional()
+    .default({ printed_pages: [], pdf_pages: [] }),
 });
 
 const zOptionFeedback = z.object({
