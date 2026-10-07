@@ -34,16 +34,23 @@ function ListenButton({ refTable, refId, field, text }: { refTable: string; refI
   async function play() {
     if (state === "loading") return;
     setState("loading");
-    const res = await narrateMathCourseV2Action({ refTable, refId, field, text });
-    if (res.status !== "ok") {
+    try {
+      const res = await narrateMathCourseV2Action({ refTable, refId, field, text });
+      if (res.status !== "ok") {
+        setState("unavailable");
+        return;
+      }
+      const audio = new Audio(`data:${res.audioMime};base64,${res.audioBase64}`);
+      audioRef.current = audio;
+      audio.onended = () => setState("idle");
+      setState("playing");
+      void audio.play().catch(() => setState("idle"));
+    } catch {
+      // A thrown request error must still leave the button clickable again
+      // rather than stuck on "…" forever — same silent-lock class of bug as
+      // `QuestionCard`/`ExerciseCard` above.
       setState("unavailable");
-      return;
     }
-    const audio = new Audio(`data:${res.audioMime};base64,${res.audioBase64}`);
-    audioRef.current = audio;
-    audio.onended = () => setState("idle");
-    setState("playing");
-    void audio.play().catch(() => setState("idle"));
   }
 
   if (!text.trim()) return null;
@@ -98,14 +105,28 @@ function QuestionCard({ question }: { question: MathV2QuestionView }) {
   const [result, setResult] = useState<QuestionAnswerResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [skipped, setSkipped] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
+  // PO complaint 2026-10-07 ("тести не працюють, відповідь не можна
+  // вибрати"): a failed submit (missing key on an older import, a dropped
+  // request) used to fail completely silently — no error shown, and a
+  // thrown exception (vs. a returned `{status:"error"}`) left `busy` stuck
+  // `true` forever, so the child's next click did nothing at all. Both
+  // paths now show a real message and let her try again.
   async function answer(optionId: string) {
     if (result || busy) return;
     setSelected(optionId);
     setBusy(true);
-    const res = await submitQuestionAnswerAction({ questionId: question.id, optionId });
-    setBusy(false);
-    if (res.status === "ok") setResult(res.result);
+    setError(null);
+    try {
+      const res = await submitQuestionAnswerAction({ questionId: question.id, optionId });
+      if (res.status === "ok") setResult(res.result);
+      else setError(res.message);
+    } catch (e) {
+      setError(`Не вдалося перевірити відповідь (${(e as Error).message}). Спробуй ще раз.`);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -135,6 +156,11 @@ function QuestionCard({ question }: { question: MathV2QuestionView }) {
           );
         })}
       </ul>
+      {error && (
+        <p role="alert" className="mt-1 text-xs font-bold text-danger">
+          {error}
+        </p>
+      )}
       {!result && !skipped && (
         <button type="button" onClick={() => setSkipped(true)} className="mt-1 text-xs font-bold text-text/60 underline">
           Пропустити (питання не буде зараховано)
@@ -160,12 +186,20 @@ function QuestionCard({ question }: { question: MathV2QuestionView }) {
 function ExerciseCard({ exercise }: { exercise: MathV2ExerciseView }) {
   const [revealed, setRevealed] = useState<{ hint: string; parts: { label: string; stepsMd: string[]; answerMd: string }[]; sourceIssueWarning: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function reveal() {
     setBusy(true);
-    const res = await revealExerciseSolutionAction({ exerciseId: exercise.id });
-    setBusy(false);
-    if (res.status === "ok") setRevealed(res.result);
+    setError(null);
+    try {
+      const res = await revealExerciseSolutionAction({ exerciseId: exercise.id });
+      if (res.status === "ok") setRevealed(res.result);
+      else setError(res.message);
+    } catch (e) {
+      setError(`Не вдалося показати розв'язання (${(e as Error).message}). Спробуй ще раз.`);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -193,6 +227,11 @@ function ExerciseCard({ exercise }: { exercise: MathV2ExerciseView }) {
           </button>
         )}
       </div>
+      {error && (
+        <p role="alert" className="mt-1 text-xs font-bold text-danger">
+          {error}
+        </p>
+      )}
       {revealed && (
         <div className="mt-2 rounded-xl border border-line bg-surface-alt p-2.5 text-sm">
           {revealed.sourceIssueWarning && <p className="course-warning">{revealed.sourceIssueWarning}</p>}
