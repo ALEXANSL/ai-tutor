@@ -50,25 +50,38 @@ export function narrationTextHash(text: string): string {
 }
 
 /**
- * Synthesizes narration for a step's readable text. Never throws: a budget
- * refusal, a missing provider key, or a provider failure all resolve to
- * `null` — the child silently keeps the text-only step (docs/04 §5: "при
- * недоступності голосу... стан замінюється на нейтральний... без згадки
- * причини"), matching how live-voice unavailability already behaves.
+ * Synthesizes narration for an arbitrary piece of already-written text.
+ * Never throws: a budget refusal, a missing provider key, or a provider
+ * failure all resolve to `null` — the caller falls back to text-only
+ * (docs/04 §5: "при недоступності голосу... стан замінюється на
+ * нейтральний... без згадки причини"), matching how live-voice
+ * unavailability already behaves.
+ *
+ * 2026-10-07 (S35): generalized from `synthesizeStepNarration` (sessionId
+ * was mandatory, tying every narration to a `lesson_sessions` row) to take
+ * a `ref` instead — the S33/S34/S35 content screens (`literature_lessons`/
+ * `course_lessons`/`course_v2_*`) are stateless content views with no
+ * session row at all. `CallContext` (`server/ai/types.ts`) already
+ * supports `ref` as an independent, optional field alongside `sessionId`
+ * (per-item cost attribution), so no router change was needed — only this
+ * function's own signature. `synthesizeStepNarration` below is now a thin
+ * wrapper kept for the existing `LessonRunner`/`NarrationPlayer` call site.
  */
-export async function synthesizeStepNarration(
-  familyId: string,
-  sessionId: string,
-  text: string,
-): Promise<NarrationAudio | null> {
+export async function synthesizeNarration(familyId: string, ref: { table: string; id: string } | { sessionId: string }, text: string): Promise<NarrationAudio | null> {
   const trimmed = text.trim().slice(0, MAX_NARRATION_CHARS);
   if (!trimmed) return null;
   try {
-    const res = await callAudio("passive_narration", { text: trimmed }, { familyId, sessionId });
+    const ctx = "sessionId" in ref ? { familyId, sessionId: ref.sessionId } : { familyId, ref };
+    const res = await callAudio("passive_narration", { text: trimmed }, ctx);
     return res.result;
   } catch (e) {
     if (e instanceof BudgetBlockedError || e instanceof AiNotConfiguredError || e instanceof ProviderError) return null;
-    console.error(`synthesizeStepNarration failed: ${(e as Error).message}`);
+    console.error(`synthesizeNarration failed: ${(e as Error).message}`);
     return null;
   }
+}
+
+/** @deprecated kept for the existing `LessonRunner` call site — new code should call `synthesizeNarration` with a `ref` instead of a `sessionId`. */
+export async function synthesizeStepNarration(familyId: string, sessionId: string, text: string): Promise<NarrationAudio | null> {
+  return synthesizeNarration(familyId, { sessionId }, text);
 }

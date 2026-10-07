@@ -118,7 +118,7 @@ describe("getSubjectDetail: literatureLessonId (S33/D-123)", () => {
 
     const detail = await getSubjectDetail("fam-1", "subj-lit");
 
-    expect(detail?.topics).toEqual([{ id: "t1", title: "Розділ 1", pageFrom: 1, pageTo: 10, literatureLessonId: "ll-1", courseLessonId: null }]);
+    expect(detail?.topics).toEqual([{ id: "t1", title: "Розділ 1", pageFrom: 1, pageTo: 10, literatureLessonId: "ll-1", courseLessonId: null, mathCourseV2LessonId: null }]);
   });
 
   it("falls through to the old flow (literatureLessonId: null) when no literature_lessons row exists at all", async () => {

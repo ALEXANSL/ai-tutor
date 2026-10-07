@@ -1,4 +1,5 @@
 import { MaterialsImportPanel } from "@/components/parent/materials/MaterialsImportPanel";
+import { MathCourseV2ImportPanel } from "@/components/parent/materials/MathCourseV2ImportPanel";
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
 import { listSubjects } from "@/server/books/queries";
@@ -31,6 +32,12 @@ export default async function MaterialsImportPage() {
       <Panel>
         <p className="-mt-2 mb-3.5 text-xs text-p-muted">{t.intro}</p>
         <MaterialsImportPanel subjects={subjects} uploadEnabled={uploadEnabled} />
+      </Panel>
+      <Panel title="Математика (повний текстовий пакет)">
+        <p className="-mt-2 mb-3.5 text-xs text-p-muted">
+          Окремий формат (S35) — два файли JSON (public/course.json, private/teacher.json) замість одного zip, плюс необов&apos;язковий zip з рисунками.
+        </p>
+        <MathCourseV2ImportPanel subjects={subjects} />
       </Panel>
     </>
   );
