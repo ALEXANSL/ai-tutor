@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { requireChild, requireParentAccess } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
+import { explainStepAgain } from "@/server/lessons/chat";
 import { narrationTextHash, synthesizeNarration } from "@/server/lessons/narration";
 import { combineMathCourseV2Package, parseMathCourseV2Private, parseMathCourseV2Public, type ImportIssue } from "@/server/lessons/mathCourseV2Import";
 import { persistMathCourseV2Package } from "@/server/lessons/mathCourseV2Persist";
@@ -324,4 +325,51 @@ export async function searchMathCourseV2Action(input: { subjectId: string; page?
 
   const result = await searchMathCourseV2(ctx.familyId, subjectParsed.data, { page, exerciseNumber });
   return { status: "ok", result };
+}
+
+// ---------------------------------------------------------------------------
+// explainMathCourseV2Action — "💡 Пояснити": PO request 2026-10-07, "ШІ має
+// прочитати та пояснити більш розширено... вже вмикається інтерактивний
+// діалог з ШІ" (step 1 of 2 — voice comes next). One click, no typing: reuses
+// the EXISTING paid `tutor_chat` role (`explainStepAgain`, same function the
+// old LessonRunner's "💡 Пояснити" already calls) — not a new AI feature, just
+// wired into a lesson type that never had it.
+// ---------------------------------------------------------------------------
+
+export type ExplainMathCourseV2State = { status: "ok"; content: string } | { status: "error"; message: string };
+
+const explainTextSchema = z.string().trim().min(1).max(4000);
+
+export async function explainMathCourseV2Action(input: { subjectId: string; topicId: string; stepText: string }): Promise<ExplainMathCourseV2State> {
+  const { ctx, profile: child } = await requireChild();
+  const subjectParsed = UUID.safeParse(input.subjectId);
+  const topicParsed = UUID.safeParse(input.topicId);
+  if (!subjectParsed.success || !topicParsed.success) return { status: "error", message: "Невірні дані." };
+  const stepTextParsed = explainTextSchema.safeParse(input.stepText);
+  if (!stepTextParsed.success) return { status: "error", message: "Немає тексту для пояснення." };
+
+  const scope = forFamily(ctx.familyId);
+  const [{ data: subject }, { data: topic }] = await Promise.all([
+    scope.select("subjects", "name_uk").eq("id", subjectParsed.data).maybeSingle<{ name_uk: string }>(),
+    scope.select("topics", "title").eq("id", topicParsed.data).maybeSingle<{ title: string }>(),
+  ]);
+  if (!subject || !topic) return { status: "error", message: "Предмет чи тему не знайдено." };
+
+  try {
+    const message = await explainStepAgain(
+      ctx.familyId,
+      child.id,
+      child.tutor_name ?? "",
+      child.tutor_name_gender,
+      subjectParsed.data,
+      subject.name_uk,
+      topicParsed.data,
+      topic.title,
+      child.nickname ?? "",
+      stepTextParsed.data,
+    );
+    return { status: "ok", content: message.content };
+  } catch (e) {
+    return { status: "error", message: `Не вдалося пояснити (${(e as Error).message}). Спробуй ще раз.` };
+  }
 }

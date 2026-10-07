@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type RefObject } from "react";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { MathText } from "@/components/shared/MathText";
 import { OpenTextbookPageButton } from "@/components/shared/BookPageModal";
 import { askTopicChatAction } from "@/app/actions/lesson";
 import {
+  explainMathCourseV2Action,
   narrateMathCourseV2Action,
   revealExerciseSolutionAction,
   submitQuestionAnswerAction,
@@ -92,7 +93,50 @@ function ListenButton({ refTable, refId, field, text, autoPlay }: { refTable: st
   );
 }
 
-function ScreenNav({ lesson, voiceMode }: { lesson: MathV2LessonView; voiceMode: boolean }) {
+/**
+ * PO request 2026-10-07: "кнопка пояснити біля завдання або теми уроку —
+ * ШІ має прочитати та пояснити більш розширено". One click, no typing: asks
+ * `explainMathCourseV2Action` (same paid `tutor_chat` role as the chat
+ * panel) and pushes the answer straight into the shared tutor-chat, opening
+ * it — same `pushAndOpen` idea as `LessonRunner.tsx`'s own "💡 Пояснити".
+ * Voice playback of the explanation is a planned follow-up (PO: "потім
+ * прикрутимо мікрофон і... голосом"), not this slice.
+ */
+function ExplainButton({
+  subjectId,
+  topicId,
+  stepText,
+  chatRef,
+}: {
+  subjectId: string;
+  topicId: string | null;
+  stepText: string;
+  chatRef: RefObject<LessonTopicChatHandle | null>;
+}) {
+  const [pending, setPending] = useState(false);
+  if (!topicId || !stepText.trim()) return null;
+
+  async function explain() {
+    if (pending) return;
+    setPending(true);
+    try {
+      const res = await explainMathCourseV2Action({ subjectId, topicId: topicId!, stepText });
+      chatRef.current?.pushAndOpen(res.status === "ok" ? res.content : res.message);
+    } catch (e) {
+      chatRef.current?.pushAndOpen(`Не вдалося пояснити (${(e as Error).message}). Спробуй ще раз.`);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <button type="button" onClick={() => void explain()} disabled={pending} className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold disabled:opacity-60">
+      {pending ? "…" : "💡 Пояснити"}
+    </button>
+  );
+}
+
+function ScreenNav({ lesson, voiceMode, chatRef }: { lesson: MathV2LessonView; voiceMode: boolean; chatRef: RefObject<LessonTopicChatHandle | null> }) {
   const [index, setIndex] = useState(0);
   const screen = lesson.screens[index];
   if (!screen) return <p className="course-note">Екранів ще немає.</p>;
@@ -103,8 +147,9 @@ function ScreenNav({ lesson, voiceMode }: { lesson: MathV2LessonView; voiceMode:
       <p style={{ whiteSpace: "pre-wrap" }}>
         <MathText text={screen.displayMd} />
       </p>
-      <div className="mt-2">
+      <div className="mt-2 flex flex-wrap gap-2">
         <ListenButton key={screen.id} refTable="course_v2_screens" refId={screen.id} field="narration" text={screen.narration} autoPlay={voiceMode} />
+        <ExplainButton subjectId={lesson.subjectId} topicId={lesson.topicId} stepText={screen.displayMd} chatRef={chatRef} />
       </div>
       {/* PO feedback 2026-10-07: "надпис екран х з у краще показувати біля
           кнопок навігації" — moved from above the content down to right
@@ -151,12 +196,26 @@ function VoiceModeToggle({ voiceMode, onChange }: { voiceMode: boolean; onChange
  * app, nothing new) rather than building a parallel chat system; it only
  * needs a topic, no `lesson_sessions` row (its `sessionId` param is already
  * optional — used solely for moderation-event context). */
-function LessonTopicChat({ subjectId, topicId }: { subjectId: string; topicId: string }) {
+export interface LessonTopicChatHandle {
+  /** PO request 2026-10-07: "💡 Пояснити" next to a screen/exercise pushes
+   * the AI's explanation straight into this shared chat panel and opens it
+   * — same `pushAndOpen` pattern as the old `LessonRunner.tsx`'s `TopicChat`. */
+  pushAndOpen(content: string): void;
+}
+
+const LessonTopicChat = forwardRef<LessonTopicChatHandle, { subjectId: string; topicId: string }>(function LessonTopicChat({ subjectId, topicId }, ref) {
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<{ author: "child" | "ai"; content: string }[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    pushAndOpen(content: string) {
+      setMessages((prev) => [...prev, { author: "ai", content }]);
+      setOpen(true);
+    },
+  }));
 
   async function send() {
     const q = question.trim();
@@ -214,7 +273,7 @@ function LessonTopicChat({ subjectId, topicId }: { subjectId: string; topicId: s
       )}
     </section>
   );
-}
+});
 
 function QuestionCard({ question }: { question: MathV2QuestionView }) {
   const [selected, setSelected] = useState<string | null>(null);
@@ -305,7 +364,19 @@ interface TextbookRef {
   pageCount: number | null;
 }
 
-function ExerciseCard({ exercise, textbook }: { exercise: MathV2ExerciseView; textbook: TextbookRef | null }) {
+function ExerciseCard({
+  exercise,
+  textbook,
+  subjectId,
+  topicId,
+  chatRef,
+}: {
+  exercise: MathV2ExerciseView;
+  textbook: TextbookRef | null;
+  subjectId: string;
+  topicId: string | null;
+  chatRef: RefObject<LessonTopicChatHandle | null>;
+}) {
   const [revealed, setRevealed] = useState<{ hint: string; parts: { label: string; stepsMd: string[]; answerMd: string }[]; sourceIssueWarning: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -343,6 +414,7 @@ function ExerciseCard({ exercise, textbook }: { exercise: MathV2ExerciseView; te
       )}
       <div className="mt-1 flex flex-wrap items-center gap-2">
         <ListenButton refTable="course_v2_exercises" refId={exercise.id} field="narration" text={exercise.narration} />
+        <ExplainButton subjectId={subjectId} topicId={topicId} stepText={exercise.displayMd} chatRef={chatRef} />
         {!revealed && (
           <button type="button" onClick={reveal} disabled={busy} className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold disabled:opacity-60">
             {busy ? "…" : "Показати розв'язання"}
@@ -388,7 +460,19 @@ const EXERCISES_PER_PAGE = 10;
  * the nav bar/pagination work was meant to avoid, just for exercises
  * instead of textbook-page images this time. Same windowed-index pattern
  * as `ScreenNav` above. */
-function ExerciseList({ exercises, textbook }: { exercises: MathV2ExerciseView[]; textbook: TextbookRef | null }) {
+function ExerciseList({
+  exercises,
+  textbook,
+  subjectId,
+  topicId,
+  chatRef,
+}: {
+  exercises: MathV2ExerciseView[];
+  textbook: TextbookRef | null;
+  subjectId: string;
+  topicId: string | null;
+  chatRef: RefObject<LessonTopicChatHandle | null>;
+}) {
   const [page, setPage] = useState(0);
   const pageCount = Math.ceil(exercises.length / EXERCISES_PER_PAGE);
   const start = page * EXERCISES_PER_PAGE;
@@ -401,7 +485,7 @@ function ExerciseList({ exercises, textbook }: { exercises: MathV2ExerciseView[]
       </p>
       <ol className="course-exercise-list" start={start + 1}>
         {visible.map((e) => (
-          <ExerciseCard key={e.exerciseKey} exercise={e} textbook={textbook} />
+          <ExerciseCard key={e.exerciseKey} exercise={e} textbook={textbook} subjectId={subjectId} topicId={topicId} chatRef={chatRef} />
         ))}
       </ol>
       <div className="mt-3 flex gap-2">
@@ -436,6 +520,7 @@ function readStoredVoiceMode(): boolean {
 }
 
 export function MathCourseV2LessonScreen({ lesson }: { lesson: MathV2LessonView }) {
+  const chatRef = useRef<LessonTopicChatHandle>(null);
   const [voiceMode, setVoiceMode] = useState(false);
   // Lazy-read from localStorage only after mount (avoids a server/client
   // render mismatch — `window` doesn't exist during SSR). Deferred into a
@@ -504,14 +589,14 @@ export function MathCourseV2LessonScreen({ lesson }: { lesson: MathV2LessonView 
         </section>
       )}
 
-      <ScreenNav lesson={lesson} voiceMode={voiceMode} />
+      <ScreenNav lesson={lesson} voiceMode={voiceMode} chatRef={chatRef} />
 
-      {lesson.topicId && <LessonTopicChat subjectId={lesson.subjectId} topicId={lesson.topicId} />}
+      {lesson.topicId && <LessonTopicChat ref={chatRef} subjectId={lesson.subjectId} topicId={lesson.topicId} />}
 
       {lesson.exercises.length > 0 && (
         <section>
           <h2>Вправи з підручника</h2>
-          <ExerciseList exercises={lesson.exercises} textbook={textbook} />
+          <ExerciseList exercises={lesson.exercises} textbook={textbook} subjectId={lesson.subjectId} topicId={lesson.topicId} chatRef={chatRef} />
         </section>
       )}
 
