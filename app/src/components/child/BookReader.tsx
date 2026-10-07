@@ -33,6 +33,10 @@ interface PdfRenderTaskLike {
 interface PdfPageProxyLike {
   getViewport(opts: { scale: number }): { width: number; height: number };
   render(opts: { canvasContext: CanvasRenderingContext2D; viewport: unknown }): PdfRenderTaskLike;
+  /** Releases this page's own decoded/cached resources (fonts, images) while
+   * keeping the document open — pdf.js keeps every visited page's data
+   * around otherwise. See the page-render effect for why this matters. */
+  cleanup(): void;
 }
 
 interface SearchHit {
@@ -66,6 +70,7 @@ export function BookReader({
   const t = uk.child.book;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const renderTaskRef = useRef<PdfRenderTaskLike | null>(null);
+  const prevPageRef = useRef<PdfPageProxyLike | null>(null);
   const docRef = useRef<PdfDocumentProxyLike | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [page, setPage] = useState(initialPage && initialPage > 0 ? initialPage : 1);
@@ -111,6 +116,7 @@ export function BookReader({
       cancelled = true;
       docRef.current?.destroy();
       docRef.current = null;
+      prevPageRef.current = null;
     };
   }, [materialId]);
 
@@ -130,8 +136,25 @@ export function BookReader({
         // old page. Cancel it first instead of letting two renders fight
         // over one canvas.
         renderTaskRef.current?.cancel();
+        // PO complaint 2026-10-07 ("сторінка уроку вилітає, потрібно
+        // перезавантажувати" after searching/paging through the book):
+        // pdf.js keeps every visited page's decoded fonts/images resident
+        // until told otherwise — a long search-and-flip session (exactly
+        // this flow) accumulates them until the tab's renderer process runs
+        // out of memory and crashes the whole page, not just the modal.
+        // Releasing the PREVIOUS page's resources once we've moved past it
+        // keeps memory bounded to ~1 page at a time. Best-effort: pdf.js
+        // can refuse this if that page's own render hadn't fully settled
+        // yet, which is fine to ignore (next navigation retries on a fresh
+        // page anyway).
+        try {
+          prevPageRef.current?.cleanup();
+        } catch {
+          // best-effort only, see above
+        }
         const doc = docRef.current!;
         const pdfPage = await doc.getPage(page);
+        prevPageRef.current = pdfPage;
         const base = pdfPage.getViewport({ scale: 1 });
         const scale = Math.min(2, MAX_RENDER_WIDTH / base.width);
         const viewport = pdfPage.getViewport({ scale });
