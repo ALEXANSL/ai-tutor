@@ -156,29 +156,86 @@ function ListenButton({
  * `explainMathCourseV2Action` (same paid `tutor_chat` role as the chat
  * panel) and pushes the answer straight into the shared tutor-chat, opening
  * it — same `pushAndOpen` idea as `LessonRunner.tsx`'s own "💡 Пояснити".
- * Voice playback of the explanation is a planned follow-up (PO: "потім
- * прикрутимо мікрофон і... голосом"), not this slice.
+ *
+ * PO follow-up (2026-10-07): "ШІ видає лише текст, хоча... «вчитель» міг
+ * пояснити голосом" — the explanation now also synthesizes and auto-plays
+ * narration, same TTS pipeline as `ListenButton`'s "🔊 Слухати" (reuses the
+ * module-level "only one thing plays at a time" singleton above so it can
+ * never overlap one of those). The explanation text is cached under a
+ * dedicated `field: "explanation"` slot on the SAME screen/exercise row
+ * `ListenButton` already narrates (`refTable`/`refId`) — distinct from its
+ * `field: "narration"` slot, so the two never collide, and the ownership
+ * check `narrateMathCourseV2Action` already does for `ListenButton` covers
+ * this call for free. A replay button appears once the audio is ready, so
+ * the child can hear it again without asking again (and without re-billing
+ * the AI explanation call).
  */
 function ExplainButton({
   subjectId,
   topicId,
   stepText,
+  refTable,
+  refId,
   chatRef,
 }: {
   subjectId: string;
   topicId: string | null;
   stepText: string;
+  refTable: string;
+  refId: string;
   chatRef: RefObject<LessonTopicChatHandle | null>;
 }) {
   const [pending, setPending] = useState(false);
+  const [audio, setAudio] = useState<{ base64: string; mime: string } | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(
+    () => () => {
+      if (currentlyPlayingAudio === audioRef.current) stopCurrentlyPlaying();
+    },
+    [],
+  );
+
   if (!topicId || !stepText.trim()) return null;
+
+  function playAudio(base64: string, mime: string) {
+    stopCurrentlyPlaying();
+    const el = new Audio(`data:${mime};base64,${base64}`);
+    audioRef.current = el;
+    currentlyPlayingAudio = el;
+    onCurrentlyPlayingStopped = () => setPlaying(false);
+    el.onended = () => {
+      setPlaying(false);
+      if (currentlyPlayingAudio === el) {
+        currentlyPlayingAudio = null;
+        onCurrentlyPlayingStopped = null;
+      }
+    };
+    setPlaying(true);
+    void el.play().catch(() => setPlaying(false));
+  }
 
   async function explain() {
     if (pending) return;
     setPending(true);
+    setAudio(null);
     try {
       const res = await explainMathCourseV2Action({ subjectId, topicId: topicId!, stepText });
-      chatRef.current?.pushAndOpen(res.status === "ok" ? res.content : res.message);
+      const content = res.status === "ok" ? res.content : res.message;
+      chatRef.current?.pushAndOpen(content);
+      if (res.status === "ok") {
+        try {
+          const narration = await narrateMathCourseV2Action({ refTable, refId, field: "explanation", text: content });
+          if (narration.status === "ok") {
+            setAudio({ base64: narration.audioBase64, mime: narration.audioMime });
+            playAudio(narration.audioBase64, narration.audioMime);
+          }
+        } catch {
+          // Voice is a bonus on top of the text already shown in chat — a
+          // TTS failure here must not surface as an "explain" failure.
+        }
+      }
     } catch (e) {
       chatRef.current?.pushAndOpen(`Не вдалося пояснити (${(e as Error).message}). Спробуй ще раз.`);
     } finally {
@@ -187,9 +244,21 @@ function ExplainButton({
   }
 
   return (
-    <button type="button" onClick={() => void explain()} disabled={pending} className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold disabled:opacity-60">
-      {pending ? "…" : "💡 Пояснити"}
-    </button>
+    <div className="flex items-center gap-1.5">
+      <button type="button" onClick={() => void explain()} disabled={pending} className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold disabled:opacity-60">
+        {pending ? "…" : "💡 Пояснити"}
+      </button>
+      {audio && (
+        <button
+          type="button"
+          onClick={() => playAudio(audio.base64, audio.mime)}
+          disabled={playing}
+          className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold disabled:opacity-60"
+        >
+          {playing ? "🔊 Грає…" : "🔁 Ще раз"}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -232,7 +301,7 @@ function ScreenNav({
           autoPlay={voiceMode}
           onEnded={onNarrationEnded}
         />
-        <ExplainButton subjectId={lesson.subjectId} topicId={lesson.topicId} stepText={screen.displayMd} chatRef={chatRef} />
+        <ExplainButton subjectId={lesson.subjectId} topicId={lesson.topicId} stepText={screen.displayMd} refTable="course_v2_screens" refId={screen.id} chatRef={chatRef} />
       </div>
       {/* PO feedback 2026-10-07: "надпис екран х з у краще показувати біля
           кнопок навігації" — moved from above the content down to right
@@ -516,7 +585,7 @@ function ExerciseCard({
       )}
       <div className="mt-1 flex flex-wrap items-center gap-2">
         <ListenButton refTable="course_v2_exercises" refId={exercise.id} field="narration" text={exercise.narration} />
-        <ExplainButton subjectId={subjectId} topicId={topicId} stepText={exercise.displayMd} chatRef={chatRef} />
+        <ExplainButton subjectId={subjectId} topicId={topicId} stepText={exercise.displayMd} refTable="course_v2_exercises" refId={exercise.id} chatRef={chatRef} />
         {!revealed && (
           <button type="button" onClick={reveal} disabled={busy} className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold disabled:opacity-60">
             {busy ? "…" : "Показати розв'язання"}
