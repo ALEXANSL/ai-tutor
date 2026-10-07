@@ -311,7 +311,12 @@ export async function importMathCourseV2Action(input: { subjectId: string; publi
 
 export type MathCourseV2SearchState = { status: "ok"; result: MathCourseV2SearchResult } | { status: "error"; message: string };
 
-export async function searchMathCourseV2Action(input: { subjectId: string; page?: string; exerciseNumber?: string }): Promise<MathCourseV2SearchState> {
+export async function searchMathCourseV2Action(input: {
+  subjectId: string;
+  page?: string;
+  exerciseNumber?: string;
+  topicQuery?: string;
+}): Promise<MathCourseV2SearchState> {
   const { ctx } = await requireChild();
   const subjectParsed = UUID.safeParse(input.subjectId);
   if (!subjectParsed.success) return { status: "error", message: "Невірний ідентифікатор предмета." };
@@ -321,9 +326,10 @@ export async function searchMathCourseV2Action(input: { subjectId: string; page?
   if (pageTrimmed && (page == null || Number.isNaN(page))) return { status: "error", message: "Сторінка має бути числом." };
 
   const exerciseNumber = input.exerciseNumber?.trim() || undefined;
-  if (!page && !exerciseNumber) return { status: "error", message: "Вкажи сторінку або номер задачі." };
+  const topicQuery = input.topicQuery?.trim() || undefined;
+  if (!page && !exerciseNumber && !topicQuery) return { status: "error", message: "Вкажи тему, сторінку або номер задачі." };
 
-  const result = await searchMathCourseV2(ctx.familyId, subjectParsed.data, { page, exerciseNumber });
+  const result = await searchMathCourseV2(ctx.familyId, subjectParsed.data, { page, exerciseNumber, topicQuery });
   return { status: "ok", result };
 }
 
