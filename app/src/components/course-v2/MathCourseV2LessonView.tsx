@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type RefObject } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { MathText } from "@/components/shared/MathText";
 import { OpenTextbookPageButton } from "@/components/shared/BookPageModal";
@@ -169,23 +169,16 @@ function ListenButton({
  * this call for free. A replay button appears once the audio is ready, so
  * the child can hear it again without asking again (and without re-billing
  * the AI explanation call).
+ *
+ * PO complaint 2026-10-08 (literature-v2, same bug here): the explanation
+ * used to land in the single shared `LessonTopicChat` panel elsewhere on
+ * the page — "абсолютно не зручно шукати звідки ШІ читає текст" with many
+ * exercises/screens on one page. It now renders directly below THIS
+ * button instead (own local state, no `chatRef`) — the shared chat panel
+ * stays only for the free-form "💬 Запитати репетитора" question box.
  */
-function ExplainButton({
-  subjectId,
-  topicId,
-  stepText,
-  refTable,
-  refId,
-  chatRef,
-}: {
-  subjectId: string;
-  topicId: string | null;
-  stepText: string;
-  refTable: string;
-  refId: string;
-  chatRef: RefObject<LessonTopicChatHandle | null>;
-}) {
-  const [pending, setPending] = useState(false);
+function ExplainButton({ subjectId, topicId, stepText, refTable, refId }: { subjectId: string; topicId: string | null; stepText: string; refTable: string; refId: string }) {
+  const [state, setState] = useState<{ status: "idle" } | { status: "pending" } | { status: "done"; content: string }>({ status: "idle" });
   const [audio, setAudio] = useState<{ base64: string; mime: string } | null>(null);
   const [playing, setPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -217,13 +210,13 @@ function ExplainButton({
   }
 
   async function explain() {
-    if (pending) return;
-    setPending(true);
+    if (state.status === "pending") return;
+    setState({ status: "pending" });
     setAudio(null);
     try {
       const res = await explainMathCourseV2Action({ subjectId, topicId: topicId!, stepText });
       const content = res.status === "ok" ? res.content : res.message;
-      chatRef.current?.pushAndOpen(content);
+      setState({ status: "done", content });
       if (res.status === "ok") {
         try {
           const narration = await narrateMathCourseV2Action({ refTable, refId, field: "explanation", text: content });
@@ -232,47 +225,42 @@ function ExplainButton({
             playAudio(narration.audioBase64, narration.audioMime);
           }
         } catch {
-          // Voice is a bonus on top of the text already shown in chat — a
+          // Voice is a bonus on top of the text already shown below — a
           // TTS failure here must not surface as an "explain" failure.
         }
       }
     } catch (e) {
-      chatRef.current?.pushAndOpen(`Не вдалося пояснити (${(e as Error).message}). Спробуй ще раз.`);
-    } finally {
-      setPending(false);
+      setState({ status: "done", content: `Не вдалося пояснити (${(e as Error).message}). Спробуй ще раз.` });
     }
   }
 
   return (
-    <div className="flex items-center gap-1.5">
-      <button type="button" onClick={() => void explain()} disabled={pending} className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold disabled:opacity-60">
-        {pending ? "…" : "💡 Пояснити"}
-      </button>
-      {audio && (
-        <button
-          type="button"
-          onClick={() => playAudio(audio.base64, audio.mime)}
-          disabled={playing}
-          className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold disabled:opacity-60"
-        >
-          {playing ? "🔊 Грає…" : "🔁 Ще раз"}
+    <div>
+      <div className="flex items-center gap-1.5">
+        <button type="button" onClick={() => void explain()} disabled={state.status === "pending"} className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold disabled:opacity-60">
+          {state.status === "pending" ? "…" : "💡 Пояснити"}
         </button>
+        {audio && (
+          <button
+            type="button"
+            onClick={() => playAudio(audio.base64, audio.mime)}
+            disabled={playing}
+            className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold disabled:opacity-60"
+          >
+            {playing ? "🔊 Грає…" : "🔁 Ще раз"}
+          </button>
+        )}
+      </div>
+      {state.status === "done" && (
+        <div className="mt-2 rounded-xl border border-line bg-surface-alt p-2.5 text-sm">
+          <MathText text={state.content} />
+        </div>
       )}
     </div>
   );
 }
 
-function ScreenNav({
-  lesson,
-  voiceMode,
-  autoAdvance,
-  chatRef,
-}: {
-  lesson: MathV2LessonView;
-  voiceMode: boolean;
-  autoAdvance: boolean;
-  chatRef: RefObject<LessonTopicChatHandle | null>;
-}) {
+function ScreenNav({ lesson, voiceMode, autoAdvance }: { lesson: MathV2LessonView; voiceMode: boolean; autoAdvance: boolean }) {
   const [index, setIndex] = useState(0);
   const screen = lesson.screens[index];
   if (!screen) return <p className="course-note">Екранів ще немає.</p>;
@@ -301,7 +289,7 @@ function ScreenNav({
           autoPlay={voiceMode}
           onEnded={onNarrationEnded}
         />
-        <ExplainButton subjectId={lesson.subjectId} topicId={lesson.topicId} stepText={screen.displayMd} refTable="course_v2_screens" refId={screen.id} chatRef={chatRef} />
+        <ExplainButton subjectId={lesson.subjectId} topicId={lesson.topicId} stepText={screen.displayMd} refTable="course_v2_screens" refId={screen.id} />
       </div>
       {/* PO feedback 2026-10-07: "надпис екран х з у краще показувати біля
           кнопок навігації" — moved from above the content down to right
@@ -540,13 +528,11 @@ function ExerciseCard({
   textbook,
   subjectId,
   topicId,
-  chatRef,
 }: {
   exercise: MathV2ExerciseView;
   textbook: TextbookRef | null;
   subjectId: string;
   topicId: string | null;
-  chatRef: RefObject<LessonTopicChatHandle | null>;
 }) {
   const [revealed, setRevealed] = useState<{ hint: string; parts: { label: string; stepsMd: string[]; answerMd: string }[]; sourceIssueWarning: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -585,7 +571,7 @@ function ExerciseCard({
       )}
       <div className="mt-1 flex flex-wrap items-center gap-2">
         <ListenButton refTable="course_v2_exercises" refId={exercise.id} field="narration" text={exercise.narration} />
-        <ExplainButton subjectId={subjectId} topicId={topicId} stepText={exercise.displayMd} refTable="course_v2_exercises" refId={exercise.id} chatRef={chatRef} />
+        <ExplainButton subjectId={subjectId} topicId={topicId} stepText={exercise.displayMd} refTable="course_v2_exercises" refId={exercise.id} />
         {!revealed && (
           <button type="button" onClick={reveal} disabled={busy} className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold disabled:opacity-60">
             {busy ? "…" : "Показати розв'язання"}
@@ -636,13 +622,11 @@ function ExerciseList({
   textbook,
   subjectId,
   topicId,
-  chatRef,
 }: {
   exercises: MathV2ExerciseView[];
   textbook: TextbookRef | null;
   subjectId: string;
   topicId: string | null;
-  chatRef: RefObject<LessonTopicChatHandle | null>;
 }) {
   const [page, setPage] = useState(0);
   const pageCount = Math.ceil(exercises.length / EXERCISES_PER_PAGE);
@@ -656,7 +640,7 @@ function ExerciseList({
       </p>
       <ol className="course-exercise-list" start={start + 1}>
         {visible.map((e) => (
-          <ExerciseCard key={e.exerciseKey} exercise={e} textbook={textbook} subjectId={subjectId} topicId={topicId} chatRef={chatRef} />
+          <ExerciseCard key={e.exerciseKey} exercise={e} textbook={textbook} subjectId={subjectId} topicId={topicId} />
         ))}
       </ol>
       <div className="mt-3 flex gap-2">
@@ -773,14 +757,14 @@ export function MathCourseV2LessonScreen({ lesson }: { lesson: MathV2LessonView 
         </section>
       )}
 
-      <ScreenNav lesson={lesson} voiceMode={voiceMode} autoAdvance={autoAdvance} chatRef={chatRef} />
+      <ScreenNav lesson={lesson} voiceMode={voiceMode} autoAdvance={autoAdvance} />
 
       {lesson.topicId && <LessonTopicChat ref={chatRef} subjectId={lesson.subjectId} topicId={lesson.topicId} />}
 
       {lesson.exercises.length > 0 && (
         <section>
           <h2>Вправи з підручника</h2>
-          <ExerciseList exercises={lesson.exercises} textbook={textbook} subjectId={lesson.subjectId} topicId={lesson.topicId} chatRef={chatRef} />
+          <ExerciseList exercises={lesson.exercises} textbook={textbook} subjectId={lesson.subjectId} topicId={lesson.topicId} />
         </section>
       )}
 
