@@ -1,0 +1,253 @@
+[
+  {
+    "id": "zarlit6-kovbasenko-2023-ILL-010-0",
+    "page_id": "zarlit6-kovbasenko-2023-P011",
+    "path": "assets/illustrations/zarlit6-kovbasenko-2023-ILL-010-0.png",
+    "kind": "textbook_illustration",
+    "caption": "Мій Всесвіт. Людмила Мітченко, 2004",
+    "alt": "Фантастична картина: острів із краєвидом ніби тримається в просторі; звичні предмети поєднано незвично.",
+    "tts": {
+      "text": "Фантастична картина: острів із краєвидом ніби тримається в просторі; звичні предмети поєднано незвично.",
+      "lang": "uk-UA"
+    },
+    "discussion_prompt": {
+      "display": "Що на картині впізнаване, а що фантастичне? Чи є вона науковою моделлю світу?",
+      "tts": {
+        "text": "Що на картині впізнаване, а що фантастичне? Чи є вона науковою моделлю світу?",
+        "lang": "uk-UA"
+      }
+    },
+    "source": {
+      "type": "user_provided_textbook",
+      "printed_page": 10,
+      "pdf_page": 11,
+      "bbox_pdf_points": [
+        222.2024688720703,
+        50.1728515625,
+        439.37005615234375,
+        212.1728515625
+      ]
+    },
+    "rights": {
+      "basis": "Ілюстрація з наданого користувачем підручника для роботи з цим примірником; окрему відкриту ліцензію не встановлено.",
+      "public_domain_claim": false
+    },
+    "sha256": "00013179ca22fe486d2b84fc328883cee43da0c9ccc712c7612c03dba68746ec"
+  },
+  {
+    "id": "zarlit6-kovbasenko-2023-A-p004-chardin",
+    "page_id": "zarlit6-kovbasenko-2023-P005",
+    "path": "assets/illustrations/zarlit6-kovbasenko-2023-A-p004-chardin.png",
+    "kind": "textbook_illustration",
+    "caption": "Ілюстративний матеріал вступу, сторінка 4",
+    "alt": "Натюрморт: скульптурна фігура та предмети, пов’язані з мистецтвом. Для впізнавання дрібних деталей відкрий оригінал PDF.",
+    "tts": {
+      "text": "Натюрморт: скульптурна фігура та предмети, пов’язані з мистецтвом. Для впізнавання дрібних деталей відкрий оригінал PDF.",
+      "lang": "uk-UA",
+      "segments": [
+        {
+          "text": "Натюрморт: скульптурна фігура та предмети, пов’язані з мистецтвом. Для впізнавання дрібних деталей відкрий оригінал ",
+          "lang": "uk-UA"
+        },
+        {
+          "text": "PDF",
+          "lang": "en-US"
+        },
+        {
+          "text": ".",
+          "lang": "uk-UA"
+        }
+      ]
+    },
+    "discussion_prompt": {
+      "display": "Опиши зображення й пов’яжи його з поняттями уроку.",
+      "tts": {
+        "text": "Опиши зображення й пов’яжи його з поняттями уроку.",
+        "lang": "uk-UA"
+      }
+    },
+    "source": {
+      "type": "user_provided_textbook",
+      "printed_page": 4,
+      "pdf_page": 5,
+      "bbox_pdf_points": [
+        210,
+        52,
+        441,
+        224
+      ]
+    },
+    "rights": {
+      "basis": "Наданий користувачем примірник підручника; відкриту ліцензію на весь підручник не заявлено.",
+      "public_domain_claim": false
+    },
+    "sha256": "e55f94efdeae00d1fd0ba7fcc042c2ea59106545421dead2a2cfdf5ca550a78a",
+    "task_ids": [
+      "zarlit6-kovbasenko-2023-L001-p004-art",
+      "zarlit6-kovbasenko-2023-L001-p004-prompt1",
+      "zarlit6-kovbasenko-2023-L001-p004-prompt2",
+      "zarlit6-kovbasenko-2023-L001-p004-prompt3"
+    ]
+  },
+  {
+    "id": "zarlit6-kovbasenko-2023-A-p005-types",
+    "page_id": "zarlit6-kovbasenko-2023-P006",
+    "path": "assets/illustrations/zarlit6-kovbasenko-2023-A-p005-types.png",
+    "kind": "textbook_illustration",
+    "caption": "Ілюстративний матеріал вступу, сторінка 5",
+    "alt": "Три групи мистецтв. Просторові: архітектура, скульптура, живопис, фотографія. Часові: література, музика. Синтетичні: хореографія, кінематограф, театр, цирк.",
+    "tts": {
+      "text": "Три групи мистецтв. Просторові: архітектура, скульптура, живопис, фотографія. Часові: література, музика. Синтетичні: хореографія, кінематограф, театр, цирк.",
+      "lang": "uk-UA"
+    },
+    "discussion_prompt": {
+      "display": "Опиши зображення й пов’яжи його з поняттями уроку.",
+      "tts": {
+        "text": "Опиши зображення й пов’яжи його з поняттями уроку.",
+        "lang": "uk-UA"
+      }
+    },
+    "source": {
+      "type": "user_provided_textbook",
+      "printed_page": 5,
+      "pdf_page": 6,
+      "bbox_pdf_points": [
+        35,
+        245,
+        443,
+        337
+      ]
+    },
+    "rights": {
+      "basis": "Наданий користувачем примірник підручника; відкриту ліцензію на весь підручник не заявлено.",
+      "public_domain_claim": false
+    },
+    "sha256": "77bfe3d3a67126f7004b2267169bd0bed43aa2bdb75cb24c7be526610910e821",
+    "task_ids": [
+      "zarlit6-kovbasenko-2023-L001-extra-practice"
+    ]
+  },
+  {
+    "id": "zarlit6-kovbasenko-2023-A-p006-compare",
+    "page_id": "zarlit6-kovbasenko-2023-P007",
+    "path": "assets/illustrations/zarlit6-kovbasenko-2023-A-p006-compare.png",
+    "kind": "textbook_illustration",
+    "caption": "Ілюстративний матеріал вступу, сторінка 6",
+    "alt": "Схема порівнює літературу й інші мистецтва. Наведені в ній твердження про необмеженість літератури та обмеженість інших мистецтв є навчальним узагальненням, а не абсолютним правилом.",
+    "tts": {
+      "text": "Схема порівнює літературу й інші мистецтва. Наведені в ній твердження про необмеженість літератури та обмеженість інших мистецтв є навчальним узагальненням, а не абсолютним правилом.",
+      "lang": "uk-UA"
+    },
+    "discussion_prompt": {
+      "display": "Опиши зображення й пов’яжи його з поняттями уроку.",
+      "tts": {
+        "text": "Опиши зображення й пов’яжи його з поняттями уроку.",
+        "lang": "uk-UA"
+      }
+    },
+    "source": {
+      "type": "user_provided_textbook",
+      "printed_page": 6,
+      "pdf_page": 7,
+      "bbox_pdf_points": [
+        50,
+        307,
+        447,
+        451
+      ]
+    },
+    "rights": {
+      "basis": "Наданий користувачем примірник підручника; відкриту ліцензію на весь підручник не заявлено.",
+      "public_domain_claim": false
+    },
+    "sha256": "45012ff613296d17ebfac1bfcf5473e9e05223b621b6cf6d47e14ea94fc3ed2a",
+    "task_ids": [
+      "zarlit6-kovbasenko-2023-L001-extra-final"
+    ]
+  },
+  {
+    "id": "zarlit6-kovbasenko-2023-A-p007-images",
+    "page_id": "zarlit6-kovbasenko-2023-P008",
+    "path": "assets/illustrations/zarlit6-kovbasenko-2023-A-p007-images.png",
+    "kind": "textbook_illustration",
+    "caption": "Ілюстративний матеріал вступу, сторінка 7",
+    "alt": "Три приклади за казкою «Хлопчик-зірка»: предмет-прикраса, дійові особи та нічний краєвид.",
+    "tts": {
+      "text": "Три приклади за казкою «Хлопчик-зірка»: предмет-прикраса, дійові особи та нічний краєвид.",
+      "lang": "uk-UA"
+    },
+    "discussion_prompt": {
+      "display": "Опиши зображення й пов’яжи його з поняттями уроку.",
+      "tts": {
+        "text": "Опиши зображення й пов’яжи його з поняттями уроку.",
+        "lang": "uk-UA"
+      }
+    },
+    "source": {
+      "type": "user_provided_textbook",
+      "printed_page": 7,
+      "pdf_page": 8,
+      "bbox_pdf_points": [
+        35,
+        489,
+        436,
+        594
+      ]
+    },
+    "rights": {
+      "basis": "Наданий користувачем примірник підручника; відкриту ліцензію на весь підручник не заявлено.",
+      "public_domain_claim": false
+    },
+    "sha256": "a442dbc194caaf7ab68b50e6c732498a0d2c0d5aa07c60c8cf0da09a860816d6",
+    "task_ids": [
+      "zarlit6-kovbasenko-2023-L002-extra-practice",
+      "zarlit6-kovbasenko-2023-L002-p007-infographic"
+    ]
+  },
+  {
+    "id": "zarlit6-kovbasenko-2023-A-p008-landmarks",
+    "page_id": "zarlit6-kovbasenko-2023-P009",
+    "path": "assets/illustrations/zarlit6-kovbasenko-2023-A-p008-landmarks.png",
+    "kind": "textbook_illustration",
+    "caption": "Ілюстративний матеріал вступу, сторінка 8",
+    "alt": "Чотири пам’ятки зліва направо: композиція з людьми в човні, металева вежа, постать із факелом, вовчиця з двома немовлятами. Назви навмисно не наведено до відповіді учня.",
+    "tts": {
+      "text": "Чотири пам’ятки зліва направо: композиція з людьми в човні, металева вежа, постать із факелом, вовчиця з двома немовлятами. Назви навмисно не наведено до відповіді учня.",
+      "lang": "uk-UA"
+    },
+    "discussion_prompt": {
+      "display": "Опиши зображення й пов’яжи його з поняттями уроку.",
+      "tts": {
+        "text": "Опиши зображення й пов’яжи його з поняттями уроку.",
+        "lang": "uk-UA"
+      }
+    },
+    "source": {
+      "type": "user_provided_textbook",
+      "printed_page": 8,
+      "pdf_page": 9,
+      "bbox_pdf_points": [
+        77,
+        393,
+        444,
+        494
+      ]
+    },
+    "rights": {
+      "basis": "Наданий користувачем примірник підручника; відкриту ліцензію на весь підручник не заявлено.",
+      "public_domain_claim": false
+    },
+    "sha256": "e1fc7b5e8887e474d6324a946f4c02492c17363d6712299bca50deb2c11f3109",
+    "task_ids": [
+      "zarlit6-kovbasenko-2023-L001-p008-home",
+      "zarlit6-kovbasenko-2023-L001-p008-q1",
+      "zarlit6-kovbasenko-2023-L001-p008-q2",
+      "zarlit6-kovbasenko-2023-L001-p008-q3",
+      "zarlit6-kovbasenko-2023-L001-p008-q4",
+      "zarlit6-kovbasenko-2023-L002-extra-final",
+      "zarlit6-kovbasenko-2023-L002-p008-q5",
+      "zarlit6-kovbasenko-2023-L002-p008-q6",
+      "zarlit6-kovbasenko-2023-L002-p008-q7"
+    ]
+  }
+]

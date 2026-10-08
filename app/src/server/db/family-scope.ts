@@ -69,6 +69,18 @@ const FAMILY_COLUMN: Record<string, string> = {
   // which narrows by the specific `question_id`/`exercise_id` the child
   // just answered/asked about — adding them here would wrongly suggest a
   // generic family-scoped read path exists for key/solution data.
+
+  // S36 (foreign-literature course package v2 importer, see
+  // supabase/migrations/20261020100000_s36_literature_course_v2.sql).
+  literature_v2_packages: "owner_family_id",
+  literature_v2_assets: "owner_family_id",
+  literature_v2_lessons: "owner_family_id",
+  literature_v2_screens: "owner_family_id",
+  literature_v2_tasks: "owner_family_id",
+  literature_v2_task_tables: "owner_family_id",
+  // Deliberately NOT in this map: literature_v2_task_keys — same reasoning
+  // as course_v2_question_keys above (no select RLS grant for any role;
+  // service-role only, read narrowly by a future task-help action).
 };
 
 export function familyColumn(table: string): string {
