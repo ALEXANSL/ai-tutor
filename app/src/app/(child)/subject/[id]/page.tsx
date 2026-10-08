@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChildStartLessonButton } from "@/components/child/ChildStartLessonButton";
+import { LastLessonHighlight } from "@/components/child/LastLessonHighlight";
 import { PrepareTopicButton } from "@/components/child/PrepareTopicButton";
 import { MathCourseV2Search } from "@/components/course-v2/MathCourseV2Search";
 import { uk } from "@/i18n/uk";
@@ -62,7 +63,8 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
         <div className="space-y-3">
           <p className="text-sm text-muted">{ts.topicsSubtitle}</p>
           {subject.topics.map((topic) => (
-            <div key={topic.id} className="rounded-[22px] border border-line bg-surface p-4.5">
+            <LastLessonHighlight key={topic.id} subjectId={subject.id} topicId={topic.id}>
+              <div className="rounded-[22px] border border-line bg-surface p-4.5">
               <div className="mb-1 flex items-center gap-2">
                 <p className="font-bold">{topic.title}</p>
                 {topic.id === subject.currentTopicId && (
@@ -143,7 +145,8 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
                   </>
                 )}
               </div>
-            </div>
+              </div>
+            </LastLessonHighlight>
           ))}
         </div>
       ) : (

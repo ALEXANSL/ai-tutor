@@ -176,6 +176,10 @@ export const uk = {
       // instead of the old "Почати"/generation flow — see
       // `getSubjectDetail`'s `literatureLessonId` doc comment.
       openLesson: "Відкрити урок",
+      // S37 (PO 2026-10-08): "remember the last lesson and highlight it" —
+      // shown on the topic the child last opened, so she can find her place
+      // again without remembering which one it was.
+      continueBadge: "Продовжити",
       // US-19.5 КП-2 (S38): "Підготувати" on a "Потрібна підготовка" card —
       // queues the same background generation as "Почати", but does NOT
       // navigate away from the topic list (the whole point — no 5–6 хв
@@ -347,6 +351,12 @@ export const uk = {
       navHome: "🏠 На головну",
       navSubjectList: "📚 Список уроків предмету",
       navPrevModule: "⬅️ Попередній модуль",
+      // S37 (PO 2026-10-08): "уявити ти листаєш підручник" — prev/next
+      // lesson + a table-of-contents panel, so switching lessons never
+      // means leaving the lesson screen to the topic list and back.
+      navPrevLesson: "← Попередній урок",
+      navNextLesson: "Наступний урок →",
+      navToc: "Зміст",
       navExplain: "💡 Пояснити",
       explainSending: "Пояснюю…",
       explainFailed: "Зараз не вдалося пояснити ще раз — спробуй, будь ласка, ще раз.",

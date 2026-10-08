@@ -6,7 +6,7 @@ import { MathText } from "@/components/shared/MathText";
 import { isCurrentlyPlaying, playSingleAudio, stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
 import { askTopicChatAction } from "@/app/actions/lesson";
 import { explainLiteratureV2Action, narrateLiteratureV2Action, revealLiteratureV2TaskHelpAction, type LiteratureV2TaskHelpResult } from "@/app/actions/literature-course-v2";
-import type { LiteratureV2LessonView, LiteratureV2TaskView } from "@/server/lessons/literatureV2View";
+import type { LiteratureV2LessonListItem, LiteratureV2LessonView, LiteratureV2TaskView } from "@/server/lessons/literatureV2View";
 
 const VOICE_MODE_STORAGE_KEY = "literatureV2VoiceMode";
 const AUTO_ADVANCE_STORAGE_KEY = "literatureV2AutoAdvance";
@@ -492,7 +492,7 @@ function readStoredFlag(key: string): boolean {
   }
 }
 
-export function LiteratureV2LessonScreen({ lesson }: { lesson: LiteratureV2LessonView }) {
+export function LiteratureV2LessonScreen({ lesson, packageLessons }: { lesson: LiteratureV2LessonView; packageLessons: LiteratureV2LessonListItem[] }) {
   const chatRef = useRef<LessonTopicChatHandle>(null);
   const [voiceMode, setVoiceMode] = useState(false);
   const [autoAdvance, setAutoAdvance] = useState(false);
@@ -529,7 +529,7 @@ export function LiteratureV2LessonScreen({ lesson }: { lesson: LiteratureV2Lesso
 
   return (
     <article className="course-lesson">
-      <LessonNavBar subjectId={lesson.subjectId} />
+      <LessonNavBar subjectId={lesson.subjectId} courseNav={{ basePath: "/literature-course-v2", currentLessonId: lesson.id, lessons: packageLessons, topicId: lesson.topicId }} />
       <header>
         <p className="course-eyebrow">{lesson.packageTitle}</p>
         <h1>{lesson.title}</h1>

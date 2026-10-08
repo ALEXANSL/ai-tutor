@@ -13,7 +13,7 @@ import {
   submitQuestionAnswerAction,
   type QuestionAnswerResult,
 } from "@/app/actions/math-course-v2";
-import type { MathV2ExerciseView, MathV2LessonView, MathV2QuestionView } from "@/server/lessons/mathCourseV2View";
+import type { MathCourseV2LessonListItem, MathV2ExerciseView, MathV2LessonView, MathV2QuestionView } from "@/server/lessons/mathCourseV2View";
 
 const VOICE_MODE_STORAGE_KEY = "mathCourseV2VoiceMode";
 const AUTO_ADVANCE_STORAGE_KEY = "mathCourseV2AutoAdvance";
@@ -642,7 +642,7 @@ function readStoredFlag(key: string): boolean {
   }
 }
 
-export function MathCourseV2LessonScreen({ lesson }: { lesson: MathV2LessonView }) {
+export function MathCourseV2LessonScreen({ lesson, packageLessons }: { lesson: MathV2LessonView; packageLessons: MathCourseV2LessonListItem[] }) {
   const chatRef = useRef<LessonTopicChatHandle>(null);
   const [voiceMode, setVoiceMode] = useState(false);
   const [autoAdvance, setAutoAdvance] = useState(false);
@@ -685,7 +685,7 @@ export function MathCourseV2LessonScreen({ lesson }: { lesson: MathV2LessonView 
 
   return (
     <article className="course-lesson">
-      <LessonNavBar subjectId={lesson.subjectId} />
+      <LessonNavBar subjectId={lesson.subjectId} courseNav={{ basePath: "/math-course-v2", currentLessonId: lesson.id, lessons: packageLessons, topicId: lesson.topicId }} />
       <header>
         <p className="course-eyebrow">
           {KIND_LABEL[lesson.kind]} · {lesson.packageTitle}
