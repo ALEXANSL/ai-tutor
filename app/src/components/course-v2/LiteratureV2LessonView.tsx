@@ -3,6 +3,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { MathText } from "@/components/shared/MathText";
+import { isCurrentlyPlaying, playSingleAudio, stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
 import { askTopicChatAction } from "@/app/actions/lesson";
 import { explainLiteratureV2Action, narrateLiteratureV2Action, revealLiteratureV2TaskHelpAction, type LiteratureV2TaskHelpResult } from "@/app/actions/literature-course-v2";
 import type { LiteratureV2LessonView, LiteratureV2TaskView } from "@/server/lessons/literatureV2View";
@@ -20,18 +21,6 @@ const AUTO_ADVANCE_STORAGE_KEY = "literatureV2AutoAdvance";
  * (`revealLiteratureV2TaskHelpAction` never sends this content before the
  * child asks for it, same "ключі не передаються перед відповіддю" rule).
  */
-
-// Same "only one thing plays at a time" singleton as S35's ListenButton —
-// see that file's comment for the full reasoning (PO complaint 2026-10-07).
-let currentlyPlayingAudio: HTMLAudioElement | null = null;
-let onCurrentlyPlayingStopped: (() => void) | null = null;
-
-function stopCurrentlyPlaying() {
-  currentlyPlayingAudio?.pause();
-  currentlyPlayingAudio = null;
-  onCurrentlyPlayingStopped?.();
-  onCurrentlyPlayingStopped = null;
-}
 
 function ListenButton({
   refTable,
@@ -53,7 +42,7 @@ function ListenButton({
 
   useEffect(
     () => () => {
-      if (currentlyPlayingAudio === audioRef.current) stopCurrentlyPlaying();
+      if (isCurrentlyPlaying(audioRef.current)) stopCurrentlyPlaying();
     },
     [],
   );
@@ -70,18 +59,9 @@ function ListenButton({
       }
       const audio = new Audio(`data:${res.audioMime};base64,${res.audioBase64}`);
       audioRef.current = audio;
-      currentlyPlayingAudio = audio;
-      onCurrentlyPlayingStopped = () => setState("idle");
-      audio.onended = () => {
-        setState("idle");
-        if (currentlyPlayingAudio === audio) {
-          currentlyPlayingAudio = null;
-          onCurrentlyPlayingStopped = null;
-        }
-        onEnded?.();
-      };
       setState("playing");
-      void audio.play().catch(() => setState("idle"));
+      playSingleAudio(audio, () => setState("idle"));
+      audio.addEventListener("ended", () => onEnded?.(), { once: true });
     } catch {
       setState("unavailable");
     }
@@ -129,7 +109,7 @@ function ExplainButton({ subjectId, topicId, stepText, refTable, refId }: { subj
 
   useEffect(
     () => () => {
-      if (currentlyPlayingAudio === audioRef.current) stopCurrentlyPlaying();
+      if (isCurrentlyPlaying(audioRef.current)) stopCurrentlyPlaying();
     },
     [],
   );
@@ -137,20 +117,10 @@ function ExplainButton({ subjectId, topicId, stepText, refTable, refId }: { subj
   if (!topicId || !stepText.trim()) return null;
 
   function playAudio(base64: string, mime: string) {
-    stopCurrentlyPlaying();
     const el = new Audio(`data:${mime};base64,${base64}`);
     audioRef.current = el;
-    currentlyPlayingAudio = el;
-    onCurrentlyPlayingStopped = () => setPlaying(false);
-    el.onended = () => {
-      setPlaying(false);
-      if (currentlyPlayingAudio === el) {
-        currentlyPlayingAudio = null;
-        onCurrentlyPlayingStopped = null;
-      }
-    };
     setPlaying(true);
-    void el.play().catch(() => setPlaying(false));
+    playSingleAudio(el, () => setPlaying(false));
   }
 
   async function explain() {

@@ -4,6 +4,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { MathText } from "@/components/shared/MathText";
 import { OpenTextbookPageButton } from "@/components/shared/BookPageModal";
+import { isCurrentlyPlaying, playSingleAudio, stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
 import { askTopicChatAction } from "@/app/actions/lesson";
 import {
   explainMathCourseV2Action,
@@ -34,24 +35,10 @@ const AUTO_ADVANCE_STORAGE_KEY = "mathCourseV2AutoAdvance";
  */
 
 // PO complaint 2026-10-07: "якщо увімкнути голосовий режим потім натиснути
-// кілька кнопок слухати, то всі модулі читаються підряд і одночасно" — each
-// `ListenButton` owned its own independent `Audio`, so nothing ever stopped
-// a previous one before a new one started (voice-mode autoplay moving to
-// the next screen while an earlier exercise's manual click was still
-// playing is the most common way to trigger it). Module-level (not React
-// state — these buttons are siblings with no shared parent state) "only one
-// thing plays at a time": starting a new one always stops whatever else is
-// currently playing first, and tells it to reset its own button back to idle.
-let currentlyPlayingAudio: HTMLAudioElement | null = null;
-let onCurrentlyPlayingStopped: (() => void) | null = null;
-
-function stopCurrentlyPlaying() {
-  currentlyPlayingAudio?.pause();
-  currentlyPlayingAudio = null;
-  onCurrentlyPlayingStopped?.();
-  onCurrentlyPlayingStopped = null;
-}
-
+// кілька кнопок слухати, то всі модулі читаються підряд і одночасно" — "only
+// one thing plays at a time" now lives in `singleAudioPlayback.ts` (shared
+// across every course viewer, not copy-pasted per subject — see that
+// module's own comment for why and its 2026-10-08 follow-up).
 function ListenButton({
   refTable,
   refId,
@@ -78,7 +65,7 @@ function ListenButton({
   // too rather than leaving it to play on in the background.
   useEffect(
     () => () => {
-      if (currentlyPlayingAudio === audioRef.current) stopCurrentlyPlaying();
+      if (isCurrentlyPlaying(audioRef.current)) stopCurrentlyPlaying();
     },
     [],
   );
@@ -95,18 +82,9 @@ function ListenButton({
       }
       const audio = new Audio(`data:${res.audioMime};base64,${res.audioBase64}`);
       audioRef.current = audio;
-      currentlyPlayingAudio = audio;
-      onCurrentlyPlayingStopped = () => setState("idle");
-      audio.onended = () => {
-        setState("idle");
-        if (currentlyPlayingAudio === audio) {
-          currentlyPlayingAudio = null;
-          onCurrentlyPlayingStopped = null;
-        }
-        onEnded?.();
-      };
       setState("playing");
-      void audio.play().catch(() => setState("idle"));
+      playSingleAudio(audio, () => setState("idle"));
+      audio.addEventListener("ended", () => onEnded?.(), { once: true });
     } catch {
       // A thrown request error must still leave the button clickable again
       // rather than stuck on "…" forever — same silent-lock class of bug as
@@ -185,7 +163,7 @@ function ExplainButton({ subjectId, topicId, stepText, refTable, refId }: { subj
 
   useEffect(
     () => () => {
-      if (currentlyPlayingAudio === audioRef.current) stopCurrentlyPlaying();
+      if (isCurrentlyPlaying(audioRef.current)) stopCurrentlyPlaying();
     },
     [],
   );
@@ -193,20 +171,10 @@ function ExplainButton({ subjectId, topicId, stepText, refTable, refId }: { subj
   if (!topicId || !stepText.trim()) return null;
 
   function playAudio(base64: string, mime: string) {
-    stopCurrentlyPlaying();
     const el = new Audio(`data:${mime};base64,${base64}`);
     audioRef.current = el;
-    currentlyPlayingAudio = el;
-    onCurrentlyPlayingStopped = () => setPlaying(false);
-    el.onended = () => {
-      setPlaying(false);
-      if (currentlyPlayingAudio === el) {
-        currentlyPlayingAudio = null;
-        onCurrentlyPlayingStopped = null;
-      }
-    };
     setPlaying(true);
-    void el.play().catch(() => setPlaying(false));
+    playSingleAudio(el, () => setPlaying(false));
   }
 
   async function explain() {
