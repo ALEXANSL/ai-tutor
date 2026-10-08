@@ -5,6 +5,7 @@ import { loadLibraryItemTitles } from "@/server/lessons/generate";
 import { getActiveLiteratureLessonIdForTopic } from "@/server/lessons/literatureView";
 import { getActiveCourseLessonIdForTopic } from "@/server/lessons/courseView";
 import { getActiveMathCourseV2LessonIdForTopic } from "@/server/lessons/mathCourseV2View";
+import { getActiveLiteratureV2LessonIdForTopic } from "@/server/lessons/literatureV2View";
 import { getLessonView } from "@/server/lessons/orchestrator";
 import { LessonPicker } from "@/components/lesson/LessonPicker";
 import { LessonRunner } from "@/components/lesson/LessonRunner";
@@ -42,6 +43,9 @@ export default async function LessonPage({ params }: { params: Promise<{ session
   // S35: same safety net, third parallel $0 full-text course-package import.
   const mathCourseV2LessonId = await getActiveMathCourseV2LessonIdForTopic(familyId, session.topic_id);
   if (mathCourseV2LessonId) redirect(`/math-course-v2/${mathCourseV2LessonId}`);
+  // S36: same safety net, fourth parallel $0 open-response course-package import.
+  const literatureV2LessonId = await getActiveLiteratureV2LessonIdForTopic(familyId, session.topic_id);
+  if (literatureV2LessonId) redirect(`/literature-course-v2/${literatureV2LessonId}`);
 
   // ADR-023 (D-76): a "cold" topic (zero active blocks at start) lands here
   // with no candidates yet — a `library.warm_topic` job is producing the

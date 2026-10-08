@@ -73,7 +73,7 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
                     topic already served by its own `literature_lessons` row
                     — omit it there rather than show a misleading "Потрібна
                     підготовка"/"Готуємо…" next to an already-ready lesson. */}
-                {!topic.literatureLessonId && !topic.courseLessonId && !topic.mathCourseV2LessonId && (
+                {!topic.literatureLessonId && !topic.courseLessonId && !topic.mathCourseV2LessonId && !topic.literatureV2LessonId && (
                   <span
                     className={
                       warmupStatuses[topic.id] === "ready"
@@ -122,6 +122,14 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
                   // S35/D-123: third parallel $0 import path — same idea.
                   <Link
                     href={`/math-course-v2/${topic.mathCourseV2LessonId}`}
+                    className="inline-flex min-h-12 items-center rounded-2xl bg-primary px-5 text-base font-bold text-white"
+                  >
+                    {ts.openLesson}
+                  </Link>
+                ) : topic.literatureV2LessonId ? (
+                  // S36/D-123: fourth parallel $0 import path — same idea.
+                  <Link
+                    href={`/literature-course-v2/${topic.literatureV2LessonId}`}
                     className="inline-flex min-h-12 items-center rounded-2xl bg-primary px-5 text-base font-bold text-white"
                   >
                     {ts.openLesson}
