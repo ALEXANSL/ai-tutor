@@ -51,6 +51,13 @@ export interface LiteratureV2TaskView {
   printedPage: number | null;
   hasHint: boolean;
   table: LiteratureV2TaskTableView | null;
+  /** PO complaint 2026-10-08: a task like "Розгляньте картину Шардена…"
+   * referenced an illustration only by TEXT, with no image or page link
+   * anywhere near it. The package links illustrations to a PAGE (`asset_
+   * refs` on a task is a list of page ids, `literature_v2_assets.page_id`
+   * matches it — see `getLiteratureV2LessonView`), not to a task directly,
+   * so this is resolved at view time instead of import time. */
+  assets: LiteratureV2AssetView[];
 }
 
 export interface LiteratureV2DefinitionView {
@@ -80,6 +87,12 @@ export interface LiteratureV2LessonView {
   tasks: LiteratureV2TaskView[];
   printedPageFrom: number | null;
   printedPageTo: number | null;
+  /** The uploaded PDF `materials` row this package's pages map to — null
+   * until a parent links it (see `20261021100000_s36c_literature_v2_textbook_link.sql`),
+   * same as `MathV2LessonView`'s own field. */
+  textbookMaterialId: string | null;
+  textbookTitle: string | null;
+  textbookPageCount: number | null;
   status: "active" | "needs_review";
 }
 
@@ -121,9 +134,11 @@ interface TaskRow {
   response_type: string;
   printed_page: number | null;
   has_hint: boolean;
+  asset_refs: string[];
 }
 interface AssetRow {
   asset_key: string;
+  page_id: string;
   storage_path: string | null;
   caption: string;
   alt: string;
@@ -136,31 +151,34 @@ interface TaskTableRow {
   empty_cells_are_student_input: boolean;
 }
 
-async function signAssets(client: ReturnType<typeof forFamily>["client"], packageId: string, assetKeys: string[]): Promise<Map<string, LiteratureV2AssetView>> {
-  const distinct = [...new Set(assetKeys)];
-  if (distinct.length === 0) return new Map();
-  const { data: rows } = await client
-    .from("literature_v2_assets")
-    .select("asset_key, storage_path, caption, alt, tts")
-    .eq("package_id", packageId)
-    .in("asset_key", distinct)
-    .returns<AssetRow[]>();
-  const byKey = new Map((rows ?? []).map((r) => [r.asset_key, r]));
+/**
+ * Fetches every illustration in the package (typically ~30, cheap for one
+ * lesson view) and signs its storage URL, returning both lookups the
+ * caller needs: by the package's own asset key (screens' `asset_ids`) and
+ * by the page it illustrates (tasks' `asset_refs` — see
+ * `LiteratureV2TaskView.assets`'s own doc comment for why a task links to
+ * an illustration via its page, not directly).
+ */
+async function signPackageAssets(client: ReturnType<typeof forFamily>["client"], packageId: string): Promise<{ byAssetKey: Map<string, LiteratureV2AssetView>; byPageId: Map<string, LiteratureV2AssetView[]> }> {
+  const { data: rows } = await client.from("literature_v2_assets").select("asset_key, page_id, storage_path, caption, alt, tts").eq("package_id", packageId).returns<AssetRow[]>();
   const storagePaths = (rows ?? []).filter((r) => r.storage_path).map((r) => r.storage_path as string);
   const { data: signed } = storagePaths.length ? await client.storage.from(COURSE_ASSETS_BUCKET).createSignedUrls(storagePaths, SIGNED_URL_TTL_S) : { data: [] };
   const urlByStoragePath = new Map((signed ?? []).filter((s) => !s.error).map((s) => [s.path ?? "", s.signedUrl]));
 
-  const result = new Map<string, LiteratureV2AssetView>();
-  for (const [key, row] of byKey) {
-    result.set(key, {
-      assetKey: key,
+  const byAssetKey = new Map<string, LiteratureV2AssetView>();
+  const byPageId = new Map<string, LiteratureV2AssetView[]>();
+  for (const row of rows ?? []) {
+    const view: LiteratureV2AssetView = {
+      assetKey: row.asset_key,
       url: row.storage_path ? (urlByStoragePath.get(row.storage_path) ?? null) : null,
       caption: row.caption,
       alt: row.alt,
       tts: row.tts,
-    });
+    };
+    byAssetKey.set(row.asset_key, view);
+    if (row.page_id) byPageId.set(row.page_id, [...(byPageId.get(row.page_id) ?? []), view]);
   }
-  return result;
+  return { byAssetKey, byPageId };
 }
 
 export async function getLiteratureV2LessonView(familyId: string, lessonId: string): Promise<LiteratureV2LessonView | null> {
@@ -175,10 +193,13 @@ export async function getLiteratureV2LessonView(familyId: string, lessonId: stri
   if (!lesson) return null;
 
   const [{ data: pkg }, { data: screenRows }, { data: taskRows }] = await Promise.all([
-    scope.select("literature_v2_packages", "title").eq("id", lesson.package_id).maybeSingle<{ title: string }>(),
+    scope
+      .select("literature_v2_packages", "title, textbook_material_id")
+      .eq("id", lesson.package_id)
+      .maybeSingle<{ title: string; textbook_material_id: string | null }>(),
     scope.select("literature_v2_screens", "id, screen_key, order_no, step_type, content_display, content_tts, tutor_action, asset_ids").eq("lesson_id", lessonId).order("order_no").returns<ScreenRow[]>(),
     scope
-      .select("literature_v2_tasks", "id, task_key, original_label, prompt_display, prompt_tts, subtasks, response_type, printed_page, has_hint")
+      .select("literature_v2_tasks", "id, task_key, original_label, prompt_display, prompt_tts, subtasks, response_type, printed_page, has_hint, asset_refs")
       .eq("lesson_id", lessonId)
       .returns<TaskRow[]>(),
   ]);
@@ -190,8 +211,20 @@ export async function getLiteratureV2LessonView(familyId: string, lessonId: stri
 
   const tableByTaskId = new Map((taskTableRows ?? []).map((r) => [r.task_id, r]));
 
-  const assetKeys = [...(screenRows ?? []).flatMap((s) => s.asset_ids)];
-  const assetByKey = await signAssets(scope.client, lesson.package_id, assetKeys);
+  const { byAssetKey: assetByKey, byPageId: assetsByPageId } = await signPackageAssets(scope.client, lesson.package_id);
+
+  let textbookTitle: string | null = null;
+  let textbookPageCount: number | null = null;
+  if (pkg?.textbook_material_id) {
+    const { data: material } = await scope
+      .select("materials", "title, name, page_count")
+      .eq("id", pkg.textbook_material_id)
+      .maybeSingle<{ title: string | null; name: string; page_count: number | null }>();
+    if (material) {
+      textbookTitle = material.title ?? material.name;
+      textbookPageCount = material.page_count;
+    }
+  }
 
   const taskByKey = new Map((taskRows ?? []).map((t) => [t.task_key, t]));
   const orderedTasks = lesson.task_ids.map((key) => taskByKey.get(key)).filter((t): t is TaskRow => t != null);
@@ -231,10 +264,14 @@ export async function getLiteratureV2LessonView(familyId: string, lessonId: stri
         printedPage: t.printed_page,
         hasHint: t.has_hint,
         table: table ? { columns: table.columns, rows: table.rows, emptyCellsAreStudentInput: table.empty_cells_are_student_input } : null,
+        assets: (t.asset_refs ?? []).flatMap((pageId) => assetsByPageId.get(pageId) ?? []),
       };
     }),
     printedPageFrom: lesson.printed_page_from,
     printedPageTo: lesson.printed_page_to,
+    textbookMaterialId: pkg?.textbook_material_id ?? null,
+    textbookTitle,
+    textbookPageCount,
     status: lesson.status,
   };
 }

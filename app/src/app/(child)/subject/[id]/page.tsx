@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChildStartLessonButton } from "@/components/child/ChildStartLessonButton";
+import { LastLessonHighlight } from "@/components/child/LastLessonHighlight";
 import { PrepareTopicButton } from "@/components/child/PrepareTopicButton";
+import { LiteratureV2Search } from "@/components/course-v2/LiteratureV2Search";
 import { MathCourseV2Search } from "@/components/course-v2/MathCourseV2Search";
 import { uk } from "@/i18n/uk";
 import { requireChild } from "@/server/auth/guards";
+import { getLiteratureV2TextbookForSubject } from "@/server/lessons/literatureV2Search";
 import { getMathCourseV2TextbookForSubject } from "@/server/lessons/mathCourseV2Search";
 import { getTopicWarmupStatuses } from "@/server/lessons/warmup";
 import { getSubjectDetail } from "@/server/subjects/queries";
@@ -46,9 +49,11 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
   // in-progress (queued or generating, incl. from КП-2's own "Підготувати")
   // / needs preparing.
   const hasMathCourseV2 = subject.topics.some((t) => t.mathCourseV2LessonId);
-  const [warmupStatuses, textbook] = await Promise.all([
+  const hasLiteratureV2 = subject.topics.some((t) => t.literatureV2LessonId);
+  const [warmupStatuses, textbook, literatureTextbook] = await Promise.all([
     subject.topics.length > 0 ? getTopicWarmupStatuses(ctx.familyId, subject.topics.map((tp) => tp.id)) : Promise.resolve({} as Awaited<ReturnType<typeof getTopicWarmupStatuses>>),
     hasMathCourseV2 ? getMathCourseV2TextbookForSubject(ctx.familyId, subject.id) : Promise.resolve(null),
+    hasLiteratureV2 ? getLiteratureV2TextbookForSubject(ctx.familyId, subject.id) : Promise.resolve(null),
   ]);
 
   return (
@@ -58,11 +63,13 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
       </Link>
       <h1 className="mb-4 text-2xl font-extrabold">{subject.name}</h1>
       {hasMathCourseV2 && <MathCourseV2Search subjectId={subject.id} textbook={textbook} />}
+      {hasLiteratureV2 && <LiteratureV2Search subjectId={subject.id} textbook={literatureTextbook} />}
       {subject.topics.length > 0 ? (
         <div className="space-y-3">
           <p className="text-sm text-muted">{ts.topicsSubtitle}</p>
           {subject.topics.map((topic) => (
-            <div key={topic.id} className="rounded-[22px] border border-line bg-surface p-4.5">
+            <LastLessonHighlight key={topic.id} subjectId={subject.id} topicId={topic.id}>
+              <div className="rounded-[22px] border border-line bg-surface p-4.5">
               <div className="mb-1 flex items-center gap-2">
                 <p className="font-bold">{topic.title}</p>
                 {topic.id === subject.currentTopicId && (
@@ -143,7 +150,8 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
                   </>
                 )}
               </div>
-            </div>
+              </div>
+            </LastLessonHighlight>
           ))}
         </div>
       ) : (
