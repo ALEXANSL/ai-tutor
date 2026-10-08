@@ -127,6 +127,11 @@ export async function persistLiteratureV2Package(
 
   const { uploaded, missing, uploadFailures } = await persistAssets(scope, packageId, parsed, assetFiles);
 
+  // Computed up front, service-role side, so the child-facing view
+  // (`literatureV2View.ts`) never needs to read the locked
+  // `literature_v2_task_keys` table itself — see that column's own comment.
+  const taskIdsWithKey = new Set(parsed.taskKeys.map((k) => k.task_id));
+
   let lessonsImported = 0;
   const lessonIdByKey = new Map<string, string>();
   for (const [index, lesson] of parsed.lessons.entries()) {
@@ -242,6 +247,7 @@ export async function persistLiteratureV2Package(
           required_inputs: task.required_inputs,
           printed_page: task.source.printed_page,
           pdf_page: task.source.pdf_page,
+          has_hint: taskIdsWithKey.has(task.id),
           status: "active",
         },
         { onConflict: "package_id,task_key" },
