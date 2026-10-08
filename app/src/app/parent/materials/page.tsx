@@ -1,5 +1,6 @@
 import { MaterialsImportPanel } from "@/components/parent/materials/MaterialsImportPanel";
 import { MathCourseV2ImportPanel } from "@/components/parent/materials/MathCourseV2ImportPanel";
+import { LiteratureV2ImportPanel } from "@/components/parent/materials/LiteratureV2ImportPanel";
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
 import { listSubjects } from "@/server/books/queries";
@@ -38,6 +39,12 @@ export default async function MaterialsImportPage() {
           Окремий формат (S35) — два файли JSON (public/course.json, private/teacher.json) замість одного zip, плюс необов&apos;язковий zip з рисунками.
         </p>
         <MathCourseV2ImportPanel subjects={subjects} />
+      </Panel>
+      <Panel title="Зарубіжна література (повний пакет, відкриті завдання)">
+        <p className="-mt-2 mb-3.5 text-xs text-p-muted">
+          Окремий формат (S36) — чотири файли JSON (course.json, teacher.json, assets.json, task_tables.json), плюс необов&apos;язковий zip з ілюстраціями. Усі завдання тут відкриті (без варіантів відповіді).
+        </p>
+        <LiteratureV2ImportPanel subjects={subjects} />
       </Panel>
     </>
   );
