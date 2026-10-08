@@ -87,6 +87,12 @@ export interface LiteratureV2LessonView {
   tasks: LiteratureV2TaskView[];
   printedPageFrom: number | null;
   printedPageTo: number | null;
+  /** The uploaded PDF `materials` row this package's pages map to — null
+   * until a parent links it (see `20261021100000_s36c_literature_v2_textbook_link.sql`),
+   * same as `MathV2LessonView`'s own field. */
+  textbookMaterialId: string | null;
+  textbookTitle: string | null;
+  textbookPageCount: number | null;
   status: "active" | "needs_review";
 }
 
@@ -187,7 +193,10 @@ export async function getLiteratureV2LessonView(familyId: string, lessonId: stri
   if (!lesson) return null;
 
   const [{ data: pkg }, { data: screenRows }, { data: taskRows }] = await Promise.all([
-    scope.select("literature_v2_packages", "title").eq("id", lesson.package_id).maybeSingle<{ title: string }>(),
+    scope
+      .select("literature_v2_packages", "title, textbook_material_id")
+      .eq("id", lesson.package_id)
+      .maybeSingle<{ title: string; textbook_material_id: string | null }>(),
     scope.select("literature_v2_screens", "id, screen_key, order_no, step_type, content_display, content_tts, tutor_action, asset_ids").eq("lesson_id", lessonId).order("order_no").returns<ScreenRow[]>(),
     scope
       .select("literature_v2_tasks", "id, task_key, original_label, prompt_display, prompt_tts, subtasks, response_type, printed_page, has_hint, asset_refs")
@@ -203,6 +212,19 @@ export async function getLiteratureV2LessonView(familyId: string, lessonId: stri
   const tableByTaskId = new Map((taskTableRows ?? []).map((r) => [r.task_id, r]));
 
   const { byAssetKey: assetByKey, byPageId: assetsByPageId } = await signPackageAssets(scope.client, lesson.package_id);
+
+  let textbookTitle: string | null = null;
+  let textbookPageCount: number | null = null;
+  if (pkg?.textbook_material_id) {
+    const { data: material } = await scope
+      .select("materials", "title, name, page_count")
+      .eq("id", pkg.textbook_material_id)
+      .maybeSingle<{ title: string | null; name: string; page_count: number | null }>();
+    if (material) {
+      textbookTitle = material.title ?? material.name;
+      textbookPageCount = material.page_count;
+    }
+  }
 
   const taskByKey = new Map((taskRows ?? []).map((t) => [t.task_key, t]));
   const orderedTasks = lesson.task_ids.map((key) => taskByKey.get(key)).filter((t): t is TaskRow => t != null);
@@ -247,6 +269,9 @@ export async function getLiteratureV2LessonView(familyId: string, lessonId: stri
     }),
     printedPageFrom: lesson.printed_page_from,
     printedPageTo: lesson.printed_page_to,
+    textbookMaterialId: pkg?.textbook_material_id ?? null,
+    textbookTitle,
+    textbookPageCount,
     status: lesson.status,
   };
 }

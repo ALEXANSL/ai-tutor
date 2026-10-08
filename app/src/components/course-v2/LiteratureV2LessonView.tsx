@@ -2,6 +2,7 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
+import { OpenTextbookPageButton } from "@/components/shared/BookPageModal";
 import { MathText } from "@/components/shared/MathText";
 import { isCurrentlyPlaying, playSingleAudio, stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
 import { askTopicChatAction } from "@/app/actions/lesson";
@@ -10,6 +11,12 @@ import type { LiteratureV2LessonListItem, LiteratureV2LessonView, LiteratureV2Ta
 
 const VOICE_MODE_STORAGE_KEY = "literatureV2VoiceMode";
 const AUTO_ADVANCE_STORAGE_KEY = "literatureV2AutoAdvance";
+
+interface TextbookRef {
+  materialId: string;
+  title: string;
+  pageCount: number | null;
+}
 
 /**
  * S36 — child-facing viewer for one imported `literature_v2_lessons` row.
@@ -322,7 +329,7 @@ const LessonTopicChat = forwardRef<LessonTopicChatHandle, { subjectId: string; t
   );
 });
 
-function TaskCard({ task, subjectId, topicId }: { task: LiteratureV2TaskView; subjectId: string; topicId: string | null }) {
+function TaskCard({ task, subjectId, topicId, textbook }: { task: LiteratureV2TaskView; subjectId: string; topicId: string | null; textbook: TextbookRef | null }) {
   const [revealed, setRevealed] = useState<LiteratureV2TaskHelpResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -398,8 +405,8 @@ function TaskCard({ task, subjectId, topicId }: { task: LiteratureV2TaskView; su
           </table>
         </div>
       )}
-      {task.printedPage != null && <p className="mt-1 text-xs text-muted">Стор. {task.printedPage} підручника</p>}
       <div className="mt-1 flex flex-wrap items-center gap-2">
+        {textbook && task.printedPage != null && <OpenTextbookPageButton materialId={textbook.materialId} title={textbook.title} pageCount={textbook.pageCount} page={task.printedPage} numberKeywordHint="завдання" />}
         <ListenButton refTable="literature_v2_tasks" refId={task.id} field="narration" text={task.prompt.tts.text} />
         <ExplainButton subjectId={subjectId} topicId={topicId} stepText={task.prompt.display} refTable="literature_v2_tasks" refId={task.id} />
         {!revealed && task.hasHint && (
@@ -451,7 +458,7 @@ function TaskCard({ task, subjectId, topicId }: { task: LiteratureV2TaskView; su
 
 const TASKS_PER_PAGE = 10;
 
-function TaskList({ tasks, subjectId, topicId }: { tasks: LiteratureV2TaskView[]; subjectId: string; topicId: string | null }) {
+function TaskList({ tasks, subjectId, topicId, textbook }: { tasks: LiteratureV2TaskView[]; subjectId: string; topicId: string | null; textbook: TextbookRef | null }) {
   const [page, setPage] = useState(0);
   const pageCount = Math.ceil(tasks.length / TASKS_PER_PAGE);
   const start = page * TASKS_PER_PAGE;
@@ -464,7 +471,7 @@ function TaskList({ tasks, subjectId, topicId }: { tasks: LiteratureV2TaskView[]
       </p>
       <ol className="course-exercise-list">
         {visible.map((t) => (
-          <TaskCard key={t.id} task={t} subjectId={subjectId} topicId={topicId} />
+          <TaskCard key={t.id} task={t} subjectId={subjectId} topicId={topicId} textbook={textbook} />
         ))}
       </ol>
       <div className="mt-3 flex gap-2">
@@ -527,6 +534,10 @@ export function LiteratureV2LessonScreen({ lesson, packageLessons }: { lesson: L
     }
   }
 
+  const textbook: TextbookRef | null = lesson.textbookMaterialId
+    ? { materialId: lesson.textbookMaterialId, title: lesson.textbookTitle ?? lesson.packageTitle, pageCount: lesson.textbookPageCount }
+    : null;
+
   return (
     <article className="course-lesson">
       <LessonNavBar subjectId={lesson.subjectId} courseNav={{ basePath: "/literature-course-v2", currentLessonId: lesson.id, lessons: packageLessons, topicId: lesson.topicId }} />
@@ -541,6 +552,9 @@ export function LiteratureV2LessonScreen({ lesson, packageLessons }: { lesson: L
         )}
         {lesson.status === "needs_review" && <p className="course-warning">Цей урок ще потребує перевірки дорослого.</p>}
         <div className="mt-2 flex flex-wrap gap-2">
+          {textbook && (
+            <OpenTextbookPageButton materialId={textbook.materialId} title={textbook.title} pageCount={textbook.pageCount} page={lesson.printedPageFrom} label="📖 Відкрити підручник" />
+          )}
           <VoiceModeToggle voiceMode={voiceMode} onChange={changeVoiceMode} />
           <AutoAdvanceToggle autoAdvance={autoAdvance} voiceMode={voiceMode} onChange={changeAutoAdvance} />
         </div>
@@ -577,7 +591,7 @@ export function LiteratureV2LessonScreen({ lesson, packageLessons }: { lesson: L
       {lesson.tasks.length > 0 && (
         <section>
           <h2>Завдання</h2>
-          <TaskList tasks={lesson.tasks} subjectId={lesson.subjectId} topicId={lesson.topicId} />
+          <TaskList tasks={lesson.tasks} subjectId={lesson.subjectId} topicId={lesson.topicId} textbook={textbook} />
         </section>
       )}
     </article>

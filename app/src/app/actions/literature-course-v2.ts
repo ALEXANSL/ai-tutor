@@ -7,6 +7,7 @@ import { explainStepAgain } from "@/server/lessons/chat";
 import { combineLiteratureV2Package, parseLiteratureV2Assets, parseLiteratureV2Course, parseLiteratureV2TaskTables, parseLiteratureV2Teacher, type ImportIssue } from "@/server/lessons/literatureV2Import";
 import { narrationTextHash, synthesizeNarration } from "@/server/lessons/narration";
 import { persistLiteratureV2Package } from "@/server/lessons/literatureV2Persist";
+import { searchLiteratureV2, type LiteratureV2SearchResult } from "@/server/lessons/literatureV2Search";
 import { createServiceClient } from "@/server/supabase/clients";
 import { unzipSync } from "fflate";
 
@@ -291,4 +292,29 @@ export async function explainLiteratureV2Action(input: { subjectId: string; topi
   } catch (e) {
     return { status: "error", message: `Не вдалося пояснити (${(e as Error).message}). Спробуй ще раз.` };
   }
+}
+
+// ---------------------------------------------------------------------------
+// searchLiteratureV2Action — "де пошук по підручнику" (PO feedback
+// 2026-10-08). Mirrors `searchMathCourseV2Action` (S35) exactly — searches
+// the already-imported lesson/task metadata, not the PDF itself.
+// ---------------------------------------------------------------------------
+
+export type LiteratureV2SearchState = { status: "ok"; result: LiteratureV2SearchResult } | { status: "error"; message: string };
+
+export async function searchLiteratureV2Action(input: { subjectId: string; page?: string; taskLabel?: string; topicQuery?: string }): Promise<LiteratureV2SearchState> {
+  const { ctx } = await requireChild();
+  const subjectParsed = UUID.safeParse(input.subjectId);
+  if (!subjectParsed.success) return { status: "error", message: "Невірний ідентифікатор предмета." };
+
+  const pageTrimmed = input.page?.trim();
+  const page = pageTrimmed ? Number.parseInt(pageTrimmed, 10) : undefined;
+  if (pageTrimmed && (page == null || Number.isNaN(page))) return { status: "error", message: "Сторінка має бути числом." };
+
+  const taskLabel = input.taskLabel?.trim() || undefined;
+  const topicQuery = input.topicQuery?.trim() || undefined;
+  if (!page && !taskLabel && !topicQuery) return { status: "error", message: "Вкажи тему, сторінку або номер завдання." };
+
+  const result = await searchLiteratureV2(ctx.familyId, subjectParsed.data, { page, taskLabel, topicQuery });
+  return { status: "ok", result };
 }
