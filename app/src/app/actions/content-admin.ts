@@ -145,7 +145,12 @@ export async function linkPackageTextbookAction(kind: string, packageId: string,
   return { status: "ok", pageWarning };
 }
 
-async function listSubjectPackagesForMaterialCheck(familyId: string, packageId: string, kind: PackageKind) {
+/**
+ * Exported (not just used by `linkPackageTextbookAction` above) so S43's
+ * import-time textbook linking (`literature-course-v2.ts`/`math-course-v2.ts`)
+ * can reuse the exact same КП-3 page-coverage check instead of duplicating it.
+ */
+export async function listSubjectPackagesForMaterialCheck(familyId: string, packageId: string, kind: PackageKind) {
   const scope = forFamily(familyId);
   const table = kind === "course_v2" ? "course_v2_lessons" : "literature_v2_lessons";
   const { data } = await scope.select(table, "printed_page_to").eq("package_id", packageId).returns<{ printed_page_to: number | null }[]>();
@@ -153,8 +158,53 @@ async function listSubjectPackagesForMaterialCheck(familyId: string, packageId: 
   return { maxPrintedPageTo };
 }
 
-async function listSubjectPdfMaterialsById(familyId: string, materialId: string) {
+export async function listSubjectPdfMaterialsById(familyId: string, materialId: string) {
   const scope = forFamily(familyId);
   const { data } = await scope.select("materials", "page_count").eq("id", materialId).maybeSingle<{ page_count: number | null }>();
   return data ? { pageCount: data.page_count } : null;
+}
+
+// ---------------------------------------------------------------------------
+// S43 (PO request 2026-10-13, exact wording: "там же є сенс додати
+// завантаження або прив'язку підручника до предмету") — the import screen's
+// own "Підручник (необов'язково)" dropdown, so linking no longer needs a
+// separate visit to `/parent/subjects/[id]` after the import. Thin wrapper
+// over the same read model `TextbookLinkPanel` already uses.
+// ---------------------------------------------------------------------------
+
+export type ListSubjectPdfMaterialsState = { status: "ok"; pdfOptions: Awaited<ReturnType<typeof listSubjectPdfMaterials>> } | { status: "error"; message: string };
+
+export async function listSubjectPdfMaterialsAction(subjectId: string): Promise<ListSubjectPdfMaterialsState> {
+  const { familyId } = await requireParentAccess();
+  if (!UUID.test(subjectId)) return { status: "error", message: uk.common.error };
+  return { status: "ok", pdfOptions: await listSubjectPdfMaterials(familyId, subjectId) };
+}
+
+export interface TextbookLinkWarning {
+  file: string;
+  field: string;
+  message: string;
+}
+
+/**
+ * S43: the SAME `admin_set_package_textbook` RPC `linkPackageTextbookAction`
+ * above calls, reused (not duplicated) by `importLiteratureV2Action`/
+ * `importMathCourseV2Action` so the import screen's own textbook dropdown can
+ * link right after a successful import. Never throws and never fails the
+ * import — a failed link, or the same КП-3 page-coverage mismatch
+ * `linkPackageTextbookAction` warns about, becomes one warning entry in the
+ * import summary instead (caller's `warnings` array).
+ */
+export async function linkTextbookBestEffort(familyId: string, kind: PackageKind, packageId: string, materialId: string): Promise<TextbookLinkWarning | null> {
+  const scope = forFamily(familyId);
+  const { error } = await scope.client.rpc("admin_set_package_textbook", { p_family_id: familyId, p_kind: kind, p_package_id: packageId, p_material_id: materialId });
+  if (error) {
+    return { file: "textbook", field: "link", message: error.code === "P0017" ? t.errors.materialNotFound : `Не вдалося прив'язати підручник: ${error.message}` };
+  }
+
+  const [packages, pdfOption] = await Promise.all([listSubjectPackagesForMaterialCheck(familyId, packageId, kind), listSubjectPdfMaterialsById(familyId, materialId)]);
+  if (packages && pdfOption && packages.maxPrintedPageTo != null && pdfOption.pageCount != null && pdfOption.pageCount < packages.maxPrintedPageTo) {
+    return { file: "textbook", field: "link", message: t.textbook.pageWarning };
+  }
+  return null;
 }

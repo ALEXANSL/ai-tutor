@@ -1,12 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { listSubjectPdfMaterialsAction } from "@/app/actions/content-admin";
 import { importMathCourseV2Action, type MathCourseV2ImportSummary } from "@/app/actions/math-course-v2";
 import { withBusySignal } from "@/lib/busy-signal";
 import { getBrowserSupabaseStorageClient } from "@/lib/supabase-browser";
 import { MAX_COURSE_ZIP_BYTES } from "@/lib/upload-limits";
 import type { SubjectOption } from "@/server/books/queries";
 import { parentButton, parentInput } from "@/app/parent/ui";
+
+/** Mirrors `TextbookLinkPanel.tsx`'s own copy of this shape (server-only module, so no import across the client boundary). */
+interface SubjectPdfOption {
+  id: string;
+  title: string;
+  pageCount: number | null;
+}
 
 /**
  * S35 ($0 math course-package v2 import, PO instruction 2026-10-07) — a
@@ -53,6 +62,25 @@ export function MathCourseV2ImportPanel({ subjects }: { subjects: SubjectOption[
   const [assetsZip, setAssetsZip] = useState<File | null>(null);
   const [state, setState] = useState<UiState>({ status: "idle" });
 
+  // S43 (PO request 2026-10-13): link an already-uploaded PDF right on this
+  // screen — pulled from the chosen subject's own PDFs, same read model
+  // `TextbookLinkPanel.tsx` uses on `/parent/subjects/[id]`.
+  const [pdfOptions, setPdfOptions] = useState<SubjectPdfOption[]>([]);
+  const [textbookMaterialId, setTextbookMaterialId] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const result = subjectId ? await listSubjectPdfMaterialsAction(subjectId) : null;
+      if (cancelled) return;
+      setPdfOptions(result?.status === "ok" ? result.pdfOptions : []);
+      setTextbookMaterialId("");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [subjectId]);
+
   async function doImport() {
     if (!subjectId) return setState({ status: "error", message: "Оберіть предмет." });
     if (!publicFile || !privateFile) return setState({ status: "error", message: "Потрібні обидва файли: public/course.json і private/teacher.json." });
@@ -79,7 +107,13 @@ export function MathCourseV2ImportPanel({ subjects }: { subjects: SubjectOption[
     }
 
     setState({ status: "processing" });
-    const result = await importMathCourseV2Action({ subjectId, publicStoragePath: pub.path, privateStoragePath: priv.path, assetsZipStoragePath: assetsZipPath });
+    const result = await importMathCourseV2Action({
+      subjectId,
+      publicStoragePath: pub.path,
+      privateStoragePath: priv.path,
+      assetsZipStoragePath: assetsZipPath,
+      textbookMaterialId: textbookMaterialId || null,
+    });
     if (result.status === "ok") setState({ status: "done", summary: result.summary });
     else setState({ status: "error", message: result.message });
   }
@@ -99,6 +133,30 @@ export function MathCourseV2ImportPanel({ subjects }: { subjects: SubjectOption[
           ))}
         </select>
       </label>
+
+      {subjectId && (
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[13px] font-bold text-p-text">Підручник (необов&apos;язково)</span>
+          {pdfOptions.length === 0 ? (
+            <p className="text-xs text-p-muted">
+              У цього предмета ще немає жодного завантаженого PDF.{" "}
+              <Link href="/parent/books/add" className="font-bold text-p-primary underline">
+                Завантажити PDF підручника спершу
+              </Link>
+            </p>
+          ) : (
+            <select className={parentInput} value={textbookMaterialId} onChange={(e) => setTextbookMaterialId(e.target.value)} disabled={busy}>
+              <option value="">Немає прив&apos;язки</option>
+              {pdfOptions.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.title}
+                  {m.pageCount ? ` (${m.pageCount} с.)` : ""}
+                </option>
+              ))}
+            </select>
+          )}
+        </label>
+      )}
 
       <label className="flex flex-col gap-1.5">
         <span className="text-[13px] font-bold text-p-text">public/course.json</span>
