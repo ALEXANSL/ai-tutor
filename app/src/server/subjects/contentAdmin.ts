@@ -226,7 +226,13 @@ export interface SubjectPdfOption {
   pageCount: number | null;
 }
 
-/** US-29.2 КП-1: already-uploaded, already-indexed PDFs of this subject — the dropdown's options. */
+/**
+ * US-29.2 КП-1 / S43 (textbook linking directly from the import screen,
+ * PO request 2026-10-13): already-uploaded, already-indexed PDFs of this
+ * subject — the dropdown's options, on both the subject's content-admin
+ * screen and the import panels (`listSubjectPdfMaterialsAction`,
+ * `app/actions/content-admin.ts`).
+ */
 export async function listSubjectPdfMaterials(familyId: string, subjectId: string): Promise<SubjectPdfOption[]> {
   const scope = forFamily(familyId);
   const { data } = await scope

@@ -1,6 +1,7 @@
 "use server";
 
 import { z } from "zod";
+import { linkTextbookBestEffort } from "@/app/actions/content-admin";
 import { requireChild, requireParentAccess } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
 import { explainStepAgain } from "@/server/lessons/chat";
@@ -55,10 +56,13 @@ export async function importLiteratureV2Action(input: {
   assetsStoragePath: string;
   taskTablesStoragePath: string;
   illustrationsZipStoragePath?: string;
+  /** S43: link the imported package to an already-uploaded PDF right away, no separate `/parent/subjects/[id]` visit. */
+  textbookMaterialId?: string | null;
 }): Promise<LiteratureV2ImportState> {
   const { familyId } = await requireParentAccess();
   const subjectParsed = UUID.safeParse(input.subjectId);
   if (!subjectParsed.success) return { status: "error", message: "Невірний ідентифікатор предмета." };
+  if (input.textbookMaterialId && !UUID.safeParse(input.textbookMaterialId).success) return { status: "error", message: "Невірний ідентифікатор підручника." };
   for (const p of [input.courseStoragePath, input.teacherStoragePath, input.assetsStoragePath, input.taskTablesStoragePath, input.illustrationsZipStoragePath]) {
     if (p && !p.startsWith(`${familyId}/`)) return { status: "error", message: "Невірний шлях завантаженого файлу." };
   }
@@ -117,6 +121,12 @@ export async function importLiteratureV2Action(input: {
 
     const summary = await persistLiteratureV2Package(scope, { subjectId: subject.id }, parsed, assetFiles);
 
+    const warnings: ImportIssue[] = [...parsed.warnings, ...summary.assetUploadFailures.map((f) => ({ file: f.path, field: "upload", message: f.message }))];
+    if (input.textbookMaterialId) {
+      const linkWarning = await linkTextbookBestEffort(familyId, "literature_v2", summary.packageId, input.textbookMaterialId);
+      if (linkWarning) warnings.push(linkWarning);
+    }
+
     return {
       status: "ok",
       summary: {
@@ -130,7 +140,7 @@ export async function importLiteratureV2Action(input: {
         assetsUploaded: summary.assetsUploaded,
         assetsMissing: summary.assetsMissing,
         errors: parsed.errors,
-        warnings: [...parsed.warnings, ...summary.assetUploadFailures.map((f) => ({ file: f.path, field: "upload", message: f.message }))],
+        warnings,
       },
     };
   } catch (e) {

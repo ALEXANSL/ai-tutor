@@ -40,9 +40,9 @@ export default async function MaterialsImportPage() {
         </p>
         <MathCourseV2ImportPanel subjects={subjects} />
       </Panel>
-      <Panel title="Зарубіжна література (повний пакет, відкриті завдання)">
+      <Panel title="Повний пакет уроків — відкриті завдання">
         <p className="-mt-2 mb-3.5 text-xs text-p-muted">
-          Окремий формат (S36) — чотири файли JSON (course.json, teacher.json, assets.json, task_tables.json), плюс необов&apos;язковий zip з ілюстраціями. Усі завдання тут відкриті (без варіантів відповіді).
+          Формат для будь-якого предмета з відкритими завданнями (S36) — чотири файли JSON (course.json, teacher.json, assets.json, task_tables.json), плюс необов&apos;язковий zip з ілюстраціями. Усі завдання тут відкриті (без варіантів відповіді).
         </p>
         <LiteratureV2ImportPanel subjects={subjects} />
       </Panel>
