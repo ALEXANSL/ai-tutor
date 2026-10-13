@@ -1,7 +1,15 @@
 import { generateKeyPairSync, createVerify } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { parseServiceAccount } from "../env";
-import { MAX_FILE_BYTES, buildServiceAccountAssertion, downloadFile, formatOf, isValidDriveId, listFolderFiles } from "./google";
+import {
+  MAX_FILE_BYTES,
+  buildServiceAccountAssertion,
+  downloadFile,
+  downloadFileRange,
+  formatOf,
+  isValidDriveId,
+  listFolderFiles,
+} from "./google";
 import { checkFolderPublicAccess } from "./public-access";
 
 const FOLDER = "FolderIdPlaceholder_0123456789";
@@ -108,6 +116,46 @@ describe("drive listing", () => {
     expect(cancelled).toBe(true);
     // Stops right after crossing the limit — proof it never tries to read/buffer the "whole" (huge) stream.
     expect(reads).toBeLessThanOrEqual(Math.ceil(MAX_FILE_BYTES / chunkSize) + 1);
+  });
+
+  describe("downloadFileRange (byte-range proxy for pdf.js streaming, PO complaint 2026-10-13)", () => {
+    it("sends the Range header to Drive and returns the parsed 206 Content-Range", async () => {
+      const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+        expect((init!.headers as Record<string, string>).range).toBe("bytes=0-65535");
+        return new Response(new Uint8Array(65536), {
+          status: 206,
+          headers: { "content-range": "bytes 0-65535/500000" },
+        });
+      });
+      const result = await downloadFileRange("FilePdfPlaceholder001", "t", { start: 0, end: 65535 }, fetchMock as never);
+      expect(result).toMatchObject({ start: 0, end: 65535, total: 500000 });
+      expect(result.bytes.byteLength).toBe(65536);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("treats a plain 200 (Drive ignored the Range) as non-partial", async () => {
+      const res = new Response(new Uint8Array(500000), { status: 200, headers: { "content-length": "500000" } });
+      const result = await downloadFileRange("FilePdfPlaceholder001", "t", { start: 0, end: 65535 }, (async () => res) as never);
+      expect(result.start).toBeNull();
+      expect(result.total).toBe(500000);
+    });
+
+    it("maps Drive errors the same way as downloadFile", async () => {
+      await expect(
+        downloadFileRange("FilePdfPlaceholder001", "t", { start: 0, end: 10 }, (async () => new Response("", { status: 404 })) as never),
+      ).rejects.toMatchObject({ code: "not_found" });
+      await expect(
+        downloadFileRange("FilePdfPlaceholder001", "t", { start: 0, end: 10 }, (async () => new Response("", { status: 403 })) as never),
+      ).rejects.toMatchObject({ code: "forbidden" });
+    });
+
+    it("refuses an invalid file id without calling Drive", async () => {
+      const fetchMock = vi.fn();
+      await expect(downloadFileRange("bad id!", "t", { start: 0, end: 10 }, fetchMock as never)).rejects.toMatchObject({
+        code: "not_found",
+      });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 });
 

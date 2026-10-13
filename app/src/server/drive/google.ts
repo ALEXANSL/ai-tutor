@@ -194,3 +194,59 @@ export async function downloadFile(fileId: string, token: string, fetchImpl: typ
   if (length > MAX_FILE_BYTES) throw new DriveError("file too large", 413, "too_large");
   return readBounded(res);
 }
+
+export interface DriveRangeResult {
+  bytes: Uint8Array;
+  /** `null` when Drive answered with a full `200` instead of `206` (range not honoured). */
+  start: number | null;
+  end: number | null;
+  /** Total file size, from `Content-Range`'s `/<total>` — `null` if Drive left it out. */
+  total: number | null;
+}
+
+/**
+ * PO complaint 2026-10-13 (repeat of 2026-10-07, this time History/Literature
+ * PDF): the first open of a newly-linked book was still slow because the
+ * whole flow was strictly sequential — download the *entire* file, then hand
+ * it to pdf.js, which parses the *entire* file, before rendering even one
+ * page. `downloadFile` above stays as-is (full-book indexing, the old
+ * reader flow); this is the byte-range counterpart `/api/book/[id]/file`
+ * needs so pdf.js's own streaming mode (`getDocument({ url, rangeChunkSize })`)
+ * can ask for just the bytes of one page. Drive's `alt=media` honours a
+ * normal HTTP `Range` request header the same way any static file server
+ * would (not a Drive-specific param) and answers `206 Partial Content` with
+ * `Content-Range: bytes <start>-<end>/<total>` when it can satisfy it.
+ */
+export async function downloadFileRange(
+  fileId: string,
+  token: string,
+  range: { start: number; end: number },
+  fetchImpl: typeof fetch = fetch,
+): Promise<DriveRangeResult> {
+  if (!isValidDriveId(fileId)) throw new DriveError("invalid file id", null, "not_found");
+  let res: Response;
+  try {
+    res = await fetchImpl(`${DRIVE_API}/files/${fileId}?alt=media&supportsAllDrives=true`, {
+      headers: { authorization: `Bearer ${token}`, range: `bytes=${range.start}-${range.end}` },
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch {
+    throw new DriveError("drive request failed", null, "network");
+  }
+  if (res.status === 404) throw new DriveError("drive item not found or not shared", 404, "not_found");
+  if (res.status === 401 || res.status === 403) throw new DriveError(`drive access denied (${res.status})`, res.status, "forbidden");
+  if (res.status !== 206 && res.status !== 200) throw new DriveError(`drive error ${res.status}`, res.status, "http");
+
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  if (bytes.byteLength > MAX_FILE_BYTES) throw new DriveError("file too large", 413, "too_large");
+
+  const contentRange = res.headers.get("content-range");
+  const match = contentRange ? /bytes (\d+)-(\d+)\/(\d+)/.exec(contentRange) : null;
+  if (res.status === 206 && match) {
+    return { bytes, start: Number(match[1]), end: Number(match[2]), total: Number(match[3]) };
+  }
+  // Drive answered 200 (ignored the Range) or sent a Content-Range we could
+  // not parse — caller treats this as "not actually partial".
+  const totalLength = Number(res.headers.get("content-length") ?? 0) || null;
+  return { bytes, start: null, end: null, total: res.status === 206 ? null : totalLength };
+}
