@@ -66,11 +66,22 @@ function loadPdfDocument(materialId: string): Promise<PdfDocumentProxyLike> {
   const cached = pdfDocCache.get(materialId);
   if (cached) return cached;
   const promise = (async () => {
-    const [pdfjsLib, res] = await Promise.all([import("pdfjs-dist"), fetch(`/api/book/${materialId}/file`)]);
-    if (!res.ok) throw new Error(`file ${res.status}`);
-    const bytes = new Uint8Array(await res.arrayBuffer());
+    const pdfjsLib = await import("pdfjs-dist");
     pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
-    return (await pdfjsLib.getDocument({ data: bytes }).promise) as unknown as PdfDocumentProxyLike;
+    // PO complaint 2026-10-13 (repeat of 2026-10-07, History/Literature PDF
+    // this time): fetching the whole file's bytes first and handing them to
+    // pdf.js as `data` meant pdf.js had to parse the entire file before it
+    // could render even page 1. Passing `url` instead lets pdf.js make its
+    // own HTTP Range requests against our streaming-capable
+    // `/api/book/[materialId]/file` route (206 Partial Content) -- a small
+    // xref/structure fetch first, then just the bytes of whatever page is
+    // actually being rendered. pdf.js probes Range support itself and falls
+    // back to a full download on its own if the server doesn't honour it,
+    // so this is a safe, incremental change.
+    return (await pdfjsLib.getDocument({
+      url: `/api/book/${materialId}/file`,
+      rangeChunkSize: 131072,
+    }).promise) as unknown as PdfDocumentProxyLike;
   })();
   promise.catch(() => pdfDocCache.delete(materialId));
   pdfDocCache.set(materialId, promise);
