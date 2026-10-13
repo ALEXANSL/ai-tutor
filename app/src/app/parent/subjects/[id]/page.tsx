@@ -1,16 +1,20 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BulkWarmupPanel } from "@/components/parent/subjects/BulkWarmupPanel";
+import { CleanupContentPanel } from "@/components/parent/subjects/CleanupContentPanel";
 import { CurrentTopicPicker } from "@/components/parent/subjects/CurrentTopicPicker";
 import { ForecastPlanPanel } from "@/components/parent/subjects/ForecastPlanPanel";
 import { LibraryCardsList } from "@/components/parent/subjects/LibraryCardsList";
 import { RenameSubjectForm } from "@/components/parent/subjects/RenameSubjectForm";
 import { StartLessonButton } from "@/components/parent/subjects/StartLessonButton";
+import { SubjectLessonsPanel } from "@/components/parent/subjects/SubjectLessonsPanel";
+import { TextbookLinkPanel } from "@/components/parent/subjects/TextbookLinkPanel";
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
 import { listLibraryCardsForTopic } from "@/server/lessons/library";
 import { getTopicWarmupStatuses } from "@/server/lessons/warmup";
 import { getSubjectDetail, getSubjectForecastPlan } from "@/server/subjects/queries";
+import { listSubjectLessons, listSubjectPackages, listSubjectPdfMaterials } from "@/server/subjects/contentAdmin";
 import { PageTitle, Panel } from "../../ui";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -42,6 +46,16 @@ export default async function SubjectDetailPage({ params }: { params: Promise<{ 
   // anything, so a topic already warmed up by an automatic trigger shows
   // "Готово" from the very first render (КП-5).
   const bulkWarmupStatuses = subject.topics.length > 0 ? await getTopicWarmupStatuses(familyId, subject.topics.map((tp) => tp.id)) : {};
+
+  // S42 (E-29): content-admin read models — fetched unconditionally (cheap,
+  // all-empty-array fallbacks when the subject has no imported content yet)
+  // since this screen is also the preview source for "Очистити старий
+  // контент" above.
+  const [contentLessons, contentPackages, pdfOptions] = await Promise.all([
+    listSubjectLessons(familyId, subject.id),
+    listSubjectPackages(familyId, subject.id),
+    listSubjectPdfMaterials(familyId, subject.id),
+  ]);
 
   return (
     <>
@@ -93,6 +107,23 @@ export default async function SubjectDetailPage({ params }: { params: Promise<{ 
           <LibraryCardsList cards={libraryCards} />
         </Panel>
       )}
+
+      {/* S42 (E-29, US-29.1/29.2/29.3): admin content operations, no SQL. */}
+      <Panel title={uk.parent.contentAdmin.title}>
+        <div className="flex flex-col gap-6">
+          <CleanupContentPanel subjectId={subject.id} />
+          {contentPackages.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-[14px] font-extrabold">{uk.parent.contentAdmin.textbook.title}</h3>
+              <TextbookLinkPanel packages={contentPackages} pdfOptions={pdfOptions} />
+            </div>
+          )}
+          <div>
+            <h3 className="mb-2 text-[14px] font-extrabold">{uk.parent.contentAdmin.lessons.title}</h3>
+            <SubjectLessonsPanel initialLessons={contentLessons} />
+          </div>
+        </div>
+      </Panel>
     </>
   );
 }
