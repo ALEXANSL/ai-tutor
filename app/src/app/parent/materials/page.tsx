@@ -1,6 +1,7 @@
 import { MaterialsImportPanel } from "@/components/parent/materials/MaterialsImportPanel";
 import { MathCourseV2ImportPanel } from "@/components/parent/materials/MathCourseV2ImportPanel";
 import { LiteratureV2ImportPanel } from "@/components/parent/materials/LiteratureV2ImportPanel";
+import { LiteratureV3ImportPanel } from "@/components/parent/materials/LiteratureV3ImportPanel";
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
 import { listSubjects } from "@/server/books/queries";
@@ -45,6 +46,12 @@ export default async function MaterialsImportPage() {
           Формат для будь-якого предмета з відкритими завданнями (S36) — чотири файли JSON (course.json, teacher.json, assets.json, task_tables.json), плюс необов&apos;язковий zip з ілюстраціями. Усі завдання тут відкриті (без варіантів відповіді).
         </p>
         <LiteratureV2ImportPanel subjects={subjects} />
+      </Panel>
+      <Panel title="Пакети уроків «текст твору + квіз» (chapter v2.0.0)">
+        <p className="-mt-2 mb-3.5 text-xs text-p-muted">
+          Новий, серйозніший формат (S45) — сім файлів JSON (package.json, public/course.json, public/readings.json, private/teacher.json, catalog/assets.json, catalog/pages.json, catalog/task_tables.json), плюс необов&apos;язковий zip з ілюстраціями та малими PDF уроків. Тексти творів і біографії, квіз із варіантами відповідей (як на математиці).
+        </p>
+        <LiteratureV3ImportPanel subjects={subjects} />
       </Panel>
     </>
   );

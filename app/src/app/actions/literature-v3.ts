@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireChild } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
 import { narrationTextHash, synthesizeNarration } from "@/server/lessons/narration";
+import { searchLiteratureV3, type LiteratureV3SearchResult } from "@/server/lessons/literatureV3Search";
 import { createServiceClient } from "@/server/supabase/clients";
 
 /**
@@ -13,10 +14,9 @@ import { createServiceClient } from "@/server/supabase/clients";
  * rows (`app/actions/math-course-v2.ts`, see `literatureV3Persist.ts`'s
  * header for why).
  *
- * The import action (parent-only, staged-file upload + `LiteratureV3ImportPanel.tsx`)
- * is NOT part of this slice — see the handback report. This file currently
- * holds only the narrate action, which the viewer needs regardless of how
- * content eventually gets imported.
+ * The import action lives in a separate file, `app/actions/literature-course-v3.ts`
+ * (parent-only — `requireParentAccess`, not `requireChild`), mirroring how
+ * `literature-course-v2.ts` is split from this child-facing one.
  */
 
 const UUID = z.string().uuid();
@@ -68,4 +68,81 @@ export async function narrateLiteratureV3Action(input: { refTable: string; refId
     );
 
   return { status: "ok", audioBase64: audio.audioBase64, audioMime: audio.mimeType };
+}
+
+// ---------------------------------------------------------------------------
+// searchLiteratureV3Action — "де пошук по підручнику" (PO feedback
+// 2026-10-08, S36). Mirrors `searchLiteratureV2Action`/`searchMathCourseV2Action`
+// exactly, plus a search-by-work-TITLE query this format alone supports
+// (`literatureV3Search.ts`'s own header).
+// ---------------------------------------------------------------------------
+
+export type LiteratureV3SearchState = { status: "ok"; result: LiteratureV3SearchResult } | { status: "error"; message: string };
+
+export async function searchLiteratureV3Action(input: { subjectId: string; page?: string; topicQuery?: string; workQuery?: string }): Promise<LiteratureV3SearchState> {
+  const { ctx } = await requireChild();
+  const subjectParsed = UUID.safeParse(input.subjectId);
+  if (!subjectParsed.success) return { status: "error", message: "Невірний ідентифікатор предмета." };
+
+  const pageTrimmed = input.page?.trim();
+  const page = pageTrimmed ? Number.parseInt(pageTrimmed, 10) : undefined;
+  if (pageTrimmed && (page == null || Number.isNaN(page))) return { status: "error", message: "Сторінка має бути числом." };
+
+  const topicQuery = input.topicQuery?.trim() || undefined;
+  const workQuery = input.workQuery?.trim() || undefined;
+  if (!page && !topicQuery && !workQuery) return { status: "error", message: "Вкажи тему, твір або сторінку." };
+
+  const result = await searchLiteratureV3(ctx.familyId, subjectParsed.data, { page, topicQuery, workQuery });
+  return { status: "ok", result };
+}
+
+// ---------------------------------------------------------------------------
+// saveReadingPositionAction / clearReadingPositionAction (US-31.2 КП-2) —
+// "повернення до місця" for a `reading` step. See the migration
+// (`20261024100000_s45b_literature_v3_reading_position.sql`) for why this is
+// its own small table rather than `lesson_sessions.reading_position`
+// (ADR-044 §1's original plan) — `literature_v3` creates no orchestrator
+// session at all. `offsetCodepoints` is the Unicode CODE POINT offset of
+// `content_tts.text` the reader's own scroll position maps to (never a JS
+// UTF-16 string index — INTEGRATION.md's explicit requirement), computed
+// client-side from scroll ratio.
+// ---------------------------------------------------------------------------
+
+export type SaveReadingPositionState = { status: "ok" } | { status: "error"; message: string };
+
+export async function saveReadingPositionAction(input: { lessonId: string; refId: string; offsetCodepoints: number }): Promise<SaveReadingPositionState> {
+  const { ctx, profile } = await requireChild();
+  if (!UUID.safeParse(input.lessonId).success || !input.refId.trim() || !Number.isFinite(input.offsetCodepoints) || input.offsetCodepoints < 0) {
+    return { status: "error", message: "Невірні дані." };
+  }
+
+  const scope = forFamily(ctx.familyId);
+  const { data: lesson } = await scope.select("literature_v3_lessons", "id").eq("id", input.lessonId).maybeSingle<{ id: string }>();
+  if (!lesson) return { status: "error", message: "Урок не знайдено." };
+
+  const service = createServiceClient();
+  const { error } = await service
+    .from("literature_v3_reading_positions")
+    .upsert(
+      {
+        owner_family_id: ctx.familyId,
+        child_profile_id: profile.id,
+        lesson_id: input.lessonId,
+        position: { kind: "reading", ref_id: input.refId, offset_codepoints: Math.round(input.offsetCodepoints) },
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "child_profile_id,lesson_id" },
+    );
+  if (error) return { status: "error", message: `Не вдалося зберегти позицію читання (${error.message}).` };
+  return { status: "ok" };
+}
+
+export async function clearReadingPositionAction(input: { lessonId: string }): Promise<SaveReadingPositionState> {
+  const { profile } = await requireChild();
+  if (!UUID.safeParse(input.lessonId).success) return { status: "error", message: "Невірні дані." };
+
+  const service = createServiceClient();
+  const { error } = await service.from("literature_v3_reading_positions").delete().eq("child_profile_id", profile.id).eq("lesson_id", input.lessonId);
+  if (error) return { status: "error", message: `Не вдалося очистити позицію читання (${error.message}).` };
+  return { status: "ok" };
 }

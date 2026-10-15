@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { uk } from "@/i18n/uk";
+import { isRenderCancelledError, loadPdfDocument, renderPdfPage, type PdfDocumentProxyLike, type PdfPageProxyLike, type PdfRenderTaskLike } from "@/components/child/pdfEngine";
 
 /**
  * PDF book reader (Alex, 2026-10-02): "читалка книги в pdf форматі... з
@@ -17,27 +18,15 @@ import { uk } from "@/i18n/uk";
  * (ADR-008) — this component never calls `page.getTextContent()` itself,
  * so a search does not need every page downloaded/parsed first.
  *
+ * S45 (US-31.3): the pdf.js document cache/load and per-page
+ * render/cleanup/cancel logic now live in the shared `pdfEngine.ts`
+ * (extracted verbatim, see its header) so `VirtualBookReader.tsx` reuses the
+ * exact same fixes instead of re-introducing one of the memory/render bugs
+ * documented there — this component's own behaviour is unchanged.
+ *
  * pdf.js types are loaded only at runtime (dynamic import, client-only: the
  * library touches `document`/`Worker` and must never run during SSR).
  */
-
-interface PdfDocumentProxyLike {
-  numPages: number;
-  getPage(n: number): Promise<PdfPageProxyLike>;
-  destroy(): void;
-}
-interface PdfRenderTaskLike {
-  promise: Promise<void>;
-  cancel(): void;
-}
-interface PdfPageProxyLike {
-  getViewport(opts: { scale: number }): { width: number; height: number };
-  render(opts: { canvasContext: CanvasRenderingContext2D; viewport: unknown }): PdfRenderTaskLike;
-  /** Releases this page's own decoded/cached resources (fonts, images) while
-   * keeping the document open — pdf.js keeps every visited page's data
-   * around otherwise. See the page-render effect for why this matters. */
-  cleanup(): void;
-}
 
 interface SearchHit {
   page: number;
@@ -47,46 +36,13 @@ interface SearchHit {
 
 const MAX_RENDER_WIDTH = 760;
 
-/**
- * PO complaint 2026-10-07 ("сторінка уроку все ще падає в релоад після
- * читання книги") persisted even after the per-page `cleanup()` fix below.
- * Root cause this targets: every "Відкрити підручник" modal open/close
- * cycle (`BookPageModal`) fully re-fetched the whole PDF as bytes,
- * re-parsed it via `pdfjsLib.getDocument(...)`, then `destroy()`-ed it on
- * close — repeated several times in one lesson session (search, close,
- * open another exercise's page, close...). That churn is a separate,
- * heavier memory-pressure source than the single-page accumulation already
- * fixed. Caching the parsed document per `materialId` across mounts means
- * reopening the same book reuses it instead of repeating the full
- * fetch+parse, and the doc is never destroyed while the tab lives.
- */
-const pdfDocCache = new Map<string, Promise<PdfDocumentProxyLike>>();
-
-function loadPdfDocument(materialId: string): Promise<PdfDocumentProxyLike> {
-  const cached = pdfDocCache.get(materialId);
-  if (cached) return cached;
-  const promise = (async () => {
-    const pdfjsLib = await import("pdfjs-dist");
-    pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
-    // PO complaint 2026-10-13 (repeat of 2026-10-07, History/Literature PDF
-    // this time): fetching the whole file's bytes first and handing them to
-    // pdf.js as `data` meant pdf.js had to parse the entire file before it
-    // could render even page 1. Passing `url` instead lets pdf.js make its
-    // own HTTP Range requests against our streaming-capable
-    // `/api/book/[materialId]/file` route (206 Partial Content) -- a small
-    // xref/structure fetch first, then just the bytes of whatever page is
-    // actually being rendered. pdf.js probes Range support itself and falls
-    // back to a full download on its own if the server doesn't honour it,
-    // so this is a safe, incremental change.
-    return (await pdfjsLib.getDocument({
-      url: `/api/book/${materialId}/file`,
-      rangeChunkSize: 131072,
-    }).promise) as unknown as PdfDocumentProxyLike;
-  })();
-  promise.catch(() => pdfDocCache.delete(materialId));
-  pdfDocCache.set(materialId, promise);
-  return promise;
-}
+// Document cache/load (keyed by `materialId`, PO complaints 2026-10-02/07/13
+// about repeated re-fetch+re-parse on modal open/close and about Range
+// requests vs. whole-file downloads) and the per-page render/cleanup/cancel
+// sequence (PO complaints 2026-10-07 about memory accumulation and about a
+// stale in-flight render fighting a new one) now live in `pdfEngine.ts` —
+// extracted verbatim, see that module's header. `VirtualBookReader.tsx`
+// reuses the exact same `loadPdfDocument`/`renderPdfPage`.
 
 export function BookReader({
   materialId,
@@ -132,7 +88,7 @@ export function BookReader({
     let cancelled = false;
     (async () => {
       try {
-        const doc = await loadPdfDocument(materialId);
+        const doc = await loadPdfDocument(materialId, `/api/book/${materialId}/file`);
         if (cancelled) return;
         docRef.current = doc;
         setPageCount(doc.numPages);
@@ -159,50 +115,15 @@ export function BookReader({
     setRenderError(false);
     (async () => {
       try {
-        // PO complaint 2026-10-07 ("Не вдалося показати цю сторінку", right
-        // after jumping straight to a search hit): pdf.js throws "Cannot use
-        // the same canvas during multiple render() operations" if a
-        // previous page's render() is still in flight on this same
-        // `<canvas>` when a new page change fires this effect again — a
-        // fast jump (search result, Далі spam) raced the still-rendering
-        // old page. Cancel it first instead of letting two renders fight
-        // over one canvas.
-        renderTaskRef.current?.cancel();
-        // PO complaint 2026-10-07 ("сторінка уроку вилітає, потрібно
-        // перезавантажувати" after searching/paging through the book):
-        // pdf.js keeps every visited page's decoded fonts/images resident
-        // until told otherwise — a long search-and-flip session (exactly
-        // this flow) accumulates them until the tab's renderer process runs
-        // out of memory and crashes the whole page, not just the modal.
-        // Releasing the PREVIOUS page's resources once we've moved past it
-        // keeps memory bounded to ~1 page at a time. Best-effort: pdf.js
-        // can refuse this if that page's own render hadn't fully settled
-        // yet, which is fine to ignore (next navigation retries on a fresh
-        // page anyway).
-        try {
-          prevPageRef.current?.cleanup();
-        } catch {
-          // best-effort only, see above
-        }
-        const doc = docRef.current!;
-        const pdfPage = await doc.getPage(page);
-        prevPageRef.current = pdfPage;
-        const base = pdfPage.getViewport({ scale: 1 });
-        const scale = Math.min(2, MAX_RENDER_WIDTH / base.width);
-        const viewport = pdfPage.getViewport({ scale });
-        const canvas = canvasRef.current!;
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx || cancelled) return;
-        const task = pdfPage.render({ canvasContext: ctx, viewport });
-        renderTaskRef.current = task;
-        await task.promise;
-        renderTaskRef.current = null;
+        // Cancel-in-flight, previous-page cleanup, viewport/scale and the
+        // actual render() call all live in `renderPdfPage` (`pdfEngine.ts`)
+        // now — same sequence as before this extraction, see that module's
+        // header for the PO complaints each step fixes.
+        await renderPdfPage({ doc: docRef.current!, pageNum: page, canvas: canvasRef.current!, maxRenderWidth: MAX_RENDER_WIDTH, refs: { renderTaskRef, prevPageRef } });
       } catch (e) {
-        // A render we cancelled ourselves (above) rejects too — that is
-        // expected and silent, not a real failure to report.
-        if ((e as { name?: string } | null)?.name === "RenderingCancelledException") return;
+        // A render we cancelled ourselves (inside `renderPdfPage`) rejects
+        // too — that is expected and silent, not a real failure to report.
+        if (isRenderCancelledError(e)) return;
         if (!cancelled) {
           console.error(`BookReader: page ${page} render failed: ${(e as Error)?.message ?? e}`);
           setRenderError(true);

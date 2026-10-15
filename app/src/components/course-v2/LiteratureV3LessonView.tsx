@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { isCurrentlyPlaying, playSingleAudio, stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
-import { narrateLiteratureV3Action } from "@/app/actions/literature-v3";
+import { narrateLiteratureV3Action, saveReadingPositionAction } from "@/app/actions/literature-v3";
+import { OpenVirtualBookButton } from "@/components/child/OpenVirtualBookButton";
 import { QuestionCard } from "@/components/course-v2/QuestionCard";
-import type { LiteratureV3FlowStep, LiteratureV3LessonListItem, LiteratureV3LessonView as LiteratureV3LessonViewModel } from "@/server/lessons/literatureV3View";
+import type { LiteratureV3BookPage, LiteratureV3FlowStep, LiteratureV3LessonListItem, LiteratureV3LessonView as LiteratureV3LessonViewModel, LiteratureV3ReadingPosition } from "@/server/lessons/literatureV3View";
 
 /**
  * S45 (ADR-044 §3) — new child-facing viewer for one imported
@@ -24,15 +25,27 @@ import type { LiteratureV3FlowStep, LiteratureV3LessonListItem, LiteratureV3Less
  * intentionally NEVER rendered here (US-31.2 КП-6, INTEGRATION.md's own
  * explicit instruction — their material is already represented in `flow`).
  *
- * NOT implemented in this slice (see handback report): persisting the exact
- * reading position (`lesson_sessions.reading_position`) across visits —
- * "Повторити" restarts the CURRENT reading step from its own beginning
- * (US-31.2 КП-2's "повтор" half), but leaving the lesson mid-reading and
- * coming back currently resumes at the start of the reading step, not the
- * exact scroll/audio offset (the "повернення до місця" half). The step/flow
- * index itself is also not yet persisted server-side for this format (same
- * gap as `MathCourseV2LessonView.tsx`/`LiteratureV2LessonView.tsx` already
- * have today — not a new limitation introduced here).
+ * US-31.3 (ADR-044 §4): "📖 Подивитись у підручнику" opens `VirtualBookReader`
+ * (small per-lesson PDFs stitched into one seamless book, no Drive involved)
+ * — at the lesson level (header button, first printed page of this lesson)
+ * and on each `reading` step whose fragment has a resolvable primary page
+ * (`bookPage`). `screen`/`biography` steps don't carry a single-page anchor
+ * in this package version, so they get no button of their own — see
+ * handback report.
+ *
+ * The step/flow index itself is NOT yet persisted server-side for this
+ * format (same gap as `MathCourseV2LessonView.tsx`/`LiteratureV2LessonView.tsx`
+ * already have today — not a new limitation introduced here); see
+ * `ReadingStep`'s own doc comment for the reading-POSITION persistence this
+ * slice DOES add (US-31.2 КП-2) — a coarser, honestly-scoped restore: it
+ * remembers the last READING step visited (and a scroll-derived offset
+ * inside it), not the lesson's overall step index. Finishing that reading
+ * step and moving on (to its own quiz, say) does not clear the saved
+ * position — reopening the lesson later still jumps back into that reading
+ * step rather than wherever the child actually got to afterwards. Fixing
+ * that needs the same "persist the whole flow index" work the paragraph
+ * above already flags as a pre-existing gap across all three course-v2
+ * viewers, not something to solve only for reading steps here.
  */
 
 function ListenButton({ refTable, refId, field, text }: { refTable: string; refId: string; field: string; text: string }) {
@@ -109,9 +122,78 @@ function BiographyStep({ step }: { step: Extract<LiteratureV3FlowStep, { kind: "
  * only — NO extra generated questions are ever inserted mid-reading
  * (INTEGRATION.md: "після кожного абзацу не потрібне додаткове згенероване
  * запитання" — comprehension checks happen only on explicit `quiz` steps).
+ *
+ * US-31.3: "📖 Подивитись у підручнику" here (when `step.bookPage` resolves)
+ * opens the virtual book at the printed page this fragment actually starts
+ * on, not just the lesson's own first page.
+ *
+ * US-31.2 КП-2 ("повернення до місця"): the text lives in its own
+ * scrollable panel; scroll position is mapped to a Unicode CODE POINT
+ * offset of `step.ttsText` (never a JS UTF-16 string index —
+ * INTEGRATION.md's explicit requirement) and saved via
+ * `saveReadingPositionAction` whenever this step is left (component
+ * unmount — navigating to another step, or away from the lesson entirely)
+ * or the tab is hidden/closed (`visibilitychange`/`pagehide`). On the
+ * step's OWN mount, if `initialOffsetCodepoints` was restored from a prior
+ * visit, the panel scrolls back to roughly that position. This is a
+ * best-effort scroll restore, not exact-character — no live audio seek is
+ * implemented in this slice (see this component's own header).
  */
-function ReadingStep({ step }: { step: Extract<LiteratureV3FlowStep, { kind: "reading" }> }) {
+function ReadingStep({
+  step,
+  packageTitle,
+  bookIndex,
+  lessonId,
+  initialOffsetCodepoints,
+}: {
+  step: Extract<LiteratureV3FlowStep, { kind: "reading" }>;
+  packageTitle: string;
+  bookIndex: LiteratureV3BookPage[];
+  lessonId: string;
+  initialOffsetCodepoints: number | null;
+}) {
   const [playKey, setPlayKey] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const offsetRef = useRef(initialOffsetCodepoints ?? 0);
+  const totalCodepoints = Math.max(1, Array.from(step.ttsText).length);
+
+  // Restore scroll once, after layout.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || initialOffsetCodepoints == null) return;
+    const ratio = Math.min(1, initialOffsetCodepoints / totalCodepoints);
+    const frame = requestAnimationFrame(() => {
+      el.scrollTop = ratio * Math.max(0, el.scrollHeight - el.clientHeight);
+    });
+    return () => cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function onScroll() {
+    const el = containerRef.current;
+    if (!el) return;
+    const maxScroll = el.scrollHeight - el.clientHeight;
+    const ratio = maxScroll > 0 ? el.scrollTop / maxScroll : 0;
+    offsetRef.current = Math.round(ratio * totalCodepoints);
+  }
+
+  // Save on hide/close and on leaving this step (unmount).
+  useEffect(() => {
+    function save() {
+      void saveReadingPositionAction({ lessonId, refId: step.id, offsetCodepoints: offsetRef.current });
+    }
+    function onVisibilityChange() {
+      if (document.hidden) save();
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", save);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", save);
+      save();
+    };
+  }, [lessonId, step.id]);
+
   return (
     <section className="lit-v3-step lit-v3-step-reading">
       <p className="course-eyebrow">
@@ -119,25 +201,40 @@ function ReadingStep({ step }: { step: Extract<LiteratureV3FlowStep, { kind: "re
         {step.workTitle}
       </p>
       {step.title && <h3>{step.title}</h3>}
-      <p style={{ whiteSpace: "pre-wrap" }}>{step.displayText}</p>
+      <div ref={containerRef} onScroll={onScroll} style={{ maxHeight: "60vh", overflowY: "auto" }}>
+        <p style={{ whiteSpace: "pre-wrap" }}>{step.displayText}</p>
+      </div>
       <div className="mt-2 flex flex-wrap gap-2">
         <ListenButton key={playKey} refTable="literature_v3_reading_items" refId={step.id} field="tts" text={step.ttsText} />
         <button type="button" onClick={() => setPlayKey((k) => k + 1)} className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold">
           🔁 Повторити
         </button>
+        <OpenVirtualBookButton title={packageTitle} pageIndex={bookIndex} printedPage={step.bookPage} />
       </div>
     </section>
   );
 }
 
-function FlowStepRenderer({ step }: { step: LiteratureV3FlowStep }) {
+function FlowStepRenderer({
+  step,
+  packageTitle,
+  bookIndex,
+  lessonId,
+  initialReadingOffset,
+}: {
+  step: LiteratureV3FlowStep;
+  packageTitle: string;
+  bookIndex: LiteratureV3BookPage[];
+  lessonId: string;
+  initialReadingOffset: number | null;
+}) {
   switch (step.kind) {
     case "screen":
       return <ScreenStep step={step} />;
     case "biography":
       return <BiographyStep step={step} />;
     case "reading":
-      return <ReadingStep step={step} />;
+      return <ReadingStep step={step} packageTitle={packageTitle} bookIndex={bookIndex} lessonId={lessonId} initialOffsetCodepoints={initialReadingOffset} />;
     case "quiz":
       // No `listenButton` here: `course_v2_questions` narration isn't in
       // either narrate action's allow-list today (true for math's own quiz
@@ -151,14 +248,16 @@ function FlowStepRenderer({ step }: { step: LiteratureV3FlowStep }) {
   }
 }
 
-function FlowNav({ lesson }: { lesson: LiteratureV3LessonViewModel }) {
-  const [index, setIndex] = useState(0);
+function FlowNav({ lesson, bookIndex, savedPosition }: { lesson: LiteratureV3LessonViewModel; bookIndex: LiteratureV3BookPage[]; savedPosition: LiteratureV3ReadingPosition | null }) {
+  const savedStepIndex = savedPosition ? lesson.flow.findIndex((s) => s.id === savedPosition.refId) : -1;
+  const [index, setIndex] = useState(savedStepIndex >= 0 ? savedStepIndex : 0);
   const step = lesson.flow[index];
   if (!step) return <p className="course-note">Кроків ще немає.</p>;
+  const initialReadingOffset = step.kind === "reading" && savedPosition?.refId === step.id ? savedPosition.offsetCodepoints : null;
 
   return (
     <>
-      <FlowStepRenderer key={step.id} step={step} />
+      <FlowStepRenderer key={step.id} step={step} packageTitle={lesson.packageTitle} bookIndex={bookIndex} lessonId={lesson.id} initialReadingOffset={initialReadingOffset} />
       <p className="course-eyebrow mt-3">
         Крок {index + 1} з {lesson.flow.length}
       </p>
@@ -179,7 +278,17 @@ function FlowNav({ lesson }: { lesson: LiteratureV3LessonViewModel }) {
   );
 }
 
-export function LiteratureV3LessonScreen({ lesson, packageLessons }: { lesson: LiteratureV3LessonViewModel; packageLessons: LiteratureV3LessonListItem[] }) {
+export function LiteratureV3LessonScreen({
+  lesson,
+  packageLessons,
+  bookIndex,
+  savedPosition,
+}: {
+  lesson: LiteratureV3LessonViewModel;
+  packageLessons: LiteratureV3LessonListItem[];
+  bookIndex: LiteratureV3BookPage[];
+  savedPosition: LiteratureV3ReadingPosition | null;
+}) {
   return (
     <article className="course-lesson">
       <LessonNavBar subjectId={lesson.subjectId} courseNav={{ basePath: "/literature-v3", currentLessonId: lesson.id, lessons: packageLessons, topicId: lesson.topicId }} />
@@ -193,6 +302,9 @@ export function LiteratureV3LessonScreen({ lesson, packageLessons }: { lesson: L
           </p>
         )}
         {lesson.status === "needs_review" && <p className="course-warning">Цей урок ще потребує перевірки дорослого.</p>}
+        <div className="mt-2">
+          <OpenVirtualBookButton title={lesson.packageTitle} pageIndex={bookIndex} printedPage={lesson.printedPageFrom} />
+        </div>
       </header>
 
       {lesson.objectives.length > 0 && (
@@ -206,7 +318,7 @@ export function LiteratureV3LessonScreen({ lesson, packageLessons }: { lesson: L
         </section>
       )}
 
-      <FlowNav lesson={lesson} />
+      <FlowNav lesson={lesson} bookIndex={bookIndex} savedPosition={savedPosition} />
     </article>
   );
 }
