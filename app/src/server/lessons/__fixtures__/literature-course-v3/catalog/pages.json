@@ -1,0 +1,172 @@
+{
+ "schema_version": "2.0.0",
+ "book_id": "ukrlit6-kalynych-diachok-2023",
+ "source_document": {
+  "title": "Українська література. 6 клас",
+  "authors": [
+   "Олеся Калинич",
+   "Світлана Дячок"
+  ],
+  "year": 2023,
+  "publisher": "Астон",
+  "sha256": "9a9634347c09810714c2526955db0f07905378bc99caed0ecb1a0e2be6735bc3",
+  "pdf_pages": 306,
+  "page_number_base": 1
+ },
+ "items": [
+  {
+   "id": "ukrlit6-kalynych-diachok-2023-P006",
+   "printed_page": 6,
+   "source_pdf_page": 6,
+   "transcript_path": "assets/text/pages/P006.txt",
+   "transcript_role": "reference_only_not_default_tts",
+   "lesson_locations": [
+    {
+     "lesson_id": "ukrlit6-kalynych-diachok-2023-L001",
+     "pdf_asset_id": "ukrlit6-kalynych-diachok-2023-L001-PDF",
+     "bundle_pdf_page": 1
+    }
+   ]
+  },
+  {
+   "id": "ukrlit6-kalynych-diachok-2023-P007",
+   "printed_page": 7,
+   "source_pdf_page": 7,
+   "transcript_path": "assets/text/pages/P007.txt",
+   "transcript_role": "reference_only_not_default_tts",
+   "lesson_locations": [
+    {
+     "lesson_id": "ukrlit6-kalynych-diachok-2023-L001",
+     "pdf_asset_id": "ukrlit6-kalynych-diachok-2023-L001-PDF",
+     "bundle_pdf_page": 2
+    }
+   ]
+  },
+  {
+   "id": "ukrlit6-kalynych-diachok-2023-P008",
+   "printed_page": 8,
+   "source_pdf_page": 8,
+   "transcript_path": "assets/text/pages/P008.txt",
+   "transcript_role": "reference_only_not_default_tts",
+   "lesson_locations": [
+    {
+     "lesson_id": "ukrlit6-kalynych-diachok-2023-L001",
+     "pdf_asset_id": "ukrlit6-kalynych-diachok-2023-L001-PDF",
+     "bundle_pdf_page": 3
+    }
+   ]
+  },
+  {
+   "id": "ukrlit6-kalynych-diachok-2023-P009",
+   "printed_page": 9,
+   "source_pdf_page": 9,
+   "transcript_path": "assets/text/pages/P009.txt",
+   "transcript_role": "reference_only_not_default_tts",
+   "lesson_locations": [
+    {
+     "lesson_id": "ukrlit6-kalynych-diachok-2023-L001",
+     "pdf_asset_id": "ukrlit6-kalynych-diachok-2023-L001-PDF",
+     "bundle_pdf_page": 4
+    }
+   ]
+  },
+  {
+   "id": "ukrlit6-kalynych-diachok-2023-P010",
+   "printed_page": 10,
+   "source_pdf_page": 10,
+   "transcript_path": "assets/text/pages/P010.txt",
+   "transcript_role": "reference_only_not_default_tts",
+   "lesson_locations": [
+    {
+     "lesson_id": "ukrlit6-kalynych-diachok-2023-L001",
+     "pdf_asset_id": "ukrlit6-kalynych-diachok-2023-L001-PDF",
+     "bundle_pdf_page": 5
+    }
+   ]
+  },
+  {
+   "id": "ukrlit6-kalynych-diachok-2023-P022",
+   "printed_page": 22,
+   "source_pdf_page": 22,
+   "transcript_path": "assets/text/pages/P022.txt",
+   "transcript_role": "reference_only_not_default_tts",
+   "lesson_locations": [
+    {
+     "lesson_id": "ukrlit6-kalynych-diachok-2023-L004",
+     "pdf_asset_id": "ukrlit6-kalynych-diachok-2023-L004-PDF",
+     "bundle_pdf_page": 1
+    }
+   ]
+  },
+  {
+   "id": "ukrlit6-kalynych-diachok-2023-P023",
+   "printed_page": 23,
+   "source_pdf_page": 23,
+   "transcript_path": "assets/text/pages/P023.txt",
+   "transcript_role": "reference_only_not_default_tts",
+   "lesson_locations": [
+    {
+     "lesson_id": "ukrlit6-kalynych-diachok-2023-L004",
+     "pdf_asset_id": "ukrlit6-kalynych-diachok-2023-L004-PDF",
+     "bundle_pdf_page": 2
+    }
+   ]
+  },
+  {
+   "id": "ukrlit6-kalynych-diachok-2023-P024",
+   "printed_page": 24,
+   "source_pdf_page": 24,
+   "transcript_path": "assets/text/pages/P024.txt",
+   "transcript_role": "reference_only_not_default_tts",
+   "lesson_locations": [
+    {
+     "lesson_id": "ukrlit6-kalynych-diachok-2023-L004",
+     "pdf_asset_id": "ukrlit6-kalynych-diachok-2023-L004-PDF",
+     "bundle_pdf_page": 3
+    }
+   ]
+  },
+  {
+   "id": "ukrlit6-kalynych-diachok-2023-P025",
+   "printed_page": 25,
+   "source_pdf_page": 25,
+   "transcript_path": "assets/text/pages/P025.txt",
+   "transcript_role": "reference_only_not_default_tts",
+   "lesson_locations": [
+    {
+     "lesson_id": "ukrlit6-kalynych-diachok-2023-L004",
+     "pdf_asset_id": "ukrlit6-kalynych-diachok-2023-L004-PDF",
+     "bundle_pdf_page": 4
+    }
+   ]
+  },
+  {
+   "id": "ukrlit6-kalynych-diachok-2023-P026",
+   "printed_page": 26,
+   "source_pdf_page": 26,
+   "transcript_path": "assets/text/pages/P026.txt",
+   "transcript_role": "reference_only_not_default_tts",
+   "lesson_locations": [
+    {
+     "lesson_id": "ukrlit6-kalynych-diachok-2023-L004",
+     "pdf_asset_id": "ukrlit6-kalynych-diachok-2023-L004-PDF",
+     "bundle_pdf_page": 5
+    }
+   ]
+  },
+  {
+   "id": "ukrlit6-kalynych-diachok-2023-P027",
+   "printed_page": 27,
+   "source_pdf_page": 27,
+   "transcript_path": "assets/text/pages/P027.txt",
+   "transcript_role": "reference_only_not_default_tts",
+   "lesson_locations": [
+    {
+     "lesson_id": "ukrlit6-kalynych-diachok-2023-L004",
+     "pdf_asset_id": "ukrlit6-kalynych-diachok-2023-L004-PDF",
+     "bundle_pdf_page": 6
+    }
+   ]
+  }
+ ]
+}
