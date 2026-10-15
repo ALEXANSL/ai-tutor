@@ -1,0 +1,124 @@
+{
+ "schema_version": "2.0.0",
+ "book_id": "ukrlit6-kalynych-diachok-2023",
+ "items": [
+  {
+   "id": "ukrlit6-kalynych-diachok-2023-A-p022-dara-kornii",
+   "page_id": "ukrlit6-kalynych-diachok-2023-P022",
+   "path": "assets/p022-dara-kornii.webp",
+   "kind": "textbook_illustration",
+   "caption": "",
+   "alt": "Дара Корній. Кольорова світлина письменниці з коротким темним волоссям, у темному одязі з орнаментом, на зеленому тлі.",
+   "tts": {
+    "text": "Дара Корній. Кольорова світлина письменниці з коротким темним волоссям, у темному одязі з орнаментом, на зеленому тлі.",
+    "lang": "uk-UA"
+   },
+   "sha256": "bc0500fd5acd73157389027eafc050dfe18b4e82d132b28a177e8d7bdf5414d0",
+   "mime_type": "image/webp",
+   "byte_size": 20748
+  },
+  {
+   "id": "ukrlit6-kalynych-diachok-2023-A-p024-lisovyk",
+   "page_id": "ukrlit6-kalynych-diachok-2023-P024",
+   "path": "assets/p024-lisovyk.webp",
+   "kind": "textbook_illustration",
+   "caption": "Лісовик. Худ. Ангеліна Канкава",
+   "alt": "Бородата людиноподібна істота з довгим волоссям зображена серед гілок і коріння в сіро-зелених тонах.",
+   "tts": {
+    "text": "Бородата людиноподібна істота з довгим волоссям зображена серед гілок і коріння в сіро-зелених тонах.",
+    "lang": "uk-UA"
+   },
+   "sha256": "7418baaaa8c5772f63d8c17c5e604b02ded682c4bf2e8f83ffa09c9c3198c3f2",
+   "mime_type": "image/webp",
+   "byte_size": 26832
+  },
+  {
+   "id": "ukrlit6-kalynych-diachok-2023-L001-PDF",
+   "kind": "lesson_pdf",
+   "path": "assets/lessons/L001.pdf",
+   "mime_type": "application/pdf",
+   "byte_size": 797432,
+   "sha256": "3c5c7011101d824b7c7c69e5f3526ad9a7f262eec3a5a2bd1ee1169019cbbedd",
+   "title": "Мистецтво слова: як література створює образи",
+   "page_map": [
+    {
+     "page_id": "ukrlit6-kalynych-diachok-2023-P006",
+     "printed_page": 6,
+     "source_pdf_page": 6,
+     "bundle_pdf_page": 1
+    },
+    {
+     "page_id": "ukrlit6-kalynych-diachok-2023-P007",
+     "printed_page": 7,
+     "source_pdf_page": 7,
+     "bundle_pdf_page": 2
+    },
+    {
+     "page_id": "ukrlit6-kalynych-diachok-2023-P008",
+     "printed_page": 8,
+     "source_pdf_page": 8,
+     "bundle_pdf_page": 3
+    },
+    {
+     "page_id": "ukrlit6-kalynych-diachok-2023-P009",
+     "printed_page": 9,
+     "source_pdf_page": 9,
+     "bundle_pdf_page": 4
+    },
+    {
+     "page_id": "ukrlit6-kalynych-diachok-2023-P010",
+     "printed_page": 10,
+     "source_pdf_page": 10,
+     "bundle_pdf_page": 5
+    }
+   ]
+  },
+  {
+   "id": "ukrlit6-kalynych-diachok-2023-L004-PDF",
+   "kind": "lesson_pdf",
+   "path": "assets/lessons/L004.pdf",
+   "mime_type": "application/pdf",
+   "byte_size": 335534,
+   "sha256": "4f7d8e36efea96231ae66fa40ca1f5eba5b87e29c67d46be4fbf3c6795520362",
+   "title": "Дара Корній. «Лісовик»: уявлення про охоронця лісу",
+   "page_map": [
+    {
+     "page_id": "ukrlit6-kalynych-diachok-2023-P022",
+     "printed_page": 22,
+     "source_pdf_page": 22,
+     "bundle_pdf_page": 1
+    },
+    {
+     "page_id": "ukrlit6-kalynych-diachok-2023-P023",
+     "printed_page": 23,
+     "source_pdf_page": 23,
+     "bundle_pdf_page": 2
+    },
+    {
+     "page_id": "ukrlit6-kalynych-diachok-2023-P024",
+     "printed_page": 24,
+     "source_pdf_page": 24,
+     "bundle_pdf_page": 3
+    },
+    {
+     "page_id": "ukrlit6-kalynych-diachok-2023-P025",
+     "printed_page": 25,
+     "source_pdf_page": 25,
+     "bundle_pdf_page": 4
+    },
+    {
+     "page_id": "ukrlit6-kalynych-diachok-2023-P026",
+     "printed_page": 26,
+     "source_pdf_page": 26,
+     "bundle_pdf_page": 5
+    },
+    {
+     "page_id": "ukrlit6-kalynych-diachok-2023-P027",
+     "printed_page": 27,
+     "source_pdf_page": 27,
+     "bundle_pdf_page": 6
+    }
+   ]
+  }
+ ]
+}

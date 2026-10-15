@@ -81,6 +81,18 @@ const FAMILY_COLUMN: Record<string, string> = {
   // Deliberately NOT in this map: literature_v2_task_keys — same reasoning
   // as course_v2_question_keys above (no select RLS grant for any role;
   // service-role only, read narrowly by a future task-help action).
+  // S45 ("Українська література" v2.0.0 chapter-package importer,
+  // see supabase/migrations/20261023100000_s45_literature_v3.sql). Quizzes
+  // are a literal reuse of the course_v2_questions/course_v2_quizzes rows
+  // already listed above — no separate entry needed for those.
+  literature_v3_packages: "owner_family_id",
+  literature_v3_assets: "owner_family_id",
+  literature_v3_lessons: "owner_family_id",
+  literature_v3_screens: "owner_family_id",
+  literature_v3_works: "owner_family_id",
+  literature_v3_reading_items: "owner_family_id",
+  literature_v3_biographies: "owner_family_id",
+  literature_v3_pages: "owner_family_id",
 };
 
 export function familyColumn(table: string): string {

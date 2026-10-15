@@ -2,10 +2,7 @@ import { redirect } from "next/navigation";
 import { requireLessonAccess } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
 import { loadLibraryItemTitles } from "@/server/lessons/generate";
-import { getActiveLiteratureLessonIdForTopic } from "@/server/lessons/literatureView";
-import { getActiveCourseLessonIdForTopic } from "@/server/lessons/courseView";
-import { getActiveMathCourseV2LessonIdForTopic } from "@/server/lessons/mathCourseV2View";
-import { getActiveLiteratureV2LessonIdForTopic } from "@/server/lessons/literatureV2View";
+import { getActiveImportedLessonForTopic } from "@/server/subjects/queries";
 import { getLessonView } from "@/server/lessons/orchestrator";
 import { LessonPicker } from "@/components/lesson/LessonPicker";
 import { LessonRunner } from "@/components/lesson/LessonRunner";
@@ -31,21 +28,24 @@ export default async function LessonPage({ params }: { params: Promise<{ session
   const { session, step, remediation } = await getLessonView(familyId, sessionId);
 
   // 2026-10-02 incident: redirect ANY way of landing here (stale session,
-  // bookmarked URL, cached page) straight to the S33 literature lesson if
-  // this topic now has one — the old step-runner below must never be the
-  // thing the child sees for such a topic again (see
-  // `getActiveLiteratureLessonIdForTopic`'s doc comment).
-  const literatureLessonId = await getActiveLiteratureLessonIdForTopic(familyId, session.topic_id);
-  if (literatureLessonId) redirect(`/literature/${literatureLessonId}`);
-  // S34: same safety net, parallel $0 image-anchored course-package import.
-  const courseLessonId = await getActiveCourseLessonIdForTopic(familyId, session.topic_id);
-  if (courseLessonId) redirect(`/course-lesson/${courseLessonId}`);
-  // S35: same safety net, third parallel $0 full-text course-package import.
-  const mathCourseV2LessonId = await getActiveMathCourseV2LessonIdForTopic(familyId, session.topic_id);
-  if (mathCourseV2LessonId) redirect(`/math-course-v2/${mathCourseV2LessonId}`);
-  // S36: same safety net, fourth parallel $0 open-response course-package import.
-  const literatureV2LessonId = await getActiveLiteratureV2LessonIdForTopic(familyId, session.topic_id);
-  if (literatureV2LessonId) redirect(`/literature-course-v2/${literatureV2LessonId}`);
+  // bookmarked URL, cached page) straight to whichever of the five parallel
+  // $0 import systems (S33/S34/S35/S36/S45) now has an active lesson for
+  // this topic — the old step-runner below must never be the thing the
+  // child sees for such a topic again. ADR-043: this used to be four
+  // hand-copied inline lookups here (one per system) — now one shared
+  // helper, also used by `getSubjectDetail` (`queries.ts`), so a sixth
+  // future format needs one new branch in ONE place, not two.
+  const importedLesson = await getActiveImportedLessonForTopic(familyId, session.topic_id);
+  if (importedLesson) {
+    const path: Record<typeof importedLesson.kind, string> = {
+      literature: `/literature/${importedLesson.lessonId}`,
+      course: `/course-lesson/${importedLesson.lessonId}`,
+      math_v2: `/math-course-v2/${importedLesson.lessonId}`,
+      literature_v2: `/literature-course-v2/${importedLesson.lessonId}`,
+      literature_v3: `/literature-v3/${importedLesson.lessonId}`,
+    };
+    redirect(path[importedLesson.kind]);
+  }
 
   // ADR-023 (D-76): a "cold" topic (zero active blocks at start) lands here
   // with no candidates yet — a `library.warm_topic` job is producing the
