@@ -272,6 +272,30 @@ export async function getLiteratureV3BookIndex(familyId: string, packageId: stri
   return result;
 }
 
+export interface LiteratureV3ReadingPosition {
+  refId: string;
+  offsetCodepoints: number;
+}
+
+/**
+ * US-31.2 КП-2 — the child's saved reading position for one lesson, if any
+ * (`literature_v3_reading_positions`, see migration
+ * `20261024100000_s45b_literature_v3_reading_position.sql` for why this is a
+ * small dedicated table rather than `lesson_sessions.reading_position`).
+ * `null` when nothing was ever saved (most lessons, most of the time) — the
+ * viewer then falls back to its existing "start at flow index 0" behaviour.
+ */
+export async function getLiteratureV3ReadingPosition(familyId: string, childProfileId: string, lessonId: string): Promise<LiteratureV3ReadingPosition | null> {
+  const scope = forFamily(familyId);
+  const { data } = await scope
+    .select("literature_v3_reading_positions", "position")
+    .eq("child_profile_id", childProfileId)
+    .eq("lesson_id", lessonId)
+    .maybeSingle<{ position: { ref_id: string; offset_codepoints: number } }>();
+  if (!data) return null;
+  return { refId: data.position.ref_id, offsetCodepoints: data.position.offset_codepoints };
+}
+
 /** Same role as `mathCourseV2View.ts`'s `getActiveMathCourseV2LessonIdForTopic` (see its doc comment). */
 export async function getActiveLiteratureV3LessonIdForTopic(familyId: string, topicId: string): Promise<string | null> {
   const scope = forFamily(familyId);

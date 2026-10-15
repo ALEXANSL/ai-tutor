@@ -95,3 +95,54 @@ export async function searchLiteratureV3Action(input: { subjectId: string; page?
   const result = await searchLiteratureV3(ctx.familyId, subjectParsed.data, { page, topicQuery, workQuery });
   return { status: "ok", result };
 }
+
+// ---------------------------------------------------------------------------
+// saveReadingPositionAction / clearReadingPositionAction (US-31.2 КП-2) —
+// "повернення до місця" for a `reading` step. See the migration
+// (`20261024100000_s45b_literature_v3_reading_position.sql`) for why this is
+// its own small table rather than `lesson_sessions.reading_position`
+// (ADR-044 §1's original plan) — `literature_v3` creates no orchestrator
+// session at all. `offsetCodepoints` is the Unicode CODE POINT offset of
+// `content_tts.text` the reader's own scroll position maps to (never a JS
+// UTF-16 string index — INTEGRATION.md's explicit requirement), computed
+// client-side from scroll ratio.
+// ---------------------------------------------------------------------------
+
+export type SaveReadingPositionState = { status: "ok" } | { status: "error"; message: string };
+
+export async function saveReadingPositionAction(input: { lessonId: string; refId: string; offsetCodepoints: number }): Promise<SaveReadingPositionState> {
+  const { ctx, profile } = await requireChild();
+  if (!UUID.safeParse(input.lessonId).success || !input.refId.trim() || !Number.isFinite(input.offsetCodepoints) || input.offsetCodepoints < 0) {
+    return { status: "error", message: "Невірні дані." };
+  }
+
+  const scope = forFamily(ctx.familyId);
+  const { data: lesson } = await scope.select("literature_v3_lessons", "id").eq("id", input.lessonId).maybeSingle<{ id: string }>();
+  if (!lesson) return { status: "error", message: "Урок не знайдено." };
+
+  const service = createServiceClient();
+  const { error } = await service
+    .from("literature_v3_reading_positions")
+    .upsert(
+      {
+        owner_family_id: ctx.familyId,
+        child_profile_id: profile.id,
+        lesson_id: input.lessonId,
+        position: { kind: "reading", ref_id: input.refId, offset_codepoints: Math.round(input.offsetCodepoints) },
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "child_profile_id,lesson_id" },
+    );
+  if (error) return { status: "error", message: `Не вдалося зберегти позицію читання (${error.message}).` };
+  return { status: "ok" };
+}
+
+export async function clearReadingPositionAction(input: { lessonId: string }): Promise<SaveReadingPositionState> {
+  const { profile } = await requireChild();
+  if (!UUID.safeParse(input.lessonId).success) return { status: "error", message: "Невірні дані." };
+
+  const service = createServiceClient();
+  const { error } = await service.from("literature_v3_reading_positions").delete().eq("child_profile_id", profile.id).eq("lesson_id", input.lessonId);
+  if (error) return { status: "error", message: `Не вдалося очистити позицію читання (${error.message}).` };
+  return { status: "ok" };
+}
