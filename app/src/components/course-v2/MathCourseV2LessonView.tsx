@@ -6,14 +6,9 @@ import { MathText } from "@/components/shared/MathText";
 import { OpenTextbookPageButton } from "@/components/shared/BookPageModal";
 import { isCurrentlyPlaying, playSingleAudio, stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
 import { askTopicChatAction } from "@/app/actions/lesson";
-import {
-  explainMathCourseV2Action,
-  narrateMathCourseV2Action,
-  revealExerciseSolutionAction,
-  submitQuestionAnswerAction,
-  type QuestionAnswerResult,
-} from "@/app/actions/math-course-v2";
-import type { MathCourseV2LessonListItem, MathV2ExerciseView, MathV2LessonView, MathV2QuestionView } from "@/server/lessons/mathCourseV2View";
+import { explainMathCourseV2Action, narrateMathCourseV2Action, revealExerciseSolutionAction } from "@/app/actions/math-course-v2";
+import { QuestionCard } from "@/components/course-v2/QuestionCard";
+import type { MathCourseV2LessonListItem, MathV2ExerciseView, MathV2LessonView } from "@/server/lessons/mathCourseV2View";
 
 const VOICE_MODE_STORAGE_KEY = "mathCourseV2VoiceMode";
 const AUTO_ADVANCE_STORAGE_KEY = "mathCourseV2AutoAdvance";
@@ -402,89 +397,6 @@ const LessonTopicChat = forwardRef<LessonTopicChatHandle, { subjectId: string; t
   );
 });
 
-function QuestionCard({ question }: { question: MathV2QuestionView }) {
-  const [selected, setSelected] = useState<string | null>(null);
-  const [result, setResult] = useState<QuestionAnswerResult | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [skipped, setSkipped] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // PO complaint 2026-10-07 ("тести не працюють, відповідь не можна
-  // вибрати"): a failed submit (missing key on an older import, a dropped
-  // request) used to fail completely silently — no error shown, and a
-  // thrown exception (vs. a returned `{status:"error"}`) left `busy` stuck
-  // `true` forever, so the child's next click did nothing at all. Both
-  // paths now show a real message and let her try again.
-  async function answer(optionId: string) {
-    if (result || busy) return;
-    setSelected(optionId);
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await submitQuestionAnswerAction({ questionId: question.id, optionId });
-      if (res.status === "ok") setResult(res.result);
-      else setError(res.message);
-    } catch (e) {
-      setError(`Не вдалося перевірити відповідь (${(e as Error).message}). Спробуй ще раз.`);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <li className="lit-test-q">
-      <p className="lit-test-q-text">
-        <MathText text={question.displayMd} />
-      </p>
-      <ListenButton refTable="course_v2_questions" refId={question.id} field="narration" text={question.narration} />
-      <ul className="lit-test-options">
-        {question.options.map((o) => {
-          const isSelected = selected === o.id;
-          const isCorrectRevealed = result && o.id === result.correctOptionId;
-          const isWrongSelected = result && isSelected && !result.correct;
-          return (
-            <li key={o.id}>
-              <button
-                type="button"
-                onClick={() => answer(o.id)}
-                disabled={!!result || busy}
-                className={`min-h-11 w-full rounded-xl border-2 px-3.5 text-left text-sm font-semibold disabled:opacity-100 ${
-                  isCorrectRevealed ? "border-success bg-success/10" : isWrongSelected ? "border-danger bg-danger/10" : "border-line bg-surface"
-                }`}
-              >
-                <MathText text={o.displayMd} />
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-      {error && (
-        <p role="alert" className="mt-1 text-xs font-bold text-danger">
-          {error}
-        </p>
-      )}
-      {!result && !skipped && (
-        <button type="button" onClick={() => setSkipped(true)} className="mt-1 text-xs font-bold text-text/60 underline">
-          Пропустити (питання не буде зараховано)
-        </button>
-      )}
-      {result && (
-        <div className="mt-2 rounded-xl border border-line bg-surface-alt p-2.5 text-sm">
-          <p className="font-bold">{result.correct ? "Правильно!" : "Неправильно."}</p>
-          <p style={{ whiteSpace: "pre-wrap" }}>
-            <MathText text={result.explanationMd} />
-          </p>
-          {!result.correct && result.hint && (
-            <p className="mt-1 text-text/70">
-              Підказка: <MathText text={result.hint} />
-            </p>
-          )}
-        </div>
-      )}
-    </li>
-  );
-}
-
 interface TextbookRef {
   materialId: string;
   title: string;
@@ -741,7 +653,7 @@ export function MathCourseV2LessonScreen({ lesson, packageLessons }: { lesson: M
           <h2>{lesson.quizTitle ?? "Тест"}</h2>
           <ol className="lit-test-list">
             {lesson.quizQuestions.map((q) => (
-              <QuestionCard key={q.id} question={q} />
+              <QuestionCard key={q.id} question={q} listenButton={<ListenButton refTable="course_v2_questions" refId={q.id} field="narration" text={q.narration} />} />
             ))}
           </ol>
         </section>
