@@ -5,13 +5,11 @@ import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { MathText } from "@/components/shared/MathText";
 import { OpenTextbookPageButton } from "@/components/shared/BookPageModal";
 import { isCurrentlyPlaying, playSingleAudio, stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
+import { AutoAdvanceToggle, VoiceModeToggle, useVoiceModeControls } from "@/components/shared/VoiceModeControls";
 import { askTopicChatAction } from "@/app/actions/lesson";
 import { explainMathCourseV2Action, narrateMathCourseV2Action, revealExerciseSolutionAction } from "@/app/actions/math-course-v2";
 import { QuestionCard } from "@/components/course-v2/QuestionCard";
 import type { MathCourseV2LessonListItem, MathV2ExerciseView, MathV2LessonView } from "@/server/lessons/mathCourseV2View";
-
-const VOICE_MODE_STORAGE_KEY = "mathCourseV2VoiceMode";
-const AUTO_ADVANCE_STORAGE_KEY = "mathCourseV2AutoAdvance";
 
 /**
  * S35 — child-facing viewer for one `course_v2_lessons` row (Істер math6
@@ -277,41 +275,6 @@ function ScreenNav({ lesson, voiceMode, autoAdvance }: { lesson: MathV2LessonVie
   );
 }
 
-/** PO complaint 2026-10-07: narration needed a manual click on every screen.
- * A simple persisted (per-device, `localStorage`) toggle: while on, every
- * freshly-mounted `ListenButton` on a lesson screen auto-plays once. */
-function VoiceModeToggle({ voiceMode, onChange }: { voiceMode: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!voiceMode)}
-      aria-pressed={voiceMode}
-      className={`min-h-11 rounded-full border-2 px-3.5 text-sm font-bold ${voiceMode ? "border-primary bg-primary/10 text-primary" : "border-line bg-surface"}`}
-    >
-      {voiceMode ? "🔊 Голосовий режим: увімкнено" : "🔈 Голосовий режим: вимкнено"}
-    </button>
-  );
-}
-
-/** PO request 2026-10-07: "урок... вимагає ручного перимикання «далі», давай
- * додамо... режим автовідтворення" — advances past a screen on its own once
- * voice mode finishes narrating it. Only enabled together with voice mode
- * (see `ScreenNav`'s `onNarrationEnded` — nothing to wait for otherwise). */
-function AutoAdvanceToggle({ autoAdvance, voiceMode, onChange }: { autoAdvance: boolean; voiceMode: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!autoAdvance)}
-      disabled={!voiceMode}
-      aria-pressed={autoAdvance}
-      title={voiceMode ? undefined : "Спершу увімкни голосовий режим"}
-      className={`min-h-11 rounded-full border-2 px-3.5 text-sm font-bold disabled:opacity-40 ${autoAdvance && voiceMode ? "border-primary bg-primary/10 text-primary" : "border-line bg-surface"}`}
-    >
-      {autoAdvance ? "▶️ Автовідтворення: увімкнено" : "⏸️ Автовідтворення: вимкнено"}
-    </button>
-  );
-}
-
 /** PO complaint 2026-10-07: "у нас зник ШІ діалог... не можу попросити
  * пояснити завдання чи задачу". Reuses the EXISTING paid tutor-chat path
  * (`askTopicChatAction` — same role/cost as every other topic chat in the
@@ -546,50 +509,9 @@ const KIND_LABEL: Record<MathV2LessonView["kind"], string> = {
   assessment: "Самостійна/перевірочна робота",
 };
 
-function readStoredFlag(key: string): boolean {
-  try {
-    return window.localStorage.getItem(key) === "1";
-  } catch {
-    return false;
-  }
-}
-
 export function MathCourseV2LessonScreen({ lesson, packageLessons }: { lesson: MathV2LessonView; packageLessons: MathCourseV2LessonListItem[] }) {
   const chatRef = useRef<LessonTopicChatHandle>(null);
-  const [voiceMode, setVoiceMode] = useState(false);
-  const [autoAdvance, setAutoAdvance] = useState(false);
-  // Lazy-read from localStorage only after mount (avoids a server/client
-  // render mismatch — `window` doesn't exist during SSR). Deferred into a
-  // microtask, same reasoning as `ListenButton`'s autoplay effect above.
-  useEffect(() => {
-    let cancelled = false;
-    Promise.resolve().then(() => {
-      if (cancelled) return;
-      setVoiceMode(readStoredFlag(VOICE_MODE_STORAGE_KEY));
-      setAutoAdvance(readStoredFlag(AUTO_ADVANCE_STORAGE_KEY));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  function changeVoiceMode(v: boolean) {
-    setVoiceMode(v);
-    try {
-      window.localStorage.setItem(VOICE_MODE_STORAGE_KEY, v ? "1" : "0");
-    } catch {
-      // per-device convenience only — fine to drop silently
-    }
-  }
-
-  function changeAutoAdvance(v: boolean) {
-    setAutoAdvance(v);
-    try {
-      window.localStorage.setItem(AUTO_ADVANCE_STORAGE_KEY, v ? "1" : "0");
-    } catch {
-      // per-device convenience only — fine to drop silently
-    }
-  }
+  const { voiceMode, autoAdvance, changeVoiceMode, changeAutoAdvance } = useVoiceModeControls("mathCourseV2");
 
   const textbook: TextbookRef | null = lesson.textbookMaterialId
     ? { materialId: lesson.textbookMaterialId, title: lesson.textbookTitle ?? lesson.packageTitle, pageCount: lesson.textbookPageCount }
@@ -611,8 +533,6 @@ export function MathCourseV2LessonScreen({ lesson, packageLessons }: { lesson: M
         )}
         {lesson.status === "needs_review" && <p className="course-warning">Цей урок ще потребує перевірки дорослого.</p>}
         <div className="mt-2 flex flex-wrap gap-2">
-          <VoiceModeToggle voiceMode={voiceMode} onChange={changeVoiceMode} />
-          <AutoAdvanceToggle autoAdvance={autoAdvance} voiceMode={voiceMode} onChange={changeAutoAdvance} />
           {textbook && (
             <OpenTextbookPageButton
               materialId={textbook.materialId}
@@ -623,6 +543,8 @@ export function MathCourseV2LessonScreen({ lesson, packageLessons }: { lesson: M
               numberKeywordHint="вправа"
             />
           )}
+          <VoiceModeToggle voiceMode={voiceMode} onChange={changeVoiceMode} />
+          <AutoAdvanceToggle autoAdvance={autoAdvance} voiceMode={voiceMode} onChange={changeAutoAdvance} />
         </div>
       </header>
 

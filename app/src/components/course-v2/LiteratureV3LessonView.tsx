@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { isCurrentlyPlaying, playSingleAudio, stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
+import { AutoAdvanceToggle, VoiceModeToggle, useVoiceModeControls } from "@/components/shared/VoiceModeControls";
 import { narrateLiteratureV3Action, saveReadingPositionAction } from "@/app/actions/literature-v3";
 import { OpenVirtualBookButton } from "@/components/child/OpenVirtualBookButton";
 import { QuestionCard } from "@/components/course-v2/QuestionCard";
@@ -48,7 +49,21 @@ import type { LiteratureV3BookPage, LiteratureV3FlowStep, LiteratureV3LessonList
  * viewers, not something to solve only for reading steps here.
  */
 
-function ListenButton({ refTable, refId, field, text }: { refTable: string; refId: string; field: string; text: string }) {
+function ListenButton({
+  refTable,
+  refId,
+  field,
+  text,
+  autoPlay,
+  onEnded,
+}: {
+  refTable: string;
+  refId: string;
+  field: string;
+  text: string;
+  autoPlay?: boolean;
+  onEnded?: () => void;
+}) {
   const [state, setState] = useState<"idle" | "loading" | "playing" | "unavailable">("idle");
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -73,10 +88,24 @@ function ListenButton({ refTable, refId, field, text }: { refTable: string; refI
       audioRef.current = audio;
       setState("playing");
       playSingleAudio(audio, () => setState("idle"));
+      audio.addEventListener("ended", () => onEnded?.(), { once: true });
     } catch {
       setState("unavailable");
     }
   }
+
+  useEffect(() => {
+    if (!autoPlay || !text.trim()) return;
+    let cancelled = false;
+    Promise.resolve().then(() => {
+      if (!cancelled) void play();
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Intentionally only on mount — fresh per step via the caller's `key`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!text.trim()) return null;
   return (
@@ -91,27 +120,27 @@ function ListenButton({ refTable, refId, field, text }: { refTable: string; refI
   );
 }
 
-function ScreenStep({ step }: { step: Extract<LiteratureV3FlowStep, { kind: "screen" }> }) {
+function ScreenStep({ step, voiceMode, onNarrationEnded }: { step: Extract<LiteratureV3FlowStep, { kind: "screen" }>; voiceMode: boolean; onNarrationEnded?: () => void }) {
   return (
     <section className="lit-v3-step lit-v3-step-screen">
       {step.title && <h3>{step.title}</h3>}
       <p style={{ whiteSpace: "pre-wrap" }}>{step.displayText}</p>
       <div className="mt-2">
-        <ListenButton refTable="literature_v3_screens" refId={step.id} field="tts" text={step.ttsText} />
+        <ListenButton key={step.id} refTable="literature_v3_screens" refId={step.id} field="tts" text={step.ttsText} autoPlay={voiceMode} onEnded={onNarrationEnded} />
       </div>
     </section>
   );
 }
 
 /** US-31.2 КП-5: passive, never evaluated, no response required. */
-function BiographyStep({ step }: { step: Extract<LiteratureV3FlowStep, { kind: "biography" }> }) {
+function BiographyStep({ step, voiceMode, onNarrationEnded }: { step: Extract<LiteratureV3FlowStep, { kind: "biography" }>; voiceMode: boolean; onNarrationEnded?: () => void }) {
   return (
     <section className="lit-v3-step lit-v3-step-biography">
       <p className="course-eyebrow">Про автора</p>
       <h3>{step.authorName}</h3>
       <p style={{ whiteSpace: "pre-wrap" }}>{step.displayText}</p>
       <div className="mt-2">
-        <ListenButton refTable="literature_v3_biographies" refId={step.id} field="tts" text={step.ttsText} />
+        <ListenButton key={step.id} refTable="literature_v3_biographies" refId={step.id} field="tts" text={step.ttsText} autoPlay={voiceMode} onEnded={onNarrationEnded} />
       </div>
     </section>
   );
@@ -145,12 +174,14 @@ function ReadingStep({
   bookIndex,
   lessonId,
   initialOffsetCodepoints,
+  voiceMode,
 }: {
   step: Extract<LiteratureV3FlowStep, { kind: "reading" }>;
   packageTitle: string;
   bookIndex: LiteratureV3BookPage[];
   lessonId: string;
   initialOffsetCodepoints: number | null;
+  voiceMode: boolean;
 }) {
   const [playKey, setPlayKey] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -205,7 +236,7 @@ function ReadingStep({
         <p style={{ whiteSpace: "pre-wrap" }}>{step.displayText}</p>
       </div>
       <div className="mt-2 flex flex-wrap gap-2">
-        <ListenButton key={playKey} refTable="literature_v3_reading_items" refId={step.id} field="tts" text={step.ttsText} />
+        <ListenButton key={`${step.id}-${playKey}`} refTable="literature_v3_reading_items" refId={step.id} field="tts" text={step.ttsText} autoPlay={voiceMode} />
         <button type="button" onClick={() => setPlayKey((k) => k + 1)} className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold">
           🔁 Повторити
         </button>
@@ -221,20 +252,26 @@ function FlowStepRenderer({
   bookIndex,
   lessonId,
   initialReadingOffset,
+  voiceMode,
+  onNarrationEnded,
 }: {
   step: LiteratureV3FlowStep;
   packageTitle: string;
   bookIndex: LiteratureV3BookPage[];
   lessonId: string;
   initialReadingOffset: number | null;
+  voiceMode: boolean;
+  onNarrationEnded?: () => void;
 }) {
   switch (step.kind) {
     case "screen":
-      return <ScreenStep step={step} />;
+      return <ScreenStep step={step} voiceMode={voiceMode} onNarrationEnded={onNarrationEnded} />;
     case "biography":
-      return <BiographyStep step={step} />;
+      return <BiographyStep step={step} voiceMode={voiceMode} onNarrationEnded={onNarrationEnded} />;
     case "reading":
-      return <ReadingStep step={step} packageTitle={packageTitle} bookIndex={bookIndex} lessonId={lessonId} initialOffsetCodepoints={initialReadingOffset} />;
+      // No auto-advance here even in voice mode — the child may still be
+      // reading when the audio ends; "🔁 Повторити"/scroll stay manual.
+      return <ReadingStep step={step} packageTitle={packageTitle} bookIndex={bookIndex} lessonId={lessonId} initialOffsetCodepoints={initialReadingOffset} voiceMode={voiceMode} />;
     case "quiz":
       // No `listenButton` here: `course_v2_questions` narration isn't in
       // either narrate action's allow-list today (true for math's own quiz
@@ -248,16 +285,43 @@ function FlowStepRenderer({
   }
 }
 
-function FlowNav({ lesson, bookIndex, savedPosition }: { lesson: LiteratureV3LessonViewModel; bookIndex: LiteratureV3BookPage[]; savedPosition: LiteratureV3ReadingPosition | null }) {
+function FlowNav({
+  lesson,
+  bookIndex,
+  savedPosition,
+  voiceMode,
+  autoAdvance,
+}: {
+  lesson: LiteratureV3LessonViewModel;
+  bookIndex: LiteratureV3BookPage[];
+  savedPosition: LiteratureV3ReadingPosition | null;
+  voiceMode: boolean;
+  autoAdvance: boolean;
+}) {
   const savedStepIndex = savedPosition ? lesson.flow.findIndex((s) => s.id === savedPosition.refId) : -1;
   const [index, setIndex] = useState(savedStepIndex >= 0 ? savedStepIndex : 0);
   const step = lesson.flow[index];
   if (!step) return <p className="course-note">Кроків ще немає.</p>;
   const initialReadingOffset = step.kind === "reading" && savedPosition?.refId === step.id ? savedPosition.offsetCodepoints : null;
 
+  const isLast = index >= lesson.flow.length - 1;
+  // Only `screen`/`biography` steps auto-advance on narration end — `reading`
+  // never does (see `FlowStepRenderer`'s comment), and `quiz` has no
+  // narration at all.
+  const onNarrationEnded = voiceMode && autoAdvance && !isLast && (step.kind === "screen" || step.kind === "biography") ? () => setIndex((i) => Math.min(lesson.flow.length - 1, i + 1)) : undefined;
+
   return (
     <>
-      <FlowStepRenderer key={step.id} step={step} packageTitle={lesson.packageTitle} bookIndex={bookIndex} lessonId={lesson.id} initialReadingOffset={initialReadingOffset} />
+      <FlowStepRenderer
+        key={step.id}
+        step={step}
+        packageTitle={lesson.packageTitle}
+        bookIndex={bookIndex}
+        lessonId={lesson.id}
+        initialReadingOffset={initialReadingOffset}
+        voiceMode={voiceMode}
+        onNarrationEnded={onNarrationEnded}
+      />
       <p className="course-eyebrow mt-3">
         Крок {index + 1} з {lesson.flow.length}
       </p>
@@ -289,6 +353,8 @@ export function LiteratureV3LessonScreen({
   bookIndex: LiteratureV3BookPage[];
   savedPosition: LiteratureV3ReadingPosition | null;
 }) {
+  const { voiceMode, autoAdvance, changeVoiceMode, changeAutoAdvance } = useVoiceModeControls("literatureV3");
+
   return (
     <article className="course-lesson">
       <LessonNavBar subjectId={lesson.subjectId} courseNav={{ basePath: "/literature-v3", currentLessonId: lesson.id, lessons: packageLessons, topicId: lesson.topicId }} />
@@ -302,8 +368,10 @@ export function LiteratureV3LessonScreen({
           </p>
         )}
         {lesson.status === "needs_review" && <p className="course-warning">Цей урок ще потребує перевірки дорослого.</p>}
-        <div className="mt-2">
-          <OpenVirtualBookButton title={lesson.packageTitle} pageIndex={bookIndex} printedPage={lesson.printedPageFrom} />
+        <div className="mt-2 flex flex-wrap gap-2">
+          <OpenVirtualBookButton title={lesson.packageTitle} pageIndex={bookIndex} printedPage={lesson.printedPageFrom} label="📖 Відкрити підручник" />
+          <VoiceModeToggle voiceMode={voiceMode} onChange={changeVoiceMode} />
+          <AutoAdvanceToggle autoAdvance={autoAdvance} voiceMode={voiceMode} onChange={changeAutoAdvance} />
         </div>
       </header>
 
@@ -318,7 +386,7 @@ export function LiteratureV3LessonScreen({
         </section>
       )}
 
-      <FlowNav lesson={lesson} bookIndex={bookIndex} savedPosition={savedPosition} />
+      <FlowNav lesson={lesson} bookIndex={bookIndex} savedPosition={savedPosition} voiceMode={voiceMode} autoAdvance={autoAdvance} />
     </article>
   );
 }
