@@ -154,6 +154,75 @@ export interface SubjectTopicOption {
    * has active content for it; see `page.tsx`'s link-priority comment.
    */
   literatureV2LessonId: string | null;
+  /**
+   * S45/ADR-043: same idea as `literatureV2LessonId`, for the fifth parallel
+   * $0 import path (`literatureV3Import.ts` — `flow[]`-based chapter package
+   * with actual work text + single_choice quiz, ADR-044). Unlike the first
+   * four, this one is looked up through the shared
+   * `getActiveImportedLessonsForTopics` helper below (ADR-043 §б) rather
+   * than its own ad-hoc inline query — see that helper's doc comment for why
+   * a fifth hand-written lookup was NOT simply added here the same way.
+   */
+  literatureV3LessonId: string | null;
+}
+
+export type ImportedLessonKind = "literature" | "course" | "math_v2" | "literature_v2" | "literature_v3";
+
+export interface ActiveImportedLesson {
+  kind: ImportedLessonKind;
+  lessonId: string;
+}
+
+/**
+ * ADR-043 (AR-29 п.2): the ONE shared place that knows "does this topic
+ * already have an active lesson in any of the five parallel import
+ * systems, and if so which one" — replaces what used to be the SAME
+ * four (now five) inline lookups, hand-copied into both `getSubjectDetail`
+ * below AND `/lesson/[sessionId]/page.tsx`'s safety-net redirect. ADR-043
+ * explicitly chose this (a shared HELPER, still five separate `select`s
+ * inside it) over a schema unification (one `imported_lesson_links` table)
+ * — see that ADR for the full reasoning. Both call sites now call ONLY this
+ * function; neither knows about `literature_lessons`/`course_lessons`/
+ * `course_v2_lessons`/`literature_v2_lessons`/`literature_v3_lessons`
+ * directly any more, which is the whole point: adding a sixth format later
+ * means one new branch HERE, not a second place to remember.
+ *
+ * Priority when (in practice, never) more than one system has an active row
+ * for the same topic: literature (S33) > course (S34) > math_v2 (S35) >
+ * literature_v2 (S36) > literature_v3 (S45) — the same order the four
+ * pre-existing call sites already checked in, preserved verbatim so this
+ * refactor changes no observable behavior.
+ */
+export async function getActiveImportedLessonsForTopics(familyId: string, topicIds: string[]): Promise<Map<string, ActiveImportedLesson>> {
+  const map = new Map<string, ActiveImportedLesson>();
+  if (topicIds.length === 0) return map;
+  const scope = forFamily(familyId);
+  const [{ data: literatureRows }, { data: courseRows }, { data: mathV2Rows }, { data: literatureV2Rows }, { data: literatureV3Rows }] = await Promise.all([
+    scope.select("literature_lessons", "id, topic_id").in("topic_id", topicIds).eq("status", "active").returns<{ id: string; topic_id: string }[]>(),
+    scope.select("course_lessons", "id, topic_id").in("topic_id", topicIds).eq("status", "active").returns<{ id: string; topic_id: string }[]>(),
+    scope.select("course_v2_lessons", "id, topic_id").in("topic_id", topicIds).eq("status", "active").returns<{ id: string; topic_id: string }[]>(),
+    scope.select("literature_v2_lessons", "id, topic_id").in("topic_id", topicIds).eq("status", "active").returns<{ id: string; topic_id: string }[]>(),
+    scope.select("literature_v3_lessons", "id, topic_id").in("topic_id", topicIds).eq("status", "active").returns<{ id: string; topic_id: string }[]>(),
+  ]);
+  const bySystem: [ImportedLessonKind, { id: string; topic_id: string }[] | null][] = [
+    ["literature", literatureRows],
+    ["course", courseRows],
+    ["math_v2", mathV2Rows],
+    ["literature_v2", literatureV2Rows],
+    ["literature_v3", literatureV3Rows],
+  ];
+  for (const [kind, rows] of bySystem) {
+    for (const row of rows ?? []) {
+      if (!map.has(row.topic_id)) map.set(row.topic_id, { kind, lessonId: row.id });
+    }
+  }
+  return map;
+}
+
+/** Single-topic convenience wrapper, for `/lesson/[sessionId]/page.tsx`'s safety-net redirect. */
+export async function getActiveImportedLessonForTopic(familyId: string, topicId: string): Promise<ActiveImportedLesson | null> {
+  const map = await getActiveImportedLessonsForTopics(familyId, [topicId]);
+  return map.get(topicId) ?? null;
 }
 
 export interface SubjectDetail {
@@ -225,50 +294,17 @@ export async function getSubjectDetail(familyId: string, subjectId: string): Pro
   const topicList = topics ?? [];
   const kind = subject.kind ?? "school_subject";
 
-  // S33/D-123: look up which of this subject's topics already have an
-  // `active` extraction-pipeline lesson (see `SubjectTopicOption.literatureLessonId`
-  // doc comment above). Explicitly filtered to `status = 'active'` here
-  // (not left to RLS) because this same query also serves the PARENT
-  // cabinet, where RLS would return `needs_review` rows too.
+  // ADR-043: one shared lookup instead of five (was four) hand-copied
+  // inline queries — see `getActiveImportedLessonsForTopics`'s doc comment.
+  // Explicitly filtered to `status = 'active'` inside that helper (not left
+  // to RLS) because this same query also serves the PARENT cabinet, where
+  // RLS would return `needs_review` rows too.
   const topicIds = topicList.map((t) => t.id);
-  const { data: literatureLessons } = topicIds.length
-    ? await scope
-        .select("literature_lessons", "id, topic_id")
-        .in("topic_id", topicIds)
-        .eq("status", "active")
-        .returns<{ id: string; topic_id: string }[]>()
-    : { data: [] as { id: string; topic_id: string }[] };
-  const literatureLessonByTopic = new Map((literatureLessons ?? []).map((l) => [l.topic_id, l.id]));
-
-  // S34: same lookup, parallel table (see `SubjectTopicOption.courseLessonId`).
-  const { data: courseLessons } = topicIds.length
-    ? await scope
-        .select("course_lessons", "id, topic_id")
-        .in("topic_id", topicIds)
-        .eq("status", "active")
-        .returns<{ id: string; topic_id: string }[]>()
-    : { data: [] as { id: string; topic_id: string }[] };
-  const courseLessonByTopic = new Map((courseLessons ?? []).map((l) => [l.topic_id, l.id]));
-
-  // S35: same lookup, third parallel table (see `SubjectTopicOption.mathCourseV2LessonId`).
-  const { data: mathCourseV2Lessons } = topicIds.length
-    ? await scope
-        .select("course_v2_lessons", "id, topic_id")
-        .in("topic_id", topicIds)
-        .eq("status", "active")
-        .returns<{ id: string; topic_id: string }[]>()
-    : { data: [] as { id: string; topic_id: string }[] };
-  const mathCourseV2LessonByTopic = new Map((mathCourseV2Lessons ?? []).map((l) => [l.topic_id, l.id]));
-
-  // S36: same lookup, fourth parallel table (see `SubjectTopicOption.literatureV2LessonId`).
-  const { data: literatureV2Lessons } = topicIds.length
-    ? await scope
-        .select("literature_v2_lessons", "id, topic_id")
-        .in("topic_id", topicIds)
-        .eq("status", "active")
-        .returns<{ id: string; topic_id: string }[]>()
-    : { data: [] as { id: string; topic_id: string }[] };
-  const literatureV2LessonByTopic = new Map((literatureV2Lessons ?? []).map((l) => [l.topic_id, l.id]));
+  const importedLessonByTopic = await getActiveImportedLessonsForTopics(familyId, topicIds);
+  const lessonIdOfKind = (kind: ImportedLessonKind, topicId: string) => {
+    const entry = importedLessonByTopic.get(topicId);
+    return entry && entry.kind === kind ? entry.lessonId : null;
+  };
 
   // 2026-10-02 incident: a course-package import (S34, same as S33's
   // literature_lessons before it) creates its OWN fresh `topics` rows
@@ -282,10 +318,8 @@ export async function getSubjectDetail(familyId: string, subjectId: string): Pro
   // old pipeline is not coming back for it (today's whole direction:
   // PO-prepared imports replace AI generation) — so filter the old,
   // import-less topics out entirely rather than showing a confusing mix.
-  const hasAnyImportedTopic = literatureLessonByTopic.size > 0 || courseLessonByTopic.size > 0 || mathCourseV2LessonByTopic.size > 0 || literatureV2LessonByTopic.size > 0;
-  const visibleTopics = hasAnyImportedTopic
-    ? topicList.filter((t) => literatureLessonByTopic.has(t.id) || courseLessonByTopic.has(t.id) || mathCourseV2LessonByTopic.has(t.id) || literatureV2LessonByTopic.has(t.id))
-    : topicList;
+  const hasAnyImportedTopic = importedLessonByTopic.size > 0;
+  const visibleTopics = hasAnyImportedTopic ? topicList.filter((t) => importedLessonByTopic.has(t.id)) : topicList;
 
   return {
     id: subject.id,
@@ -299,10 +333,11 @@ export async function getSubjectDetail(familyId: string, subjectId: string): Pro
       title: t.title,
       pageFrom: t.page_from,
       pageTo: t.page_to,
-      literatureLessonId: literatureLessonByTopic.get(t.id) ?? null,
-      courseLessonId: courseLessonByTopic.get(t.id) ?? null,
-      mathCourseV2LessonId: mathCourseV2LessonByTopic.get(t.id) ?? null,
-      literatureV2LessonId: literatureV2LessonByTopic.get(t.id) ?? null,
+      literatureLessonId: lessonIdOfKind("literature", t.id),
+      courseLessonId: lessonIdOfKind("course", t.id),
+      mathCourseV2LessonId: lessonIdOfKind("math_v2", t.id),
+      literatureV2LessonId: lessonIdOfKind("literature_v2", t.id),
+      literatureV3LessonId: lessonIdOfKind("literature_v3", t.id),
     })),
     currentTopicId: visibleTopics.find((t) => t.is_current)?.id ?? null,
     kind,
