@@ -4,6 +4,7 @@ import { ChildStartLessonButton } from "@/components/child/ChildStartLessonButto
 import { LastLessonHighlight } from "@/components/child/LastLessonHighlight";
 import { PrepareTopicButton } from "@/components/child/PrepareTopicButton";
 import { LiteratureV2Search } from "@/components/course-v2/LiteratureV2Search";
+import { LiteratureV3Search } from "@/components/course-v2/LiteratureV3Search";
 import { MathCourseV2Search } from "@/components/course-v2/MathCourseV2Search";
 import { uk } from "@/i18n/uk";
 import { requireChild } from "@/server/auth/guards";
@@ -50,6 +51,7 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
   // / needs preparing.
   const hasMathCourseV2 = subject.topics.some((t) => t.mathCourseV2LessonId);
   const hasLiteratureV2 = subject.topics.some((t) => t.literatureV2LessonId);
+  const hasLiteratureV3 = subject.topics.some((t) => t.literatureV3LessonId);
   const [warmupStatuses, textbook, literatureTextbook] = await Promise.all([
     subject.topics.length > 0 ? getTopicWarmupStatuses(ctx.familyId, subject.topics.map((tp) => tp.id)) : Promise.resolve({} as Awaited<ReturnType<typeof getTopicWarmupStatuses>>),
     hasMathCourseV2 ? getMathCourseV2TextbookForSubject(ctx.familyId, subject.id) : Promise.resolve(null),
@@ -64,6 +66,7 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
       <h1 className="mb-4 text-2xl font-extrabold">{subject.name}</h1>
       {hasMathCourseV2 && <MathCourseV2Search subjectId={subject.id} textbook={textbook} />}
       {hasLiteratureV2 && <LiteratureV2Search subjectId={subject.id} textbook={literatureTextbook} />}
+      {hasLiteratureV3 && <LiteratureV3Search subjectId={subject.id} />}
       {subject.topics.length > 0 ? (
         <div className="space-y-3">
           <p className="text-sm text-muted">{ts.topicsSubtitle}</p>
