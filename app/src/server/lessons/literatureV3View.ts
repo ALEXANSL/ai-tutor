@@ -84,12 +84,14 @@ interface LessonRow {
   status: "active" | "needs_review";
 }
 interface ScreenRow {
+  id: string;
   screen_key: string;
   title: string;
   content_display: string;
   content_tts: { text?: string };
 }
 interface ReadingItemRow {
+  id: string;
   reading_key: string;
   title: string;
   content_display: string;
@@ -103,6 +105,7 @@ interface WorkRow {
   author: string;
 }
 interface BiographyRow {
+  id: string;
   biography_key: string;
   author_name: string;
   content_display: string;
@@ -133,13 +136,13 @@ export async function getLiteratureV3LessonView(familyId: string, lessonId: stri
   const [{ data: pkg }, { data: screens }, { data: readingItems }, { data: biographies }, { data: questions }] = await Promise.all([
     scope.select("literature_v3_packages", "title").eq("id", lesson.package_id).maybeSingle<{ title: string }>(),
     screenKeys.length
-      ? scope.select("literature_v3_screens", "screen_key, title, content_display, content_tts").eq("lesson_id", lessonId).in("screen_key", screenKeys).returns<ScreenRow[]>()
+      ? scope.select("literature_v3_screens", "id, screen_key, title, content_display, content_tts").eq("lesson_id", lessonId).in("screen_key", screenKeys).returns<ScreenRow[]>()
       : Promise.resolve({ data: [] as ScreenRow[] }),
     readingKeys.length
-      ? scope.select("literature_v3_reading_items", "reading_key, title, content_display, content_tts, work_id, primary_page_id").in("reading_key", readingKeys).returns<ReadingItemRow[]>()
+      ? scope.select("literature_v3_reading_items", "id, reading_key, title, content_display, content_tts, work_id, primary_page_id").in("reading_key", readingKeys).returns<ReadingItemRow[]>()
       : Promise.resolve({ data: [] as ReadingItemRow[] }),
     biographyKeys.length
-      ? scope.select("literature_v3_biographies", "biography_key, author_name, content_display, content_tts").in("biography_key", biographyKeys).returns<BiographyRow[]>()
+      ? scope.select("literature_v3_biographies", "id, biography_key, author_name, content_display, content_tts").in("biography_key", biographyKeys).returns<BiographyRow[]>()
       : Promise.resolve({ data: [] as BiographyRow[] }),
     quizKeys.length
       ? scope.select("course_v2_questions", "id, question_key, max_points, display_md, narration, options").eq("literature_v3_lesson_id", lessonId).in("question_key", quizKeys).returns<QuestionRow[]>()
@@ -166,14 +169,14 @@ export async function getLiteratureV3LessonView(familyId: string, lessonId: stri
     if (step.kind === "screen") {
       const s = screenByKey.get(step.ref_id);
       if (!s) continue;
-      flow.push({ kind: "screen", id: step.ref_id, title: s.title, displayText: s.content_display, ttsText: s.content_tts?.text ?? s.content_display });
+      flow.push({ kind: "screen", id: s.id, title: s.title, displayText: s.content_display, ttsText: s.content_tts?.text ?? s.content_display });
     } else if (step.kind === "reading") {
       const r = readingByKey.get(step.ref_id);
       if (!r) continue;
       const work = workById.get(r.work_id);
       flow.push({
         kind: "reading",
-        id: step.ref_id,
+        id: r.id,
         workTitle: work?.title ?? "",
         workAuthor: work?.author ?? "",
         title: r.title,
@@ -184,7 +187,7 @@ export async function getLiteratureV3LessonView(familyId: string, lessonId: stri
     } else if (step.kind === "biography") {
       const b = biographyByKey.get(step.ref_id);
       if (!b) continue;
-      flow.push({ kind: "biography", id: step.ref_id, authorName: b.author_name, displayText: b.content_display, ttsText: b.content_tts?.text ?? b.content_display });
+      flow.push({ kind: "biography", id: b.id, authorName: b.author_name, displayText: b.content_display, ttsText: b.content_tts?.text ?? b.content_display });
     } else if (step.kind === "quiz") {
       const q = questionByKey.get(step.ref_id);
       if (!q) continue;
