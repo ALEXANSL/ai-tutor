@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { uk } from "@/i18n/uk";
 
 const t = uk.child.lesson;
@@ -43,6 +43,35 @@ function useRememberLastLesson(subjectId: string, nav: CourseNavProps | undefine
 }
 
 /**
+ * Measures the rendered height of a fixed element and reports it back, so a
+ * caller can reserve exactly that much space in normal document flow — a
+ * `ResizeObserver` instead of a guessed Tailwind spacer class, because the
+ * bar's real height depends on things no single constant can predict
+ * (viewport width, how many buttons wrap, font scaling, `courseNav`/
+ * `extraControls` being present or not). PO complaint 2026-10-16 ("верхню
+ * панель переробити, налізає на текст"): the previous fixed `pt-48` spacer
+ * undercounted a narrower viewport where the top row wrapped onto an extra
+ * line, so the fixed bar covered the first lines of lesson content.
+ */
+function useMeasuredHeight<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    const el = ref.current;
+    // Not available in every environment (e.g. the component test's jsdom)
+    // — degrades to no spacer rather than throwing.
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) setHeight(entry.contentRect.height);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  return [ref, height] as const;
+}
+
+/**
  * 2026-10-02: the S33/S34 "minimal viewer" lesson screens
  * (`LiteratureLessonView.tsx`/`CourseLessonView.tsx`) never had a navigation
  * header at all, unlike the old `LessonRunner.tsx` — PO feedback: "навігація
@@ -70,11 +99,28 @@ function useRememberLastLesson(subjectId: string, nav: CourseNavProps | undefine
  * precisely so opening/closing it never changes this bar's own height —
  * a changing fixed-bar height would just reintroduce the "stuff jumps
  * around" problem one level up.
+ *
+ * PO follow-up same day ("верхню панель переробити, налізає на текст, і
+ * кнопку тривога можна десь винести з основного управління"):
+ * 1. "🚨 Тривога" moved OUT of the wrapping button row entirely — it's a
+ *    panic button, not an everyday control, and it was the widest item in
+ *    that row, the one most likely to wrap onto its own line and throw off
+ *    the bar's height. It's now a small, separate, always-on-top corner
+ *    button (`fixed top-3.5 left-3.5 z-50`) — the mirror image of the
+ *    existing `ThemeToggle` (`fixed top-3.5 right-3.5 z-50`), so it stays
+ *    reachable from anywhere in the app, not just lesson screens, without
+ *    crowding the lesson-specific controls.
+ * 2. The component itself now renders its own spacer (see
+ *    `useMeasuredHeight` above) sized to its OWN measured height, instead
+ *    of asking every caller to guess a Tailwind class — this is the actual
+ *    fix for "налізає на текст": no fixed constant can account for every
+ *    viewport width this bar might wrap at.
  */
 export function LessonNavBar({ subjectId, courseNav, extraControls }: { subjectId: string; courseNav?: CourseNavProps; extraControls?: React.ReactNode }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [tocOpen, setTocOpen] = useState(false);
+  const [barRef, barHeight] = useMeasuredHeight<HTMLDivElement>();
   useRememberLastLesson(subjectId, courseNav);
 
   const goHome = () => {
@@ -85,6 +131,10 @@ export function LessonNavBar({ subjectId, courseNav, extraControls }: { subjectI
     setBusy(true);
     router.push(`/subject/${subjectId}`);
   };
+  const goAlarm = () => {
+    setBusy(true);
+    router.push("/today");
+  };
 
   const activeLessons = courseNav?.lessons.filter((l) => l.status === "active") ?? [];
   const currentIndex = activeLessons.findIndex((l) => l.id === courseNav?.currentLessonId);
@@ -92,82 +142,83 @@ export function LessonNavBar({ subjectId, courseNav, extraControls }: { subjectI
   const nextLesson = currentIndex >= 0 && currentIndex < activeLessons.length - 1 ? activeLessons[currentIndex + 1] : null;
 
   return (
-    <div className="fixed inset-x-0 top-0 z-40 border-b border-line bg-surface/95 backdrop-blur" style={{ paddingTop: "env(safe-area-inset-top)" }}>
-      <div className="mx-auto max-w-2xl px-4 py-2.5">
-        {/* `pr-14` reserves room for the always-on-top `ThemeToggle` pill
-            (`fixed top-3.5 right-3.5 z-50` in the child layout, every child
-            screen) so it never sits over the alarm button once this row is
-            pinned to the top for good, not just at the initial scroll
-            position. */}
-        <div className="flex flex-wrap items-center gap-2 pr-14">
-          <button type="button" onClick={goHome} disabled={busy} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-60">
-            {t.navHome}
-          </button>
-          <button type="button" onClick={goSubjectList} disabled={busy} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-60">
-            {t.navSubjectList}
-          </button>
-          <span className="flex-1" />
-          <button
-            type="button"
-            onClick={goHome}
-            disabled={busy}
-            className="min-h-11 rounded-full border-2 border-text/40 bg-surface-alt px-4 text-sm font-bold text-text disabled:opacity-60"
-          >
-            {t.exitLesson}
-          </button>
-          <button type="button" onClick={goHome} className="min-h-11 rounded-full bg-danger px-4 text-sm font-bold text-white">
-            {t.alarmButton}
-          </button>
-        </div>
-        {courseNav && (
-          <div className="relative mt-2">
-            <div className="flex flex-wrap items-center gap-2">
-              {prevLesson ? (
-                <Link href={`${courseNav.basePath}/${prevLesson.id}`} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold leading-[2.5rem]">
-                  {t.navPrevLesson}
-                </Link>
-              ) : (
-                <span className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold leading-[2.5rem] text-muted opacity-50">{t.navPrevLesson}</span>
-              )}
-              <button type="button" onClick={() => setTocOpen((v) => !v)} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold" aria-expanded={tocOpen}>
-                📖 {t.navToc} {tocOpen ? "▲" : "▼"}
-              </button>
-              {nextLesson ? (
-                <Link href={`${courseNav.basePath}/${nextLesson.id}`} className="min-h-11 rounded-full bg-primary px-3.5 text-sm font-bold leading-[2.5rem] text-white">
-                  {t.navNextLesson}
-                </Link>
-              ) : (
-                <span className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold leading-[2.5rem] text-muted opacity-50">{t.navNextLesson}</span>
+    <>
+      {/* Spacer in normal document flow — reserves exactly as much room as
+          the fixed bar below actually renders at, so lesson content never
+          starts underneath it. */}
+      <div style={{ height: barHeight }} aria-hidden="true" />
+      <button
+        type="button"
+        onClick={goAlarm}
+        className="fixed top-3.5 left-3.5 z-50 min-h-11 rounded-full bg-danger px-4 text-sm font-bold text-white shadow-sm"
+      >
+        {t.alarmButton}
+      </button>
+      <div ref={barRef} className="fixed inset-x-0 top-0 z-40 border-b border-line bg-surface/95 backdrop-blur" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+        <div className="mx-auto max-w-2xl px-4 py-2.5">
+          {/* `pl-14`/`pr-14` reserve room for the alarm button (top-left) and
+              the always-on-top `ThemeToggle` pill (top-right, `fixed
+              top-3.5 right-3.5 z-50` in the child layout) so this row's own
+              buttons never render underneath either one. */}
+          <div className="flex flex-wrap items-center gap-2 pl-14 pr-14">
+            <button type="button" onClick={goHome} disabled={busy} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-60">
+              {t.navHome}
+            </button>
+            <button type="button" onClick={goSubjectList} disabled={busy} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-60">
+              {t.navSubjectList}
+            </button>
+            <span className="flex-1" />
+            <button
+              type="button"
+              onClick={goHome}
+              disabled={busy}
+              className="min-h-11 rounded-full border-2 border-text/40 bg-surface-alt px-4 text-sm font-bold text-text disabled:opacity-60"
+            >
+              {t.exitLesson}
+            </button>
+          </div>
+          {courseNav && (
+            <div className="relative mt-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {prevLesson ? (
+                  <Link href={`${courseNav.basePath}/${prevLesson.id}`} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold leading-[2.5rem]">
+                    {t.navPrevLesson}
+                  </Link>
+                ) : (
+                  <span className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold leading-[2.5rem] text-muted opacity-50">{t.navPrevLesson}</span>
+                )}
+                <button type="button" onClick={() => setTocOpen((v) => !v)} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold" aria-expanded={tocOpen}>
+                  📖 {t.navToc} {tocOpen ? "▲" : "▼"}
+                </button>
+                {nextLesson ? (
+                  <Link href={`${courseNav.basePath}/${nextLesson.id}`} className="min-h-11 rounded-full bg-primary px-3.5 text-sm font-bold leading-[2.5rem] text-white">
+                    {t.navNextLesson}
+                  </Link>
+                ) : (
+                  <span className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold leading-[2.5rem] text-muted opacity-50">{t.navNextLesson}</span>
+                )}
+              </div>
+              {tocOpen && (
+                <div className="absolute inset-x-0 top-full z-10 mt-2 max-h-72 overflow-y-auto rounded-2xl border border-line bg-surface p-2 shadow-lg">
+                  {courseNav.lessons.map((l) => (
+                    <Link
+                      key={l.id}
+                      href={`${courseNav.basePath}/${l.id}`}
+                      onClick={() => setTocOpen(false)}
+                      className={`block rounded-xl px-3 py-2 text-sm ${
+                        l.id === courseNav.currentLessonId ? "bg-primary/10 font-bold text-primary" : l.status === "needs_review" ? "text-muted" : "hover:bg-surface-alt"
+                      }`}
+                    >
+                      {l.orderNo}. {l.title}
+                    </Link>
+                  ))}
+                </div>
               )}
             </div>
-            {tocOpen && (
-              <div className="absolute inset-x-0 top-full z-10 mt-2 max-h-72 overflow-y-auto rounded-2xl border border-line bg-surface p-2 shadow-lg">
-                {courseNav.lessons.map((l) => (
-                  <Link
-                    key={l.id}
-                    href={`${courseNav.basePath}/${l.id}`}
-                    onClick={() => setTocOpen(false)}
-                    className={`block rounded-xl px-3 py-2 text-sm ${
-                      l.id === courseNav.currentLessonId ? "bg-primary/10 font-bold text-primary" : l.status === "needs_review" ? "text-muted" : "hover:bg-surface-alt"
-                    }`}
-                  >
-                    {l.orderNo}. {l.title}
-                  </Link>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-        {extraControls && <div className="mt-2 flex flex-wrap gap-2">{extraControls}</div>}
+          )}
+          {extraControls && <div className="mt-2 flex flex-wrap gap-2">{extraControls}</div>}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
-
-/** Reserves room at the top of the lesson page so the fixed `LessonNavBar`
- * never overlaps the first line of lesson content — same idea as
- * `StepNavBar`'s own `STEP_NAV_BAR_SPACER_CLASS`. Sized generously for this
- * bar's tallest shape (home/exit/alarm row + prev/TOC/next row + voice-mode
- * controls row); a shorter bar (e.g. no `courseNav`) just leaves a bit more
- * breathing room above the title, never a clipped one. */
-export const TOP_NAV_BAR_SPACER_CLASS = "pt-48";

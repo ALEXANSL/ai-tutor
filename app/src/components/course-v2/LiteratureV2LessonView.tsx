@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { LessonNavBar, TOP_NAV_BAR_SPACER_CLASS } from "@/components/shared/LessonNavBar";
+import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { OpenTextbookPageButton } from "@/components/shared/BookPageModal";
 import { MathText } from "@/components/shared/MathText";
 import { isCurrentlyPlaying, playSingleAudio, stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
@@ -473,7 +473,7 @@ export function LiteratureV2LessonScreen({ lesson, packageLessons }: { lesson: L
     : null;
 
   return (
-    <article className={`course-lesson ${TOP_NAV_BAR_SPACER_CLASS} ${STEP_NAV_BAR_SPACER_CLASS}`}>
+    <article className={`course-lesson ${STEP_NAV_BAR_SPACER_CLASS}`}>
       <LessonNavBar
         subjectId={lesson.subjectId}
         courseNav={{ basePath: "/literature-course-v2", currentLessonId: lesson.id, lessons: packageLessons, topicId: lesson.topicId }}
