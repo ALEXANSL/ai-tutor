@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { LessonNavBar } from "@/components/shared/LessonNavBar";
+import { LessonNavBar, TOP_NAV_BAR_SPACER_CLASS } from "@/components/shared/LessonNavBar";
 import { OpenTextbookPageButton } from "@/components/shared/BookPageModal";
 import { MathText } from "@/components/shared/MathText";
 import { isCurrentlyPlaying, playSingleAudio, stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
@@ -210,6 +210,17 @@ function ScreenNav({ lesson, voiceMode, autoAdvance }: { lesson: LiteratureV2Les
         onBack={() => setIndex((i) => Math.max(0, i - 1))}
         nextDisabled={index >= lesson.screens.length - 1}
         onNext={() => setIndex((i) => Math.min(lesson.screens.length - 1, i + 1))}
+        middleControl={
+          lesson.textbookMaterialId && (
+            <OpenTextbookPageButton
+              materialId={lesson.textbookMaterialId}
+              title={lesson.textbookTitle ?? lesson.packageTitle}
+              pageCount={lesson.textbookPageCount}
+              page={lesson.printedPageFrom}
+              label="📖 Відкрити підручник"
+            />
+          )
+        }
       />
     </section>
   );
@@ -462,8 +473,17 @@ export function LiteratureV2LessonScreen({ lesson, packageLessons }: { lesson: L
     : null;
 
   return (
-    <article className={`course-lesson ${STEP_NAV_BAR_SPACER_CLASS}`}>
-      <LessonNavBar subjectId={lesson.subjectId} courseNav={{ basePath: "/literature-course-v2", currentLessonId: lesson.id, lessons: packageLessons, topicId: lesson.topicId }} />
+    <article className={`course-lesson ${TOP_NAV_BAR_SPACER_CLASS} ${STEP_NAV_BAR_SPACER_CLASS}`}>
+      <LessonNavBar
+        subjectId={lesson.subjectId}
+        courseNav={{ basePath: "/literature-course-v2", currentLessonId: lesson.id, lessons: packageLessons, topicId: lesson.topicId }}
+        extraControls={
+          <>
+            <VoiceModeToggle voiceMode={voiceMode} onChange={changeVoiceMode} />
+            <AutoAdvanceToggle autoAdvance={autoAdvance} voiceMode={voiceMode} onChange={changeAutoAdvance} />
+          </>
+        }
+      />
       <header>
         <p className="course-eyebrow">{lesson.packageTitle}</p>
         <h1>{lesson.title}</h1>
@@ -474,13 +494,6 @@ export function LiteratureV2LessonScreen({ lesson, packageLessons }: { lesson: L
           </p>
         )}
         {lesson.status === "needs_review" && <p className="course-warning">Цей урок ще потребує перевірки дорослого.</p>}
-        <div className="mt-2 flex flex-wrap gap-2">
-          {textbook && (
-            <OpenTextbookPageButton materialId={textbook.materialId} title={textbook.title} pageCount={textbook.pageCount} page={lesson.printedPageFrom} label="📖 Відкрити підручник" />
-          )}
-          <VoiceModeToggle voiceMode={voiceMode} onChange={changeVoiceMode} />
-          <AutoAdvanceToggle autoAdvance={autoAdvance} voiceMode={voiceMode} onChange={changeAutoAdvance} />
-        </div>
       </header>
 
       {lesson.objectives.length > 0 && (

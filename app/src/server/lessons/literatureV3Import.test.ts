@@ -47,23 +47,28 @@ describe("literatureV3Import (real fixture subset)", () => {
     expect(manifest?.progress_namespace).toBe("ukrlit6-kalynych-diachok-2023@2.0.0");
   });
 
-  // Real bug Alex hit 2026-10-16: his "Українська мова, 6 клас"
-  // (ukrmova6-semenog-2023) package — same chapter-package contract family,
-  // 2.0.1 (only additive Work.scope/completeness enum values over 2.0.0,
-  // already accepted since both are free-form strings here) — was rejected
-  // because `zPackageManifest.format` only accepted the literature package's
-  // own literal. A real, non-literature subject using this same shape must
-  // parse too; an unrelated/garbage manifest must still be rejected.
-  it("accepts the ukrmova-tutor-package manifest format (same contract family, different subject)", () => {
-    const { manifest, errors } = parseLiteratureV3PackageManifest({
-      format: "ukrmova-tutor-package",
-      schema_version: "2.0.1",
-      book_id: "ukrmova6-semenog-2023",
-      progress_namespace: "ukrmova6-semenog-2023@2.0.1",
-    });
-    expect(errors).toEqual([]);
-    expect(manifest?.format).toBe("ukrmova-tutor-package");
-  });
+  // Real bug Alex hit 2026-10-16, TWICE: first with "Українська мова, 6
+  // клас" (ukrmova6-semenog-2023, format "ukrmova-tutor-package"), then
+  // again minutes later with "Історія" (istoriya6-shchupak-2023, format
+  // "history-tutor-package") — each a genuine chapter-package-contract
+  // subject (same flow/readings/assets/pages shape, only additive enum
+  // values over 2.0.0), rejected only because `zPackageManifest.format`
+  // allowlisted exact literals one at a time. Now validates the NAMING
+  // PATTERN instead, so a fourth/fifth/etc. subject's own manifest format
+  // never needs another hotfix for this.
+  it.each(["ukrlit-tutor-package", "ukrmova-tutor-package", "history-tutor-package", "geography-tutor-package"])(
+    "accepts any manifest format following the <subject>-tutor-package naming pattern (%s)",
+    (format) => {
+      const { manifest, errors } = parseLiteratureV3PackageManifest({
+        format,
+        schema_version: "2.1.0",
+        book_id: "some-book-2023",
+        progress_namespace: "some-book-2023@2.1.0",
+      });
+      expect(errors).toEqual([]);
+      expect(manifest?.format).toBe(format);
+    },
+  );
 
   it("rejects an unrecognized manifest format", () => {
     const { manifest, errors } = parseLiteratureV3PackageManifest({

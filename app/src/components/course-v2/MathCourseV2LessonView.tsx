@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { LessonNavBar } from "@/components/shared/LessonNavBar";
+import { LessonNavBar, TOP_NAV_BAR_SPACER_CLASS } from "@/components/shared/LessonNavBar";
 import { MathText } from "@/components/shared/MathText";
 import { OpenTextbookPageButton } from "@/components/shared/BookPageModal";
 import { isCurrentlyPlaying, playSingleAudio, stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
@@ -255,13 +255,27 @@ function ScreenNav({ lesson, voiceMode, autoAdvance }: { lesson: MathV2LessonVie
       </div>
       {/* PO complaint 2026-10-16: "кнопки стрибають по екрану" — Назад/Далі
           now live in `StepNavBar`, fixed to the bottom of the viewport
-          regardless of this screen's own content length. */}
+          regardless of this screen's own content length. PO follow-up same
+          day: "відкрити підручник... розмістити перед кнопкою далі" — the
+          lesson-level textbook link rides along as `middleControl`. */}
       <StepNavBar
         label={`Екран ${index + 1} з ${lesson.screens.length}`}
         backDisabled={index === 0}
         onBack={() => setIndex((i) => Math.max(0, i - 1))}
         nextDisabled={index >= lesson.screens.length - 1}
         onNext={() => setIndex((i) => Math.min(lesson.screens.length - 1, i + 1))}
+        middleControl={
+          lesson.textbookMaterialId && (
+            <OpenTextbookPageButton
+              materialId={lesson.textbookMaterialId}
+              title={lesson.textbookTitle ?? lesson.packageTitle}
+              pageCount={lesson.textbookPageCount}
+              page={lesson.printedPageFrom}
+              label="📖 Відкрити підручник"
+              numberKeywordHint="вправа"
+            />
+          )
+        }
       />
     </section>
   );
@@ -510,8 +524,17 @@ export function MathCourseV2LessonScreen({ lesson, packageLessons }: { lesson: M
     : null;
 
   return (
-    <article className={`course-lesson ${STEP_NAV_BAR_SPACER_CLASS}`}>
-      <LessonNavBar subjectId={lesson.subjectId} courseNav={{ basePath: "/math-course-v2", currentLessonId: lesson.id, lessons: packageLessons, topicId: lesson.topicId }} />
+    <article className={`course-lesson ${TOP_NAV_BAR_SPACER_CLASS} ${STEP_NAV_BAR_SPACER_CLASS}`}>
+      <LessonNavBar
+        subjectId={lesson.subjectId}
+        courseNav={{ basePath: "/math-course-v2", currentLessonId: lesson.id, lessons: packageLessons, topicId: lesson.topicId }}
+        extraControls={
+          <>
+            <VoiceModeToggle voiceMode={voiceMode} onChange={changeVoiceMode} />
+            <AutoAdvanceToggle autoAdvance={autoAdvance} voiceMode={voiceMode} onChange={changeAutoAdvance} />
+          </>
+        }
+      />
       <header>
         <p className="course-eyebrow">
           {KIND_LABEL[lesson.kind]} · {lesson.packageTitle}
@@ -524,20 +547,6 @@ export function MathCourseV2LessonScreen({ lesson, packageLessons }: { lesson: M
           </p>
         )}
         {lesson.status === "needs_review" && <p className="course-warning">Цей урок ще потребує перевірки дорослого.</p>}
-        <div className="mt-2 flex flex-wrap gap-2">
-          {textbook && (
-            <OpenTextbookPageButton
-              materialId={textbook.materialId}
-              title={textbook.title}
-              pageCount={textbook.pageCount}
-              page={lesson.printedPageFrom}
-              label="📖 Відкрити підручник"
-              numberKeywordHint="вправа"
-            />
-          )}
-          <VoiceModeToggle voiceMode={voiceMode} onChange={changeVoiceMode} />
-          <AutoAdvanceToggle autoAdvance={autoAdvance} voiceMode={voiceMode} onChange={changeAutoAdvance} />
-        </div>
       </header>
 
       {lesson.objectives.length > 0 && (
