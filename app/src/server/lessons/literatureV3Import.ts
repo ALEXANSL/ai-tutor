@@ -230,8 +230,21 @@ const zPage = z.object({
 
 const zTaskTablesTop = z.object({ schema_version: z.string(), book_id: z.string().min(1), items: z.array(z.unknown()) });
 
+// Accepted manifest formats for this "chapter package" contract family
+// (ADR-044 §1): the content model — lesson.flow of screen/reading/
+// biography/quiz steps, works/readings/biographies, single_choice quizzes
+// reusing course_v2_questions, lesson_pdf + pages.json "virtual book" index
+// — is identical across subjects; only the manifest's own `format` string
+// and `book_id` differ per book. `ukrlit-tutor-package` is "Українська
+// література" (S45); `ukrmova-tutor-package` is "Українська мова" (same
+// schema family, 2.0.1 — PO-provided migration.json: only two ADDITIVE
+// `Work.scope`/`Work.completeness` enum values over 2.0.0, already accepted
+// here since both fields are free-form strings, not enums). Naming debt:
+// the DB tables/components stay named `literature_v3_*` even though they
+// now also hold a non-literature subject — same tradeoff ADR-043 already
+// accepted for reuse over a new parallel system, not revisited here.
 const zPackageManifest = z.object({
-  format: z.literal("ukrlit-tutor-package"),
+  format: z.enum(["ukrlit-tutor-package", "ukrmova-tutor-package"]),
   schema_version: z.string(),
   book_id: z.string().min(1),
   progress_namespace: z.string().min(1),

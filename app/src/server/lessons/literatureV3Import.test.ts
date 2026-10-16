@@ -47,6 +47,35 @@ describe("literatureV3Import (real fixture subset)", () => {
     expect(manifest?.progress_namespace).toBe("ukrlit6-kalynych-diachok-2023@2.0.0");
   });
 
+  // Real bug Alex hit 2026-10-16: his "Українська мова, 6 клас"
+  // (ukrmova6-semenog-2023) package — same chapter-package contract family,
+  // 2.0.1 (only additive Work.scope/completeness enum values over 2.0.0,
+  // already accepted since both are free-form strings here) — was rejected
+  // because `zPackageManifest.format` only accepted the literature package's
+  // own literal. A real, non-literature subject using this same shape must
+  // parse too; an unrelated/garbage manifest must still be rejected.
+  it("accepts the ukrmova-tutor-package manifest format (same contract family, different subject)", () => {
+    const { manifest, errors } = parseLiteratureV3PackageManifest({
+      format: "ukrmova-tutor-package",
+      schema_version: "2.0.1",
+      book_id: "ukrmova6-semenog-2023",
+      progress_namespace: "ukrmova6-semenog-2023@2.0.1",
+    });
+    expect(errors).toEqual([]);
+    expect(manifest?.format).toBe("ukrmova-tutor-package");
+  });
+
+  it("rejects an unrecognized manifest format", () => {
+    const { manifest, errors } = parseLiteratureV3PackageManifest({
+      format: "some-other-package",
+      schema_version: "1.0.0",
+      book_id: "x",
+      progress_namespace: "x@1.0.0",
+    });
+    expect(manifest).toBeNull();
+    expect(errors).toHaveLength(1);
+  });
+
   it("parses the trimmed public course.json with no errors, keeping flow[] order verbatim", () => {
     const result = parseLiteratureV3Course(readJson("public/course.json"));
     expect(result.errors).toEqual([]);
