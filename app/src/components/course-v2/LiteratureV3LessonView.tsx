@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { isCurrentlyPlaying, playSingleAudio, stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
 import { AutoAdvanceToggle, VoiceModeToggle, useVoiceModeControls } from "@/components/shared/VoiceModeControls";
+import { STEP_NAV_BAR_SPACER_CLASS, StepNavBar } from "@/components/shared/StepNavBar";
 import { narrateLiteratureV3Action, saveReadingPositionAction } from "@/app/actions/literature-v3";
 import { OpenVirtualBookButton } from "@/components/child/OpenVirtualBookButton";
 import { QuestionCard } from "@/components/course-v2/QuestionCard";
@@ -322,22 +323,13 @@ function FlowNav({
         voiceMode={voiceMode}
         onNarrationEnded={onNarrationEnded}
       />
-      <p className="course-eyebrow mt-3">
-        Крок {index + 1} з {lesson.flow.length}
-      </p>
-      <div className="mt-1 flex gap-2">
-        <button type="button" disabled={index === 0} onClick={() => setIndex((i) => Math.max(0, i - 1))} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-40">
-          ← Назад
-        </button>
-        <button
-          type="button"
-          disabled={index >= lesson.flow.length - 1}
-          onClick={() => setIndex((i) => Math.min(lesson.flow.length - 1, i + 1))}
-          className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-40"
-        >
-          Далі →
-        </button>
-      </div>
+      <StepNavBar
+        label={`Крок ${index + 1} з ${lesson.flow.length}`}
+        backDisabled={index === 0}
+        onBack={() => setIndex((i) => Math.max(0, i - 1))}
+        nextDisabled={index >= lesson.flow.length - 1}
+        onNext={() => setIndex((i) => Math.min(lesson.flow.length - 1, i + 1))}
+      />
     </>
   );
 }
@@ -356,7 +348,7 @@ export function LiteratureV3LessonScreen({
   const { voiceMode, autoAdvance, changeVoiceMode, changeAutoAdvance } = useVoiceModeControls("literatureV3");
 
   return (
-    <article className="course-lesson">
+    <article className={`course-lesson ${STEP_NAV_BAR_SPACER_CLASS}`}>
       <LessonNavBar subjectId={lesson.subjectId} courseNav={{ basePath: "/literature-v3", currentLessonId: lesson.id, lessons: packageLessons, topicId: lesson.topicId }} />
       <header>
         <p className="course-eyebrow">{lesson.packageTitle}</p>
