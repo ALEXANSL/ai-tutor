@@ -235,16 +235,25 @@ const zTaskTablesTop = z.object({ schema_version: z.string(), book_id: z.string(
 // biography/quiz steps, works/readings/biographies, single_choice quizzes
 // reusing course_v2_questions, lesson_pdf + pages.json "virtual book" index
 // — is identical across subjects; only the manifest's own `format` string
-// and `book_id` differ per book. `ukrlit-tutor-package` is "Українська
-// література" (S45); `ukrmova-tutor-package` is "Українська мова" (same
-// schema family, 2.0.1 — PO-provided migration.json: only two ADDITIVE
-// `Work.scope`/`Work.completeness` enum values over 2.0.0, already accepted
-// here since both fields are free-form strings, not enums). Naming debt:
-// the DB tables/components stay named `literature_v3_*` even though they
-// now also hold a non-literature subject — same tradeoff ADR-043 already
-// accepted for reuse over a new parallel system, not revisited here.
+// and `book_id` differ per book. Hit THREE TIMES in one session (2026-10-16):
+// `ukrlit-tutor-package` ("Українська література", S45) → `ukrmova-tutor-package`
+// ("Українська мова", 2.0.1) → `history-tutor-package` ("Історія", 2.1.0) —
+// each new subject's own ChatGPT-prepared package names its manifest format
+// after ITS subject, and each schema bump so far has been purely additive
+// (new, free-form enum values on `Work.scope`/`Work.completeness`, never a
+// structural change to flow/readings/assets/pages). An exact-literal
+// allowlist (`z.enum([...])`) meant hand-adding one more literal, and
+// hitting this exact same import failure, every single time a NEW subject's
+// package showed up — so this validates the established NAMING PATTERN
+// (`<subject-prefix>-tutor-package`) instead of an exact, ever-growing list.
+// Still rejects garbage (an empty string, a typo, an unrelated manifest
+// shape) — just no longer a hotfix-the-literal treadmill for a shape that
+// hasn't actually changed. Naming debt (not revisited here, same tradeoff
+// ADR-043 already accepted for reuse over a new parallel system): the DB
+// tables/components stay named `literature_v3_*` even though they now hold
+// several non-literature subjects too.
 const zPackageManifest = z.object({
-  format: z.enum(["ukrlit-tutor-package", "ukrmova-tutor-package"]),
+  format: z.string().regex(/^[a-z]+-tutor-package$/, 'має бути "<предмет>-tutor-package" (напр. "ukrlit-tutor-package")'),
   schema_version: z.string(),
   book_id: z.string().min(1),
   progress_namespace: z.string().min(1),
