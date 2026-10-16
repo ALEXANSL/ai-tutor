@@ -2,6 +2,9 @@ import "server-only";
 import { forFamily } from "@/server/db/family-scope";
 import type { CourseV2QuestionView } from "@/components/course-v2/QuestionCard";
 
+const SIGNED_URL_TTL_S = 600;
+const LIT_V3_ASSETS_BUCKET = "course_assets"; // shared bucket (S34/S35/S36), same as `literatureV3Persist.ts`'s own constant.
+
 /**
  * S45 read path for the child-facing `/literature-v3/[lessonId]` screen.
  * Mirrors `mathCourseV2View.ts`'s conventions (never returns
@@ -19,12 +22,20 @@ import type { CourseV2QuestionView } from "@/components/course-v2/QuestionCard";
  * simply skipped here, never shown as a broken step.
  */
 
+export interface LiteratureV3IllustrationView {
+  assetKey: string;
+  url: string | null;
+  caption: string;
+  alt: string;
+}
+
 export interface LiteratureV3ScreenStep {
   kind: "screen";
   id: string;
   title: string;
   displayText: string;
   ttsText: string;
+  illustrations: LiteratureV3IllustrationView[];
 }
 
 export interface LiteratureV3BiographyStep {
@@ -89,6 +100,13 @@ interface ScreenRow {
   title: string;
   content_display: string;
   content_tts: { text?: string };
+  asset_ids: string[];
+}
+interface IllustrationAssetRow {
+  asset_key: string;
+  storage_path: string | null;
+  caption: string;
+  alt: string;
 }
 interface ReadingItemRow {
   id: string;
@@ -136,7 +154,7 @@ export async function getLiteratureV3LessonView(familyId: string, lessonId: stri
   const [{ data: pkg }, { data: screens }, { data: readingItems }, { data: biographies }, { data: questions }] = await Promise.all([
     scope.select("literature_v3_packages", "title").eq("id", lesson.package_id).maybeSingle<{ title: string }>(),
     screenKeys.length
-      ? scope.select("literature_v3_screens", "id, screen_key, title, content_display, content_tts").eq("lesson_id", lessonId).in("screen_key", screenKeys).returns<ScreenRow[]>()
+      ? scope.select("literature_v3_screens", "id, screen_key, title, content_display, content_tts, asset_ids").eq("lesson_id", lessonId).in("screen_key", screenKeys).returns<ScreenRow[]>()
       : Promise.resolve({ data: [] as ScreenRow[] }),
     readingKeys.length
       ? scope.select("literature_v3_reading_items", "id, reading_key, title, content_display, content_tts, work_id, primary_page_id").in("reading_key", readingKeys).returns<ReadingItemRow[]>()
@@ -159,6 +177,29 @@ export async function getLiteratureV3LessonView(familyId: string, lessonId: stri
     : { data: [] as { page_key: string; printed_page: number }[] };
   const printedPageByPageKey = new Map((pageRows ?? []).map((p) => [p.page_key, p.printed_page]));
 
+  // PO complaint 2026-10-16 ("чому в уроках не підтягуються ілюстрації?"):
+  // `asset_ids` was always imported onto `literature_v3_screens` (see
+  // `literatureV3Persist.ts`), but this read path never selected it nor
+  // resolved the referenced `literature_v3_assets` rows into a URL — so the
+  // illustrations the package's own screens reference ("Поруч показано...")
+  // simply never reached the viewer. Same signed-URL pattern as
+  // `literatureV2View.ts`'s `signPackageAssets`.
+  const illustrationAssetIds = [...new Set((screens ?? []).flatMap((s) => s.asset_ids ?? []))];
+  const { data: illustrationAssets } = illustrationAssetIds.length
+    ? await scope.select("literature_v3_assets", "asset_key, storage_path, caption, alt").eq("package_id", lesson.package_id).in("asset_key", illustrationAssetIds).returns<IllustrationAssetRow[]>()
+    : { data: [] as IllustrationAssetRow[] };
+  const illustrationStoragePaths = (illustrationAssets ?? []).filter((a) => a.storage_path).map((a) => a.storage_path as string);
+  const { data: signedIllustrations } = illustrationStoragePaths.length
+    ? await scope.client.storage.from(LIT_V3_ASSETS_BUCKET).createSignedUrls(illustrationStoragePaths, SIGNED_URL_TTL_S)
+    : { data: [] };
+  const signedUrlByStoragePath = new Map((signedIllustrations ?? []).filter((s) => !s.error).map((s) => [s.path ?? "", s.signedUrl]));
+  const illustrationByAssetKey = new Map(
+    (illustrationAssets ?? []).map((a) => [
+      a.asset_key,
+      { assetKey: a.asset_key, url: a.storage_path ? (signedUrlByStoragePath.get(a.storage_path) ?? null) : null, caption: a.caption, alt: a.alt } satisfies LiteratureV3IllustrationView,
+    ]),
+  );
+
   const screenByKey = new Map((screens ?? []).map((s) => [s.screen_key, s]));
   const readingByKey = new Map((readingItems ?? []).map((r) => [r.reading_key, r]));
   const biographyByKey = new Map((biographies ?? []).map((b) => [b.biography_key, b]));
@@ -169,7 +210,14 @@ export async function getLiteratureV3LessonView(familyId: string, lessonId: stri
     if (step.kind === "screen") {
       const s = screenByKey.get(step.ref_id);
       if (!s) continue;
-      flow.push({ kind: "screen", id: s.id, title: s.title, displayText: s.content_display, ttsText: s.content_tts?.text ?? s.content_display });
+      flow.push({
+        kind: "screen",
+        id: s.id,
+        title: s.title,
+        displayText: s.content_display,
+        ttsText: s.content_tts?.text ?? s.content_display,
+        illustrations: (s.asset_ids ?? []).map((id) => illustrationByAssetKey.get(id)).filter((a): a is LiteratureV3IllustrationView => a != null),
+      });
     } else if (step.kind === "reading") {
       const r = readingByKey.get(step.ref_id);
       if (!r) continue;

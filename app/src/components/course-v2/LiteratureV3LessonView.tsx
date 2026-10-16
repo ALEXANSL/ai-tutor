@@ -126,6 +126,13 @@ function ScreenStep({ step, voiceMode, onNarrationEnded }: { step: Extract<Liter
     <section className="lit-v3-step lit-v3-step-screen">
       {step.title && <h3>{step.title}</h3>}
       <p style={{ whiteSpace: "pre-wrap" }}>{step.displayText}</p>
+      {step.illustrations.map((a) =>
+        a.url ? (
+          // eslint-disable-next-line @next/next/no-img-element -- short-lived signed Supabase Storage URL
+          <img key={a.assetKey} src={a.url} alt={a.alt} className="course-exercise-asset mt-2" style={{ maxWidth: "100%", height: "auto" }} />
+        ) : null,
+      )}
+      {step.illustrations.map((a) => a.caption && <p key={a.assetKey} className="text-xs text-muted">{a.caption}</p>)}
       <div className="mt-2">
         <ListenButton key={step.id} refTable="literature_v3_screens" refId={step.id} field="tts" text={step.ttsText} autoPlay={voiceMode} onEnded={onNarrationEnded} />
       </div>
