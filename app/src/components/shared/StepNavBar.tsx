@@ -18,6 +18,14 @@
  * — this is pure, stateless chrome. `label` is caller-worded ("Екран X з Y"
  * for math/literature_v2, "Крок X з Y" for literature_v3) since those
  * viewers' content models differ; only the layout/positioning is shared.
+ *
+ * PO follow-up 2026-10-16: "відкрити підручник... можна перенести на нижню
+ * панель і розмістити перед кнопкою далі, фокус буде — перед переходом далі
+ * завжди можна відкрити оригінал" — the lesson-level "open textbook" button
+ * (same page range for every step of one lesson) moves here, right before
+ * "Далі →", via `middleControl`. Optional because not every viewer always
+ * has a textbook/virtual-book link to offer (e.g. no linked textbook for
+ * this subject yet).
  */
 export function StepNavBar({
   label,
@@ -25,23 +33,26 @@ export function StepNavBar({
   onNext,
   backDisabled,
   nextDisabled,
+  middleControl,
 }: {
   label: string;
   onBack: () => void;
   onNext: () => void;
   backDisabled: boolean;
   nextDisabled: boolean;
+  middleControl?: React.ReactNode;
 }) {
   return (
     <div
       className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface/95 backdrop-blur"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <div className="mx-auto flex max-w-2xl items-center gap-2 px-4 py-2.5">
+      <div className="mx-auto flex max-w-2xl flex-wrap items-center gap-2 px-4 py-2.5">
         <button type="button" disabled={backDisabled} onClick={onBack} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-40">
           ← Назад
         </button>
-        <p className="flex-1 truncate text-center text-xs font-bold text-muted">{label}</p>
+        <p className="min-w-0 flex-1 truncate text-center text-xs font-bold text-muted">{label}</p>
+        {middleControl}
         <button type="button" disabled={nextDisabled} onClick={onNext} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-40">
           Далі →
         </button>

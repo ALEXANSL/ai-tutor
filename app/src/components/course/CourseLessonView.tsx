@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { LiteratureTest } from "@/components/literature/LiteratureLessonView";
-import { LessonNavBar } from "@/components/shared/LessonNavBar";
+import { LessonNavBar, TOP_NAV_BAR_SPACER_CLASS } from "@/components/shared/LessonNavBar";
 import { MathText } from "@/components/shared/MathText";
 import type { LiteratureTestQuestionView } from "@/server/lessons/literatureView";
 import type { CourseLessonView, CourseSourceImageView } from "@/server/lessons/courseView";
@@ -103,7 +103,7 @@ export function CourseLessonScreen({ lesson }: { lesson: CourseLessonView }) {
   const testQuestions = useMemo(() => toLiteratureTestQuestions(lesson), [lesson]);
 
   return (
-    <article className="course-lesson">
+    <article className={`course-lesson ${TOP_NAV_BAR_SPACER_CLASS}`}>
       <LessonNavBar subjectId={lesson.subjectId} />
       <header>
         <p className="course-eyebrow">

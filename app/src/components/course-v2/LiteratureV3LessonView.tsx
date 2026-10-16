@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { LessonNavBar } from "@/components/shared/LessonNavBar";
+import { LessonNavBar, TOP_NAV_BAR_SPACER_CLASS } from "@/components/shared/LessonNavBar";
 import { isCurrentlyPlaying, playSingleAudio, stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
 import { AutoAdvanceToggle, VoiceModeToggle, useVoiceModeControls } from "@/components/shared/VoiceModeControls";
 import { STEP_NAV_BAR_SPACER_CLASS, StepNavBar } from "@/components/shared/StepNavBar";
@@ -329,6 +329,7 @@ function FlowNav({
         onBack={() => setIndex((i) => Math.max(0, i - 1))}
         nextDisabled={index >= lesson.flow.length - 1}
         onNext={() => setIndex((i) => Math.min(lesson.flow.length - 1, i + 1))}
+        middleControl={<OpenVirtualBookButton title={lesson.packageTitle} pageIndex={bookIndex} printedPage={lesson.printedPageFrom} label="📖 Відкрити підручник" />}
       />
     </>
   );
@@ -348,8 +349,17 @@ export function LiteratureV3LessonScreen({
   const { voiceMode, autoAdvance, changeVoiceMode, changeAutoAdvance } = useVoiceModeControls("literatureV3");
 
   return (
-    <article className={`course-lesson ${STEP_NAV_BAR_SPACER_CLASS}`}>
-      <LessonNavBar subjectId={lesson.subjectId} courseNav={{ basePath: "/literature-v3", currentLessonId: lesson.id, lessons: packageLessons, topicId: lesson.topicId }} />
+    <article className={`course-lesson ${TOP_NAV_BAR_SPACER_CLASS} ${STEP_NAV_BAR_SPACER_CLASS}`}>
+      <LessonNavBar
+        subjectId={lesson.subjectId}
+        courseNav={{ basePath: "/literature-v3", currentLessonId: lesson.id, lessons: packageLessons, topicId: lesson.topicId }}
+        extraControls={
+          <>
+            <VoiceModeToggle voiceMode={voiceMode} onChange={changeVoiceMode} />
+            <AutoAdvanceToggle autoAdvance={autoAdvance} voiceMode={voiceMode} onChange={changeAutoAdvance} />
+          </>
+        }
+      />
       <header>
         <p className="course-eyebrow">{lesson.packageTitle}</p>
         <h1>{lesson.title}</h1>
@@ -360,11 +370,6 @@ export function LiteratureV3LessonScreen({
           </p>
         )}
         {lesson.status === "needs_review" && <p className="course-warning">Цей урок ще потребує перевірки дорослого.</p>}
-        <div className="mt-2 flex flex-wrap gap-2">
-          <OpenVirtualBookButton title={lesson.packageTitle} pageIndex={bookIndex} printedPage={lesson.printedPageFrom} label="📖 Відкрити підручник" />
-          <VoiceModeToggle voiceMode={voiceMode} onChange={changeVoiceMode} />
-          <AutoAdvanceToggle autoAdvance={autoAdvance} voiceMode={voiceMode} onChange={changeAutoAdvance} />
-        </div>
       </header>
 
       {lesson.objectives.length > 0 && (
