@@ -53,7 +53,11 @@ export function OpenTextbookPageButton({
                 ✕ Закрити
               </button>
             </div>
-            <div className="overflow-y-auto p-3">
+            {/* PO complaint 2026-10-16 (same bug hit via the virtual-book
+                modal, see `OpenVirtualBookButton.tsx`): without `min-h-0`, a
+                flex item grows past the parent's fixed `h-[95vh]` instead of
+                becoming scrollable — `overflow-y-auto` never engaged. */}
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">
               <BookReader materialId={materialId} title={title} initialPageCount={pageCount} initialPage={page} numberKeywordHint={numberKeywordHint} />
             </div>
           </div>

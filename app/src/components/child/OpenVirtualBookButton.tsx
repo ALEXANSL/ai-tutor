@@ -39,7 +39,14 @@ export function OpenVirtualBookButton({
                 ✕ Закрити
               </button>
             </div>
-            <div className="overflow-y-auto p-3">
+            {/* PO complaint 2026-10-16 ("в уроці відкриваю підручник і він не
+                скролиться... лише закрити"): without `min-h-0`, a flex
+                item's own content (the rendered page + Назад/Далі buttons)
+                simply grows past the parent's fixed `h-[95vh]` instead of
+                becoming scrollable — `overflow-y-auto` here never got a
+                chance to engage, and the outer `overflow-hidden` just
+                clipped the overflow silently, including the nav buttons. */}
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">
               <VirtualBookReader title={title} pageIndex={pageIndex} initialPrintedPage={printedPage} />
             </div>
           </div>
