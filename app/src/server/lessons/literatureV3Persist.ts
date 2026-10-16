@@ -270,16 +270,27 @@ export async function persistLiteratureV3Package(
     const printedPageTo = printedPages.length ? Math.max(...printedPages) : null;
 
     let topicId = existing?.topic_id ?? null;
+    // BUG (Алекс 2026-10-16, "в списку уроків історії відсутнє сортування"):
+    // this used to insert `sort_order: lesson.flow.length` — the STEP COUNT
+    // of this one lesson, not its position among the package's lessons —
+    // so the subject's topic list sorted by "how many screens/readings/
+    // quizzes this lesson happens to have," not lesson order. Must be the
+    // same sequential counter `order_no` uses below (`lessonsImported`),
+    // same convention as `literatureV2Persist.ts`'s `sort_order: index` /
+    // `mathCourseV2Persist.ts`'s `sort_order: lesson.order`. Also now part
+    // of `topicFields` so a RE-IMPORT (the `else` update branch) fixes a
+    // topic's stale sort_order too, not just a fresh insert.
     const topicFields = {
       title: lesson.title,
       page_from: printedPageFrom,
       page_to: printedPageTo,
       grade: lesson.grade,
+      sort_order: lessonsImported,
     };
     if (!topicId) {
       const { data: topicRow, error: topicErr } = await scope.client
         .from("topics")
-        .insert({ owner_family_id: scope.familyId, subject_id: ctx.subjectId, sort_order: lesson.flow.length, ...topicFields })
+        .insert({ owner_family_id: scope.familyId, subject_id: ctx.subjectId, ...topicFields })
         .select("id")
         .single<{ id: string }>();
       if (topicErr) throw new Error(`topics insert failed for ${lesson.id}: ${topicErr.message}`);
