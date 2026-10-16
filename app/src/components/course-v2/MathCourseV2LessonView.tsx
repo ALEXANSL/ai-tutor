@@ -5,6 +5,7 @@ import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { MathText } from "@/components/shared/MathText";
 import { OpenTextbookPageButton } from "@/components/shared/BookPageModal";
 import { isCurrentlyPlaying, playSingleAudio, stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
+import { STEP_NAV_BAR_SPACER_CLASS, StepNavBar } from "@/components/shared/StepNavBar";
 import { AutoAdvanceToggle, VoiceModeToggle, useVoiceModeControls } from "@/components/shared/VoiceModeControls";
 import { askTopicChatAction } from "@/app/actions/lesson";
 import { explainMathCourseV2Action, narrateMathCourseV2Action, revealExerciseSolutionAction } from "@/app/actions/math-course-v2";
@@ -252,25 +253,16 @@ function ScreenNav({ lesson, voiceMode, autoAdvance }: { lesson: MathV2LessonVie
         />
         <ExplainButton subjectId={lesson.subjectId} topicId={lesson.topicId} stepText={screen.displayMd} refTable="course_v2_screens" refId={screen.id} />
       </div>
-      {/* PO feedback 2026-10-07: "надпис екран х з у краще показувати біля
-          кнопок навігації" — moved from above the content down to right
-          next to Назад/Далі, where it reads as part of the nav control. */}
-      <p className="course-eyebrow mt-3">
-        Екран {index + 1} з {lesson.screens.length}
-      </p>
-      <div className="mt-1 flex gap-2">
-        <button type="button" disabled={index === 0} onClick={() => setIndex((i) => Math.max(0, i - 1))} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-40">
-          ← Назад
-        </button>
-        <button
-          type="button"
-          disabled={index >= lesson.screens.length - 1}
-          onClick={() => setIndex((i) => Math.min(lesson.screens.length - 1, i + 1))}
-          className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-40"
-        >
-          Далі →
-        </button>
-      </div>
+      {/* PO complaint 2026-10-16: "кнопки стрибають по екрану" — Назад/Далі
+          now live in `StepNavBar`, fixed to the bottom of the viewport
+          regardless of this screen's own content length. */}
+      <StepNavBar
+        label={`Екран ${index + 1} з ${lesson.screens.length}`}
+        backDisabled={index === 0}
+        onBack={() => setIndex((i) => Math.max(0, i - 1))}
+        nextDisabled={index >= lesson.screens.length - 1}
+        onNext={() => setIndex((i) => Math.min(lesson.screens.length - 1, i + 1))}
+      />
     </section>
   );
 }
@@ -518,7 +510,7 @@ export function MathCourseV2LessonScreen({ lesson, packageLessons }: { lesson: M
     : null;
 
   return (
-    <article className="course-lesson">
+    <article className={`course-lesson ${STEP_NAV_BAR_SPACER_CLASS}`}>
       <LessonNavBar subjectId={lesson.subjectId} courseNav={{ basePath: "/math-course-v2", currentLessonId: lesson.id, lessons: packageLessons, topicId: lesson.topicId }} />
       <header>
         <p className="course-eyebrow">
