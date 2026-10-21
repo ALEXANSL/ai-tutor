@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { DragSortStep } from "@/lesson-components/drag_sort/DragSortStep";
 import type { DragSortProps } from "@/lesson-components/drag_sort";
 import { uk } from "@/i18n/uk";
+import { isCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
+import { useAudioPlaybackScope } from "@/components/shared/useAudioPlaybackScope";
 import {
   acknowledgeSlideAction,
   askTopicChatAction,
@@ -934,17 +936,49 @@ function NarrationPlayer({ sessionId, stepId, labels: t }: { sessionId: string; 
   // of each fresh `NarrationPlayer` mount, not one render late).
   const [speed, setSpeed] = useState<NarrationSpeed>(readStoredNarrationSpeed);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const { begin } = useAudioPlaybackScope();
+  const requestRef = useRef<ReturnType<typeof begin> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    // Own the pending synthesis as well as playback: link intent cancels
+    // this ticket before Next finishes unmounting the old lesson screen.
+    const request = begin(() => {});
+    requestRef.current = request;
     synthesizeNarrationAction(sessionId, stepId).then((res) => {
-      if (cancelled) return;
+      if (cancelled || !request.isCurrent()) return;
       if (res.status === "ok") setAudioUrl(`data:${res.mimeType};base64,${res.audioBase64}`);
-    });
+    }).catch(() => {});
     return () => {
       cancelled = true;
+      request.cancel();
+      if (requestRef.current === request) requestRef.current = null;
     };
-  }, [sessionId, stepId]);
+  }, [sessionId, stepId, begin]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    const request = requestRef.current;
+    if (!audio) return;
+    if (request?.isCurrent()) {
+      if (!isCurrentlyPlaying(audio)) request.play(audio, () => {});
+    } else {
+      // Navigation can land between setAudioUrl and this effect.
+      audio.autoplay = false;
+      audio.pause();
+    }
+    return () => { audio.autoplay = false; };
+  }, [audioUrl]);
+
+  function playNativeAudio() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (!isCurrentlyPlaying(audio)) {
+      const request = begin(() => {});
+      requestRef.current = request;
+      request.play(audio, () => {});
+    } else void audio.play().catch(() => {});
+  }
 
   // Applies to the current audio element immediately (mid-playback too), and
   // again whenever a new step's element mounts.
@@ -979,10 +1013,10 @@ function NarrationPlayer({ sessionId, stepId, labels: t }: { sessionId: string; 
   }
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2">
-      <audio ref={audioRef} src={audioUrl} autoPlay controls className="h-10 flex-1" />
+      <audio ref={audioRef} src={audioUrl} controls onPlay={playNativeAudio} className="h-10 flex-1" />
       <button
         type="button"
-        onClick={() => audioRef.current?.play()}
+        onClick={playNativeAudio}
         className="min-h-11 rounded-full border-2 border-line bg-surface px-3 text-sm font-bold"
       >
         {t.narrationReplay}

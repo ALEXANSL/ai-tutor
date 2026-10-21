@@ -8,16 +8,8 @@ import { MAX_COURSE_ZIP_BYTES } from "@/lib/upload-limits";
 import type { SubjectOption } from "@/server/books/queries";
 import { parentButton, parentInput } from "@/app/parent/ui";
 
-/**
- * S45 ($0 "Українська література" v2.0.0 chapter-package import) — modeled
- * directly on `LiteratureV2ImportPanel.tsx`/`MathCourseV2ImportPanel.tsx`:
- * this package's contract is SEVEN JSON documents (package.json manifest +
- * six catalogs: public/course.json, public/readings.json,
- * private/teacher.json, catalog/assets.json, catalog/pages.json,
- * catalog/task_tables.json) instead of four/two — see `literatureV3Import.ts`'s
- * header for the full per-file contract — plus an optional binaries zip
- * (illustrations AND `assets/lessons/*.pdf`, the 46 per-lesson PDFs).
- */
+/** Universal chapter package: four core JSON files, optional catalogs/media.
+ * Uploads go directly to staging storage to avoid the Vercel body-size limit. */
 
 type UiState =
   | { status: "idle" }
@@ -44,13 +36,13 @@ async function uploadOneToStaging(file: File, setStep: (s: string) => void): Pro
 }
 
 const FILE_FIELDS = [
-  { key: "packageFile", label: "package.json (маніфест пакета)" },
-  { key: "courseFile", label: "public/course.json" },
-  { key: "readingsFile", label: "public/readings.json" },
-  { key: "teacherFile", label: "private/teacher.json" },
-  { key: "assetsFile", label: "catalog/assets.json" },
-  { key: "pagesFile", label: "catalog/pages.json" },
-  { key: "taskTablesFile", label: "catalog/task_tables.json" },
+  { key: "packageFile", label: "package.json (маніфест пакета)", required: true },
+  { key: "courseFile", label: "public/course.json", required: true },
+  { key: "readingsFile", label: "public/readings.json", required: true },
+  { key: "teacherFile", label: "private/teacher.json", required: true },
+  { key: "assetsFile", label: "catalog/assets.json (необов’язково)", required: false },
+  { key: "pagesFile", label: "catalog/pages.json (необов’язково)", required: false },
+  { key: "taskTablesFile", label: "catalog/task_tables.json (необов’язково)", required: false },
 ] as const;
 type FileFieldKey = (typeof FILE_FIELDS)[number]["key"];
 
@@ -66,15 +58,16 @@ export function LiteratureV3ImportPanel({ subjects }: { subjects: SubjectOption[
     taskTablesFile: null,
   });
   const [binariesZip, setBinariesZip] = useState<File | null>(null);
+  const [lessonPdfsZip, setLessonPdfsZip] = useState<File | null>(null);
   const [state, setState] = useState<UiState>({ status: "idle" });
 
   async function doImport() {
     if (!subjectId) return setState({ status: "error", message: "Оберіть предмет." });
-    const missing = FILE_FIELDS.filter((f) => !files[f.key]);
+    const missing = FILE_FIELDS.filter((f) => f.required && !files[f.key]);
     if (missing.length > 0) {
-      return setState({ status: "error", message: `Потрібні всі сім файлів пакета. Бракує: ${missing.map((f) => f.label).join(", ")}.` });
+      return setState({ status: "error", message: `Бракує обов’язкових файлів: ${missing.map((f) => f.label).join(", ")}.` });
     }
-    for (const f of [...Object.values(files), binariesZip]) {
+    for (const f of [...Object.values(files), binariesZip, lessonPdfsZip]) {
       if (f && f.size > MAX_COURSE_ZIP_BYTES) return setState({ status: "error", message: `Файл ${f.name} завеликий.` });
     }
 
@@ -87,7 +80,8 @@ export function LiteratureV3ImportPanel({ subjects }: { subjects: SubjectOption[
 
     const uploaded: Partial<Record<FileFieldKey, string>> = {};
     for (const f of FILE_FIELDS) {
-      const file = files[f.key]!;
+      const file = files[f.key];
+      if (!file) continue;
       const res = await uploadOneToStaging(file, setStep);
       if ("error" in res) return setState({ status: "error", message: res.error });
       uploaded[f.key] = res.path;
@@ -98,6 +92,12 @@ export function LiteratureV3ImportPanel({ subjects }: { subjects: SubjectOption[
       if ("error" in zip) return setState({ status: "error", message: zip.error });
       binariesZipPath = zip.path;
     }
+    let lessonPdfsZipPath: string | undefined;
+    if (lessonPdfsZip) {
+      const zip = await uploadOneToStaging(lessonPdfsZip, setStep);
+      if ("error" in zip) return setState({ status: "error", message: zip.error });
+      lessonPdfsZipPath = zip.path;
+    }
 
     setState({ status: "processing" });
     const result = await importLiteratureV3Action({
@@ -106,10 +106,11 @@ export function LiteratureV3ImportPanel({ subjects }: { subjects: SubjectOption[
       courseStoragePath: uploaded.courseFile!,
       readingsStoragePath: uploaded.readingsFile!,
       teacherStoragePath: uploaded.teacherFile!,
-      assetsStoragePath: uploaded.assetsFile!,
-      pagesStoragePath: uploaded.pagesFile!,
-      taskTablesStoragePath: uploaded.taskTablesFile!,
+      assetsStoragePath: uploaded.assetsFile,
+      pagesStoragePath: uploaded.pagesFile,
+      taskTablesStoragePath: uploaded.taskTablesFile,
       binariesZipStoragePath: binariesZipPath,
+      lessonPdfsZipStoragePath: lessonPdfsZipPath,
     });
     if (result.status === "ok") setState({ status: "done", summary: result.summary });
     else setState({ status: "error", message: result.message });
@@ -119,6 +120,9 @@ export function LiteratureV3ImportPanel({ subjects }: { subjects: SubjectOption[
 
   return (
     <div className="flex flex-col gap-3.5">
+      <a href="/content-package-prompt.md" download className="text-[13px] font-bold text-p-text underline">
+        Завантажити промпт для ChatGPT — спільний формат усіх предметів
+      </a>
       <label className="flex flex-col gap-1.5">
         <span className="text-[13px] font-bold text-p-text">Предмет</span>
         <select className={parentInput} value={subjectId} onChange={(e) => setSubjectId(e.target.value)} disabled={busy}>
@@ -144,8 +148,13 @@ export function LiteratureV3ImportPanel({ subjects }: { subjects: SubjectOption[
         </label>
       ))}
       <label className="flex flex-col gap-1.5">
-        <span className="text-[13px] font-bold text-p-text">Бінарники (необов&apos;язково): zip з папкою assets/ (ілюстрації + assets/lessons/*.pdf)</span>
+        <span className="text-[13px] font-bold text-p-text">ZIP ілюстрацій (assets/) або повний архів пакета — необов’язково</span>
         <input type="file" accept=".zip,application/zip" disabled={busy} onChange={(e) => setBinariesZip(e.target.files?.[0] ?? null)} className={parentInput} />
+      </label>
+      <label className="flex flex-col gap-1.5">
+        <span className="text-[13px] font-bold text-p-text">ZIP PDF-уроків (папка lessons або lesson_pdfs) — необов’язково</span>
+        <input type="file" accept=".zip,application/zip" disabled={busy} onChange={(e) => setLessonPdfsZip(e.target.files?.[0] ?? null)} className={parentInput} />
+        <span className="text-xs text-p-muted">Якщо PDF уже є в повному архіві вище, окремо додавати їх не потрібно. Повторний імпорт зберігає вже завантажені файли.</span>
       </label>
 
       <button type="button" disabled={busy} onClick={() => void withBusySignal(doImport)} className={parentButton}>
@@ -172,8 +181,16 @@ function LiteratureV3ImportResult({ summary }: { summary: LiteratureV3ImportSumm
         {summary.packageTitle} · {summary.subjectName} · ключів відповідей: {summary.questionKeysImported} · сторінок у покажчику: {summary.pagesImported} · файлів завантажено: {summary.assetsUploaded}
       </p>
       {summary.assetsMissing.length > 0 && (
+        <p role="alert" className="text-[13px] font-bold text-p-danger">
+          Текст уроків імпортовано, але {summary.assetsMissing.length} файлів не завантажено.
+          Відповідні ілюстрації та сторінки підручника поки не відкриватимуться.
+          Додайте архів зі справжніми зображеннями й PDF та повторіть імпорт того самого пакета.
+          Самі JSON-файли містять лише посилання на них.
+        </p>
+      )}
+      {summary.assetsMissing.length > 0 && (
         <details>
-          <summary className="cursor-pointer text-[13px] font-bold text-p-text">Файли без бінарника ({summary.assetsMissing.length})</summary>
+          <summary className="cursor-pointer text-[13px] font-bold text-p-text">Незавантажені файли ({summary.assetsMissing.length})</summary>
           <ul className="mt-1.5 list-disc pl-5 text-xs text-p-muted">
             {summary.assetsMissing.map((p, i) => (
               <li key={i}>{p}</li>

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
-import { isCurrentlyPlaying, playSingleAudio, stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
+import { NarrationButton } from "@/components/shared/NarrationButton";
 import { AutoAdvanceToggle, VoiceModeToggle, useVoiceModeControls } from "@/components/shared/VoiceModeControls";
 import { STEP_NAV_BAR_SPACER_CLASS, StepNavBar } from "@/components/shared/StepNavBar";
 import { narrateLiteratureV3Action, saveReadingPositionAction } from "@/app/actions/literature-v3";
@@ -50,75 +50,13 @@ import type { LiteratureV3BookPage, LiteratureV3FlowStep, LiteratureV3LessonList
  * viewers, not something to solve only for reading steps here.
  */
 
-function ListenButton({
-  refTable,
-  refId,
-  field,
-  text,
-  autoPlay,
-  onEnded,
-}: {
-  refTable: string;
-  refId: string;
-  field: string;
-  text: string;
-  autoPlay?: boolean;
-  onEnded?: () => void;
+function ListenButton(props: {
+  refTable: string; refId: string; field: string; text: string;
+  autoPlay?: boolean; onEnded?: () => void;
 }) {
-  const [state, setState] = useState<"idle" | "loading" | "playing" | "unavailable">("idle");
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  useEffect(
-    () => () => {
-      if (isCurrentlyPlaying(audioRef.current)) stopCurrentlyPlaying();
-    },
-    [],
-  );
-
-  async function play() {
-    if (state === "loading") return;
-    stopCurrentlyPlaying();
-    setState("loading");
-    try {
-      const res = await narrateLiteratureV3Action({ refTable, refId, field, text });
-      if (res.status !== "ok") {
-        setState("unavailable");
-        return;
-      }
-      const audio = new Audio(`data:${res.audioMime};base64,${res.audioBase64}`);
-      audioRef.current = audio;
-      setState("playing");
-      playSingleAudio(audio, () => setState("idle"));
-      audio.addEventListener("ended", () => onEnded?.(), { once: true });
-    } catch {
-      setState("unavailable");
-    }
-  }
-
-  useEffect(() => {
-    if (!autoPlay || !text.trim()) return;
-    let cancelled = false;
-    Promise.resolve().then(() => {
-      if (!cancelled) void play();
-    });
-    return () => {
-      cancelled = true;
-    };
-    // Intentionally only on mount — fresh per step via the caller's `key`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  if (!text.trim()) return null;
-  return (
-    <button
-      type="button"
-      onClick={play}
-      disabled={state === "loading" || state === "playing"}
-      className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold disabled:opacity-60"
-    >
-      {state === "loading" ? "…" : state === "playing" ? "🔊 Грає…" : state === "unavailable" ? "🔇 Недоступно" : "🔊 Слухати"}
-    </button>
-  );
+  const { refTable, refId, field, text } = props;
+  return <NarrationButton {...props} identity={JSON.stringify([refTable, refId, field, text])}
+    synthesize={() => narrateLiteratureV3Action({ refTable, refId, field, text })} />;
 }
 
 function ScreenStep({ step, voiceMode, onNarrationEnded }: { step: Extract<LiteratureV3FlowStep, { kind: "screen" }>; voiceMode: boolean; onNarrationEnded?: () => void }) {

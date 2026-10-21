@@ -204,12 +204,14 @@ const zPageMapEntry = z.object({
 
 const zAsset = z.object({
   id: z.string().min(1),
-  kind: z.enum(ASSET_KINDS),
+  // Geography uses the same illustration contract for supplementary workbook figures.
+  // Normalize to the existing image category; no database schema change is needed.
+  kind: z.union([z.enum(ASSET_KINDS), z.literal("workbook_illustration")]).transform(kind => kind === "workbook_illustration" ? "textbook_illustration" as const : kind),
   path: z.string().min(1),
   mime_type: z.string().min(1),
   byte_size: z.number().int().optional().default(0),
   sha256: z.string().optional().default(""),
-  page_id: z.string().optional(),
+  page_id: z.string().nullish(),
   caption: z.string().optional().default(""),
   alt: z.string().optional().default(""),
   tts: zTts.optional(),

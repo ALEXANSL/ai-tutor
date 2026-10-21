@@ -1,6 +1,7 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import type { FamilyScope } from "@/server/db/family-scope";
-import type { ParsedLiteratureV3Package } from "./literatureV3Import";
+import type { ParsedAsset, ParsedLiteratureV3Package } from "./literatureV3Import";
 
 /**
  * S45: persists an already-parsed+validated "Українська література"
@@ -52,6 +53,8 @@ export interface LiteratureV3PersistSummary {
   assetsUploaded: number;
   assetsMissing: string[];
   assetUploadFailures: { path: string; message: string }[];
+  /** A changed source descriptor could not replace the previously uploaded media. */
+  assetReuseWarnings?: { path: string; message: string }[];
 }
 
 /**
@@ -64,31 +67,79 @@ export interface LiteratureV3PersistSummary {
  * assets are reported, never block the rest of the import (same resilience
  * as S34/S35/S36's `persistAssets`, 2026-10-02 incident).
  */
+interface StoredAsset {
+  asset_key: string;
+  kind: ParsedAsset["kind"];
+  storage_path: string | null;
+  mime_type: string;
+  byte_size: number | null;
+  sha256: string | null;
+  title: string;
+  caption: string;
+  alt: string;
+  tts: ParsedAsset["tts"] | Record<string, never>;
+  page_map: ParsedAsset["page_map"];
+}
+
 async function persistAssets(
   scope: FamilyScope,
   packageId: string,
   parsed: ParsedLiteratureV3Package,
   assetFiles: Map<string, Uint8Array>,
-): Promise<{ uploaded: number; missing: string[]; uploadFailures: { path: string; message: string }[] }> {
+): Promise<{ uploaded: number; missing: string[]; uploadFailures: { path: string; message: string }[]; reuseWarnings: { path: string; message: string }[] }> {
   const missing: string[] = [];
   const uploadFailures: { path: string; message: string }[] = [];
+  const reuseWarnings: { path: string; message: string }[] = [];
   let uploaded = 0;
 
+  // An omitted or failed replacement must not disconnect an existing file.
+  // Read only assets belonging to this family AND this package. Bounded key
+  // batches avoid PostgREST's result limit dropping a retained asset silently.
+  const previous = new Map<string, StoredAsset>();
+  const keys = [...new Set(parsed.assets.map((asset) => asset.id))];
+  for (let i = 0; i < keys.length; i += 100) {
+    const { data, error } = await scope.select("literature_v3_assets", "asset_key,kind,storage_path,mime_type,byte_size,sha256,title,caption,alt,tts,page_map")
+      .eq("package_id", packageId).in("asset_key", keys.slice(i, i + 100)).returns<StoredAsset[]>();
+    if (error) throw new Error(`reading existing literature_v3_assets failed: ${error.message}`);
+    for (const asset of data ?? []) previous.set(asset.asset_key, asset);
+  }
+
   for (const asset of parsed.assets) {
+    const old = previous.get(asset.id);
     const bytes = assetFiles.get(asset.path);
-    const storagePath = `lit-v3/${packageId}/${asset.id}`;
-    let storedPath: string | null = null;
+    let storedPath = old?.storage_path || null;
+    let replaced = false;
+    let uploadedHash: string | null = null;
+    let uploadedByteSize: number | null = null;
     if (bytes) {
+      // Keep replacements immutable until their DB pointer can be saved.
+      // Failed uploads therefore cannot overwrite the previous media object.
+      const digest = createHash("sha256").update(bytes).digest("hex");
+      const storagePath = `lit-v3/${packageId}/${encodeURIComponent(asset.id)}/${digest}`;
       const { error: uploadErr } = await uploadAssetWithRetry(scope, storagePath, bytes, asset.mime_type);
       if (uploadErr) {
         uploadFailures.push({ path: asset.path, message: uploadErr.message });
       } else {
         storedPath = storagePath;
+        replaced = true;
+        uploadedHash = digest;
+        uploadedByteSize = bytes.byteLength;
         uploaded += 1;
       }
-    } else {
-      missing.push(asset.path);
     }
+    if (!storedPath) missing.push(asset.path);
+
+    const retained = !replaced && storedPath ? old : undefined;
+    const sourceChanged = !!retained && (
+      retained.kind !== asset.kind || retained.mime_type !== asset.mime_type ||
+      (!!asset.sha256 && asset.sha256.toLowerCase() !== retained.sha256?.toLowerCase()) ||
+      (asset.byte_size > 0 && asset.byte_size !== retained.byte_size) ||
+      JSON.stringify(retained.page_map ?? []) !== JSON.stringify(asset.page_map)
+    );
+    if (sourceChanged) reuseWarnings.push({
+      path: asset.path,
+      message: "Новий опис файлу відрізняється від збереженого, але новий файл не завантажено. Залишено попередній файл і його метадані; завантажте відповідний архів, щоб оновити його.",
+    });
 
     const { error: rowErr } = await scope.client
       .from("literature_v3_assets")
@@ -97,23 +148,25 @@ async function persistAssets(
           owner_family_id: scope.familyId,
           package_id: packageId,
           asset_key: asset.id,
-          kind: asset.kind,
+          kind: retained?.kind ?? asset.kind,
           storage_path: storedPath,
-          mime_type: asset.mime_type,
-          title: asset.title ?? "",
-          caption: asset.caption ?? "",
-          alt: asset.alt ?? "",
-          tts: asset.tts ?? {},
-          page_map: asset.page_map,
-          byte_size: asset.byte_size ?? null,
-          sha256: asset.sha256 || null,
+          // Retaining an old file must not relabel it as the requested new
+          // bytes/type/hash, or attach a new PDF page map to older contents.
+          mime_type: retained?.mime_type ?? asset.mime_type,
+          title: sourceChanged ? retained!.title : (asset.title ?? ""),
+          caption: sourceChanged ? retained!.caption : (asset.caption ?? ""),
+          alt: sourceChanged ? retained!.alt : (asset.alt ?? ""),
+          tts: sourceChanged ? retained!.tts : (asset.tts ?? {}),
+          page_map: retained ? retained.page_map : asset.page_map,
+          byte_size: replaced ? uploadedByteSize : retained ? retained.byte_size : (asset.byte_size ?? null),
+          sha256: replaced ? uploadedHash : retained ? retained.sha256 : (asset.sha256 || null),
         },
         { onConflict: "package_id,asset_key" },
       );
     if (rowErr) throw new Error(`literature_v3_assets upsert failed for ${asset.id}: ${rowErr.message}`);
   }
 
-  return { uploaded, missing, uploadFailures };
+  return { uploaded, missing, uploadFailures, reuseWarnings };
 }
 
 export async function persistLiteratureV3Package(
@@ -153,7 +206,7 @@ export async function persistLiteratureV3Package(
   if (pkgErr) throw new Error(`literature_v3_packages upsert failed: ${pkgErr.message}`);
   const packageId = pkg.id;
 
-  const { uploaded, missing, uploadFailures } = await persistAssets(scope, packageId, parsed, assetFiles);
+  const { uploaded, missing, uploadFailures, reuseWarnings } = await persistAssets(scope, packageId, parsed, assetFiles);
 
   // Page key -> printed_page, used to derive each lesson's printed_page_from/to.
   const printedPageByPageKey = new Map(parsed.pages.map((p) => [p.id, p.printed_page]));
@@ -469,5 +522,6 @@ export async function persistLiteratureV3Package(
     assetsUploaded: uploaded,
     assetsMissing: missing,
     assetUploadFailures: uploadFailures,
+    assetReuseWarnings: reuseWarnings,
   };
 }

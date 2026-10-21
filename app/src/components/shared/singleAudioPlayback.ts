@@ -1,57 +1,79 @@
 "use client";
 
-/**
- * PO complaint 2026-10-07 (math-v2), recurred 2026-10-08 (literature-v2):
- * "можна одночасно слухати декілька потоків... це мало бути на рівні
- * платформи пофікшено, а не тільки для математики" — this singleton used
- * to be copy-pasted as a module-level variable inside EACH course viewer
- * (`MathCourseV2LessonView.tsx`, then `LiteratureV2LessonView.tsx`), so
- * each lesson type coordinated its OWN narration/explanation buttons but
- * had no way to know about another lesson type's audio at all. One shared
- * module, used by every course viewer (current and future), fixes that
- * for good instead of needing the same fix copied into each new subject's
- * importer slice.
- *
- * Still scoped to ONE browser tab (a `let` in a client module instance) —
- * genuinely separate tabs/windows are isolated JS realms with no shared
- * state without a cross-tab channel (BroadcastChannel, a Service Worker),
- * which is a different, much rarer problem (a child using two tabs/
- * windows open side by side) not worth the complexity here.
- */
+/** One active or pending narration per browser tab. Requests are invalidated
+ * before playback exists, so leaving a page cannot revive late TTS audio. */
+interface PlaybackOwner {
+  audio: HTMLAudioElement | null;
+  onStopped: () => void;
+  cleanup?: () => void;
+}
+let current: PlaybackOwner | null = null;
 
-let currentlyPlayingAudio: HTMLAudioElement | null = null;
-let onCurrentlyPlayingStopped: (() => void) | null = null;
+export interface AudioPlaybackRequest {
+  isCurrent(): boolean;
+  cancel(): void;
+}
 
+function finish(owner: PlaybackOwner, pause: boolean): void {
+  if (current !== owner) return;
+  current = null;
+  owner.cleanup?.();
+  if (pause) {
+    try { owner.audio?.pause(); } catch { /* The browser may have detached its media backend. */ }
+  }
+  owner.onStopped();
+}
+
+/** Cancels both playing audio and a request still waiting for synthesis. */
 export function stopCurrentlyPlaying(): void {
-  currentlyPlayingAudio?.pause();
-  currentlyPlayingAudio = null;
-  onCurrentlyPlayingStopped?.();
-  onCurrentlyPlayingStopped = null;
+  if (current) finish(current, true);
 }
 
 export function isCurrentlyPlaying(audio: HTMLAudioElement | null): boolean {
-  return audio !== null && currentlyPlayingAudio === audio;
+  return audio !== null && current?.audio === audio;
 }
 
-/**
- * Stops whatever else is playing, then plays `audio` as the new "currently
- * playing" one. `onStopped` fires whenever this specific audio stops being
- * the active one (naturally ending, or a later call here stopping it) —
- * callers use it to reset their own button back to an idle state.
- */
-export function playSingleAudio(audio: HTMLAudioElement, onStopped: () => void): void {
+export function beginAudioPlayback(onStopped: () => void): AudioPlaybackRequest {
   stopCurrentlyPlaying();
-  currentlyPlayingAudio = audio;
-  onCurrentlyPlayingStopped = onStopped;
-  const clearIfSelf = () => {
-    if (currentlyPlayingAudio === audio) {
-      currentlyPlayingAudio = null;
-      onCurrentlyPlayingStopped = null;
-    }
+  const owner: PlaybackOwner = { audio: null, onStopped };
+  current = owner;
+  return {
+    isCurrent: () => current === owner,
+    cancel: () => finish(owner, true),
   };
-  audio.addEventListener("ended", clearIfSelf, { once: true });
-  void audio.play().catch(() => {
-    clearIfSelf();
-    onStopped();
-  });
+}
+
+/** Reuse a synthesis request's ownership, or begin a fresh direct playback.
+ * Natural completion alone calls onEnded; cancellation/error never advances a lesson. */
+export function playSingleAudio(
+  audio: HTMLAudioElement,
+  onStopped: () => void,
+  request?: AudioPlaybackRequest,
+  onEnded?: () => void,
+): boolean {
+  const ticket = request ?? beginAudioPlayback(onStopped);
+  if (!ticket.isCurrent() || !current) return false;
+  const owner = current;
+  owner.audio = audio;
+  owner.onStopped = onStopped;
+  const ended = () => {
+    if (current !== owner) return;
+    finish(owner, false);
+    onEnded?.();
+  };
+  const failed = () => finish(owner, true);
+  audio.addEventListener("ended", ended);
+  audio.addEventListener("error", failed);
+  owner.cleanup = () => {
+    audio.removeEventListener("ended", ended);
+    audio.removeEventListener("error", failed);
+  };
+  try {
+    void audio.play().then(() => {
+      // Some media backends resolve play after cancellation. Do not stop a
+      // newer legitimate replay of this same element.
+      if (current !== owner && current?.audio !== audio) audio.pause();
+    }).catch(failed);
+  } catch { failed(); }
+  return current === owner;
 }

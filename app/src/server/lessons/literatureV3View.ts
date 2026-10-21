@@ -286,41 +286,70 @@ export interface LiteratureV3BookPage {
   bundlePdfPage: number;
 }
 
+export interface LiteratureV3BookIndexPageRow {
+  printed_page: number;
+  lesson_locations: { lesson_key: string; pdf_asset_key: string; bundle_pdf_page: number }[];
+}
+export interface LiteratureV3BookIndexAssetRow {
+  id: string;
+  asset_key: string;
+  storage_path: string | null;
+  page_map: { printed_page: number; bundle_pdf_page: number }[];
+}
+
 /**
- * US-31.3 (ADR-044 §4) — the "virtual book" page index for one package: for
- * every printed page the pages.json reverse index knows, which `lesson_pdf`
- * asset (resolved to its DB uuid, not the package's own text id) and which
- * page INSIDE that small PDF holds it. Ordered by `printedPage` so
- * `VirtualBookReader` can step past one small PDF's own last page straight
- * into the next asset's first page without the child ever noticing two
- * different files are involved (see ADR-044 §4's "безшовність").
- *
- * A page with no resolvable lesson_pdf location (not every printed page
- * necessarily has one importable yet) is simply skipped — same resilience
- * stance as the rest of this read path (a step that doesn't resolve is
- * skipped, never shown broken).
+ * Build only usable page links. Catalog entries can exist before their PDF
+ * binaries are uploaded; those must not produce a button whose file route 404s.
+ * An overlapping page may also have several lesson locations: use the first
+ * uploaded PDF rather than treating a missing first location as a missing page.
+ * Source PDF page numbers are deliberately never used as bundle page numbers.
  */
+export function buildLiteratureV3BookIndex(pages: LiteratureV3BookIndexPageRow[], assets: LiteratureV3BookIndexAssetRow[]): LiteratureV3BookPage[] {
+  const available = [...assets].filter((asset) => !!asset.storage_path).sort((a, b) => a.asset_key.localeCompare(b.asset_key));
+  const assetByKey = new Map(available.map((asset) => [asset.asset_key, asset]));
+  const fallbackByPage = new Map<number, LiteratureV3BookPage>();
+  const validPage = (page: number) => Number.isSafeInteger(page) && page >= 1;
+  for (const asset of available) {
+    for (const mapping of asset.page_map ?? []) {
+      if (validPage(mapping.printed_page) && validPage(mapping.bundle_pdf_page) && !fallbackByPage.has(mapping.printed_page)) {
+        fallbackByPage.set(mapping.printed_page, { printedPage: mapping.printed_page, assetId: asset.id, bundlePdfPage: mapping.bundle_pdf_page });
+      }
+    }
+  }
+  const result: LiteratureV3BookPage[] = [];
+  const seen = new Set<number>();
+  for (const page of [...pages].sort((a, b) => a.printed_page - b.printed_page)) {
+    if (!validPage(page.printed_page) || seen.has(page.printed_page)) continue;
+    let resolved: LiteratureV3BookPage | undefined;
+    for (const location of page.lesson_locations ?? []) {
+      const asset = assetByKey.get(location.pdf_asset_key);
+      if (!asset) continue;
+      // A metadata-only re-import may update the reverse index while the
+      // previously uploaded PDF is retained. Its own saved page map describes
+      // the actual binary, so never reinterpret that file using newer offsets.
+      const storedMapping = asset.page_map?.length
+        ? asset.page_map.find((mapping) => mapping.printed_page === page.printed_page && validPage(mapping.bundle_pdf_page))
+        : null;
+      if (asset.page_map?.length && !storedMapping) continue;
+      const bundlePdfPage = storedMapping?.bundle_pdf_page ?? location.bundle_pdf_page;
+      if (!validPage(bundlePdfPage)) continue;
+      resolved = { printedPage: page.printed_page, assetId: asset.id, bundlePdfPage };
+      break;
+    }
+    resolved ??= fallbackByPage.get(page.printed_page);
+    if (resolved) { result.push(resolved); seen.add(page.printed_page); }
+  }
+  return result;
+}
+
+/** US-31.3: family/package-scoped uploaded lesson PDFs form one virtual book. */
 export async function getLiteratureV3BookIndex(familyId: string, packageId: string): Promise<LiteratureV3BookPage[]> {
   const scope = forFamily(familyId);
   const [{ data: pages }, { data: assets }] = await Promise.all([
-    scope
-      .select("literature_v3_pages", "printed_page, lesson_locations")
-      .eq("package_id", packageId)
-      .order("printed_page")
-      .returns<{ printed_page: number; lesson_locations: { lesson_key: string; pdf_asset_key: string; bundle_pdf_page: number }[] }[]>(),
-    scope.select("literature_v3_assets", "id, asset_key").eq("package_id", packageId).eq("kind", "lesson_pdf").returns<{ id: string; asset_key: string }[]>(),
+    scope.select("literature_v3_pages", "printed_page, lesson_locations").eq("package_id", packageId).order("printed_page").returns<LiteratureV3BookIndexPageRow[]>(),
+    scope.select("literature_v3_assets", "id, asset_key, storage_path, page_map").eq("package_id", packageId).eq("kind", "lesson_pdf").returns<LiteratureV3BookIndexAssetRow[]>(),
   ]);
-  const assetIdByKey = new Map((assets ?? []).map((a) => [a.asset_key, a.id]));
-
-  const result: LiteratureV3BookPage[] = [];
-  for (const page of pages ?? []) {
-    const location = page.lesson_locations[0]; // first known location is enough for navigation purposes.
-    if (!location) continue;
-    const assetId = assetIdByKey.get(location.pdf_asset_key);
-    if (!assetId) continue;
-    result.push({ printedPage: page.printed_page, assetId, bundlePdfPage: location.bundle_pdf_page });
-  }
-  return result;
+  return buildLiteratureV3BookIndex(pages ?? [], assets ?? []);
 }
 
 export interface LiteratureV3ReadingPosition {
