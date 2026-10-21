@@ -7,6 +7,7 @@ import type { DragSortProps } from "@/lesson-components/drag_sort";
 import { uk } from "@/i18n/uk";
 import { isCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
 import { useAudioPlaybackScope } from "@/components/shared/useAudioPlaybackScope";
+import { LessonVoicePanel } from "@/components/voice/LessonVoicePanel";
 import {
   acknowledgeSlideAction,
   askTopicChatAction,
@@ -644,6 +645,7 @@ export function LessonRunner({
       {presentationMode === "voice" && (
         <NarrationPlayer key={step.stepId} sessionId={sessionId} stepId={step.stepId} labels={t} />
       )}
+      <LessonVoicePanel target={{ kind: "lesson", source: "session", sessionId, stepId: step.stepId }} />
 
       {exitConfirmOpen && (
         <div className="mb-4 rounded-2xl border border-line bg-surface-alt p-3.5" role="alertdialog" aria-label={t.exitLessonConfirmTitle}>

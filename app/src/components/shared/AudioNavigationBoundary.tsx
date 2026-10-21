@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { stopCurrentlyPlaying } from "./singleAudioPlayback";
 
 function stopPageAudio() {
+  window.dispatchEvent(new Event("lesson-navigation"));
   stopCurrentlyPlaying();
   // Native lesson <audio> players are not detached Audio objects, but must
   // obey the same route-change rule.

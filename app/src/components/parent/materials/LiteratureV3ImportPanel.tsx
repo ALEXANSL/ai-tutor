@@ -8,7 +8,7 @@ import { MAX_COURSE_ZIP_BYTES } from "@/lib/upload-limits";
 import type { SubjectOption } from "@/server/books/queries";
 import { parentButton, parentInput } from "@/app/parent/ui";
 
-/** Universal chapter package: four core JSON files, optional catalogs/media.
+/** Universal chapter package: seven JSON files and two optional media ZIPs.
  * Uploads go directly to staging storage to avoid the Vercel body-size limit. */
 
 type UiState =
@@ -40,9 +40,9 @@ const FILE_FIELDS = [
   { key: "courseFile", label: "public/course.json", required: true },
   { key: "readingsFile", label: "public/readings.json", required: true },
   { key: "teacherFile", label: "private/teacher.json", required: true },
-  { key: "assetsFile", label: "catalog/assets.json (необов’язково)", required: false },
-  { key: "pagesFile", label: "catalog/pages.json (необов’язково)", required: false },
-  { key: "taskTablesFile", label: "catalog/task_tables.json (необов’язково)", required: false },
+  { key: "assetsFile", label: "catalog/assets.json", required: true },
+  { key: "pagesFile", label: "catalog/pages.json", required: true },
+  { key: "taskTablesFile", label: "catalog/task_tables.json", required: true },
 ] as const;
 type FileFieldKey = (typeof FILE_FIELDS)[number]["key"];
 
@@ -148,13 +148,13 @@ export function LiteratureV3ImportPanel({ subjects }: { subjects: SubjectOption[
         </label>
       ))}
       <label className="flex flex-col gap-1.5">
-        <span className="text-[13px] font-bold text-p-text">ZIP ілюстрацій (assets/) або повний архів пакета — необов’язково</span>
+        <span className="text-[13px] font-bold text-p-text">ZIP assets — ілюстрації (необов’язково)</span>
         <input type="file" accept=".zip,application/zip" disabled={busy} onChange={(e) => setBinariesZip(e.target.files?.[0] ?? null)} className={parentInput} />
       </label>
       <label className="flex flex-col gap-1.5">
-        <span className="text-[13px] font-bold text-p-text">ZIP PDF-уроків (папка lessons або lesson_pdfs) — необов’язково</span>
+        <span className="text-[13px] font-bold text-p-text">ZIP lessons — PDF уроків (необов’язково)</span>
         <input type="file" accept=".zip,application/zip" disabled={busy} onChange={(e) => setLessonPdfsZip(e.target.files?.[0] ?? null)} className={parentInput} />
-        <span className="text-xs text-p-muted">Якщо PDF уже є в повному архіві вище, окремо додавати їх не потрібно. Повторний імпорт зберігає вже завантажені файли.</span>
+        <span className="text-xs text-p-muted">Додайте окремий архів папки lessons або lesson_pdfs. Обидва ZIP можна пропустити. Сім JSON завантажуються окремо, як раніше.</span>
       </label>
 
       <button type="button" disabled={busy} onClick={() => void withBusySignal(doImport)} className={parentButton}>

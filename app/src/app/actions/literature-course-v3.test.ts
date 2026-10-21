@@ -49,4 +49,25 @@ describe("universal chapter import optional media", () => {
     expect(await importLiteratureV3Action({ ...base, lessonPdfsZipStoragePath: "other-family/lessons.zip" })).toMatchObject({ status: "error" });
     expect(mock.download).not.toHaveBeenCalled(); expect(mock.persist).not.toHaveBeenCalled();
   });
+  it("imports all seven JSON documents and two separately uploaded ZIPs", async () => {
+    const pdf = new Uint8Array([37, 80, 68, 70]);
+    const image = new Uint8Array([82, 73, 70, 70]);
+    mock.files.set("family-one/assets.json", new Blob([JSON.stringify({ items: [
+      { id: "PDF-L001", kind: "lesson_pdf", path: "lesson_pdfs/L001.pdf", mime_type: "application/pdf" },
+      { id: "figure", kind: "textbook_illustration", path: "assets/figures/F001.webp", mime_type: "image/webp" },
+    ] })]));
+    mock.files.set("family-one/pages.json", new Blob([JSON.stringify({ items: [] })]));
+    const manifest = JSON.parse(readFileSync(join(fixture, "package.json"), "utf8"));
+    mock.files.set("family-one/task_tables.json", new Blob([JSON.stringify({ schema_version: manifest.schema_version, book_id: manifest.book_id, items: [] })]));
+    mock.files.set("family-one/assets.zip", new Blob([zipSync({ "assets/figures/F001.webp": image })]));
+    mock.files.set("family-one/lessons.zip", new Blob([zipSync({ "lessons/L001.pdf": pdf })]));
+    const result = await importLiteratureV3Action({ ...base,
+      assetsStoragePath: "family-one/assets.json", pagesStoragePath: "family-one/pages.json", taskTablesStoragePath: "family-one/task_tables.json",
+      binariesZipStoragePath: "family-one/assets.zip", lessonPdfsZipStoragePath: "family-one/lessons.zip",
+    });
+    expect(result.status).toBe("ok");
+    expect(mock.persist.mock.calls[0]![2].errors).toEqual([]);
+    expect(mock.persist.mock.calls[0]![3]).toEqual(new Map([["assets/figures/F001.webp", image], ["lesson_pdfs/L001.pdf", pdf]]));
+    expect(mock.download).toHaveBeenCalledTimes(9);
+  });
 });
