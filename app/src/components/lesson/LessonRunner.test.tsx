@@ -72,6 +72,7 @@ let root: Root | null = null;
 
 afterEach(() => {
   act(() => root?.unmount());
+  vi.useRealTimers();
   container?.remove();
   container = null;
   root = null;
@@ -243,6 +244,49 @@ describe("BUG-031: «Далі» on the block-complete screen actually advances t
     stepNumber: 1,
     totalSteps: 1,
   };
+
+  it("shows the slow hint after 15 seconds and resets the delay when retrying a failed continuation", async () => {
+    vi.useFakeTimers();
+    submitStepAnswerAction.mockResolvedValue({
+      verdict: "correct",
+      explanation: "",
+      formatChangeSuggested: false,
+      next: { kind: "block_complete", libraryItemId: "item-1", visibleOutcomeUk: null },
+    });
+    const el = renderRunner(1, choiceStep);
+    await act(async () => {
+      findButtonByText(el, "4")!.click();
+    });
+
+    let rejectContinue!: (reason: Error) => void;
+    continueAfterBlockAction.mockImplementation(() => new Promise((_, reject) => {
+      rejectContinue = reject;
+    }));
+    const hint = () => el.querySelector('[role="status"]');
+    await act(async () => {
+      findButtonByText(el, "Далі")!.click();
+    });
+    act(() => vi.advanceTimersByTime(14_999));
+    expect(hint()).toBeNull();
+    act(() => vi.advanceTimersByTime(1));
+    expect(hint()?.textContent).toContain("Можеш почекати або вийти");
+    expect(findButtonByText(el, "Вийти з уроку")!.disabled).toBe(false);
+
+    await act(async () => {
+      rejectContinue(new Error("generation failed"));
+    });
+    expect(hint()).toBeNull();
+    expect(findButtonByText(el, "Далі")!.disabled).toBe(false);
+
+    await act(async () => {
+      findButtonByText(el, "Далі")!.click();
+    });
+    expect(hint()).toBeNull();
+    act(() => vi.advanceTimersByTime(14_999));
+    expect(hint()).toBeNull();
+    act(() => vi.advanceTimersByTime(1));
+    expect(hint()?.textContent).toContain("Можеш почекати або вийти");
+  });
 
   it("choosing the only answer reaches the block-complete screen, and clicking «Далі» starts the next block", async () => {
     submitStepAnswerAction.mockResolvedValue({

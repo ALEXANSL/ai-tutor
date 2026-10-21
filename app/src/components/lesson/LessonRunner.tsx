@@ -1042,6 +1042,21 @@ function BreakOfferScreen({
   );
 }
 
+/** Mount only during a pending continuation so each attempt gets a fresh timer. */
+function BlockContinueSlowHint({ text }: { text: string }) {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setVisible(true), 15_000);
+    return () => clearTimeout(id);
+  }, []);
+
+  return visible ? (
+    <p className="mb-3 text-sm font-semibold text-muted" role="status">
+      {text}
+    </p>
+  ) : null;
+}
+
 function BlockCompleteScreen({
   libraryItemId,
   visibleOutcomeUk,
@@ -1065,20 +1080,6 @@ function BlockCompleteScreen({
   onExit: () => void;
 }) {
   const [feedbackSent, setFeedbackSent] = useState<"interesting" | "normal" | "boring" | null>(null);
-  // BUG-034: a real on-demand generation (planning → up to 3 passes of
-  // generating/reviewing) can take 1-5 minutes — after ~15s of waiting,
-  // swap the neutral busy label for a friendlier explanation so the child
-  // does not conclude the app is stuck.
-  const [slowWait, setSlowWait] = useState(false);
-  useEffect(() => {
-    if (!busy) {
-      setSlowWait(false);
-      return;
-    }
-    const id = setTimeout(() => setSlowWait(true), 15_000);
-    return () => clearTimeout(id);
-  }, [busy]);
-
   function sendFeedback(kind: "interesting" | "normal" | "boring") {
     setFeedbackSent(kind);
     if (libraryItemId) submitBlockFeedbackAction(libraryItemId, kind).catch(() => {});
@@ -1107,11 +1108,8 @@ function BlockCompleteScreen({
           </div>
         )}
 
-        {busy && slowWait && (
-          <p className="mb-3 text-sm font-semibold text-muted" role="status">
-            {t.blockContinueSlowHint}
-          </p>
-        )}
+        {/* BUG-034: explain long generation after 15s; unmounting resets the hint. */}
+        {busy && <BlockContinueSlowHint text={t.blockContinueSlowHint} />}
 
         <div className="flex flex-wrap items-center gap-3">
           <button

@@ -2,10 +2,9 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireParentAccount } from "@/server/auth/guards";
 import { getAppBaseUrl } from "@/server/env";
-import { connectGoogleDrive } from "@/server/drive/oauth";
+import { connectGoogleDrive, STATE_COOKIE } from "@/server/drive/oauth";
 import { getServiceAccountEmail } from "@/server/drive/service";
 import { DriveError } from "@/server/drive/google";
-import { STATE_COOKIE } from "../connect/route";
 
 function statesMatch(a: string, b: string): boolean {
   const bufA = Buffer.from(a);
