@@ -1,6 +1,7 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { VoiceConversation } from "@/components/voice/VoiceConversation";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { MathText } from "@/components/shared/MathText";
 import { OpenTextbookPageButton } from "@/components/shared/BookPageModal";
@@ -153,6 +154,15 @@ function ExplainButton({ subjectId, topicId, stepText, refTable, refId }: { subj
   const [state, setState] = useState<{ status: "idle" } | { status: "pending" } | { status: "done"; content: string }>({ status: "idle" });
   const [audio, setAudio] = useState<{ base64: string; mime: string } | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [voiceActive, setVoiceActive] = useState(false);
+  const [voiceMessages, setVoiceMessages] = useState<{ author: "child" | "ai"; content: string }[]>([]);
+  const handleVoiceTurn = useCallback(({ text, message }: { text: string; message: { content: string } }) => {
+    setVoiceMessages((previous) => [...previous, { author: "child", content: text }, { author: "ai", content: message.content }]);
+  }, []);
+  const handleVoiceActive = useCallback((active: boolean) => {
+    if (active) stopCurrentlyPlaying();
+    setVoiceActive(active);
+  }, []);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(
@@ -199,14 +209,14 @@ function ExplainButton({ subjectId, topicId, stepText, refTable, refId }: { subj
   return (
     <div>
       <div className="flex items-center gap-1.5">
-        <button type="button" onClick={() => void explain()} disabled={state.status === "pending"} className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold disabled:opacity-60">
+        <button type="button" onClick={() => void explain()} disabled={state.status === "pending" || voiceActive} className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold disabled:opacity-60">
           {state.status === "pending" ? "…" : "💡 Пояснити"}
         </button>
         {audio && (
           <button
             type="button"
             onClick={() => playAudio(audio.base64, audio.mime)}
-            disabled={playing}
+            disabled={playing || voiceActive}
             className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold disabled:opacity-60"
           >
             {playing ? "🔊 Грає…" : "🔁 Ще раз"}
@@ -216,6 +226,17 @@ function ExplainButton({ subjectId, topicId, stepText, refTable, refId }: { subj
       {state.status === "done" && (
         <div className="mt-2 rounded-xl border border-line bg-surface-alt p-2.5 text-sm">
           <MathText text={state.content} />
+          <div className="mt-3 space-y-2" aria-label="Уточнення до пояснення">
+            {voiceMessages.map((message, index) => (
+              <p key={index} className={message.author === "child" ? "font-semibold" : "text-muted"}>{message.content}</p>
+            ))}
+          </div>
+          <VoiceConversation
+            key={`${refTable}:${refId}`}
+            target={{ kind: "course", refTable, refId }}
+            onTurn={handleVoiceTurn}
+            onActiveChange={handleVoiceActive}
+          />
         </div>
       )}
     </div>
@@ -251,7 +272,7 @@ function ScreenNav({ lesson, voiceMode, autoAdvance }: { lesson: MathV2LessonVie
           autoPlay={voiceMode}
           onEnded={onNarrationEnded}
         />
-        <ExplainButton subjectId={lesson.subjectId} topicId={lesson.topicId} stepText={screen.displayMd} refTable="course_v2_screens" refId={screen.id} />
+        <ExplainButton key={screen.id} subjectId={lesson.subjectId} topicId={lesson.topicId} stepText={screen.displayMd} refTable="course_v2_screens" refId={screen.id} />
       </div>
       {/* PO complaint 2026-10-16: "кнопки стрибають по екрану" — Назад/Далі
           now live in `StepNavBar`, fixed to the bottom of the viewport

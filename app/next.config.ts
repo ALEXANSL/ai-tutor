@@ -36,7 +36,13 @@ const nextConfig: NextConfig = {
     "/**": ["./prompts/**/*", "./node_modules/pdfjs-dist/cmaps/**/*", "./node_modules/pdfjs-dist/standard_fonts/**/*"],
   },
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      ...["/friend", "/lesson/:path*", "/math-course-v2/:path*", "/literature-course-v2/:path*"].map(source => ({
+        source,
+        headers: [{ key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=()" }],
+      })),
+    ];
   },
 };
 

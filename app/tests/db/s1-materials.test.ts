@@ -116,6 +116,8 @@ describe("model routes (docs/02 7.3, ADR-005)", () => {
       { role: "safety_moderator", primary_provider: "anthropic", primary_model: "claude-haiku-4-5", policy: null },
       { role: "step_reinforcement", primary_provider: "anthropic", primary_model: "claude-sonnet-5", policy: null },
       { role: "tutor_chat", primary_provider: "anthropic", primary_model: "claude-sonnet-5", policy: null },
+      { role: "voice_reply", primary_provider: "openai", primary_model: "gpt-4o-mini-tts", policy: "defer" },
+      { role: "voice_transcription", primary_provider: "openai", primary_model: "whisper-1", policy: "defer" },
     ]);
   });
 

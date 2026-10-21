@@ -4,6 +4,8 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { useRouter } from "next/navigation";
 import { DragSortStep } from "@/lesson-components/drag_sort/DragSortStep";
 import type { DragSortProps } from "@/lesson-components/drag_sort";
+import { VoiceConversation } from "@/components/voice/VoiceConversation";
+import { stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
 import { uk } from "@/i18n/uk";
 import {
   acknowledgeSlideAction,
@@ -133,6 +135,20 @@ export function LessonRunner({
   const [blockOrder, setBlockOrder] = useState(initialCurrentBlockOrder ?? 1);
   const [explainBusy, setExplainBusy] = useState(false);
   const chatRef = useRef<TopicChatHandle>(null);
+  const [voiceStepId, setVoiceStepId] = useState<string | null>(null);
+  const voiceActive = voiceStepId === step.stepId;
+  const handleVoiceTurn = useCallback(({ text, message }: { text: string; message: { content: string } }) => {
+    chatRef.current?.pushVoiceTurn(text, message.content);
+    lastInteractionRef.current = Date.now();
+    setShowIdleHint(false);
+  }, []);
+  const handleVoiceActive = useCallback((active: boolean) => {
+    if (active) {
+      stopCurrentlyPlaying();
+      document.querySelectorAll("audio").forEach((audio) => audio.pause());
+    }
+    setVoiceStepId((current) => active ? step.stepId : current === step.stepId ? null : current);
+  }, [step.stepId]);
   const lastInteractionRef = useRef<number>(0);
   useEffect(() => {
     lastInteractionRef.current = Date.now();
@@ -595,7 +611,7 @@ export function LessonRunner({
         <button
           type="button"
           onClick={navExplain}
-          disabled={explainBusy}
+          disabled={explainBusy || voiceActive}
           className="min-h-11 rounded-full border-2 border-accent bg-accent/10 px-3.5 text-sm font-bold text-accent disabled:opacity-60"
         >
           {explainBusy ? t.explainSending : t.navExplain}
@@ -640,7 +656,17 @@ export function LessonRunner({
       )}
 
       {presentationMode === "voice" && (
-        <NarrationPlayer key={step.stepId} sessionId={sessionId} stepId={step.stepId} labels={t} />
+        <>
+          <div hidden={voiceActive}>
+            <NarrationPlayer key={step.stepId} sessionId={sessionId} stepId={step.stepId} labels={t} suspended={voiceActive} />
+          </div>
+          <VoiceConversation
+            key={step.stepId}
+            target={{ kind: "lesson", source: "session", sessionId, stepId: step.stepId }}
+            onTurn={handleVoiceTurn}
+            onActiveChange={handleVoiceActive}
+          />
+        </>
       )}
 
       {exitConfirmOpen && (
@@ -802,6 +828,7 @@ function StepBody({
 export interface TopicChatHandle {
   /** US-6.16 КП-1: "Пояснити" publishes straight into this chat and opens it. */
   pushAndOpen(content: string): void;
+  pushVoiceTurn(text: string, content: string): void;
 }
 
 const TopicChat = forwardRef<TopicChatHandle, { sessionId: string; subjectId: string; topicId: string; labels: Labels }>(function TopicChat(
@@ -814,6 +841,10 @@ const TopicChat = forwardRef<TopicChatHandle, { sessionId: string; subjectId: st
   const [pending, setPending] = useState(false);
 
   useImperativeHandle(ref, () => ({
+    pushVoiceTurn(text: string, content: string) {
+      setMessages((previous) => [...previous, { author: "child", content: text }, { author: "ai", content }]);
+      setOpen(true);
+    },
     pushAndOpen(content: string) {
       setMessages((prev) => [...prev, { author: "ai", content }]);
       setOpen(true);
@@ -924,7 +955,7 @@ function readStoredNarrationSpeed(): NarrationSpeed {
   return DEFAULT_NARRATION_SPEED;
 }
 
-function NarrationPlayer({ sessionId, stepId, labels: t }: { sessionId: string; stepId: string; labels: Labels }) {
+function NarrationPlayer({ sessionId, stepId, labels: t, suspended = false }: { sessionId: string; stepId: string; labels: Labels; suspended?: boolean }) {
   // The parent renders this with `key={step.stepId}` (a fresh mount, and so
   // a fresh `useState`/`useEffect`, per step) — no in-place reset is needed
   // here for a step change.
@@ -945,6 +976,10 @@ function NarrationPlayer({ sessionId, stepId, labels: t }: { sessionId: string; 
       cancelled = true;
     };
   }, [sessionId, stepId]);
+
+  useEffect(() => {
+    if (suspended) audioRef.current?.pause();
+  }, [suspended, audioUrl]);
 
   // Applies to the current audio element immediately (mid-playback too), and
   // again whenever a new step's element mounts.
@@ -979,7 +1014,7 @@ function NarrationPlayer({ sessionId, stepId, labels: t }: { sessionId: string; 
   }
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2">
-      <audio ref={audioRef} src={audioUrl} autoPlay controls className="h-10 flex-1" />
+      <audio ref={audioRef} src={audioUrl} autoPlay={!suspended} controls className="h-10 flex-1" />
       <button
         type="button"
         onClick={() => audioRef.current?.play()}
