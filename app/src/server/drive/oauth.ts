@@ -19,6 +19,9 @@ const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const SCOPE = "https://www.googleapis.com/auth/drive.file";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 
+/** Shared by the OAuth start and callback routes; route modules only export handlers. */
+export const STATE_COOKIE = "gdrive_oauth_state";
+
 /** The one folder this slice creates (US-2.7, ADR-024); the archive folder name is D-67/S17's concern. */
 export const UPLOADS_FOLDER_NAME = "ШІ-Репетитор — Мої книги";
 
