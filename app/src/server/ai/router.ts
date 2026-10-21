@@ -2,7 +2,7 @@ import "server-only";
 import type { z } from "zod";
 import { estimateCostUsd, fallbackOf, selectModel } from "./policy";
 import { anthropicStructured, anthropicVisionStructured } from "./providers/anthropic";
-import { openaiEmbed, openaiStructured, openaiTts } from "./providers/openai";
+import { openaiEmbed, openaiStructured, openaiTts, openaiTranscribe } from "./providers/openai";
 import * as store from "./store";
 import {
   AiNotConfiguredError,
@@ -58,8 +58,9 @@ export interface ProviderAdapters {
   /** Text-to-speech (role `passive_narration`, ADR-025) — not the tutor's live voice (ADR-006). */
   audio: Record<
     string,
-    (req: { model: string; text: string; voiceId?: string; params: RouteParams }) => Promise<{ data: AudioResult; usage: Usage }>
+    (req: { model: string; text: string; voiceId?: string; instructions?: string; params: RouteParams }) => Promise<{ data: AudioResult; usage: Usage }>
   >;
+  transcription?: Record<string, (req: { model: string; audio: File; params: RouteParams }) => Promise<{ data: string; usage: Usage }>>;
 }
 
 export interface RouterDeps {
@@ -87,6 +88,7 @@ export const defaultRouterDeps: RouterDeps = {
     // (documented in the seed migration), same caveat pattern already used
     // elsewhere for an unconfirmed reserve provider.
     audio: { openai: (req) => openaiTts(req) },
+    transcription: { openai: (req) => openaiTranscribe(req) },
   },
   now: () => Date.now(),
 };
@@ -112,7 +114,7 @@ async function routed<T>(
   if (!choice.ok) throw new BudgetBlockedError(choice.reason, role);
 
   const attempt = async (model: ModelRef, fallbackUsed: boolean) => {
-    if (!deps.providers[kind][model.provider]) {
+    if (!deps.providers[kind]?.[model.provider]) {
       throw new AiNotConfiguredError(`provider "${model.provider}" is not supported for ${kind}`);
     }
     const started = deps.now();
@@ -223,7 +225,7 @@ export async function callVisionStructured<S extends z.ZodType>(
  */
 export async function callAudio(
   role: string,
-  req: { text: string; voiceId?: string },
+  req: { text: string; voiceId?: string; instructions?: string },
   ctx: CallContext,
   deps: RouterDeps = defaultRouterDeps,
 ): Promise<RoutedResult<AudioResult>> {
@@ -251,4 +253,15 @@ export async function embedTexts(
     });
     return { value: vectors, usage };
   });
+}
+
+/** Voice transcription follows the same route, budget and cost record as every other model call. */
+export async function transcribeAudio(audio: File, ctx: CallContext, deps: RouterDeps = defaultRouterDeps): Promise<RoutedResult<string> & { audioSeconds: number }> {
+  let audioSeconds = 0;
+  const result = await routed("voice_transcription", "transcription", ctx, deps, async (model, params) => {
+    const { data, usage } = await deps.providers.transcription![model.provider]!({ model: model.model, audio, params });
+    audioSeconds = usage.inputTokens;
+    return { value: data, usage };
+  });
+  return { ...result, audioSeconds };
 }

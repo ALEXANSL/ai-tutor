@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { NarrationButton } from "@/components/shared/NarrationButton";
+import { LessonVoicePanel } from "@/components/voice/LessonVoicePanel";
 import { AutoAdvanceToggle, VoiceModeToggle, useVoiceModeControls } from "@/components/shared/VoiceModeControls";
 import { STEP_NAV_BAR_SPACER_CLASS, StepNavBar } from "@/components/shared/StepNavBar";
 import { narrateLiteratureV3Action, saveReadingPositionAction } from "@/app/actions/literature-v3";
@@ -246,6 +247,7 @@ function FlowNav({
 }) {
   const savedStepIndex = savedPosition ? lesson.flow.findIndex((s) => s.id === savedPosition.refId) : -1;
   const [index, setIndex] = useState(savedStepIndex >= 0 ? savedStepIndex : 0);
+  const [interruptedStep, setInterruptedStep] = useState<string | null>(null);
   const step = lesson.flow[index];
   if (!step) return <p className="course-note">Кроків ще немає.</p>;
   const initialReadingOffset = step.kind === "reading" && savedPosition?.refId === step.id ? savedPosition.offsetCodepoints : null;
@@ -265,9 +267,10 @@ function FlowNav({
         bookIndex={bookIndex}
         lessonId={lesson.id}
         initialReadingOffset={initialReadingOffset}
-        voiceMode={voiceMode}
+        voiceMode={voiceMode && interruptedStep !== step.id}
         onNarrationEnded={onNarrationEnded}
       />
+      {lesson.topicId && <LessonVoicePanel target={{ kind: "chapter", lessonId: lesson.id, stepId: step.id }} onActiveChange={active => { if (active) setInterruptedStep(step.id); }} />}
       <StepNavBar
         label={`Крок ${index + 1} з ${lesson.flow.length}`}
         backDisabled={index === 0}

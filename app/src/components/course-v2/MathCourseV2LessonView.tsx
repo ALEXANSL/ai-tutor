@@ -4,6 +4,7 @@ import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { MathText } from "@/components/shared/MathText";
 import { OpenTextbookPageButton } from "@/components/shared/BookPageModal";
+import { LessonVoicePanel } from "@/components/voice/LessonVoicePanel";
 import { NarrationButton } from "@/components/shared/NarrationButton";
 import { useAudioPlaybackScope } from "@/components/shared/useAudioPlaybackScope";
 import { STEP_NAV_BAR_SPACER_CLASS, StepNavBar } from "@/components/shared/StepNavBar";
@@ -140,6 +141,7 @@ function ScopedExplainButton({ subjectId, topicId, stepText, refTable, refId }: 
           <MathText text={state.content} />
         </div>
       )}
+      <LessonVoicePanel target={{ kind: "course", refTable, refId }} />
     </div>
   );
 }
