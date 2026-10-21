@@ -47,9 +47,9 @@ export default async function MaterialsImportPage() {
         </p>
         <LiteratureV2ImportPanel subjects={subjects} />
       </Panel>
-      <Panel title="Пакети уроків «розділ уроку + квіз» (chapter package)">
+      <Panel title="Спільний формат для всіх предметів — уроки та квізи">
         <p className="-mt-2 mb-3.5 text-xs text-p-muted">
-          Новий, серйозніший формат (S45) для будь-якого предмета — сім файлів JSON (package.json, public/course.json, public/readings.json, private/teacher.json, catalog/assets.json, catalog/pages.json, catalog/task_tables.json), плюс необов&apos;язковий zip з ілюстраціями та малими PDF уроків. Екрани уроку, читання (текст твору або довідковий фрагмент) і необов&apos;язкові біографії, квіз із варіантами відповідей (як на математиці). Формат маніфеста — будь-яке &quot;&lt;предмет&gt;-tutor-package&quot; (напр. ukrlit/ukrmova/history).
+          Спільний формат для будь-якого предмета: чотири обов’язкові файли JSON (package.json, public/course.json, public/readings.json, private/teacher.json). Каталоги assets.json, pages.json, task_tables.json, ZIP ілюстрацій та ZIP PDF-уроків — необов’язкові. Можна спочатку завантажити текст і квізи, а файли додати пізніше повторним імпортом того самого пакета. Екрани уроку, читання й біографії можуть поєднуватися з квізами з однією правильною відповіддю.
         </p>
         <LiteratureV3ImportPanel subjects={subjects} />
       </Panel>

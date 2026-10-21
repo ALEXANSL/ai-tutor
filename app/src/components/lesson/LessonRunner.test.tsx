@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { act } from "react-dom/test-utils";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AudioNavigationBoundary } from "@/components/shared/AudioNavigationBoundary";
 
 /**
  * BUG-029: "⬅️ Попередній модуль" used to render nothing when
@@ -18,6 +19,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
  */
 const routerPush = vi.fn();
 vi.mock("next/navigation", () => ({
+  usePathname: () => "/lesson/s1",
   useRouter: () => ({ refresh: () => {}, push: (...a: unknown[]) => routerPush(...a), replace: () => {} }),
 }));
 
@@ -70,6 +72,11 @@ const step: TestStep = {
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 
+beforeEach(() => {
+  vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+  vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+});
+
 afterEach(() => {
   act(() => root?.unmount());
   vi.useRealTimers();
@@ -84,6 +91,7 @@ afterEach(() => {
   pauseLessonAction.mockResolvedValue(undefined);
   synthesizeNarrationAction.mockReset();
   routerPush.mockClear();
+  vi.restoreAllMocks();
   try {
     window.localStorage.clear();
   } catch {
@@ -91,12 +99,14 @@ afterEach(() => {
   }
 });
 
-function renderRunner(currentBlockOrder?: number, activeStep: TestStep = step, presentationMode: "text" | "voice" | "auto" = "text") {
+function renderRunner(currentBlockOrder?: number, activeStep: TestStep = step, presentationMode: "text" | "voice" | "auto" = "text", withNavigation = false) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
     root!.render(
+      <>
+      {withNavigation && <AudioNavigationBoundary />}
       <LessonRunner
         sessionId="s1"
         subjectId="subj-1"
@@ -106,7 +116,9 @@ function renderRunner(currentBlockOrder?: number, activeStep: TestStep = step, p
         idlePauseS={180}
         presentationMode={presentationMode}
         currentBlockOrder={currentBlockOrder}
-      />,
+      />
+      {withNavigation && <a href="/today" onClick={(event) => event.preventDefault()}>Test home</a>}
+      </>,
     );
   });
   return container;
@@ -424,6 +436,37 @@ describe("BUG-034: «Вийти з уроку» on the block-complete screen alw
  * that generation-time speed.
  */
 describe("D-111 п.5: narration playback-speed control", () => {
+  it("does not autoplay a late synthesis after link intent while the old lesson is still mounted", async () => {
+    let resolve!: (value: unknown) => void;
+    synthesizeNarrationAction.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+    const el = renderRunner(undefined, step, "voice", true);
+    act(() => { el.querySelector<HTMLAnchorElement>('a[href="/today"]')!.click(); });
+    await act(async () => { resolve({ status: "ok", mimeType: "audio/mpeg", audioBase64: "AAAA" }); });
+    expect(el.isConnected).toBe(true);
+    expect(el.querySelector("audio")).toBeNull();
+    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+  });
+
+  it("pauses the captured native autoplay element when leaving the lesson", async () => {
+    synthesizeNarrationAction.mockResolvedValue({ status: "ok", mimeType: "audio/mpeg", audioBase64: "AAAA" });
+    const el = renderRunner(undefined, step, "voice");
+    await act(async () => { await Promise.resolve(); });
+    const audio = el.querySelector("audio")!;
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledOnce();
+    act(() => { root!.unmount(); root = null; });
+    expect(HTMLMediaElement.prototype.pause).toHaveBeenCalledOnce();
+    expect(audio.autoplay).toBe(false);
+  });
+
+  it("never mounts native audio for a synthesis response arriving after leaving", async () => {
+    let resolve!: (value: unknown) => void;
+    synthesizeNarrationAction.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+    const el = renderRunner(undefined, step, "voice");
+    act(() => { root!.unmount(); root = null; });
+    await act(async () => { resolve({ status: "ok", mimeType: "audio/mpeg", audioBase64: "AAAA" }); });
+    expect(el.querySelector("audio")).toBeNull();
+  });
+
   it("defaults to 1x, and choosing a speed sets playbackRate and remembers it for the next step", async () => {
     synthesizeNarrationAction.mockResolvedValue({ status: "ok", mimeType: "audio/mpeg", audioBase64: "AAAA" });
     const el = renderRunner(undefined, step, "voice");

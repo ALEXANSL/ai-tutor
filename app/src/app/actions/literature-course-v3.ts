@@ -17,20 +17,14 @@ import {
 import { persistLiteratureV3Package } from "@/server/lessons/literatureV3Persist";
 import { createServiceClient } from "@/server/supabase/clients";
 import { unzipSync } from "fflate";
+import { collectReferencedAssetFiles } from "@/server/lessons/courseAssetFiles";
 
 const UUID = z.string().uuid();
 
 // ---------------------------------------------------------------------------
-// importLiteratureV3Action — parent-only, $0 import of the SEVEN staged JSON
-// documents this package ships (package.json manifest + six catalogs:
-// course/readings/teacher/assets/pages/task_tables) + an optional staged
-// binaries zip (illustrations AND `assets/lessons/*.pdf`, 46 small per-lesson
-// PDFs). Mirrors `importLiteratureV2Action`'s shape closely (see that
-// function's own doc comment) — this is the only piece of S45 that was
-// NOT done in the first pass (see `literatureV3Import.ts`/
-// `literatureV3Persist.ts`'s own headers): without this action+route+panel,
-// Alex had no way to get a package into the database other than a manual
-// test call to `persistLiteratureV3Package`.
+// Parent-only, $0 universal chapter import. Four core JSON documents,
+// optional asset/page/task-table catalogs, and optional illustration/full
+// package and lesson-PDF ZIPs. Text and quizzes work without binary media.
 // ---------------------------------------------------------------------------
 
 export interface LiteratureV3ImportSummary {
@@ -53,18 +47,6 @@ export type LiteratureV3ImportState = { status: "ok"; summary: LiteratureV3Impor
 
 const STAGING_BUCKET = "course_import_staging";
 
-/** Same convention as `literatureV2Import.ts`'s `collectAssetFiles` — zip
- * entries under `assets/` (illustrations AND `assets/lessons/L001.pdf`-style
- * per-lesson PDFs), keyed by the package's own relative path. */
-function collectAssetFiles(entries: Record<string, Uint8Array>): Map<string, Uint8Array> {
-  const map = new Map<string, Uint8Array>();
-  for (const [key, bytes] of Object.entries(entries)) {
-    const normalized = key.replace(/^\.?\//, "");
-    if (normalized.startsWith("assets/") && !normalized.endsWith("/")) map.set(normalized, bytes);
-  }
-  return map;
-}
-
 async function downloadJson(client: ReturnType<typeof createServiceClient>, path: string, label: string): Promise<{ data: unknown } | { error: string }> {
   const { data: blob, error } = await client.storage.from(STAGING_BUCKET).download(path);
   if (error || !blob) return { error: `Не вдалося завантажити ${label} (${error?.message ?? "файл не знайдено"}).` };
@@ -81,16 +63,18 @@ export async function importLiteratureV3Action(input: {
   courseStoragePath: string;
   readingsStoragePath: string;
   teacherStoragePath: string;
-  assetsStoragePath: string;
-  pagesStoragePath: string;
-  taskTablesStoragePath: string;
+  assetsStoragePath?: string;
+  pagesStoragePath?: string;
+  taskTablesStoragePath?: string;
   binariesZipStoragePath?: string;
+  lessonPdfsZipStoragePath?: string;
 }): Promise<LiteratureV3ImportState> {
   const { familyId } = await requireParentAccess();
   const subjectParsed = UUID.safeParse(input.subjectId);
   if (!subjectParsed.success) return { status: "error", message: "Невірний ідентифікатор предмета." };
-  const requiredPaths = [input.packageStoragePath, input.courseStoragePath, input.readingsStoragePath, input.teacherStoragePath, input.assetsStoragePath, input.pagesStoragePath, input.taskTablesStoragePath];
-  for (const p of [...requiredPaths, input.binariesZipStoragePath]) {
+  const requiredPaths = [input.packageStoragePath, input.courseStoragePath, input.readingsStoragePath, input.teacherStoragePath];
+  const optionalPaths = [input.assetsStoragePath, input.pagesStoragePath, input.taskTablesStoragePath, input.binariesZipStoragePath, input.lessonPdfsZipStoragePath];
+  for (const p of [...requiredPaths, ...optionalPaths]) {
     if (p && !p.startsWith(`${familyId}/`)) return { status: "error", message: "Невірний шлях завантаженого файлу." };
   }
 
@@ -100,16 +84,16 @@ export async function importLiteratureV3Action(input: {
   if (subjectErr) return { status: "error", message: `Не вдалося перевірити предмет: ${subjectErr.message}` };
   if (!subject) return { status: "error", message: "Предмет не знайдено." };
 
-  const toCleanup = [...requiredPaths, input.binariesZipStoragePath].filter((p): p is string => !!p);
+  const toCleanup = [...requiredPaths, ...optionalPaths].filter((p): p is string => !!p);
   try {
     const [pkg, course, readings, teacher, assets, pages, taskTables] = await Promise.all([
       downloadJson(client, input.packageStoragePath, "package.json"),
       downloadJson(client, input.courseStoragePath, "public/course.json"),
       downloadJson(client, input.readingsStoragePath, "public/readings.json"),
       downloadJson(client, input.teacherStoragePath, "private/teacher.json"),
-      downloadJson(client, input.assetsStoragePath, "catalog/assets.json"),
-      downloadJson(client, input.pagesStoragePath, "catalog/pages.json"),
-      downloadJson(client, input.taskTablesStoragePath, "catalog/task_tables.json"),
+      input.assetsStoragePath ? downloadJson(client, input.assetsStoragePath, "catalog/assets.json") : { data: { items: [] } },
+      input.pagesStoragePath ? downloadJson(client, input.pagesStoragePath, "catalog/pages.json") : { data: { items: [] } },
+      input.taskTablesStoragePath ? downloadJson(client, input.taskTablesStoragePath, "catalog/task_tables.json") : { data: null },
     ]);
     for (const r of [pkg, course, readings, teacher, assets, pages, taskTables]) {
       if ("error" in r) return { status: "error", message: r.error };
@@ -123,17 +107,20 @@ export async function importLiteratureV3Action(input: {
     const parsedTeacher = parseLiteratureV3Teacher((teacher as { data: unknown }).data);
     const parsedAssets = parseLiteratureV3Assets((assets as { data: unknown }).data);
     const parsedPages = parseLiteratureV3Pages((pages as { data: unknown }).data);
-    const parsedTaskTables = parseLiteratureV3TaskTables((taskTables as { data: unknown }).data);
+    const parsedTaskTables = input.taskTablesStoragePath ? parseLiteratureV3TaskTables((taskTables as { data: unknown }).data) : { warnings: [], errors: [] };
 
     const parsed = combineLiteratureV3Package(manifest, parsedCourse, parsedReadings, parsedTeacher, parsedAssets, parsedPages, parsedTaskTables);
 
-    let assetFiles = new Map<string, Uint8Array>();
-    if (input.binariesZipStoragePath) {
-      const { data: zipBlob, error: zipErr } = await client.storage.from(STAGING_BUCKET).download(input.binariesZipStoragePath);
+    const assetFiles = new Map<string, Uint8Array>();
+    const lessonPdfPaths = parsed.assets.filter(asset => asset.kind === "lesson_pdf").map(asset => asset.path);
+    for (const [zipPath, dedicatedPdfs] of [[input.binariesZipStoragePath, false], [input.lessonPdfsZipStoragePath, true]] as const) {
+      if (!zipPath) continue;
+      const { data: zipBlob, error: zipErr } = await client.storage.from(STAGING_BUCKET).download(zipPath);
       if (zipErr || !zipBlob) return { status: "error", message: `Не вдалося завантажити архів з файлами (${zipErr?.message ?? "файл не знайдено"}).` };
       const zipBytes = new Uint8Array(await zipBlob.arrayBuffer());
       try {
-        assetFiles = collectAssetFiles(unzipSync(zipBytes));
+        const matched = collectReferencedAssetFiles(unzipSync(zipBytes), dedicatedPdfs ? lessonPdfPaths : parsed.assets.map(asset => asset.path), lessonPdfPaths, dedicatedPdfs);
+        for (const [path, bytes] of matched) assetFiles.set(path, bytes);
       } catch (e) {
         return { status: "error", message: `Не вдалося розпакувати архів з файлами (${(e as Error).message}).` };
       }
@@ -141,7 +128,7 @@ export async function importLiteratureV3Action(input: {
 
     const summary = await persistLiteratureV3Package(scope, { subjectId: subject.id }, parsed, assetFiles);
 
-    const warnings: ImportIssue[] = [...parsed.warnings, ...summary.assetUploadFailures.map((f) => ({ file: f.path, field: "upload", message: f.message }))];
+    const warnings: ImportIssue[] = [...parsed.warnings, ...summary.assetUploadFailures.map((f) => ({ file: f.path, field: "upload", message: f.message })), ...(summary.assetReuseWarnings ?? []).map(f => ({ file: f.path, field: "retained_file", message: f.message }))];
 
     return {
       status: "ok",
