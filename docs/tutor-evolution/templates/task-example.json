@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "id": "T-01A",
+  "attempt_id": "T-01A-example-not-dispatched",
+  "owner": "codex",
+  "base_sha": "54de85e5647ec9fb89c492ff6d238a32fce641a4",
+  "goal": "Resolve exercise 357 from trusted lesson context for both text and voice, using synthetic lesson data.",
+  "allowed_paths": [
+    "app/src/server/voice/",
+    "app/src/server/lessons/",
+    "docs/tutor-evolution/"
+  ],
+  "acceptance": [
+    "Exact and spoken exercise numbers resolve the original task in the current book, including another lesson step.",
+    "Ambiguous, not found and unavailable are distinct; task text is never fabricated.",
+    "Foreign-family identifiers and private answer keys are not exposed.",
+    "Navigation cancellation continues to suppress late voice replies."
+  ],
+  "checks": [
+    "Targeted resolver and voice regressions on synthetic fixtures",
+    "Repository typecheck and relevant unit tests"
+  ],
+  "dependencies": [],
+  "budget": {
+    "max_usd": 0,
+    "timeout_minutes": 60,
+    "max_attempts": 1
+  },
+  "data_policy": "synthetic-only-no-secrets-no-child-records",
+  "deployment": "integrator-only",
+  "rollback": "Revert the application commit or disable the proposed lesson_context_v2 flag once implemented; no destructive schema change.",
+  "branch": "codex/t-01a-lesson-number"
+}
