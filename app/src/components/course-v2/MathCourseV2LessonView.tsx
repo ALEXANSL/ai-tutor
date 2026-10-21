@@ -1,5 +1,6 @@
 "use client";
 
+import type { VoiceTarget } from "@/lib/voice";
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { MathText } from "@/components/shared/MathText";
@@ -146,8 +147,7 @@ function ScopedExplainButton({ subjectId, topicId, stepText, refTable, refId }: 
   );
 }
 
-function ScreenNav({ lesson, voiceMode, autoAdvance }: { lesson: MathV2LessonView; voiceMode: boolean; autoAdvance: boolean }) {
-  const [index, setIndex] = useState(0);
+function ScreenNav({ lesson, voiceMode, autoAdvance, index, onIndexChange }: { lesson: MathV2LessonView; voiceMode: boolean; autoAdvance: boolean; index: number; onIndexChange: (index: number) => void }) {
   const screen = lesson.screens[index];
   if (!screen) return <p className="course-note">Екранів ще немає.</p>;
 
@@ -157,7 +157,7 @@ function ScreenNav({ lesson, voiceMode, autoAdvance }: { lesson: MathV2LessonVie
   // meaningful together with voice mode (there is nothing to wait for
   // otherwise, and auto-advancing silent text the child hasn't had time to
   // read would be worse, not better).
-  const onNarrationEnded = voiceMode && autoAdvance && !isLast ? () => setIndex((i) => Math.min(lesson.screens.length - 1, i + 1)) : undefined;
+  const onNarrationEnded = voiceMode && autoAdvance && !isLast ? () => onIndexChange(Math.min(lesson.screens.length - 1, index + 1)) : undefined;
 
   return (
     <section>
@@ -185,9 +185,9 @@ function ScreenNav({ lesson, voiceMode, autoAdvance }: { lesson: MathV2LessonVie
       <StepNavBar
         label={`Екран ${index + 1} з ${lesson.screens.length}`}
         backDisabled={index === 0}
-        onBack={() => setIndex((i) => Math.max(0, i - 1))}
+        onBack={() => onIndexChange(Math.max(0, index - 1))}
         nextDisabled={index >= lesson.screens.length - 1}
-        onNext={() => setIndex((i) => Math.min(lesson.screens.length - 1, i + 1))}
+        onNext={() => onIndexChange(Math.min(lesson.screens.length - 1, index + 1))}
         middleControl={
           lesson.textbookMaterialId && (
             <OpenTextbookPageButton
@@ -218,7 +218,7 @@ export interface LessonTopicChatHandle {
   pushAndOpen(content: string): void;
 }
 
-const LessonTopicChat = forwardRef<LessonTopicChatHandle, { subjectId: string; topicId: string }>(function LessonTopicChat({ subjectId, topicId }, ref) {
+const LessonTopicChat = forwardRef<LessonTopicChatHandle, { subjectId: string; topicId: string; target?: VoiceTarget }>(function LessonTopicChat({ subjectId, topicId, target }, ref) {
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<{ author: "child" | "ai"; content: string }[]>([]);
@@ -240,7 +240,7 @@ const LessonTopicChat = forwardRef<LessonTopicChatHandle, { subjectId: string; t
     setPending(true);
     setError(null);
     try {
-      const res = await askTopicChatAction(null, subjectId, topicId, q);
+      const res = await askTopicChatAction(null, subjectId, topicId, q, target);
       if (res.status === "ok") setMessages((prev) => [...prev, { author: "ai", content: res.message.content }]);
       else setError("Не вдалося надіслати запитання. Спробуй ще раз.");
     } catch (e) {
@@ -301,11 +301,13 @@ function ExerciseCard({
   textbook,
   subjectId,
   topicId,
+  onFocusTarget,
 }: {
   exercise: MathV2ExerciseView;
   textbook: TextbookRef | null;
   subjectId: string;
   topicId: string | null;
+  onFocusTarget: (target: VoiceTarget) => void;
 }) {
   const [revealed, setRevealed] = useState<{ hint: string; parts: { label: string; stepsMd: string[]; answerMd: string }[]; sourceIssueWarning: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -326,7 +328,7 @@ function ExerciseCard({
   }
 
   return (
-    <li className="course-exercise-card">
+    <li className="course-exercise-card" onPointerDownCapture={() => onFocusTarget({ kind: "course", refTable: "course_v2_exercises", refId: exercise.id })} onFocusCapture={() => onFocusTarget({ kind: "course", refTable: "course_v2_exercises", refId: exercise.id })}>
       <p className="course-exercise-number">№ {exercise.originalNumber}</p>
       {exercise.hasConstructionTemplate && (
         <p className="course-warning">
@@ -395,11 +397,13 @@ function ExerciseList({
   textbook,
   subjectId,
   topicId,
+  onFocusTarget,
 }: {
   exercises: MathV2ExerciseView[];
   textbook: TextbookRef | null;
   subjectId: string;
   topicId: string | null;
+  onFocusTarget: (target: VoiceTarget) => void;
 }) {
   const [page, setPage] = useState(0);
   const pageCount = Math.ceil(exercises.length / EXERCISES_PER_PAGE);
@@ -413,7 +417,7 @@ function ExerciseList({
       </p>
       <ol className="course-exercise-list" start={start + 1}>
         {visible.map((e) => (
-          <ExerciseCard key={e.exerciseKey} exercise={e} textbook={textbook} subjectId={subjectId} topicId={topicId} />
+          <ExerciseCard key={e.exerciseKey} exercise={e} textbook={textbook} subjectId={subjectId} topicId={topicId} onFocusTarget={onFocusTarget} />
         ))}
       </ol>
       <div className="mt-3 flex gap-2">
@@ -441,6 +445,15 @@ const KIND_LABEL: Record<MathV2LessonView["kind"], string> = {
 
 export function MathCourseV2LessonScreen({ lesson, packageLessons }: { lesson: MathV2LessonView; packageLessons: MathCourseV2LessonListItem[] }) {
   const chatRef = useRef<LessonTopicChatHandle>(null);
+  const [screenIndex, setScreenIndex] = useState(0);
+  const [chatTarget, setChatTarget] = useState<VoiceTarget | undefined>(() => lesson.screens[0]
+    ? { kind: "course", refTable: "course_v2_screens", refId: lesson.screens[0].id }
+    : lesson.exercises[0] ? { kind: "course", refTable: "course_v2_exercises", refId: lesson.exercises[0].id } : undefined);
+  function changeScreenIndex(index: number) {
+    setScreenIndex(index);
+    const screen = lesson.screens[index];
+    if (screen) setChatTarget({ kind: "course", refTable: "course_v2_screens", refId: screen.id });
+  }
   const { voiceMode, autoAdvance, changeVoiceMode, changeAutoAdvance } = useVoiceModeControls("mathCourseV2");
 
   const textbook: TextbookRef | null = lesson.textbookMaterialId
@@ -484,14 +497,14 @@ export function MathCourseV2LessonScreen({ lesson, packageLessons }: { lesson: M
         </section>
       )}
 
-      <ScreenNav lesson={lesson} voiceMode={voiceMode} autoAdvance={autoAdvance} />
+      <ScreenNav lesson={lesson} voiceMode={voiceMode} autoAdvance={autoAdvance} index={screenIndex} onIndexChange={changeScreenIndex} />
 
-      {lesson.topicId && <LessonTopicChat ref={chatRef} subjectId={lesson.subjectId} topicId={lesson.topicId} />}
+      {lesson.topicId && <LessonTopicChat ref={chatRef} subjectId={lesson.subjectId} topicId={lesson.topicId} target={chatTarget} />}
 
       {lesson.exercises.length > 0 && (
         <section>
           <h2>Вправи з підручника</h2>
-          <ExerciseList exercises={lesson.exercises} textbook={textbook} subjectId={lesson.subjectId} topicId={lesson.topicId} />
+          <ExerciseList exercises={lesson.exercises} textbook={textbook} subjectId={lesson.subjectId} topicId={lesson.topicId} onFocusTarget={setChatTarget} />
         </section>
       )}
 
