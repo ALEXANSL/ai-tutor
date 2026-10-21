@@ -5,6 +5,7 @@ const fixture = vi.hoisted(() => ({
   inserts: [] as { family_id: string; chat_id: string; author: string; type: string; content: string }[],
   rejectHomework: true,
   failTranscript: false,
+  history: [] as {author:string;content:string;meta?:{kind:string;lessonKind:string;lessonId:string;currentItemId:string;focusReset?:boolean}}[],
 }));
 
 vi.mock("@/server/db/family-scope", () => {
@@ -22,7 +23,7 @@ vi.mock("@/server/db/family-scope", () => {
         }
         return { data: table === "chats" ? { id: "chat1" } : null, error: null };
       },
-      returns: async () => ({ data: [], error: null }),
+      returns: async () => ({ data: table === "messages" ? fixture.history : [], error: null }),
     };
     return self;
   }
@@ -41,7 +42,11 @@ vi.mock("@/server/db/family-scope", () => {
   return { forFamily: () => ({ select, client }) };
 });
 
-const calls = vi.hoisted(() => ({ structured: vi.fn(), moderate: vi.fn(), safetyEvent: vi.fn() }));
+const calls = vi.hoisted(() => ({ structured: vi.fn(), exercise: vi.fn(), moderate: vi.fn(), safetyEvent: vi.fn() }));
+vi.mock("./lessonExerciseContext", async importOriginal => ({
+  ...await importOriginal<typeof import("./lessonExerciseContext")>(),
+  resolveLessonExerciseContext: calls.exercise,
+}));
 vi.mock("@/server/ai/router", () => ({ callStructured: calls.structured }));
 vi.mock("@/server/safety/moderate", () => ({ moderateMessage: calls.moderate }));
 vi.mock("@/server/safety/events", () => ({ recordSafetyEvent: calls.safetyEvent }));
@@ -55,6 +60,9 @@ beforeEach(() => {
   fixture.inserts.length = 0;
   fixture.rejectHomework = true;
   fixture.failTranscript = false;
+  fixture.history = [];
+  calls.exercise.mockReset();
+  calls.exercise.mockResolvedValue(null);
   calls.structured.mockReset();
   calls.moderate.mockReset();
   calls.safetyEvent.mockReset();
@@ -64,6 +72,58 @@ beforeEach(() => {
 });
 
 describe("voice clarification stays grounded in the current prepared lesson", () => {
+  const lessonRef = { kind: "math" as const, lessonId: "lesson-1", packageId: "book-1", currentItemId: "screen-1" };
+  it("provides the actual numbered exercise from another step to the tutor", async () => {
+    calls.exercise.mockResolvedValue("found: Вправа №357. Знайди площу прямокутника зі сторонами 3 і 7 см.");
+    await askTopicChat(...baseArgs, "Поясни задачу 357", undefined, { voice: true, stepContext: context, lessonRef });
+    expect(calls.exercise).toHaveBeenCalledWith("fam1", "subj1", "top1", "Поясни задачу 357", lessonRef);
+    const request = calls.structured.mock.calls[0]![1];
+    expect(request.prompt).toContain("зі сторонами 3 і 7 см");
+    expect(request.system).toContain("розмова не обмежена поточним кроком");
+    expect(fixture.queries.some(q => q.columns.includes("meta") && q.columns.includes("id"))).toBe(false);
+  });
+
+  it("retains exact exercise focus for a follow-up only within the same trusted lesson", async () => {
+    fixture.history = [{ author: "child", content: "Поясни задачу 357", meta: { kind: "lesson_tutor_turn", lessonKind: "math", lessonId: "lesson-1", currentItemId: "screen-1" } }];
+    await askTopicChat(...baseArgs, "А чому треба множити?", undefined, { voice: true, stepContext: context, lessonRef });
+    expect(calls.exercise).toHaveBeenLastCalledWith("fam1", "subj1", "top1", "Поясни задачу 357", lessonRef);
+    await askTopicChat(...baseArgs, "Поясни це", undefined, { voice: true, stepContext: context, lessonRef: { ...lessonRef, currentItemId: "another-screen" } });
+    expect(calls.exercise).toHaveBeenLastCalledWith("fam1", "subj1", "top1", "Поясни це", expect.objectContaining({ currentItemId: "another-screen" }));
+    fixture.history[0]!.meta!.lessonId = "another-lesson";
+    await askTopicChat(...baseArgs, "А чому треба множити?", undefined, { voice: true, stepContext: context, lessonRef });
+    expect(calls.exercise).toHaveBeenLastCalledWith("fam1", "subj1", "top1", "А чому треба множити?", lessonRef);
+  });
+
+  it("does not drag a previous task into a new topic or resume it after an explicit return to the lesson", async () => {
+    const meta = { kind: "lesson_tutor_turn", lessonKind: "math", lessonId: "lesson-1", currentItemId: "screen-1" };
+    fixture.history = [{ author: "child", content: "Поясни задачу 357", meta }];
+    await askTopicChat(...baseArgs, "Розкажи про вірування народів Сходу", undefined, { voice: true, stepContext: context, lessonRef });
+    expect(calls.exercise).toHaveBeenLastCalledWith("fam1", "subj1", "top1", "Розкажи про вірування народів Сходу", lessonRef);
+    fixture.history.unshift({ author: "child", content: "Повернімося до уроку", meta: { ...meta, currentItemId: "other-screen", focusReset: true } });
+    await askTopicChat(...baseArgs, "А чому треба множити?", undefined, { voice: true, stepContext: context, lessonRef });
+    expect(calls.exercise).toHaveBeenLastCalledWith("fam1", "subj1", "top1", "А чому треба множити?", lessonRef);
+    await askTopicChat(...baseArgs, "Повернемося до уроку", undefined, { voice: true, stepContext: context, lessonRef });
+    expect(fixture.inserts.at(-2)).toMatchObject({ author: "child", meta: { focusReset: true } });
+  });
+
+  it("excludes another lesson's conditions from model history", async () => {
+    fixture.history = [{ author: "ai", content: "FOREIGN_LESSON_CONDITION", meta: { kind: "lesson_tutor_turn", lessonKind: "math", lessonId: "another-lesson", currentItemId: "screen-1" } }];
+    await askTopicChat(...baseArgs, "Поясни це", undefined, { voice: true, stepContext: context, lessonRef });
+    expect(calls.structured.mock.calls[0]![1].prompt).not.toContain("FOREIGN_LESSON_CONDITION");
+  });
+
+  it("uses trusted lesson retrieval for text too, bypassing unrelated older homework cycles", async () => {
+    await askTopicChat(...baseArgs, "Поясни задачу 357", undefined, { stepContext: context, lessonRef });
+    expect(calls.exercise).toHaveBeenCalled();
+    expect(fixture.inserts.map(row => row.type)).toEqual(["text", "text"]);
+  });
+
+  it("does not mistake lookup failure for an absent exercise", async () => {
+    calls.exercise.mockRejectedValue(new Error("database offline"));
+    await askTopicChat(...baseArgs, "Поясни задачу 357", undefined, { voice: true, stepContext: context, lessonRef });
+    expect(calls.structured.mock.calls[0]![1].prompt).toContain("Не роби висновку, що задачі немає");
+  });
+
   it("does not generate a voice reply when the child's transcript cannot be saved", async () => {
     fixture.failTranscript = true;
     await expect(askTopicChat(...baseArgs, "Поясни, будь ласка", undefined, { voice: true, stepContext: context })).rejects.toThrow("saving voice transcript failed");
@@ -78,7 +138,7 @@ describe("voice clarification stays grounded in the current prepared lesson", ()
     expect(request.prompt).toContain(context);
     expect(request.system).toMatch(/(?:поточн|готов|надан)[\s\S]*(?:урок|крок)/iu);
     expect(request.system).toMatch(/не[\s\S]{0,40}вигад[\s\S]{0,40}сторін/iu);
-    expect(fixture.queries.some((q) => q.columns.includes("meta"))).toBe(false);
+    expect(fixture.queries.some((q) => q.columns === "id, meta")).toBe(false);
     expect(fixture.queries.some((q) => q.table === "material_problems")).toBe(false);
     expect(fixture.inserts.map((row) => [row.author, row.type])).toEqual([["child", "voice_transcript"], ["ai", "voice_transcript"]]);
     expect(calls.moderate).toHaveBeenCalledWith(expect.objectContaining({ familyId: "fam1", message: "Поясни вправу №117" }));
@@ -95,10 +155,11 @@ describe("voice clarification stays grounded in the current prepared lesson", ()
   it("leaves ordinary text topic chat on its existing homework-aware route", async () => {
     fixture.rejectHomework = false;
     await askTopicChat(...baseArgs, "Поясни ще раз");
-    expect(fixture.queries.some((q) => q.columns.includes("meta"))).toBe(true);
+    expect(fixture.queries.some((q) => q.columns === "id, meta")).toBe(true);
     expect(fixture.inserts.map((row) => row.type)).toEqual(["text", "text"]);
     const [, request] = calls.structured.mock.calls[0]!;
     expect(request.prompt).not.toContain(context);
-    expect(request.system).toContain("спираючись ЛИШЕ на надані фрагменти");
+    expect(request.system).toContain("Можеш відповідати ширше за підручник");
+    expect(request.system).not.toContain("спираючись ЛИШЕ на надані фрагменти");
   });
 });

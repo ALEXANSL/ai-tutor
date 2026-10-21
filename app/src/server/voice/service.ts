@@ -89,7 +89,7 @@ export async function voiceTurn(actor: VoiceActor, id: string, audio: File): Pro
     ]);
     if (!subject || !topic) throw new Error("voice_expired");
     const message = await askTopicChat(actor.familyId, actor.child.id, actor.child.nickname ?? "", actor.child.tutor_name ?? "", gender,
-      lesson.subjectId, subject.name_uk, lesson.topicId, topic.title, text, lesson.sessionId, { voice: true, stepContext: lesson.context });
+      lesson.subjectId, subject.name_uk, lesson.topicId, topic.title, text, lesson.sessionId, { voice: true, stepContext: lesson.context, ...(lesson.lessonRef ? { lessonRef: lesson.lessonRef } : {}) });
     try { await active(); }
     catch { return { text, message, audio: null, endConversation: true }; }
     let speech = null;

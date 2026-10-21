@@ -1,5 +1,6 @@
 "use client";
 
+import type { VoiceTarget } from "@/lib/voice";
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { OpenTextbookPageButton } from "@/components/shared/BookPageModal";
@@ -121,13 +122,12 @@ function ScopedExplainButton({ subjectId, topicId, stepText, refTable, refId }: 
   );
 }
 
-function ScreenNav({ lesson, voiceMode, autoAdvance }: { lesson: LiteratureV2LessonView; voiceMode: boolean; autoAdvance: boolean }) {
-  const [index, setIndex] = useState(0);
+function ScreenNav({ lesson, voiceMode, autoAdvance, index, onIndexChange }: { lesson: LiteratureV2LessonView; voiceMode: boolean; autoAdvance: boolean; index: number; onIndexChange: (index: number) => void }) {
   const screen = lesson.screens[index];
   if (!screen) return <p className="course-note">Екранів ще немає.</p>;
 
   const isLast = index >= lesson.screens.length - 1;
-  const onNarrationEnded = voiceMode && autoAdvance && !isLast ? () => setIndex((i) => Math.min(lesson.screens.length - 1, i + 1)) : undefined;
+  const onNarrationEnded = voiceMode && autoAdvance && !isLast ? () => onIndexChange(Math.min(lesson.screens.length - 1, index + 1)) : undefined;
 
   return (
     <section>
@@ -149,9 +149,9 @@ function ScreenNav({ lesson, voiceMode, autoAdvance }: { lesson: LiteratureV2Les
       <StepNavBar
         label={`Екран ${index + 1} з ${lesson.screens.length}`}
         backDisabled={index === 0}
-        onBack={() => setIndex((i) => Math.max(0, i - 1))}
+        onBack={() => onIndexChange(Math.max(0, index - 1))}
         nextDisabled={index >= lesson.screens.length - 1}
-        onNext={() => setIndex((i) => Math.min(lesson.screens.length - 1, i + 1))}
+        onNext={() => onIndexChange(Math.min(lesson.screens.length - 1, index + 1))}
         middleControl={
           lesson.textbookMaterialId && (
             <OpenTextbookPageButton
@@ -172,7 +172,7 @@ export interface LessonTopicChatHandle {
   pushAndOpen(content: string): void;
 }
 
-const LessonTopicChat = forwardRef<LessonTopicChatHandle, { subjectId: string; topicId: string }>(function LessonTopicChat({ subjectId, topicId }, ref) {
+const LessonTopicChat = forwardRef<LessonTopicChatHandle, { subjectId: string; topicId: string; target?: VoiceTarget }>(function LessonTopicChat({ subjectId, topicId, target }, ref) {
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<{ author: "child" | "ai"; content: string }[]>([]);
@@ -194,7 +194,7 @@ const LessonTopicChat = forwardRef<LessonTopicChatHandle, { subjectId: string; t
     setPending(true);
     setError(null);
     try {
-      const res = await askTopicChatAction(null, subjectId, topicId, q);
+      const res = await askTopicChatAction(null, subjectId, topicId, q, target);
       if (res.status === "ok") setMessages((prev) => [...prev, { author: "ai", content: res.message.content }]);
       else setError("Не вдалося надіслати запитання. Спробуй ще раз.");
     } catch (e) {
@@ -244,7 +244,7 @@ const LessonTopicChat = forwardRef<LessonTopicChatHandle, { subjectId: string; t
   );
 });
 
-function TaskCard({ task, subjectId, topicId, textbook }: { task: LiteratureV2TaskView; subjectId: string; topicId: string | null; textbook: TextbookRef | null }) {
+function TaskCard({ task, subjectId, topicId, textbook, onFocusTarget }: { task: LiteratureV2TaskView; subjectId: string; topicId: string | null; textbook: TextbookRef | null; onFocusTarget: (target: VoiceTarget) => void }) {
   const [revealed, setRevealed] = useState<LiteratureV2TaskHelpResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -264,7 +264,7 @@ function TaskCard({ task, subjectId, topicId, textbook }: { task: LiteratureV2Ta
   }
 
   return (
-    <li className="course-exercise-card">
+    <li className="course-exercise-card" onPointerDownCapture={() => onFocusTarget({ kind: "course", refTable: "literature_v2_tasks", refId: task.id })} onFocusCapture={() => onFocusTarget({ kind: "course", refTable: "literature_v2_tasks", refId: task.id })}>
       {task.originalLabel && <p className="course-exercise-number">{task.originalLabel}</p>}
       <p style={{ whiteSpace: "pre-wrap" }}>
         <MathText text={task.prompt.display} />
@@ -373,7 +373,7 @@ function TaskCard({ task, subjectId, topicId, textbook }: { task: LiteratureV2Ta
 
 const TASKS_PER_PAGE = 10;
 
-function TaskList({ tasks, subjectId, topicId, textbook }: { tasks: LiteratureV2TaskView[]; subjectId: string; topicId: string | null; textbook: TextbookRef | null }) {
+function TaskList({ tasks, subjectId, topicId, textbook, onFocusTarget }: { tasks: LiteratureV2TaskView[]; subjectId: string; topicId: string | null; textbook: TextbookRef | null; onFocusTarget: (target: VoiceTarget) => void }) {
   const [page, setPage] = useState(0);
   const pageCount = Math.ceil(tasks.length / TASKS_PER_PAGE);
   const start = page * TASKS_PER_PAGE;
@@ -386,7 +386,7 @@ function TaskList({ tasks, subjectId, topicId, textbook }: { tasks: LiteratureV2
       </p>
       <ol className="course-exercise-list">
         {visible.map((t) => (
-          <TaskCard key={t.id} task={t} subjectId={subjectId} topicId={topicId} textbook={textbook} />
+          <TaskCard key={t.id} task={t} subjectId={subjectId} topicId={topicId} textbook={textbook} onFocusTarget={onFocusTarget} />
         ))}
       </ol>
       <div className="mt-3 flex gap-2">
@@ -408,6 +408,15 @@ function TaskList({ tasks, subjectId, topicId, textbook }: { tasks: LiteratureV2
 
 export function LiteratureV2LessonScreen({ lesson, packageLessons }: { lesson: LiteratureV2LessonView; packageLessons: LiteratureV2LessonListItem[] }) {
   const chatRef = useRef<LessonTopicChatHandle>(null);
+  const [screenIndex, setScreenIndex] = useState(0);
+  const [chatTarget, setChatTarget] = useState<VoiceTarget | undefined>(() => lesson.screens[0]
+    ? { kind: "course", refTable: "literature_v2_screens", refId: lesson.screens[0].id }
+    : lesson.tasks[0] ? { kind: "course", refTable: "literature_v2_tasks", refId: lesson.tasks[0].id } : undefined);
+  function changeScreenIndex(index: number) {
+    setScreenIndex(index);
+    const screen = lesson.screens[index];
+    if (screen) setChatTarget({ kind: "course", refTable: "literature_v2_screens", refId: screen.id });
+  }
   const { voiceMode, autoAdvance, changeVoiceMode, changeAutoAdvance } = useVoiceModeControls("literatureV2");
 
   const textbook: TextbookRef | null = lesson.textbookMaterialId
@@ -462,14 +471,14 @@ export function LiteratureV2LessonScreen({ lesson, packageLessons }: { lesson: L
         </section>
       )}
 
-      <ScreenNav lesson={lesson} voiceMode={voiceMode} autoAdvance={autoAdvance} />
+      <ScreenNav lesson={lesson} voiceMode={voiceMode} autoAdvance={autoAdvance} index={screenIndex} onIndexChange={changeScreenIndex} />
 
-      {lesson.topicId && <LessonTopicChat ref={chatRef} subjectId={lesson.subjectId} topicId={lesson.topicId} />}
+      {lesson.topicId && <LessonTopicChat ref={chatRef} subjectId={lesson.subjectId} topicId={lesson.topicId} target={chatTarget} />}
 
       {lesson.tasks.length > 0 && (
         <section>
           <h2>Завдання</h2>
-          <TaskList tasks={lesson.tasks} subjectId={lesson.subjectId} topicId={lesson.topicId} textbook={textbook} />
+          <TaskList tasks={lesson.tasks} subjectId={lesson.subjectId} topicId={lesson.topicId} textbook={textbook} onFocusTarget={setChatTarget} />
         </section>
       )}
     </article>

@@ -4,11 +4,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
 
-const actions = vi.hoisted(() => ({ math: vi.fn(), literature: vi.fn(), literatureV3: vi.fn(), explainMath: vi.fn(), explainLiterature: vi.fn() }));
+const actions = vi.hoisted(() => ({ math: vi.fn(), literature: vi.fn(), literatureV3: vi.fn(), explainMath: vi.fn(), explainLiterature: vi.fn(), ask: vi.fn() }));
 vi.mock("@/app/actions/math-course-v2", () => ({ narrateMathCourseV2Action: actions.math, explainMathCourseV2Action: actions.explainMath, revealExerciseSolutionAction: vi.fn() }));
 vi.mock("@/app/actions/literature-course-v2", () => ({ narrateLiteratureV2Action: actions.literature, explainLiteratureV2Action: actions.explainLiterature, revealLiteratureV2TaskHelpAction: vi.fn() }));
 vi.mock("@/app/actions/literature-v3", () => ({ narrateLiteratureV3Action: actions.literatureV3, saveReadingPositionAction: vi.fn() }));
-vi.mock("@/app/actions/lesson", () => ({ askTopicChatAction: vi.fn() }));
+vi.mock("@/app/actions/lesson", () => ({ askTopicChatAction: actions.ask }));
 vi.mock("@/components/shared/LessonNavBar", () => ({ LessonNavBar: () => null }));
 vi.mock("@/components/shared/BookPageModal", () => ({ OpenTextbookPageButton: () => null }));
 vi.mock("@/components/child/OpenVirtualBookButton", () => ({ OpenVirtualBookButton: () => null }));
@@ -40,6 +40,7 @@ let root: Root | null;
 let container: HTMLDivElement;
 beforeEach(() => {
   Object.values(actions).forEach((mock) => mock.mockReset());
+  actions.ask.mockResolvedValue({ status: "ok", message: { content: "Пояснення" } });
   actions.math.mockResolvedValue(speech);
   actions.literature.mockResolvedValue(speech);
   actions.literatureV3.mockResolvedValue(speech);
@@ -134,5 +135,23 @@ describe.each<"math" | "literature">(["math", "literature"])("%s explanation nar
     await act(async () => { pending.resolve({ status: "ok", content: "Запізніле пояснення" }); });
     expect(actions[kind]).not.toHaveBeenCalled();
     expect(audios).toHaveLength(0);
+  });
+});
+
+
+describe.each<"math" | "literature">(["math", "literature"])("%s text lesson context", kind => {
+  it("sends the actual current screen selector after navigation", async () => {
+    render(kind);
+    await click("Далі →");
+    await click("💬 Запитати репетитора про цю тему");
+    const input = container.querySelector<HTMLInputElement>("input[placeholder^='Поясни']")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Поясни це");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click("Надіслати");
+    expect(actions.ask).toHaveBeenCalledWith(null, "subject", "topic", "Поясни це", {
+      kind: "course", refTable: kind === "math" ? "course_v2_screens" : "literature_v2_screens", refId: "step-2",
+    });
   });
 });
