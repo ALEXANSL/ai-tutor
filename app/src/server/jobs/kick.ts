@@ -4,6 +4,7 @@ import { registerAll } from "@/modules";
 import { registerManualBatchJobs } from "../ingest/manual-batch-pipeline";
 import { registerIngestJobs } from "../ingest/pipeline";
 import { registerLibraryWarmJobs } from "../lessons/warmup";
+import { registerUnifiedImportJobs } from "../lessons/unifiedImportLifecycle";
 import { registerNotifyJobs } from "../notify/jobs";
 import { runJobs } from "./runner";
 
@@ -14,6 +15,7 @@ export function ensureJobHandlers(): void {
   registerManualBatchJobs(); // ADR-031 §3: `ingest.manual_batch_preview`/`ingest.manual_batch_commit`.
   registerNotifyJobs();
   registerLibraryWarmJobs(); // ADR-023: `library.warm_topic`.
+  registerUnifiedImportJobs();
 }
 
 /**

@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import type { FamilyScope } from "@/server/db/family-scope";
 import { isConstructionTemplateAsset, type ParsedMathCourseV2Package } from "./mathCourseV2Import";
 
@@ -44,6 +45,7 @@ export interface MathCourseV2PersistSummary {
   assetsUploaded: number;
   assetsMissing: string[];
   assetUploadFailures: { path: string; message: string }[];
+  assetReuseWarnings?: { path: string; message: string }[];
 }
 
 /**
@@ -59,49 +61,59 @@ async function persistAssets(
   packageId: string,
   parsed: ParsedMathCourseV2Package,
   assetFiles: Map<string, Uint8Array>,
-): Promise<{ uploaded: number; missing: string[]; uploadFailures: { path: string; message: string }[] }> {
+): Promise<{ uploaded: number; missing: string[]; uploadFailures: { path: string; message: string }[]; reuseWarnings: { path: string; message: string }[] }> {
   const missing: string[] = [];
   const uploadFailures: { path: string; message: string }[] = [];
+  const reuseWarnings: { path: string; message: string }[] = [];
   let uploaded = 0;
+  const previous = new Map<string, Record<string, unknown>>();
+  const keys = [...new Set(parsed.assets.map(asset => asset.id))];
+  for (let i = 0; i < keys.length; i += 100) {
+    const { data, error } = await scope.select("course_v2_assets", "asset_key,storage_path,mime_type,alt,printed_page,pdf_page,width_px,height_px,physical_width_mm,physical_height_mm,scale_px_per_pdf_point,is_construction_template")
+      .eq("package_id", packageId).in("asset_key", keys.slice(i, i + 100)).returns<Record<string, unknown>[]>();
+    if (error) throw new Error(`reading existing course_v2_assets failed: ${error.message}`);
+    for (const row of data ?? []) previous.set(String(row.asset_key), row);
+  }
 
   for (const asset of parsed.assets) {
+    const old = previous.get(asset.id);
+    const descriptor = {
+      mime_type: asset.mime_type, alt: asset.alt,
+      printed_page: asset.source.printed_page, pdf_page: asset.source.pdf_page,
+      width_px: asset.width_px, height_px: asset.height_px,
+      physical_width_mm: asset.physical_width_mm, physical_height_mm: asset.physical_height_mm,
+      scale_px_per_pdf_point: asset.scale_pixels_per_pdf_point,
+      is_construction_template: isConstructionTemplateAsset(asset.id),
+    };
     const bytes = assetFiles.get(asset.path);
-    if (!bytes) {
-      missing.push(asset.path);
+    let storagePath: string | null = null;
+    if (bytes) {
+      const digest = createHash("sha256").update(bytes).digest("hex");
+      storagePath = `v2/${packageId}/${encodeURIComponent(asset.id)}/${digest}`;
+      const { error } = await uploadAssetWithRetry(scope, storagePath, bytes, asset.mime_type);
+      if (error) { uploadFailures.push({ path: asset.path, message: error.message }); storagePath = null; }
+    }
+    if (!storagePath) {
+      if (old?.storage_path) {
+        // Keeping the old row intact also keeps dimensions and page metadata
+        // attached to the exact old bytes, rather than a failed replacement.
+        const descriptorChanged = Object.entries(descriptor).some(([key, value]) => JSON.stringify(old[key]) !== JSON.stringify(value));
+        const storedHash = /\/([a-f0-9]{64})$/i.exec(String(old.storage_path))?.[1];
+        if (descriptorChanged || (storedHash && /^[a-f0-9]{64}$/i.test(asset.sha256) && storedHash.toLowerCase() !== asset.sha256.toLowerCase())) reuseWarnings.push({
+          path: asset.path,
+          message: "Новий опис ілюстрації відрізняється, але новий файл не завантажено. Залишено попередній файл і його метадані.",
+        });
+      } else missing.push(asset.path);
       continue;
     }
-    const storagePath = `v2/${packageId}/${asset.id}`;
-    const { error: uploadErr } = await uploadAssetWithRetry(scope, storagePath, bytes, asset.mime_type);
-    if (uploadErr) {
-      uploadFailures.push({ path: asset.path, message: uploadErr.message });
-      continue;
-    }
-    const { error: rowErr } = await scope.client
-      .from("course_v2_assets")
-      .upsert(
-        {
-          owner_family_id: scope.familyId,
-          package_id: packageId,
-          asset_key: asset.id,
-          storage_path: storagePath,
-          mime_type: asset.mime_type,
-          alt: asset.alt,
-          printed_page: asset.source.printed_page,
-          pdf_page: asset.source.pdf_page,
-          width_px: asset.width_px,
-          height_px: asset.height_px,
-          physical_width_mm: asset.physical_width_mm,
-          physical_height_mm: asset.physical_height_mm,
-          scale_px_per_pdf_point: asset.scale_pixels_per_pdf_point,
-          is_construction_template: isConstructionTemplateAsset(asset.id),
-        },
-        { onConflict: "package_id,asset_key" },
-      );
+    const { error: rowErr } = await scope.client.from("course_v2_assets").upsert({
+      owner_family_id: scope.familyId, package_id: packageId, asset_key: asset.id,
+      storage_path: storagePath, ...descriptor,
+    }, { onConflict: "package_id,asset_key" });
     if (rowErr) throw new Error(`course_v2_assets upsert failed for ${asset.id}: ${rowErr.message}`);
     uploaded += 1;
   }
-
-  return { uploaded, missing, uploadFailures };
+  return { uploaded, missing, uploadFailures, reuseWarnings };
 }
 
 export async function persistMathCourseV2Package(
@@ -140,7 +152,7 @@ export async function persistMathCourseV2Package(
   if (pkgErr) throw new Error(`course_v2_packages upsert failed: ${pkgErr.message}`);
   const packageId = pkg.id;
 
-  const { uploaded, missing, uploadFailures } = await persistAssets(scope, packageId, parsed, assetFiles);
+  const { uploaded, missing, uploadFailures, reuseWarnings } = await persistAssets(scope, packageId, parsed, assetFiles);
 
   // Exercise-level flags from assets/source_issues, computed up front so
   // the exercises upsert loop below is a pure write.
@@ -397,5 +409,6 @@ export async function persistMathCourseV2Package(
     assetsUploaded: uploaded,
     assetsMissing: missing,
     assetUploadFailures: uploadFailures,
+    assetReuseWarnings: reuseWarnings,
   };
 }
