@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Nunito } from "next/font/google";
 import { uk } from "@/i18n/uk";
+import { AudioNavigationBoundary } from "@/components/shared/AudioNavigationBoundary";
 import "./globals.css";
 
 const nunito = Nunito({
@@ -50,7 +51,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased"><AudioNavigationBoundary />{children}</body>
     </html>
   );
 }

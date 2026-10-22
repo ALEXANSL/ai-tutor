@@ -1,10 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
-import { buildAuthorizeUrl } from "@/server/drive/oauth";
+import { buildAuthorizeUrl, STATE_COOKIE } from "@/server/drive/oauth";
 import { requireParentAccount } from "@/server/auth/guards";
 import { getAppBaseUrl } from "@/server/env";
-
-export const STATE_COOKIE = "gdrive_oauth_state";
 
 /**
  * "Підключити Google Drive" (ADR-024): only the parent's own Google session

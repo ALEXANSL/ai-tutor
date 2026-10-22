@@ -1,10 +1,14 @@
 "use client";
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import type { VoiceTarget } from "@/lib/voice";
+import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { OpenTextbookPageButton } from "@/components/shared/BookPageModal";
 import { MathText } from "@/components/shared/MathText";
-import { isCurrentlyPlaying, playSingleAudio, stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
+import { LessonText } from "@/components/shared/LessonText";
+import { LessonVoicePanel } from "@/components/voice/LessonVoicePanel";
+import { NarrationButton } from "@/components/shared/NarrationButton";
+import { useAudioPlaybackScope } from "@/components/shared/useAudioPlaybackScope";
 import { STEP_NAV_BAR_SPACER_CLASS, StepNavBar } from "@/components/shared/StepNavBar";
 import { AutoAdvanceToggle, VoiceModeToggle, useVoiceModeControls } from "@/components/shared/VoiceModeControls";
 import { askTopicChatAction } from "@/app/actions/lesson";
@@ -28,75 +32,13 @@ interface TextbookRef {
  * child asks for it, same "ключі не передаються перед відповіддю" rule).
  */
 
-function ListenButton({
-  refTable,
-  refId,
-  field,
-  text,
-  autoPlay,
-  onEnded,
-}: {
-  refTable: string;
-  refId: string;
-  field: string;
-  text: string;
-  autoPlay?: boolean;
-  onEnded?: () => void;
+function ListenButton(props: {
+  refTable: string; refId: string; field: string; text: string;
+  autoPlay?: boolean; onEnded?: () => void;
 }) {
-  const [state, setState] = useState<"idle" | "loading" | "playing" | "unavailable">("idle");
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  useEffect(
-    () => () => {
-      if (isCurrentlyPlaying(audioRef.current)) stopCurrentlyPlaying();
-    },
-    [],
-  );
-
-  async function play() {
-    if (state === "loading") return;
-    stopCurrentlyPlaying();
-    setState("loading");
-    try {
-      const res = await narrateLiteratureV2Action({ refTable, refId, field, text });
-      if (res.status !== "ok") {
-        setState("unavailable");
-        return;
-      }
-      const audio = new Audio(`data:${res.audioMime};base64,${res.audioBase64}`);
-      audioRef.current = audio;
-      setState("playing");
-      playSingleAudio(audio, () => setState("idle"));
-      audio.addEventListener("ended", () => onEnded?.(), { once: true });
-    } catch {
-      setState("unavailable");
-    }
-  }
-
-  useEffect(() => {
-    if (!autoPlay || !text.trim()) return;
-    let cancelled = false;
-    Promise.resolve().then(() => {
-      if (!cancelled) void play();
-    });
-    return () => {
-      cancelled = true;
-    };
-    // Intentionally only on mount — fresh per screen via the caller's `key`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  if (!text.trim()) return null;
-  return (
-    <button
-      type="button"
-      onClick={play}
-      disabled={state === "loading" || state === "playing"}
-      className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold disabled:opacity-60"
-    >
-      {state === "loading" ? "…" : state === "playing" ? "🔊 Грає…" : state === "unavailable" ? "🔇 Недоступно" : "🔊 Слухати"}
-    </button>
-  );
+  const { refTable, refId, field, text } = props;
+  return <NarrationButton {...props} identity={JSON.stringify([refTable, refId, field, text])}
+    synthesize={() => narrateLiteratureV2Action({ refTable, refId, field, text })} />;
 }
 
 /**
@@ -107,48 +49,49 @@ function ListenButton({
  * state, no `chatRef`) — the shared chat panel stays only for the
  * free-form "💬 Запитати репетитора" question box.
  */
-function ExplainButton({ subjectId, topicId, stepText, refTable, refId }: { subjectId: string; topicId: string | null; stepText: string; refTable: string; refId: string }) {
+type ExplainButtonProps = { subjectId: string; topicId: string | null; stepText: string; refTable: string; refId: string };
+function ExplainButton(props: ExplainButtonProps) {
+  return <ScopedExplainButton key={JSON.stringify([props.refTable, props.refId, props.stepText])} {...props} />;
+}
+
+function ScopedExplainButton({ subjectId, topicId, stepText, refTable, refId }: ExplainButtonProps) {
   const [state, setState] = useState<{ status: "idle" } | { status: "pending" } | { status: "done"; content: string }>({ status: "idle" });
   const [audio, setAudio] = useState<{ base64: string; mime: string } | null>(null);
   const [playing, setPlaying] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  useEffect(
-    () => () => {
-      if (isCurrentlyPlaying(audioRef.current)) stopCurrentlyPlaying();
-    },
-    [],
-  );
+  const playback = useAudioPlaybackScope();
 
   if (!topicId || !stepText.trim()) return null;
 
-  function playAudio(base64: string, mime: string) {
+  function playAudio(base64: string, mime: string, request = playback.begin(() => setPlaying(false))) {
+    if (!request.isCurrent()) return;
     const el = new Audio(`data:${mime};base64,${base64}`);
-    audioRef.current = el;
     setPlaying(true);
-    playSingleAudio(el, () => setPlaying(false));
+    request.play(el, () => setPlaying(false));
   }
 
   async function explain() {
     if (state.status === "pending") return;
+    const request = playback.begin(() => setPlaying(false));
     setState({ status: "pending" });
     setAudio(null);
     try {
       const res = await explainLiteratureV2Action({ subjectId, topicId: topicId!, stepText });
+      if (!playback.isMounted()) return;
       const content = res.status === "ok" ? res.content : res.message;
       setState({ status: "done", content });
-      if (res.status === "ok") {
+      if (res.status === "ok" && request.isCurrent()) {
         try {
           const narration = await narrateLiteratureV2Action({ refTable, refId, field: "explanation", text: content });
-          if (narration.status === "ok") {
+          if (narration.status === "ok" && request.isCurrent()) {
             setAudio({ base64: narration.audioBase64, mime: narration.audioMime });
-            playAudio(narration.audioBase64, narration.audioMime);
+            playAudio(narration.audioBase64, narration.audioMime, request);
           }
         } catch {
           // voice is a bonus on top of the text already shown below
         }
       }
     } catch (e) {
+      if (!playback.isMounted()) return;
       setState({ status: "done", content: `Не вдалося пояснити (${(e as Error).message}). Спробуй ще раз.` });
     }
   }
@@ -175,24 +118,22 @@ function ExplainButton({ subjectId, topicId, stepText, refTable, refId }: { subj
           <MathText text={state.content} />
         </div>
       )}
+      <LessonVoicePanel target={{ kind: "course", refTable, refId }} />
     </div>
   );
 }
 
-function ScreenNav({ lesson, voiceMode, autoAdvance }: { lesson: LiteratureV2LessonView; voiceMode: boolean; autoAdvance: boolean }) {
-  const [index, setIndex] = useState(0);
+function ScreenNav({ lesson, voiceMode, autoAdvance, index, onIndexChange }: { lesson: LiteratureV2LessonView; voiceMode: boolean; autoAdvance: boolean; index: number; onIndexChange: (index: number) => void }) {
   const screen = lesson.screens[index];
   if (!screen) return <p className="course-note">Екранів ще немає.</p>;
 
   const isLast = index >= lesson.screens.length - 1;
-  const onNarrationEnded = voiceMode && autoAdvance && !isLast ? () => setIndex((i) => Math.min(lesson.screens.length - 1, i + 1)) : undefined;
+  const onNarrationEnded = voiceMode && autoAdvance && !isLast ? () => onIndexChange(Math.min(lesson.screens.length - 1, index + 1)) : undefined;
 
   return (
-    <section>
+    <section className="lesson-study-card">
       {screen.stepType && <p className="course-eyebrow">{screen.stepType}</p>}
-      <p style={{ whiteSpace: "pre-wrap" }}>
-        <MathText text={screen.content.display} />
-      </p>
+      <LessonText text={screen.content.display} />
       {screen.assets.map((a) =>
         a.url ? (
           // eslint-disable-next-line @next/next/no-img-element -- short-lived signed Supabase Storage URL
@@ -207,9 +148,9 @@ function ScreenNav({ lesson, voiceMode, autoAdvance }: { lesson: LiteratureV2Les
       <StepNavBar
         label={`Екран ${index + 1} з ${lesson.screens.length}`}
         backDisabled={index === 0}
-        onBack={() => setIndex((i) => Math.max(0, i - 1))}
+        onBack={() => onIndexChange(Math.max(0, index - 1))}
         nextDisabled={index >= lesson.screens.length - 1}
-        onNext={() => setIndex((i) => Math.min(lesson.screens.length - 1, i + 1))}
+        onNext={() => onIndexChange(Math.min(lesson.screens.length - 1, index + 1))}
         middleControl={
           lesson.textbookMaterialId && (
             <OpenTextbookPageButton
@@ -230,7 +171,7 @@ export interface LessonTopicChatHandle {
   pushAndOpen(content: string): void;
 }
 
-const LessonTopicChat = forwardRef<LessonTopicChatHandle, { subjectId: string; topicId: string }>(function LessonTopicChat({ subjectId, topicId }, ref) {
+const LessonTopicChat = forwardRef<LessonTopicChatHandle, { subjectId: string; topicId: string; target?: VoiceTarget }>(function LessonTopicChat({ subjectId, topicId, target }, ref) {
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<{ author: "child" | "ai"; content: string }[]>([]);
@@ -252,7 +193,7 @@ const LessonTopicChat = forwardRef<LessonTopicChatHandle, { subjectId: string; t
     setPending(true);
     setError(null);
     try {
-      const res = await askTopicChatAction(null, subjectId, topicId, q);
+      const res = await askTopicChatAction(null, subjectId, topicId, q, target);
       if (res.status === "ok") setMessages((prev) => [...prev, { author: "ai", content: res.message.content }]);
       else setError("Не вдалося надіслати запитання. Спробуй ще раз.");
     } catch (e) {
@@ -302,7 +243,7 @@ const LessonTopicChat = forwardRef<LessonTopicChatHandle, { subjectId: string; t
   );
 });
 
-function TaskCard({ task, subjectId, topicId, textbook }: { task: LiteratureV2TaskView; subjectId: string; topicId: string | null; textbook: TextbookRef | null }) {
+function TaskCard({ task, subjectId, topicId, textbook, onFocusTarget }: { task: LiteratureV2TaskView; subjectId: string; topicId: string | null; textbook: TextbookRef | null; onFocusTarget: (target: VoiceTarget) => void }) {
   const [revealed, setRevealed] = useState<LiteratureV2TaskHelpResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -322,11 +263,9 @@ function TaskCard({ task, subjectId, topicId, textbook }: { task: LiteratureV2Ta
   }
 
   return (
-    <li className="course-exercise-card">
+    <li className="course-exercise-card" onPointerDownCapture={() => onFocusTarget({ kind: "course", refTable: "literature_v2_tasks", refId: task.id })} onFocusCapture={() => onFocusTarget({ kind: "course", refTable: "literature_v2_tasks", refId: task.id })}>
       {task.originalLabel && <p className="course-exercise-number">{task.originalLabel}</p>}
-      <p style={{ whiteSpace: "pre-wrap" }}>
-        <MathText text={task.prompt.display} />
-      </p>
+      <LessonText text={task.prompt.display} />
       {task.subtasks.length > 0 && (
         <ol className="mt-1 list-decimal pl-5 text-sm">
           {task.subtasks.map((s) => (
@@ -431,7 +370,7 @@ function TaskCard({ task, subjectId, topicId, textbook }: { task: LiteratureV2Ta
 
 const TASKS_PER_PAGE = 10;
 
-function TaskList({ tasks, subjectId, topicId, textbook }: { tasks: LiteratureV2TaskView[]; subjectId: string; topicId: string | null; textbook: TextbookRef | null }) {
+function TaskList({ tasks, subjectId, topicId, textbook, onFocusTarget }: { tasks: LiteratureV2TaskView[]; subjectId: string; topicId: string | null; textbook: TextbookRef | null; onFocusTarget: (target: VoiceTarget) => void }) {
   const [page, setPage] = useState(0);
   const pageCount = Math.ceil(tasks.length / TASKS_PER_PAGE);
   const start = page * TASKS_PER_PAGE;
@@ -444,7 +383,7 @@ function TaskList({ tasks, subjectId, topicId, textbook }: { tasks: LiteratureV2
       </p>
       <ol className="course-exercise-list">
         {visible.map((t) => (
-          <TaskCard key={t.id} task={t} subjectId={subjectId} topicId={topicId} textbook={textbook} />
+          <TaskCard key={t.id} task={t} subjectId={subjectId} topicId={topicId} textbook={textbook} onFocusTarget={onFocusTarget} />
         ))}
       </ol>
       <div className="mt-3 flex gap-2">
@@ -466,6 +405,15 @@ function TaskList({ tasks, subjectId, topicId, textbook }: { tasks: LiteratureV2
 
 export function LiteratureV2LessonScreen({ lesson, packageLessons }: { lesson: LiteratureV2LessonView; packageLessons: LiteratureV2LessonListItem[] }) {
   const chatRef = useRef<LessonTopicChatHandle>(null);
+  const [screenIndex, setScreenIndex] = useState(0);
+  const [chatTarget, setChatTarget] = useState<VoiceTarget | undefined>(() => lesson.screens[0]
+    ? { kind: "course", refTable: "literature_v2_screens", refId: lesson.screens[0].id }
+    : lesson.tasks[0] ? { kind: "course", refTable: "literature_v2_tasks", refId: lesson.tasks[0].id } : undefined);
+  function changeScreenIndex(index: number) {
+    setScreenIndex(index);
+    const screen = lesson.screens[index];
+    if (screen) setChatTarget({ kind: "course", refTable: "literature_v2_screens", refId: screen.id });
+  }
   const { voiceMode, autoAdvance, changeVoiceMode, changeAutoAdvance } = useVoiceModeControls("literatureV2");
 
   const textbook: TextbookRef | null = lesson.textbookMaterialId
@@ -520,14 +468,14 @@ export function LiteratureV2LessonScreen({ lesson, packageLessons }: { lesson: L
         </section>
       )}
 
-      <ScreenNav lesson={lesson} voiceMode={voiceMode} autoAdvance={autoAdvance} />
+      <ScreenNav lesson={lesson} voiceMode={voiceMode} autoAdvance={autoAdvance} index={screenIndex} onIndexChange={changeScreenIndex} />
 
-      {lesson.topicId && <LessonTopicChat ref={chatRef} subjectId={lesson.subjectId} topicId={lesson.topicId} />}
+      {lesson.topicId && <LessonTopicChat ref={chatRef} subjectId={lesson.subjectId} topicId={lesson.topicId} target={chatTarget} />}
 
       {lesson.tasks.length > 0 && (
         <section>
           <h2>Завдання</h2>
-          <TaskList tasks={lesson.tasks} subjectId={lesson.subjectId} topicId={lesson.topicId} textbook={textbook} />
+          <TaskList tasks={lesson.tasks} subjectId={lesson.subjectId} topicId={lesson.topicId} textbook={textbook} onFocusTarget={setChatTarget} />
         </section>
       )}
     </article>

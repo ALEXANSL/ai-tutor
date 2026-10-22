@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
-import { isCurrentlyPlaying, playSingleAudio, stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
+import { NarrationButton } from "@/components/shared/NarrationButton";
+import { LessonText } from "@/components/shared/LessonText";
+import { LessonVoicePanel } from "@/components/voice/LessonVoicePanel";
 import { AutoAdvanceToggle, VoiceModeToggle, useVoiceModeControls } from "@/components/shared/VoiceModeControls";
 import { STEP_NAV_BAR_SPACER_CLASS, StepNavBar } from "@/components/shared/StepNavBar";
 import { narrateLiteratureV3Action, saveReadingPositionAction } from "@/app/actions/literature-v3";
@@ -50,82 +52,20 @@ import type { LiteratureV3BookPage, LiteratureV3FlowStep, LiteratureV3LessonList
  * viewers, not something to solve only for reading steps here.
  */
 
-function ListenButton({
-  refTable,
-  refId,
-  field,
-  text,
-  autoPlay,
-  onEnded,
-}: {
-  refTable: string;
-  refId: string;
-  field: string;
-  text: string;
-  autoPlay?: boolean;
-  onEnded?: () => void;
+function ListenButton(props: {
+  refTable: string; refId: string; field: string; text: string;
+  autoPlay?: boolean; onEnded?: () => void;
 }) {
-  const [state, setState] = useState<"idle" | "loading" | "playing" | "unavailable">("idle");
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-
-  useEffect(
-    () => () => {
-      if (isCurrentlyPlaying(audioRef.current)) stopCurrentlyPlaying();
-    },
-    [],
-  );
-
-  async function play() {
-    if (state === "loading") return;
-    stopCurrentlyPlaying();
-    setState("loading");
-    try {
-      const res = await narrateLiteratureV3Action({ refTable, refId, field, text });
-      if (res.status !== "ok") {
-        setState("unavailable");
-        return;
-      }
-      const audio = new Audio(`data:${res.audioMime};base64,${res.audioBase64}`);
-      audioRef.current = audio;
-      setState("playing");
-      playSingleAudio(audio, () => setState("idle"));
-      audio.addEventListener("ended", () => onEnded?.(), { once: true });
-    } catch {
-      setState("unavailable");
-    }
-  }
-
-  useEffect(() => {
-    if (!autoPlay || !text.trim()) return;
-    let cancelled = false;
-    Promise.resolve().then(() => {
-      if (!cancelled) void play();
-    });
-    return () => {
-      cancelled = true;
-    };
-    // Intentionally only on mount — fresh per step via the caller's `key`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  if (!text.trim()) return null;
-  return (
-    <button
-      type="button"
-      onClick={play}
-      disabled={state === "loading" || state === "playing"}
-      className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold disabled:opacity-60"
-    >
-      {state === "loading" ? "…" : state === "playing" ? "🔊 Грає…" : state === "unavailable" ? "🔇 Недоступно" : "🔊 Слухати"}
-    </button>
-  );
+  const { refTable, refId, field, text } = props;
+  return <NarrationButton {...props} identity={JSON.stringify([refTable, refId, field, text])}
+    synthesize={() => narrateLiteratureV3Action({ refTable, refId, field, text })} />;
 }
 
 function ScreenStep({ step, voiceMode, onNarrationEnded }: { step: Extract<LiteratureV3FlowStep, { kind: "screen" }>; voiceMode: boolean; onNarrationEnded?: () => void }) {
   return (
     <section className="lit-v3-step lit-v3-step-screen">
       {step.title && <h3>{step.title}</h3>}
-      <p style={{ whiteSpace: "pre-wrap" }}>{step.displayText}</p>
+      <LessonText text={step.displayText} />
       {step.illustrations.map((a) =>
         a.url ? (
           // eslint-disable-next-line @next/next/no-img-element -- short-lived signed Supabase Storage URL
@@ -146,7 +86,7 @@ function BiographyStep({ step, voiceMode, onNarrationEnded }: { step: Extract<Li
     <section className="lit-v3-step lit-v3-step-biography">
       <p className="course-eyebrow">Про автора</p>
       <h3>{step.authorName}</h3>
-      <p style={{ whiteSpace: "pre-wrap" }}>{step.displayText}</p>
+      <LessonText text={step.displayText} />
       <div className="mt-2">
         <ListenButton key={step.id} refTable="literature_v3_biographies" refId={step.id} field="tts" text={step.ttsText} autoPlay={voiceMode} onEnded={onNarrationEnded} />
       </div>
@@ -240,8 +180,8 @@ function ReadingStep({
         {step.workTitle}
       </p>
       {step.title && <h3>{step.title}</h3>}
-      <div ref={containerRef} onScroll={onScroll} style={{ maxHeight: "60vh", overflowY: "auto" }}>
-        <p style={{ whiteSpace: "pre-wrap" }}>{step.displayText}</p>
+      <div ref={containerRef} onScroll={onScroll} className="lesson-reading-scroll" style={{ maxHeight: "60vh", overflowY: "auto" }}>
+        <LessonText text={step.displayText} preserveLines />
       </div>
       <div className="mt-2 flex flex-wrap gap-2">
         <ListenButton key={`${step.id}-${playKey}`} refTable="literature_v3_reading_items" refId={step.id} field="tts" text={step.ttsText} autoPlay={voiceMode} />
@@ -308,6 +248,7 @@ function FlowNav({
 }) {
   const savedStepIndex = savedPosition ? lesson.flow.findIndex((s) => s.id === savedPosition.refId) : -1;
   const [index, setIndex] = useState(savedStepIndex >= 0 ? savedStepIndex : 0);
+  const [interruptedStep, setInterruptedStep] = useState<string | null>(null);
   const step = lesson.flow[index];
   if (!step) return <p className="course-note">Кроків ще немає.</p>;
   const initialReadingOffset = step.kind === "reading" && savedPosition?.refId === step.id ? savedPosition.offsetCodepoints : null;
@@ -327,9 +268,10 @@ function FlowNav({
         bookIndex={bookIndex}
         lessonId={lesson.id}
         initialReadingOffset={initialReadingOffset}
-        voiceMode={voiceMode}
+        voiceMode={voiceMode && interruptedStep !== step.id}
         onNarrationEnded={onNarrationEnded}
       />
+      {lesson.topicId && <LessonVoicePanel target={{ kind: "chapter", lessonId: lesson.id, stepId: step.id }} onActiveChange={active => { if (active) setInterruptedStep(step.id); }} />}
       <StepNavBar
         label={`Крок ${index + 1} з ${lesson.flow.length}`}
         backDisabled={index === 0}

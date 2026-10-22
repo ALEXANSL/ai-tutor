@@ -226,6 +226,7 @@ export interface OpenAiTtsRequest {
   model: string;
   text: string;
   voiceId?: string;
+  instructions?: string;
   params: RouteParams;
 }
 
@@ -253,7 +254,7 @@ export async function openaiTts(req: OpenAiTtsRequest, fetchImpl: typeof fetch =
         model: req.model,
         input: req.text,
         voice: req.voiceId ?? "alloy",
-        instructions: "Читай тепло й спокійно, українською, як аудіокнигу — не як озвучений слайд.",
+        instructions: req.instructions ?? "Читай тепло й спокійно, українською, як аудіокнигу — не як озвучений слайд.",
         response_format: "mp3",
         // D-111 п.5: PO reported narration felt too slow and asked for
         // ~10-15% faster; the API supports 0.25-4.0 (default 1.0) but this
@@ -280,4 +281,26 @@ export async function openaiTts(req: OpenAiTtsRequest, fetchImpl: typeof fetch =
     // test of this function alone doesn't imply a false usage number.
     usage: { inputTokens: 0, outputTokens: 0 },
   };
+}
+
+/** Whisper verbose JSON reports duration: billed audio seconds, not guessed token counts. */
+export async function openaiTranscribe(req: { model: string; audio: File; params: RouteParams }, fetchImpl: typeof fetch = fetch): Promise<{ data: string; usage: Usage }> {
+  const key = getServerSecret("OPENAI_API_KEY");
+  if (!key) throw new AiNotConfiguredError("OPENAI_API_KEY is not set");
+  const form = new FormData();
+  form.set("file", req.audio);
+  form.set("model", req.model);
+  form.set("response_format", "verbose_json");
+  form.set("language", "uk");
+  let res: Response;
+  try {
+    res = await fetchImpl("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST", headers: { authorization: `Bearer ${key}` }, body: form,
+      signal: AbortSignal.timeout(req.params.timeout_ms ?? 30_000),
+    });
+  } catch { throw new ProviderError("openai transcription network error", "openai", null, true); }
+  if (!res.ok) throw new ProviderError(`openai transcription error ${res.status}`, "openai", res.status, res.status === 429 || res.status >= 500);
+  const parsed = z.object({ text: z.string(), duration: z.number().finite().nonnegative() }).parse(await res.json());
+  // Never put provider output or audio into logs. The router records the real billed duration.
+  return { data: parsed.text.trim(), usage: { inputTokens: Math.ceil(parsed.duration), outputTokens: 0 } };
 }

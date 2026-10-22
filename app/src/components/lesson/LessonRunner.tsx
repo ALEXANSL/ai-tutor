@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import { DragSortStep } from "@/lesson-components/drag_sort/DragSortStep";
 import type { DragSortProps } from "@/lesson-components/drag_sort";
 import { uk } from "@/i18n/uk";
+import { isCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
+import { useAudioPlaybackScope } from "@/components/shared/useAudioPlaybackScope";
+import { LessonVoicePanel } from "@/components/voice/LessonVoicePanel";
 import {
   acknowledgeSlideAction,
   askTopicChatAction,
@@ -642,6 +645,7 @@ export function LessonRunner({
       {presentationMode === "voice" && (
         <NarrationPlayer key={step.stepId} sessionId={sessionId} stepId={step.stepId} labels={t} />
       )}
+      <LessonVoicePanel target={{ kind: "lesson", source: "session", sessionId, stepId: step.stepId }} />
 
       {exitConfirmOpen && (
         <div className="mb-4 rounded-2xl border border-line bg-surface-alt p-3.5" role="alertdialog" aria-label={t.exitLessonConfirmTitle}>
@@ -934,17 +938,49 @@ function NarrationPlayer({ sessionId, stepId, labels: t }: { sessionId: string; 
   // of each fresh `NarrationPlayer` mount, not one render late).
   const [speed, setSpeed] = useState<NarrationSpeed>(readStoredNarrationSpeed);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const { begin } = useAudioPlaybackScope();
+  const requestRef = useRef<ReturnType<typeof begin> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    // Own the pending synthesis as well as playback: link intent cancels
+    // this ticket before Next finishes unmounting the old lesson screen.
+    const request = begin(() => {});
+    requestRef.current = request;
     synthesizeNarrationAction(sessionId, stepId).then((res) => {
-      if (cancelled) return;
+      if (cancelled || !request.isCurrent()) return;
       if (res.status === "ok") setAudioUrl(`data:${res.mimeType};base64,${res.audioBase64}`);
-    });
+    }).catch(() => {});
     return () => {
       cancelled = true;
+      request.cancel();
+      if (requestRef.current === request) requestRef.current = null;
     };
-  }, [sessionId, stepId]);
+  }, [sessionId, stepId, begin]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    const request = requestRef.current;
+    if (!audio) return;
+    if (request?.isCurrent()) {
+      if (!isCurrentlyPlaying(audio)) request.play(audio, () => {});
+    } else {
+      // Navigation can land between setAudioUrl and this effect.
+      audio.autoplay = false;
+      audio.pause();
+    }
+    return () => { audio.autoplay = false; };
+  }, [audioUrl]);
+
+  function playNativeAudio() {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (!isCurrentlyPlaying(audio)) {
+      const request = begin(() => {});
+      requestRef.current = request;
+      request.play(audio, () => {});
+    } else void audio.play().catch(() => {});
+  }
 
   // Applies to the current audio element immediately (mid-playback too), and
   // again whenever a new step's element mounts.
@@ -979,10 +1015,10 @@ function NarrationPlayer({ sessionId, stepId, labels: t }: { sessionId: string; 
   }
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2">
-      <audio ref={audioRef} src={audioUrl} autoPlay controls className="h-10 flex-1" />
+      <audio ref={audioRef} src={audioUrl} controls onPlay={playNativeAudio} className="h-10 flex-1" />
       <button
         type="button"
-        onClick={() => audioRef.current?.play()}
+        onClick={playNativeAudio}
         className="min-h-11 rounded-full border-2 border-line bg-surface px-3 text-sm font-bold"
       >
         {t.narrationReplay}
@@ -1042,6 +1078,21 @@ function BreakOfferScreen({
   );
 }
 
+/** Mount only during a pending continuation so each attempt gets a fresh timer. */
+function BlockContinueSlowHint({ text }: { text: string }) {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const id = setTimeout(() => setVisible(true), 15_000);
+    return () => clearTimeout(id);
+  }, []);
+
+  return visible ? (
+    <p className="mb-3 text-sm font-semibold text-muted" role="status">
+      {text}
+    </p>
+  ) : null;
+}
+
 function BlockCompleteScreen({
   libraryItemId,
   visibleOutcomeUk,
@@ -1065,20 +1116,6 @@ function BlockCompleteScreen({
   onExit: () => void;
 }) {
   const [feedbackSent, setFeedbackSent] = useState<"interesting" | "normal" | "boring" | null>(null);
-  // BUG-034: a real on-demand generation (planning → up to 3 passes of
-  // generating/reviewing) can take 1-5 minutes — after ~15s of waiting,
-  // swap the neutral busy label for a friendlier explanation so the child
-  // does not conclude the app is stuck.
-  const [slowWait, setSlowWait] = useState(false);
-  useEffect(() => {
-    if (!busy) {
-      setSlowWait(false);
-      return;
-    }
-    const id = setTimeout(() => setSlowWait(true), 15_000);
-    return () => clearTimeout(id);
-  }, [busy]);
-
   function sendFeedback(kind: "interesting" | "normal" | "boring") {
     setFeedbackSent(kind);
     if (libraryItemId) submitBlockFeedbackAction(libraryItemId, kind).catch(() => {});
@@ -1107,11 +1144,8 @@ function BlockCompleteScreen({
           </div>
         )}
 
-        {busy && slowWait && (
-          <p className="mb-3 text-sm font-semibold text-muted" role="status">
-            {t.blockContinueSlowHint}
-          </p>
-        )}
+        {/* BUG-034: explain long generation after 15s; unmounting resets the hint. */}
+        {busy && <BlockContinueSlowHint text={t.blockContinueSlowHint} />}
 
         <div className="flex flex-wrap items-center gap-3">
           <button

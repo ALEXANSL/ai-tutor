@@ -44,12 +44,13 @@ export default async function MaterialsImportPage() {
       <Panel title="Повний пакет уроків — відкриті завдання">
         <p className="-mt-2 mb-3.5 text-xs text-p-muted">
           Формат для будь-якого предмета з відкритими завданнями (S36) — чотири файли JSON (course.json, teacher.json, assets.json, task_tables.json), плюс необов&apos;язковий zip з ілюстраціями. Усі завдання тут відкриті (без варіантів відповіді).
+          Якщо ваш пакет містить package.json і readings.json, використовуйте наступну форму «Спільний формат для всіх предметів — уроки та квізи».
         </p>
         <LiteratureV2ImportPanel subjects={subjects} />
       </Panel>
-      <Panel title="Пакети уроків «розділ уроку + квіз» (chapter package)">
+      <Panel title="Спільний формат для всіх предметів — уроки та квізи">
         <p className="-mt-2 mb-3.5 text-xs text-p-muted">
-          Новий, серйозніший формат (S45) для будь-якого предмета — сім файлів JSON (package.json, public/course.json, public/readings.json, private/teacher.json, catalog/assets.json, catalog/pages.json, catalog/task_tables.json), плюс необов&apos;язковий zip з ілюстраціями та малими PDF уроків. Екрани уроку, читання (текст твору або довідковий фрагмент) і необов&apos;язкові біографії, квіз із варіантами відповідей (як на математиці). Формат маніфеста — будь-яке &quot;&lt;предмет&gt;-tutor-package&quot; (напр. ukrlit/ukrmova/history).
+          Завантажте сім JSON окремо, як раніше: package.json, course.json, readings.json, teacher.json, assets.json, pages.json, task_tables.json. Нижче — два окремі необов’язкові ZIP: assets з ілюстраціями та lessons із PDF уроків. Якщо медіа не потрібні, залиште обидва ZIP порожніми; відповідні каталоги JSON можуть містити items: [].
         </p>
         <LiteratureV3ImportPanel subjects={subjects} />
       </Panel>

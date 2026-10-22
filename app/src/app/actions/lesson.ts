@@ -6,6 +6,8 @@ import { uk } from "@/i18n/uk";
 import { requireChild, requireLessonAccess } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
 import type { ChildProfileRow } from "@/server/db/types";
+import type { VoiceTarget } from "@/lib/voice";
+import { lessonVoiceTargetSchema, resolveLessonVoiceTarget, type LessonVoiceContext } from "@/server/voice/lessonContext";
 import { kickJobs } from "@/server/jobs/kick";
 import { askTopicChat, explainStepAgain } from "@/server/lessons/chat";
 import { recordChildFeedback, type ChildFeedbackKind } from "@/server/lessons/generate";
@@ -201,16 +203,37 @@ export async function submitBlockFeedbackAction(libraryItemId: string, feedback:
 
 const chatSchema = z.string().trim().min(1).max(800);
 
-export async function askTopicChatAction(sessionId: string | null, subjectId: string, topicId: string, question: string) {
+export async function askTopicChatAction(sessionId: string | null, subjectId: string, topicId: string, question: string, rawTarget?: VoiceTarget) {
   const { familyId } = await requireLessonAccess();
   UUID.parse(subjectId);
   UUID.parse(topicId);
   const q = chatSchema.parse(question);
   const scope = forFamily(familyId);
   const child = await onlyChild(familyId);
+  let lessonContext: LessonVoiceContext | undefined;
+  try {
+    let target = rawTarget ? lessonVoiceTargetSchema.parse(rawTarget) : undefined;
+    if (sessionId) {
+      UUID.parse(sessionId);
+      if (target && (target.kind !== "lesson" || target.sessionId !== sessionId)) return { status: "error" as const, message: uk.common.error };
+      if (!target) {
+        const { data: session, error } = await scope.select("lesson_sessions", "current_step_id,subject_id,topic_id,status")
+          .eq("id", sessionId).eq("child_profile_id", child.id)
+          .maybeSingle<{ current_step_id: string | null; subject_id: string; topic_id: string; status: string }>();
+        if (error || !session?.current_step_id || session.status !== "active" || session.subject_id !== subjectId || session.topic_id !== topicId) return { status: "error" as const, message: uk.common.error };
+        target = { kind: "lesson", source: "session", sessionId, stepId: session.current_step_id };
+      }
+    }
+    if (target) {
+      lessonContext = await resolveLessonVoiceTarget(familyId, child.id, target);
+      if (lessonContext.subjectId !== subjectId || lessonContext.topicId !== topicId) return { status: "error" as const, message: uk.common.error };
+    }
+  } catch {
+    return { status: "error" as const, message: uk.common.error };
+  }
   const [{ data: subject }, { data: topic }] = await Promise.all([
     scope.select("subjects", "name_uk").eq("id", subjectId).maybeSingle<{ name_uk: string }>(),
-    scope.select("topics", "title").eq("id", topicId).maybeSingle<{ title: string }>(),
+    scope.select("topics", "title").eq("id", topicId).eq("subject_id", subjectId).maybeSingle<{ title: string }>(),
   ]);
   if (!subject || !topic) return { status: "error" as const, message: uk.common.error };
   const message = await askTopicChat(
@@ -224,7 +247,8 @@ export async function askTopicChatAction(sessionId: string | null, subjectId: st
     topicId,
     topic.title,
     q,
-    sessionId ?? undefined,
+    lessonContext?.sessionId ?? sessionId ?? undefined,
+    lessonContext ? { stepContext: lessonContext.context, lessonRef: lessonContext.lessonRef } : {},
   );
   return { status: "ok" as const, message };
 }
