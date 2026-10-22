@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useState } from "react";
 import { askFriendChatAction } from "@/app/actions/friend";
+import { VoiceConversation } from "@/components/voice/VoiceConversation";
 import { uk } from "@/i18n/uk";
+import type { VoiceTurn } from "@/lib/voice";
 
 interface MessageView {
   id: string;
@@ -36,6 +38,19 @@ export function FriendChatScreen({ initialMessages }: { initialMessages: Message
     } finally {
       setPending(false);
     }
+  }
+
+  // US-8.5 follow-up (Алекс 2026-10-22, "голосовий режим у чаті"): a voice
+  // turn is appended into the SAME thread as typed messages (both the
+  // child's recognized speech and the reply) — unlike a lesson screen,
+  // this whole screen IS the conversation, so a separate mini-transcript
+  // (`LessonVoicePanel`'s own, used everywhere else) would just duplicate it.
+  function onVoiceTurn(turn: VoiceTurn) {
+    setMessages((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), author: "child", content: turn.text, createdAt: new Date().toISOString() },
+      turn.message,
+    ]);
   }
 
   return (
@@ -73,6 +88,8 @@ export function FriendChatScreen({ initialMessages }: { initialMessages: Message
           </div>
         )}
       </div>
+
+      <VoiceConversation target={{ kind: "friend" }} onTurn={onVoiceTurn} />
 
       <div className="flex gap-2 pb-4">
         <input

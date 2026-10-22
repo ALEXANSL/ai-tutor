@@ -79,6 +79,11 @@ describe("lightweight voice authorization", () => {
     put("literature_v3_screens", { id: stepId, lesson_id: id, screen_key: "another-key" });
     await expect(assertLessonVoiceAccess("family", "child", chapter)).rejects.toThrow("voice_lesson_unavailable");
   });
+  it("grants friend-chat access with no subject/topic and no database reads", async () => {
+    f.calls.length = 0;
+    await expect(assertLessonVoiceAccess("family", "child", { kind: "friend" })).resolves.toEqual({});
+    expect(f.calls).toHaveLength(0);
+  });
   it("rejects archived lessons, stale topics and database failures", async () => {
     const target = { kind: "course" as const, refTable: "course_v2_exercises" as const, refId: stepId };
     put("course_v2_exercises", { id: stepId, lesson_id: id });

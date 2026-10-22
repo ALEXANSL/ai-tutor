@@ -3,7 +3,8 @@ import { z } from "zod";
 import { forFamily } from "@/server/db/family-scope";
 import { lessonVoiceTargetSchema, type LessonVoiceTarget } from "./lessonContext";
 
-export interface LessonVoiceAccess { subjectId: string; topicId: string; sessionId?: string }
+/** Absent only for `{ kind: "friend" }` — no subject/topic exists to attach to. */
+export interface LessonVoiceAccess { subjectId?: string; topicId?: string; sessionId?: string }
 interface LessonRow { subject_id: string; topic_id: string | null; status: string; package_id?: string }
 function unavailable(): never { throw new Error("voice_lesson_unavailable"); }
 
@@ -11,6 +12,10 @@ function unavailable(): never { throw new Error("voice_lesson_unavailable"); }
  * Called at every paid stage and heartbeat; never cached across turns. */
 export async function assertLessonVoiceAccess(familyId: string, childId: string, raw: LessonVoiceTarget): Promise<LessonVoiceAccess> {
   const target = lessonVoiceTargetSchema.parse(raw);
+  // US-8.5 "ШІ-друг": no lesson/subject/topic to re-validate against — the
+  // basic auth already performed to reach here (this child's own family) is
+  // the entire access rule, same as the text path (`askFriendChatAction`).
+  if (target.kind === "friend") return {};
   const scope = forFamily(familyId);
   let lesson: LessonRow;
   let sessionId: string | undefined;
