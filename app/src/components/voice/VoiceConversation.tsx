@@ -6,7 +6,7 @@ import { uk } from "@/i18n/uk";
 import type { VoiceTarget, VoiceTurn } from "@/lib/voice";
 import { playWaitingFeedback } from "./waitingFeedback";
 
-type Phase = "idle" | "connecting" | "listening" | "recording" | "thinking" | "speaking";
+type Phase = "idle" | "connecting" | "listening" | "recording" | "thinking" | "speaking" | "muted";
 interface VoiceLease { id: string; expiresAt: string }
 interface WaitingState { acknowledgement: ReturnType<typeof setTimeout>; tick: ReturnType<typeof setInterval>; stopSound?: () => void }
 interface Props {
@@ -29,6 +29,9 @@ function VoiceSession({ target, onTurn, onActiveChange }: Props) {
   const [waitSeconds, setWaitSeconds] = useState(0);
   const [waitingSound, setWaitingSound] = useState(true);
   const waitingSoundEnabled = useRef(true);
+  const [isMuted, setIsMuted] = useState(false);
+  const muted = useRef(false);
+  const needsResume = useRef(false);
   const callbacks = useRef({ onTurn, onActiveChange });
   useEffect(() => { callbacks.current = { onTurn, onActiveChange }; }, [onTurn, onActiveChange]);
   const mounted = useRef(true);
@@ -65,6 +68,8 @@ function VoiceSession({ target, onTurn, onActiveChange }: Props) {
     active.current = false;
     safetyEnding.current = false;
     listening.current = null;
+    muted.current = false;
+    needsResume.current = false;
     requests.current.forEach(({ controller, timeout }) => { clearTimeout(timeout); controller.abort(); });
     requests.current.clear();
     if (detector.current !== null) clearInterval(detector.current);
@@ -98,7 +103,7 @@ function VoiceSession({ target, onTurn, onActiveChange }: Props) {
       body: JSON.stringify({ id: old.id, action: "stop" }), keepalive: true,
     }).catch(() => {});
     if (wasActive) callbacks.current.onActiveChange?.(false);
-    if (mounted.current) { setPhase("idle"); setEnding(false); setNotice(message); }
+    if (mounted.current) { setPhase("idle"); setEnding(false); setNotice(message); setIsMuted(false); }
   }, [endWaiting]);
 
   useEffect(() => {
@@ -205,6 +210,12 @@ function VoiceSession({ target, onTurn, onActiveChange }: Props) {
 
       const listen = () => {
         if (!valid() || safetyEnding.current) return;
+        // A mute toggled during "thinking"/"speaking" must not start a new
+        // recording once that turn ends — wait here, `toggleMute` resumes by
+        // calling `listening.current?.()` once the child unmutes (same path
+        // `interrupt()` already used to resume a listening cycle).
+        if (muted.current) { needsResume.current = true; setPhase("muted"); return; }
+        needsResume.current = false;
         try {
           setPhase("listening");
           const recording = new MediaRecorder(mic, { mimeType, audioBitsPerSecond: 64_000 });
@@ -316,7 +327,48 @@ function VoiceSession({ target, onTurn, onActiveChange }: Props) {
     const playback = source.current;
     source.current = null;
     if (playback) { playback.onended = null; try { playback.stop(); } catch { /* Already ended. */ } }
+    if (muted.current) { needsResume.current = true; setPhase("muted"); return; }
     listening.current?.();
+  }
+
+  /**
+   * PO 2026-10-22: "буває потрібно відволіктись чи інші фонові шуми, навіщо
+   * перевантажувати ШІ розбором контенту та пошуком відповіді, на те чого
+   * його не питали" — mute pauses capture WITHOUT ending the session/lease
+   * (unlike `stop()`): disables the mic track so no audio reaches the
+   * analyser/recorder, and drops anything mid-recording without sending it.
+   * `needsResume` remembers whether a listening cycle was paused here (as
+   * opposed to muting during "thinking"/"speaking", where the in-flight
+   * turn must finish normally and `listen()` itself will wait once reached).
+   */
+  function toggleMute() {
+    if (!active.current) return;
+    const next = !muted.current;
+    muted.current = next;
+    setIsMuted(next);
+    // `getTracks()`, not `getAudioTracks()` — the stream is mic-only
+    // (`getUserMedia({ audio: {...}, video: false })`), and the existing
+    // `onended`/`stop()` wiring above already uses `getTracks()`.
+    stream.current?.getTracks().forEach((track) => { track.enabled = !next; });
+    if (next) {
+      if (phase === "listening" || phase === "recording") {
+        const recording = recorder.current;
+        recorder.current = null;
+        if (recording) {
+          recording.onstop = null;
+          recording.ondataavailable = null;
+          recording.onerror = null;
+          try { if (recording.state !== "inactive") recording.stop(); } catch { /* Already stopped by the browser. */ }
+        }
+        if (detector.current !== null) clearInterval(detector.current);
+        detector.current = null;
+        needsResume.current = true;
+        setPhase("muted");
+      }
+    } else if (needsResume.current) {
+      needsResume.current = false;
+      listening.current?.();
+    }
   }
 
   return (
@@ -331,6 +383,7 @@ function VoiceSession({ target, onTurn, onActiveChange }: Props) {
           <button type="button" onClick={() => void start()} className="min-h-12 rounded-2xl bg-secondary px-4 font-bold text-white">{t.start}</button>
         ) : <>
           {phase === "speaking" && !ending && <button type="button" onClick={interrupt} className="min-h-12 rounded-2xl border-2 border-line px-4 font-bold">{t.interrupt}</button>}
+          {!ending && <button type="button" onClick={toggleMute} className="min-h-12 rounded-2xl border-2 border-line px-4 font-bold">{isMuted ? t.unmute : t.mute}</button>}
           <button type="button" onClick={() => stop()} className="min-h-12 rounded-2xl border-2 border-line px-4 font-bold">{t.stop}</button>
         </>}
       </div>
