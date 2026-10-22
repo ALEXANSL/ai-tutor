@@ -1,4 +1,5 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import type { FamilyScope } from "@/server/db/family-scope";
 import type { ParsedLiteratureV2Package } from "./literatureV2Import";
 
@@ -40,6 +41,7 @@ export interface LiteratureV2PersistSummary {
   assetsUploaded: number;
   assetsMissing: string[];
   assetUploadFailures: { path: string; message: string }[];
+  assetReuseWarnings?: { path: string; message: string }[];
 }
 
 async function persistAssets(
@@ -47,50 +49,58 @@ async function persistAssets(
   packageId: string,
   parsed: ParsedLiteratureV2Package,
   assetFiles: Map<string, Uint8Array>,
-): Promise<{ uploaded: number; missing: string[]; uploadFailures: { path: string; message: string }[] }> {
+): Promise<{ uploaded: number; missing: string[]; uploadFailures: { path: string; message: string }[]; reuseWarnings: { path: string; message: string }[] }> {
   const missing: string[] = [];
   const uploadFailures: { path: string; message: string }[] = [];
+  const reuseWarnings: { path: string; message: string }[] = [];
   let uploaded = 0;
-
-  for (const asset of parsed.assets) {
-    const bytes = assetFiles.get(asset.path);
-    const storagePath = `lit-v2/${packageId}/${asset.id}`;
-    let uploadedThisAsset = false;
-    if (bytes) {
-      const { error: uploadErr } = await uploadAssetWithRetry(scope, storagePath, bytes, asset.path.endsWith(".png") ? "image/png" : "image/jpeg");
-      if (uploadErr) uploadFailures.push({ path: asset.path, message: uploadErr.message });
-      else uploadedThisAsset = true;
-    } else {
-      missing.push(asset.path);
-    }
-
-    const { error: rowErr } = await scope.client
-      .from("literature_v2_assets")
-      .upsert(
-        {
-          owner_family_id: scope.familyId,
-          package_id: packageId,
-          asset_key: asset.id,
-          page_id: asset.page_id,
-          storage_path: uploadedThisAsset ? storagePath : null,
-          mime_type: asset.path.endsWith(".png") ? "image/png" : "image/jpeg",
-          caption: asset.caption,
-          alt: asset.alt,
-          tts: asset.tts ?? {},
-          discussion_prompt: asset.discussion_prompt ?? {},
-          printed_page: asset.source.printed_page,
-          pdf_page: asset.source.pdf_page,
-          bbox_pdf_points: asset.source.bbox_pdf_points,
-          rights: asset.rights,
-          sha256: asset.sha256,
-        },
-        { onConflict: "package_id,asset_key" },
-      );
-    if (rowErr) throw new Error(`literature_v2_assets upsert failed for ${asset.id}: ${rowErr.message}`);
-    if (uploadedThisAsset) uploaded += 1;
+  const previous = new Map<string, Record<string, unknown>>();
+  const keys = [...new Set(parsed.assets.map(asset => asset.id))];
+  for (let i = 0; i < keys.length; i += 100) {
+    const { data, error } = await scope.select("literature_v2_assets", "asset_key,storage_path,page_id,mime_type,caption,alt,tts,discussion_prompt,printed_page,pdf_page,bbox_pdf_points,rights,sha256")
+      .eq("package_id", packageId).in("asset_key", keys.slice(i, i + 100)).returns<Record<string, unknown>[]>();
+    if (error) throw new Error(`reading existing literature_v2_assets failed: ${error.message}`);
+    for (const row of data ?? []) previous.set(String(row.asset_key), row);
   }
 
-  return { uploaded, missing, uploadFailures };
+  for (const asset of parsed.assets) {
+    const old = previous.get(asset.id);
+    const mimeType = asset.path.toLowerCase().endsWith(".png") ? "image/png" : "image/jpeg";
+    const descriptor = {
+      page_id: asset.page_id, mime_type: mimeType, caption: asset.caption, alt: asset.alt,
+      tts: asset.tts ?? {}, discussion_prompt: asset.discussion_prompt ?? {},
+      printed_page: asset.source.printed_page, pdf_page: asset.source.pdf_page,
+      bbox_pdf_points: asset.source.bbox_pdf_points, rights: asset.rights,
+    };
+    const bytes = assetFiles.get(asset.path);
+    let storagePath: string | null = null;
+    let digest: string | null = null;
+    if (bytes) {
+      digest = createHash("sha256").update(bytes).digest("hex");
+      storagePath = `lit-v2/${packageId}/${encodeURIComponent(asset.id)}/${digest}`;
+      const { error } = await uploadAssetWithRetry(scope, storagePath, bytes, mimeType);
+      if (error) { uploadFailures.push({ path: asset.path, message: error.message }); storagePath = null; }
+    }
+    if (!storagePath && old?.storage_path) {
+      const descriptorChanged = Object.entries(descriptor).some(([key, value]) => JSON.stringify(old[key]) !== JSON.stringify(value));
+      if (descriptorChanged || (asset.sha256 && asset.sha256.toLowerCase() !== String(old.sha256 ?? "").toLowerCase())) reuseWarnings.push({
+        path: asset.path,
+        message: "Новий опис ілюстрації відрізняється, але новий файл не завантажено. Залишено попередній файл і його метадані.",
+      });
+      // Do not clear or relabel old media on a metadata-only retry, nor
+      // overwrite old bytes when a replacement upload fails.
+      continue;
+    }
+    if (!storagePath) missing.push(asset.path);
+    const { error: rowErr } = await scope.client.from("literature_v2_assets").upsert({
+      owner_family_id: scope.familyId, package_id: packageId, asset_key: asset.id,
+      storage_path: storagePath, ...descriptor,
+      sha256: storagePath ? digest : asset.sha256,
+    }, { onConflict: "package_id,asset_key" });
+    if (rowErr) throw new Error(`literature_v2_assets upsert failed for ${asset.id}: ${rowErr.message}`);
+    if (storagePath) uploaded += 1;
+  }
+  return { uploaded, missing, uploadFailures, reuseWarnings };
 }
 
 export async function persistLiteratureV2Package(
@@ -125,7 +135,7 @@ export async function persistLiteratureV2Package(
   if (pkgErr) throw new Error(`literature_v2_packages upsert failed: ${pkgErr.message}`);
   const packageId = pkg.id;
 
-  const { uploaded, missing, uploadFailures } = await persistAssets(scope, packageId, parsed, assetFiles);
+  const { uploaded, missing, uploadFailures, reuseWarnings } = await persistAssets(scope, packageId, parsed, assetFiles);
 
   // Computed up front, service-role side, so the child-facing view
   // (`literatureV2View.ts`) never needs to read the locked
@@ -316,5 +326,6 @@ export async function persistLiteratureV2Package(
     assetsUploaded: uploaded,
     assetsMissing: missing,
     assetUploadFailures: uploadFailures,
+    assetReuseWarnings: reuseWarnings,
   };
 }
