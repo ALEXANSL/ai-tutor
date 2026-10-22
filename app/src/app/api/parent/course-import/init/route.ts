@@ -1,3 +1,4 @@
+import { scheduleUnifiedImportCleanup } from "@/server/lessons/unifiedImportLifecycle";
 import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireParentAccess } from "@/server/auth/guards";
@@ -33,7 +34,7 @@ interface InitBody {
 }
 
 function sanitizeFileName(name: string): string {
-  const cleaned = name.replace(/[/\\]+/g, "_").trim();
+  const cleaned = name.replace(/[/\\]+/g, "_").replace(/\p{Cc}/gu, "_").trim();
   return (cleaned || "course.zip").slice(0, 200);
 }
 
@@ -55,6 +56,11 @@ export async function POST(request: NextRequest) {
   const { data, error } = await client.storage.from("course_import_staging").createSignedUploadUrl(storagePath, { upsert: true });
   if (error || !data) {
     console.error(`course-import init failed: ${error?.message}`);
+    return NextResponse.json({ error: "failed" }, { status: 500 });
+  }
+  try {
+    await scheduleUnifiedImportCleanup(familyId, storagePath);
+  } catch {
     return NextResponse.json({ error: "failed" }, { status: 500 });
   }
   return NextResponse.json({ signedUrl: data.signedUrl, token: data.token, path: data.path });
