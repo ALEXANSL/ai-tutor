@@ -31,7 +31,7 @@ describe("trusted voice lesson context", () => {
   it("supports the current geography reading and its printed page without client text", async () => {
     chapterView.mockResolvedValue({ subjectId: "geography", topicId: "earth", title: "Форма Землі", status: "active", flow: [{ kind: "reading", id: ids.ref, displayText: "Радіус до полюсів менший", bookPage: 20 }] });
     const result = await resolveLessonVoiceTarget("family", "child", { kind: "chapter", lessonId: ids.session, stepId: ids.ref });
-    expect(chapterView).toHaveBeenCalledWith("family", ids.session);
+    expect(chapterView).toHaveBeenCalledWith("family", ids.session, { includeIllustrations: false });
     expect(result).toMatchObject({ subjectId: "geography", topicId: "earth" });
     expect(result.context).toContain("Радіус до полюсів менший");
     expect(result.context).toContain("Друкована сторінка: 20");

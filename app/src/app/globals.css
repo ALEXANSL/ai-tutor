@@ -430,3 +430,228 @@ body {
   font-weight: 700;
   margin: 0 0 8px;
 }
+
+/* Teen learning workspace: a calm notebook, clear chapters and generous
+ * reading rhythm. Scoped to imported lessons; parent screens and source
+ * illustrations keep their existing presentation. */
+.course-lesson {
+  max-width: 860px;
+  padding: 24px clamp(16px, 3vw, 32px) calc(168px + env(safe-area-inset-bottom, 0px));
+  font-size: 17px;
+  line-height: 1.55;
+}
+.course-lesson > header {
+  position: relative;
+  margin-top: 20px;
+  padding: clamp(20px, 4vw, 32px);
+  border: 1px solid var(--border);
+  border-radius: 26px;
+  background:
+    radial-gradient(ellipse at 100% 0%, color-mix(in srgb, var(--accent-voice) 12%, transparent), transparent 65%),
+    var(--surface);
+  box-shadow: 0 6px 24px color-mix(in srgb, var(--text) 4%, transparent);
+}
+.course-lesson > header::before {
+  content: "";
+  display: block;
+  width: 48px;
+  height: 5px;
+  margin-bottom: 16px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--accent-voice), var(--primary));
+}
+.course-lesson h1 {
+  max-width: 23ch;
+  margin: 8px 0 14px;
+  font-family: inherit;
+  font-size: clamp(27px, 4vw, 36px);
+  font-weight: 850;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+.course-lesson h2 {
+  position: relative;
+  margin: 0 0 16px;
+  padding-left: 16px;
+  font-size: clamp(21px, 3vw, 24px);
+  font-weight: 800;
+  line-height: 1.3;
+}
+.course-lesson h2::before {
+  content: "";
+  position: absolute;
+  top: 0.15em;
+  bottom: 0.15em;
+  left: 0;
+  width: 5px;
+  border-radius: 99px;
+  background: var(--accent-voice);
+}
+.course-lesson h3 {
+  margin: 0 0 18px;
+  font-size: clamp(21px, 3vw, 25px);
+  font-weight: 800;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+.course-lesson section {
+  margin-top: 24px;
+}
+.course-lesson .course-eyebrow {
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 750;
+  letter-spacing: 0.025em;
+  line-height: 1.5;
+}
+.course-lesson .course-pages {
+  display: inline-flex;
+  margin: 0;
+  padding: 5px 10px;
+  border-radius: 10px;
+  background: var(--surface-alt);
+  font-size: 14px;
+  font-weight: 650;
+}
+.course-lesson > section > ul {
+  padding-left: 24px;
+  list-style: disc;
+}
+.course-lesson > section > ul > li {
+  margin-block: 10px;
+  padding-left: 4px;
+}
+.course-lesson > section > ul > li::marker {
+  color: var(--accent-voice);
+}
+.course-lesson .lesson-study-card,
+.course-lesson .lit-v3-step {
+  padding: clamp(20px, 4vw, 30px);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: var(--surface);
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--text) 3%, transparent);
+}
+.course-lesson .lit-v3-step-biography {
+  border-top: 4px solid color-mix(in srgb, var(--accent-voice) 60%, var(--border));
+}
+.course-lesson .course-exercise-list {
+  gap: 20px;
+}
+.course-lesson .course-exercise-card {
+  position: relative;
+  padding: clamp(20px, 4vw, 28px);
+  border-radius: 22px;
+  box-shadow: inset 4px 0 0 color-mix(in srgb, var(--secondary) 60%, var(--border));
+}
+.course-lesson .course-exercise-number {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  margin-bottom: 16px;
+  padding: 4px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent-voice) 10%, var(--surface));
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 800;
+}
+.course-lesson .course-warning {
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--warn) 55%, var(--border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+  color: var(--text);
+  font-size: 17px;
+}
+.course-lesson button:not([role="switch"]),
+.course-lesson input:not([type="checkbox"]):not([type="radio"]),
+.course-lesson textarea {
+  min-height: 56px;
+  font-size: 17px;
+}
+.course-lesson button:not([role="switch"]) {
+  padding-inline: 18px;
+}
+.course-lesson button:focus-visible,
+.course-lesson input:focus-visible,
+.course-lesson textarea:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+.course-lesson button:disabled {
+  cursor: default;
+}
+.lesson-prose {
+  max-width: 62ch;
+  font-size: clamp(18px, 2.4vw, 20px);
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.lesson-prose > * + * {
+  margin-top: 1.15em;
+}
+.lesson-prose__paragraph {
+  white-space: pre-line;
+}
+.lesson-prose--reading .lesson-prose__paragraph {
+  white-space: pre-wrap;
+}
+.lesson-prose strong {
+  font-weight: 800;
+}
+.lesson-prose :is(h4, h5, h6) {
+  margin-bottom: 0.5em;
+  font-size: 1.05em;
+  font-weight: 800;
+  line-height: 1.4;
+}
+.lesson-prose :is(ul, ol) {
+  padding-left: 1.55em;
+}
+.lesson-prose ul { list-style: disc; }
+.lesson-prose ol { list-style: decimal; }
+.lesson-prose li {
+  padding-left: 0.25em;
+  margin-block: 0.6em;
+  white-space: pre-line;
+}
+.lesson-prose li::marker {
+  color: var(--text-muted);
+  font-weight: 800;
+}
+.lesson-prose blockquote {
+  margin-inline: 0;
+  padding: 14px 18px;
+  border-left: 4px solid var(--accent-voice);
+  border-radius: 0 14px 14px 0;
+  background: color-mix(in srgb, var(--accent-voice) 7%, var(--surface));
+  white-space: pre-line;
+}
+.lesson-prose .math-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-block: 6px;
+}
+.lesson-reading-scroll {
+  margin-top: 16px;
+  padding: 4px 14px 12px 0;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+@media (max-width: 480px) {
+  .course-lesson { padding-inline: 14px; }
+  .course-lesson > header,
+  .course-lesson .lesson-study-card,
+  .course-lesson .lit-v3-step,
+  .course-lesson .course-exercise-card { padding: 18px; border-radius: 20px; }
+  .course-lesson button:not([role="switch"]) { padding-inline: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .course-lesson *, .course-lesson *::before, .course-lesson *::after {
+    scroll-behavior: auto !important;
+  }
+}

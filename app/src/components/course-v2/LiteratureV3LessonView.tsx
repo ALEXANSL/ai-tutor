@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { NarrationButton } from "@/components/shared/NarrationButton";
+import { LessonText } from "@/components/shared/LessonText";
 import { LessonVoicePanel } from "@/components/voice/LessonVoicePanel";
 import { AutoAdvanceToggle, VoiceModeToggle, useVoiceModeControls } from "@/components/shared/VoiceModeControls";
 import { STEP_NAV_BAR_SPACER_CLASS, StepNavBar } from "@/components/shared/StepNavBar";
@@ -64,7 +65,7 @@ function ScreenStep({ step, voiceMode, onNarrationEnded }: { step: Extract<Liter
   return (
     <section className="lit-v3-step lit-v3-step-screen">
       {step.title && <h3>{step.title}</h3>}
-      <p style={{ whiteSpace: "pre-wrap" }}>{step.displayText}</p>
+      <LessonText text={step.displayText} />
       {step.illustrations.map((a) =>
         a.url ? (
           // eslint-disable-next-line @next/next/no-img-element -- short-lived signed Supabase Storage URL
@@ -85,7 +86,7 @@ function BiographyStep({ step, voiceMode, onNarrationEnded }: { step: Extract<Li
     <section className="lit-v3-step lit-v3-step-biography">
       <p className="course-eyebrow">Про автора</p>
       <h3>{step.authorName}</h3>
-      <p style={{ whiteSpace: "pre-wrap" }}>{step.displayText}</p>
+      <LessonText text={step.displayText} />
       <div className="mt-2">
         <ListenButton key={step.id} refTable="literature_v3_biographies" refId={step.id} field="tts" text={step.ttsText} autoPlay={voiceMode} onEnded={onNarrationEnded} />
       </div>
@@ -179,8 +180,8 @@ function ReadingStep({
         {step.workTitle}
       </p>
       {step.title && <h3>{step.title}</h3>}
-      <div ref={containerRef} onScroll={onScroll} style={{ maxHeight: "60vh", overflowY: "auto" }}>
-        <p style={{ whiteSpace: "pre-wrap" }}>{step.displayText}</p>
+      <div ref={containerRef} onScroll={onScroll} className="lesson-reading-scroll" style={{ maxHeight: "60vh", overflowY: "auto" }}>
+        <LessonText text={step.displayText} preserveLines />
       </div>
       <div className="mt-2 flex flex-wrap gap-2">
         <ListenButton key={`${step.id}-${playKey}`} refTable="literature_v3_reading_items" refId={step.id} field="tts" text={step.ttsText} autoPlay={voiceMode} />
