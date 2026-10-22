@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { VoiceTurn } from "@/lib/voice";
 import { VoiceConversation } from "./VoiceConversation";
 
+const waitFeedback = vi.hoisted(() => ({ play: vi.fn(), stop: vi.fn() }));
+vi.mock("./waitingFeedback", () => ({ playWaitingFeedback: waitFeedback.play }));
 vi.mock("@/components/shared/singleAudioPlayback", () => ({ stopCurrentlyPlaying: vi.fn() }));
 
 const onTurn = vi.fn();
@@ -86,6 +88,8 @@ let visibilityDescriptor: PropertyDescriptor | undefined;
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-10-21T12:00:00Z"));
+  waitFeedback.stop.mockReset();
+  waitFeedback.play.mockReset().mockReturnValue(waitFeedback.stop);
   onTurn.mockReset();
   onActiveChange.mockReset();
   fetchMock.mockReset();
@@ -139,6 +143,88 @@ async function utterance() {
 }
 
 describe("VoiceConversation microphone and session lifecycle", () => {
+  it("acknowledges a slow answer once, keeps the microphone paused, then stops feedback before the real answer", async () => {
+    const pending = deferred<Response>();
+    fetchMock.mockImplementation((url: string) => url === "/api/voice/turn" ? pending.promise : Promise.resolve(response(lease)));
+    await start();
+    await utterance();
+    await act(async () => { vi.advanceTimersByTime(1100); });
+    expect(waitFeedback.play).not.toHaveBeenCalled();
+    await act(async () => { vi.advanceTimersByTime(100); });
+    expect(waitFeedback.play).toHaveBeenCalledExactlyOnceWith(contexts[0], "Добре, обміркую відповідь.");
+    expect(recordings).toHaveLength(1);
+    await act(async () => { vi.advanceTimersByTime(10_800); });
+    expect(waitFeedback.play).toHaveBeenCalledOnce();
+    expect(container.textContent).toContain("Готую відповідь · 12 с");
+    expect(container.textContent).toContain("Повторювати запитання зараз не потрібно");
+    await act(async () => { pending.resolve(response(answer)); });
+    expect(waitFeedback.stop).toHaveBeenCalledOnce();
+    expect(sources).toHaveLength(1);
+    expect(waitFeedback.stop.mock.invocationCallOrder[0]).toBeLessThan(sources[0]!.start.mock.invocationCallOrder[0]!);
+    expect(container.textContent).not.toContain("Готую відповідь ·");
+  });
+
+  it("does not produce a delayed acknowledgement after cancellation", async () => {
+    const pending = deferred<Response>();
+    fetchMock.mockImplementation((url: string) => url === "/api/voice/turn" ? pending.promise : Promise.resolve(response(lease)));
+    await start();
+    await utterance();
+    await click("Завершити голос");
+    await act(async () => { vi.advanceTimersByTime(5000); });
+    expect(waitFeedback.play).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(["pagehide", "lesson-navigation", "visibilitychange"])("cancels active waiting sound and all timers on %s", async event => {
+    const pending = deferred<Response>();
+    fetchMock.mockImplementation((url: string) => url === "/api/voice/turn" ? pending.promise : Promise.resolve(response(lease)));
+    await start();
+    await utterance();
+    await act(async () => { vi.advanceTimersByTime(1200); });
+    expect(waitFeedback.play).toHaveBeenCalledOnce();
+    if (event === "visibilitychange") {
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+      act(() => { document.dispatchEvent(new Event(event)); });
+    } else act(() => { window.dispatchEvent(new Event(event)); });
+    expect(waitFeedback.stop).toHaveBeenCalledOnce();
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => { pending.resolve(response(answer)); });
+    expect(sources).toHaveLength(0);
+  });
+
+  it("lets the child silence waiting feedback without cancelling the answer", async () => {
+    const pending = deferred<Response>();
+    fetchMock.mockImplementation((url: string) => url === "/api/voice/turn" ? pending.promise : Promise.resolve(response(lease)));
+    await start();
+    await utterance();
+    await act(async () => { vi.advanceTimersByTime(1200); });
+    const toggle = container.querySelector<HTMLInputElement>("input[type=checkbox]")!;
+    await act(async () => { toggle.click(); });
+    expect(toggle.checked).toBe(false);
+    expect(waitFeedback.stop).toHaveBeenCalledOnce();
+    await act(async () => { pending.resolve(response(answer)); });
+    expect(onTurn).toHaveBeenCalledWith(answer);
+    expect(sources[0]!.start).toHaveBeenCalledOnce();
+  });
+
+  it("does not let an old cancelled response clear the next turn's waiting feedback", async () => {
+    const old = deferred<Response>();
+    const next = deferred<Response>();
+    let turn = 0;
+    fetchMock.mockImplementation((url: string) => url === "/api/voice/turn" ? (++turn === 1 ? old.promise : next.promise) : Promise.resolve(response(lease)));
+    await start();
+    await utterance();
+    await click("Завершити голос");
+    await start();
+    await utterance();
+    await act(async () => { old.resolve(response(answer)); });
+    await act(async () => { vi.advanceTimersByTime(1200); });
+    expect(waitFeedback.play).toHaveBeenCalledOnce();
+    expect(container.textContent).toContain("Обмірковую відповідь");
+    expect(onTurn).not.toHaveBeenCalled();
+    await click("Завершити голос");
+  });
+
   it("keeps text available without starting a lease when the browser cannot record", async () => {
     vi.stubGlobal("MediaRecorder", undefined);
     await start();
@@ -273,10 +359,24 @@ describe("VoiceConversation microphone and session lifecycle", () => {
     expect(sources).toHaveLength(1);
     expect(sources[0]!.start).toHaveBeenCalledOnce();
     expect(container.textContent).toContain("Репетитор відповідає");
+    await act(async () => { vi.advanceTimersByTime(1500); });
+    expect(waitFeedback.play).not.toHaveBeenCalled();
     await click("Перебити і говорити");
     expect(sources[0]!.stop).toHaveBeenCalledOnce();
     expect(recordings).toHaveLength(2);
     expect(container.textContent).toContain("Слухаю тебе");
+  });
+
+  it("does not label a normally ended session as a personal safety emergency", async () => {
+    const inactive = { ...answer, audio: null, endConversation: true, endReason: "inactive" };
+    fetchMock.mockImplementation(async (url: string) => response(url === "/api/voice/turn" ? inactive : lease));
+    await start();
+    await utterance();
+    expect(container.textContent).toContain("Розмову завершено.");
+    expect(container.textContent).not.toContain("зараз піди й поговори з татом");
+    expect(recordings).toHaveLength(1);
+    expect(track.stop).toHaveBeenCalledOnce();
+    expect(sources).toHaveLength(0);
   });
 
   it("cannot interrupt an urgent safety reply to resume the conversation", async () => {

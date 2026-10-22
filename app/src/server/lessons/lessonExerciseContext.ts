@@ -57,6 +57,10 @@ export function extractLessonExerciseRequest(question: string): LessonExerciseRe
       if (rank >= previousRank || (previousValue >= 10 && previousValue < 20) || previousValue === 0) return null;
       sum += value; previousRank = rank; previousValue = value; consumed++;
     }
+    // Unsupported ordinal/fraction endings must not silently choose a smaller
+    // exercise: "триста п'ятдесят сьому" is not task 350.
+    const ending = tokens[consumed] ?? "";
+    if (/^(?:перш|друг|трет|четверт|п'ят|шост|сьом|восьм|дев'ят|десят|сот|тисяч)/u.test(ending)) return null;
     if (!consumed || isNonTaskContinuation(tokens.slice(consumed).join(" "))) return null;
     number = String(sum);
   }

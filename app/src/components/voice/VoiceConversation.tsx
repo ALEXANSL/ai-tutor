@@ -4,9 +4,11 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
 import { uk } from "@/i18n/uk";
 import type { VoiceTarget, VoiceTurn } from "@/lib/voice";
+import { playWaitingFeedback } from "./waitingFeedback";
 
 type Phase = "idle" | "connecting" | "listening" | "recording" | "thinking" | "speaking";
 interface VoiceLease { id: string; expiresAt: string }
+interface WaitingState { acknowledgement: ReturnType<typeof setTimeout>; tick: ReturnType<typeof setInterval>; stopSound?: () => void }
 interface Props {
   target: VoiceTarget;
   onTurn: (turn: VoiceTurn) => void;
@@ -24,6 +26,9 @@ function VoiceSession({ target, onTurn, onActiveChange }: Props) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [notice, setNotice] = useState("");
   const [ending, setEnding] = useState(false);
+  const [waitSeconds, setWaitSeconds] = useState(0);
+  const [waitingSound, setWaitingSound] = useState(true);
+  const waitingSoundEnabled = useRef(true);
   const callbacks = useRef({ onTurn, onActiveChange });
   useEffect(() => { callbacks.current = { onTurn, onActiveChange }; }, [onTurn, onActiveChange]);
   const mounted = useRef(true);
@@ -39,9 +44,23 @@ function VoiceSession({ target, onTurn, onActiveChange }: Props) {
   const heartbeat = useRef<ReturnType<typeof setInterval> | null>(null);
   const detector = useRef<ReturnType<typeof setInterval> | null>(null);
   const listening = useRef<(() => void) | null>(null);
+  const waiting = useRef<WaitingState | null>(null);
+
+  const endWaiting = useCallback((expected?: WaitingState) => {
+    if (expected && waiting.current !== expected) return;
+    const pending = waiting.current;
+    waiting.current = null;
+    if (pending) {
+      clearTimeout(pending.acknowledgement);
+      clearInterval(pending.tick);
+      pending.stopSound?.();
+    }
+    if (mounted.current) setWaitSeconds(0);
+  }, []);
 
   const stop = useCallback((message = "") => {
     const wasActive = active.current;
+    endWaiting();
     generation.current += 1;
     active.current = false;
     safetyEnding.current = false;
@@ -80,7 +99,7 @@ function VoiceSession({ target, onTurn, onActiveChange }: Props) {
     }).catch(() => {});
     if (wasActive) callbacks.current.onActiveChange?.(false);
     if (mounted.current) { setPhase("idle"); setEnding(false); setNotice(message); }
-  }, []);
+  }, [endWaiting]);
 
   useEffect(() => {
     mounted.current = true;
@@ -237,18 +256,31 @@ function VoiceSession({ target, onTurn, onActiveChange }: Props) {
 
       const sendTurn = async (blob: Blob) => {
         if (!valid() || !session.current) return;
+        endWaiting();
         setPhase("thinking");
+        const beganWaiting = Date.now();
+        const pending: NonNullable<typeof waiting.current> = {
+          acknowledgement: setTimeout(() => {
+            if (!valid() || waiting.current !== pending || !waitingSoundEnabled.current) return;
+            pending.stopSound = playWaitingFeedback(audioContext, t.waitAcknowledgement);
+          }, 1200),
+          tick: setInterval(() => {
+            if (valid() && waiting.current === pending) setWaitSeconds(Math.floor((Date.now() - beganWaiting) / 1000));
+          }, 1000),
+        };
+        waiting.current = pending;
         const form = new FormData();
         form.set("id", session.current.id);
         form.set("audio", blob, mimeType.includes("mp4") ? "voice.mp4" : mimeType.includes("ogg") ? "voice.ogg" : "voice.webm");
         try {
           const turn = await jsonRequest<VoiceTurn | { text: "" }>("/api/voice/turn", form, false, 120_000);
+          endWaiting(pending);
           if (!valid()) return;
           if (!("message" in turn)) { setNotice(t.notHeard); idleSince = Date.now(); listen(); return; }
-          safetyEnding.current = !!turn.endConversation;
+          safetyEnding.current = turn.endReason === "safety" || (!turn.endReason && !!turn.endConversation);
           setEnding(safetyEnding.current);
           callbacks.current.onTurn(turn);
-          if (!turn.audio) { stop(turn.endConversation ? t.safetyStop : t.audioUnavailable); return; }
+          if (!turn.audio) { stop(safetyEnding.current ? t.safetyStop : turn.endConversation ? t.sessionEnded : t.audioUnavailable); return; }
           const audioBytes = Uint8Array.from(atob(turn.audio.audioBase64), (char) => char.charCodeAt(0));
           const buffer = await audioContext.decodeAudioData(audioBytes.buffer);
           if (!valid()) return;
@@ -261,11 +293,12 @@ function VoiceSession({ target, onTurn, onActiveChange }: Props) {
           playback.onended = () => {
             if (!valid()) return;
             source.current = null;
-            if (turn.endConversation) stop(t.safetyStop);
+            if (turn.endConversation) stop(safetyEnding.current ? t.safetyStop : t.sessionEnded);
             else { idleSince = Date.now(); listen(); }
           };
           playback.start();
         } catch (error) {
+          endWaiting(pending);
           if (valid()) stop(safetyEnding.current ? t.safetyStop : error instanceof Error && error.name !== "AbortError" ? error.message : t.connectionLost);
         }
       };
@@ -289,6 +322,10 @@ function VoiceSession({ target, onTurn, onActiveChange }: Props) {
   return (
     <section className="my-3 rounded-2xl border border-line bg-surface p-3.5" aria-label={t.title}>
       <p className="mb-2 text-sm font-semibold" role="status" aria-live="polite">{notice || t.phases[phase]}</p>
+      {phase === "thinking" && <div className="mb-3 text-sm text-muted">
+        <p aria-hidden="true">{t.waitElapsed(waitSeconds)}</p>
+        {waitSeconds >= 12 && <p role="status">{t.waitSlow}</p>}
+      </div>}
       <div className="flex flex-wrap gap-2">
         {phase === "idle" ? (
           <button type="button" onClick={() => void start()} className="min-h-12 rounded-2xl bg-secondary px-4 font-bold text-white">{t.start}</button>
@@ -297,6 +334,15 @@ function VoiceSession({ target, onTurn, onActiveChange }: Props) {
           <button type="button" onClick={() => stop()} className="min-h-12 rounded-2xl border-2 border-line px-4 font-bold">{t.stop}</button>
         </>}
       </div>
+      <label className="mt-3 flex min-h-11 items-center gap-2 text-sm">
+        <input type="checkbox" checked={waitingSound} onChange={event => {
+          waitingSoundEnabled.current = event.target.checked;
+          setWaitingSound(event.target.checked);
+          if (!event.target.checked) waiting.current?.stopSound?.();
+        }} />
+        {t.waitSound}
+      </label>
+      <p className="text-xs text-muted">{t.waitSoundHint}</p>
       <p className="mt-2 text-xs text-muted">{t.instructions}</p>
     </section>
   );

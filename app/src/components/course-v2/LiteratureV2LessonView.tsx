@@ -5,6 +5,7 @@ import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { OpenTextbookPageButton } from "@/components/shared/BookPageModal";
 import { MathText } from "@/components/shared/MathText";
+import { LessonText } from "@/components/shared/LessonText";
 import { LessonVoicePanel } from "@/components/voice/LessonVoicePanel";
 import { NarrationButton } from "@/components/shared/NarrationButton";
 import { useAudioPlaybackScope } from "@/components/shared/useAudioPlaybackScope";
@@ -130,11 +131,9 @@ function ScreenNav({ lesson, voiceMode, autoAdvance, index, onIndexChange }: { l
   const onNarrationEnded = voiceMode && autoAdvance && !isLast ? () => onIndexChange(Math.min(lesson.screens.length - 1, index + 1)) : undefined;
 
   return (
-    <section>
+    <section className="lesson-study-card">
       {screen.stepType && <p className="course-eyebrow">{screen.stepType}</p>}
-      <p style={{ whiteSpace: "pre-wrap" }}>
-        <MathText text={screen.content.display} />
-      </p>
+      <LessonText text={screen.content.display} />
       {screen.assets.map((a) =>
         a.url ? (
           // eslint-disable-next-line @next/next/no-img-element -- short-lived signed Supabase Storage URL
@@ -266,9 +265,7 @@ function TaskCard({ task, subjectId, topicId, textbook, onFocusTarget }: { task:
   return (
     <li className="course-exercise-card" onPointerDownCapture={() => onFocusTarget({ kind: "course", refTable: "literature_v2_tasks", refId: task.id })} onFocusCapture={() => onFocusTarget({ kind: "course", refTable: "literature_v2_tasks", refId: task.id })}>
       {task.originalLabel && <p className="course-exercise-number">{task.originalLabel}</p>}
-      <p style={{ whiteSpace: "pre-wrap" }}>
-        <MathText text={task.prompt.display} />
-      </p>
+      <LessonText text={task.prompt.display} />
       {task.subtasks.length > 0 && (
         <ol className="mt-1 list-decimal pl-5 text-sm">
           {task.subtasks.map((s) => (

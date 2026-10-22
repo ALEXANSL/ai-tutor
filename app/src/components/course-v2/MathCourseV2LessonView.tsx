@@ -4,6 +4,7 @@ import type { VoiceTarget } from "@/lib/voice";
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { MathText } from "@/components/shared/MathText";
+import { LessonText } from "@/components/shared/LessonText";
 import { OpenTextbookPageButton } from "@/components/shared/BookPageModal";
 import { LessonVoicePanel } from "@/components/voice/LessonVoicePanel";
 import { NarrationButton } from "@/components/shared/NarrationButton";
@@ -160,11 +161,9 @@ function ScreenNav({ lesson, voiceMode, autoAdvance, index, onIndexChange }: { l
   const onNarrationEnded = voiceMode && autoAdvance && !isLast ? () => onIndexChange(Math.min(lesson.screens.length - 1, index + 1)) : undefined;
 
   return (
-    <section>
+    <section className="lesson-study-card">
       {screen.title && <h3>{screen.title}</h3>}
-      <p style={{ whiteSpace: "pre-wrap" }}>
-        <MathText text={screen.displayMd} />
-      </p>
+      <LessonText text={screen.displayMd} />
       <div className="mt-2 flex flex-wrap gap-2">
         <ListenButton
           key={screen.id}
@@ -335,9 +334,7 @@ function ExerciseCard({
           Цю вправу потрібно виконувати з роздрукованим рисунком у реальному масштабі (не вимірюй за екраном).
         </p>
       )}
-      <p style={{ whiteSpace: "pre-wrap" }}>
-        <MathText text={exercise.displayMd} />
-      </p>
+      <LessonText text={exercise.displayMd} />
       {exercise.assets.map((a) =>
         a.url ? (
           // eslint-disable-next-line @next/next/no-img-element -- short-lived signed Supabase Storage URL

@@ -138,7 +138,7 @@ interface QuestionRow {
   options: { id: string; display_md: string; narration: string }[];
 }
 
-export async function getLiteratureV3LessonView(familyId: string, lessonId: string): Promise<LiteratureV3LessonView | null> {
+export async function getLiteratureV3LessonView(familyId: string, lessonId: string, options: { includeIllustrations?: boolean } = {}): Promise<LiteratureV3LessonView | null> {
   const scope = forFamily(familyId);
   const { data: lesson } = await scope
     .select("literature_v3_lessons", "id, subject_id, topic_id, package_id, lesson_key, title, objectives, printed_page_from, printed_page_to, flow, status")
@@ -184,7 +184,7 @@ export async function getLiteratureV3LessonView(familyId: string, lessonId: stri
   // illustrations the package's own screens reference ("Поруч показано...")
   // simply never reached the viewer. Same signed-URL pattern as
   // `literatureV2View.ts`'s `signPackageAssets`.
-  const illustrationAssetIds = [...new Set((screens ?? []).flatMap((s) => s.asset_ids ?? []))];
+  const illustrationAssetIds = options.includeIllustrations === false ? [] : [...new Set((screens ?? []).flatMap((s) => s.asset_ids ?? []))];
   const { data: illustrationAssets } = illustrationAssetIds.length
     ? await scope.select("literature_v3_assets", "asset_key, storage_path, caption, alt").eq("package_id", lesson.package_id).in("asset_key", illustrationAssetIds).returns<IllustrationAssetRow[]>()
     : { data: [] as IllustrationAssetRow[] };

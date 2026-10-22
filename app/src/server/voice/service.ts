@@ -9,6 +9,7 @@ import { getServerSecret } from "@/server/env";
 import { getTutorGender } from "@/server/persona/queries";
 import { URGENT_REPLY_UK } from "@/server/safety/urgentReplyUk";
 import { lessonVoiceTargetSchema, resolveLessonVoiceTarget } from "./lessonContext";
+import { assertLessonVoiceAccess, type LessonVoiceAccess } from "./lessonAccess";
 import { createLease, readLease, renewLease, stopLease, claimLease, releaseLease } from "./leases";
 import { ensureLessonVoiceConfig } from "./config";
 import type { VoiceTurn } from "@/lib/voice";
@@ -27,9 +28,12 @@ async function budgetAllowed(familyId: string, existing = false) {
   const state = await getBudgetState(familyId);
   if (state === "hard_stop" || (state === "budget" && !existing)) throw new Error("voice_budget");
 }
-async function contextFor(actor: VoiceActor, raw: Record<string, unknown>) {
+function targetFor(raw: Record<string, unknown>) {
   const selector = { ...raw }; delete selector.voiceId;
-  return resolveLessonVoiceTarget(actor.familyId, actor.child.id, lessonVoiceTargetSchema.parse(selector));
+  return lessonVoiceTargetSchema.parse(selector);
+}
+async function contextFor(actor: VoiceActor, raw: Record<string, unknown>) {
+  return resolveLessonVoiceTarget(actor.familyId, actor.child.id, targetFor(raw));
 }
 export async function manageVoice(actor: VoiceActor, raw: unknown) {
   const command = voiceSessionCommand.parse(raw);
@@ -54,8 +58,7 @@ export async function manageVoice(actor: VoiceActor, raw: unknown) {
     return { id: lease.id, expiresAt: lease.expires_at };
   }
   const current = await readLease(scope, actor.child.id, command.id);
-  await contextFor(actor, current.target);
-  await budgetAllowed(actor.familyId, true);
+  await Promise.all([assertLessonVoiceAccess(actor.familyId, actor.child.id, targetFor(current.target)), budgetAllowed(actor.familyId, true)]);
   const lease = await renewLease(scope, actor.child.id, command.id);
   return { id: lease.id, expiresAt: lease.expires_at };
 }
@@ -65,15 +68,21 @@ export async function voiceTurn(actor: VoiceActor, id: string, audio: File): Pro
   if (!audio.size || audio.size > 1_000_000 || !/^audio\/(webm|mp4|ogg|wav|mpeg)(;|$)/.test(audio.type)) throw new Error("voice_audio");
   const scope = forFamily(actor.familyId);
   const lease = await claimLease(scope, actor.child.id, id);
+  let expectedAccess: LessonVoiceAccess | undefined;
   const active = async () => {
     const current = await readLease(scope, actor.child.id, id);
     if (current.claim !== lease.claim) throw new Error("voice_expired");
-    await budgetAllowed(actor.familyId, true);
-    return contextFor(actor, current.target);
+    const [access] = await Promise.all([
+      assertLessonVoiceAccess(actor.familyId, actor.child.id, targetFor(current.target)),
+      budgetAllowed(actor.familyId, true),
+    ]);
+    if (expectedAccess && (access.subjectId !== expectedAccess.subjectId || access.topicId !== expectedAccess.topicId || access.sessionId !== expectedAccess.sessionId)) throw new Error("voice_expired");
+    expectedAccess ??= access;
+    return access;
   };
   try {
-    let lesson = await active();
-    const ctx = { familyId: actor.familyId, ...(lesson.sessionId ? { sessionId: lesson.sessionId } : { ref: { table: "messages", id } }), sessionStartedBeforeBudget: true };
+    const access = await active();
+    const ctx = { familyId: actor.familyId, ...(access.sessionId ? { sessionId: access.sessionId } : { ref: { table: "messages", id } }), sessionStartedBeforeBudget: true };
     const transcript = await transcribeAudio(audio, ctx);
     if (transcript.audioSeconds > 30) {
       await stopLease(scope, actor.child.id, id);
@@ -81,22 +90,33 @@ export async function voiceTurn(actor: VoiceActor, id: string, audio: File): Pro
     }
     const text = transcript.result.trim().slice(0, 800);
     if (!text) return { text: "" };
-    lesson = await active();
-    const gender = await getTutorGender(actor.familyId, actor.child);
-    const [{ data: subject }, { data: topic }] = await Promise.all([
+    const currentAccess = await active();
+    const lesson = await contextFor(actor, lease.target);
+    if (lesson.subjectId !== currentAccess.subjectId || lesson.topicId !== currentAccess.topicId || lesson.sessionId !== currentAccess.sessionId
+      || lesson.subjectId !== access.subjectId || lesson.topicId !== access.topicId || lesson.sessionId !== access.sessionId) throw new Error("voice_expired");
+    const [gender, { data: subject }, { data: topic }] = await Promise.all([
+      getTutorGender(actor.familyId, actor.child),
       scope.select("subjects", "name_uk").eq("id", lesson.subjectId).maybeSingle<{ name_uk: string }>(),
       scope.select("topics", "title").eq("id", lesson.topicId).maybeSingle<{ title: string }>(),
     ]);
     if (!subject || !topic) throw new Error("voice_expired");
+    // Hydration and metadata reads can outlast a stop/navigation. Recheck
+    // immediately before starting the paid tutor response.
+    await active();
     const message = await askTopicChat(actor.familyId, actor.child.id, actor.child.nickname ?? "", actor.child.tutor_name ?? "", gender,
       lesson.subjectId, subject.name_uk, lesson.topicId, topic.title, text, lesson.sessionId, { voice: true, stepContext: lesson.context, ...(lesson.lessonRef ? { lessonRef: lesson.lessonRef } : {}) });
+    const safetyEnd = message.content === URGENT_REPLY_UK;
     try { await active(); }
-    catch { return { text, message, audio: null, endConversation: true }; }
+    catch { return { text, message, audio: null, endConversation: true, endReason: safetyEnd ? "safety" : "inactive" }; }
     let speech = null;
     try {
       speech = (await callAudio("voice_reply", { text: message.content, voiceId: String(lease.target.voiceId ?? "shimmer"), instructions: "Говори тепло й природно українською, як уважний репетитор. Не додавай слів до наданого тексту." }, ctx)).result;
     } catch { /* The moderated answer remains in the text transcript. */ }
-    return { text, message, audio: speech, endConversation: message.content === URGENT_REPLY_UK };
+    // TTS may finish after a stop, navigation, archival or budget change.
+    // Never return audio from a turn that no longer has authorization.
+    try { await active(); }
+    catch { return { text, message, audio: null, endConversation: true, endReason: safetyEnd ? "safety" : "inactive" }; }
+    return { text, message, audio: speech, endConversation: safetyEnd, ...(safetyEnd ? { endReason: "safety" as const } : {}) };
   } finally {
     await releaseLease(scope, actor.child.id, id, lease.claim).catch(() => {});
   }

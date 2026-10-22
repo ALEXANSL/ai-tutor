@@ -537,20 +537,15 @@ export async function askTopicChat(
   const homework = options.stepContext ? null : await homeworkProblemFlow(scope, familyId, chatId, childProfileId, subjectId, topicId, tutorName, tutorGender, cleanQuestion, moderation, sessionId);
   if (homework) return homework;
 
-  const { data: chunkRows } = await scope.client
-    .from("chunks")
-    .select("page, text, materials(title, name, kind)")
-    .eq("owner_family_id", familyId)
-    .eq("topic_id", topicId)
-    .order("ordinal")
-    .limit(12)
-    .returns<ChatChunkRow[]>();
-  const { data: history } = await scope
-    .select("messages", "author, content, meta")
-    .eq("chat_id", chatId)
-    .order("created_at", { ascending: false })
-    .limit(20)
-    .returns<TopicHistoryRow[]>();
+  const [{ data: chunkRows }, { data: history }] = await Promise.all([
+    scope.client.from("chunks")
+      .select("page, text, materials(title, name, kind)")
+      .eq("owner_family_id", familyId).eq("topic_id", topicId)
+      .order("ordinal").limit(12).returns<ChatChunkRow[]>(),
+    scope.select("messages", "author, content, meta")
+      .eq("chat_id", chatId).order("created_at", { ascending: false })
+      .limit(20).returns<TopicHistoryRow[]>(),
+  ]);
 
   // Preserve the requested exercise for follow-up questions, scoped to this exact
   // lesson. A topic chat can outlive a lesson, so untagged/other-lesson history
