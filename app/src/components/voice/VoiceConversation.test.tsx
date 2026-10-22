@@ -136,6 +136,12 @@ async function click(text: string) {
   await act(async () => { found.click(); });
 }
 async function start() { await click("🎙 Поговорити голосом"); }
+// UI/UX decision 2026-10-22: sound feedback now defaults OFF (opt-in), so
+// tests exercising the acknowledgement-sound behaviour must enable it first.
+async function enableWaitingSound() {
+  const toggle = container.querySelector<HTMLInputElement>("input[type=checkbox]")!;
+  await act(async () => { toggle.click(); });
+}
 async function utterance() {
   volume = 0.1;
   await act(async () => { vi.advanceTimersByTime(160); });
@@ -148,6 +154,7 @@ describe("VoiceConversation microphone and session lifecycle", () => {
     const pending = deferred<Response>();
     fetchMock.mockImplementation((url: string) => url === "/api/voice/turn" ? pending.promise : Promise.resolve(response(lease)));
     await start();
+    await enableWaitingSound();
     await utterance();
     await act(async () => { vi.advanceTimersByTime(1100); });
     expect(waitFeedback.play).not.toHaveBeenCalled();
@@ -169,6 +176,7 @@ describe("VoiceConversation microphone and session lifecycle", () => {
     const pending = deferred<Response>();
     fetchMock.mockImplementation((url: string) => url === "/api/voice/turn" ? pending.promise : Promise.resolve(response(lease)));
     await start();
+    await enableWaitingSound();
     await utterance();
     await click("Завершити голос");
     await act(async () => { vi.advanceTimersByTime(5000); });
@@ -180,6 +188,7 @@ describe("VoiceConversation microphone and session lifecycle", () => {
     const pending = deferred<Response>();
     fetchMock.mockImplementation((url: string) => url === "/api/voice/turn" ? pending.promise : Promise.resolve(response(lease)));
     await start();
+    await enableWaitingSound();
     await utterance();
     await act(async () => { vi.advanceTimersByTime(1200); });
     expect(waitFeedback.play).toHaveBeenCalledOnce();
@@ -197,6 +206,7 @@ describe("VoiceConversation microphone and session lifecycle", () => {
     const pending = deferred<Response>();
     fetchMock.mockImplementation((url: string) => url === "/api/voice/turn" ? pending.promise : Promise.resolve(response(lease)));
     await start();
+    await enableWaitingSound();
     await utterance();
     await act(async () => { vi.advanceTimersByTime(1200); });
     const toggle = container.querySelector<HTMLInputElement>("input[type=checkbox]")!;
@@ -214,9 +224,12 @@ describe("VoiceConversation microphone and session lifecycle", () => {
     let turn = 0;
     fetchMock.mockImplementation((url: string) => url === "/api/voice/turn" ? (++turn === 1 ? old.promise : next.promise) : Promise.resolve(response(lease)));
     await start();
+    await enableWaitingSound();
     await utterance();
     await click("Завершити голос");
     await start();
+    // waitingSoundEnabled is a UI preference, not session state — "Завершити
+    // голос" above does not reset it, so it is still on from enableWaitingSound() above.
     await utterance();
     await act(async () => { old.resolve(response(answer)); });
     await act(async () => { vi.advanceTimersByTime(1200); });
