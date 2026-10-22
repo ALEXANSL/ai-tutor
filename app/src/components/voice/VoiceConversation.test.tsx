@@ -13,7 +13,7 @@ const onTurn = vi.fn();
 const onActiveChange = vi.fn();
 const fetchMock = vi.fn();
 const microphone = vi.fn();
-const track = { stop: vi.fn(), onended: null as (() => void) | null };
+const track = { stop: vi.fn(), onended: null as (() => void) | null, enabled: true };
 const mic = { getTracks: () => [track] };
 let volume = 0;
 let detectorThrows = false;
@@ -95,6 +95,7 @@ beforeEach(() => {
   fetchMock.mockReset();
   track.stop.mockReset();
   track.onended = null;
+  track.enabled = true;
   volume = 0;
   detectorThrows = false;
   recorderThrows = false;
@@ -392,6 +393,56 @@ describe("VoiceConversation microphone and session lifecycle", () => {
     expect(track.stop).toHaveBeenCalledOnce();
     expect(container.textContent).toContain("зараз піди й поговори з татом");
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("mutes mid-listening without sending the dropped recording, then resumes a fresh one on unmute", async () => {
+    await start();
+    expect(recordings).toHaveLength(1);
+    await click("🔇 Мікрофон на паузу");
+    expect(track.enabled).toBe(false);
+    expect(recordings[0]!.stop).toHaveBeenCalledOnce();
+    expect(container.textContent).toContain("Мікрофон на паузі");
+    await act(async () => { vi.advanceTimersByTime(5000); });
+    expect(fetchMock.mock.calls.some(([url]) => url === "/api/voice/turn")).toBe(false);
+    await click("🎙 Увімкнути мікрофон");
+    expect(track.enabled).toBe(true);
+    expect(recordings).toHaveLength(2);
+    expect(container.textContent).toContain("Слухаю тебе");
+  });
+
+  it("keeps a reply playing while muted and waits (without a new recording) once it ends", async () => {
+    await start();
+    await utterance();
+    expect(container.textContent).toContain("Репетитор відповідає");
+    await click("🔇 Мікрофон на паузу");
+    expect(track.enabled).toBe(false);
+    expect(container.textContent).toContain("Репетитор відповідає");
+    act(() => { sources[0]!.onended?.(); });
+    expect(recordings).toHaveLength(1);
+    expect(container.textContent).toContain("Мікрофон на паузі");
+    await click("🎙 Увімкнути мікрофон");
+    expect(recordings).toHaveLength(2);
+  });
+
+  it("does not resume listening on interrupt while muted", async () => {
+    await start();
+    await utterance();
+    await click("🔇 Мікрофон на паузу");
+    await click("Перебити і говорити");
+    expect(sources[0]!.stop).toHaveBeenCalledOnce();
+    expect(recordings).toHaveLength(1);
+    expect(container.textContent).toContain("Мікрофон на паузі");
+    await click("🎙 Увімкнути мікрофон");
+    expect(recordings).toHaveLength(2);
+  });
+
+  it("resets mute state when the session ends", async () => {
+    await start();
+    await click("🔇 Мікрофон на паузу");
+    await click("Завершити голос");
+    await start();
+    expect(button("🔇 Мікрофон на паузу")).toBeDefined();
+    expect(button("🎙 Увімкнути мікрофон")).toBeUndefined();
   });
 
   it("ignores a late turn response after stop and never starts playback", async () => {
