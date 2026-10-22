@@ -42,7 +42,10 @@ export function FriendChatScreen({ initialMessages }: { initialMessages: Message
     <div className="flex min-h-[85vh] flex-col px-6 pt-4">
       <header className="mb-3 flex items-center justify-between">
         <h1 className="text-xl font-extrabold">{t.title}</h1>
-        <Link href="/today" className="text-sm font-bold text-muted underline">
+        <Link
+          href="/today"
+          className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold leading-[2.5rem] transition-transform active:scale-[0.97]"
+        >
           {t.back}
         </Link>
       </header>
