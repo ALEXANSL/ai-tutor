@@ -161,10 +161,20 @@ export function LessonNavBar({ subjectId, courseNav, extraControls }: { subjectI
               top-3.5 right-3.5 z-50` in the child layout) so this row's own
               buttons never render underneath either one. */}
           <div className="flex flex-wrap items-center gap-2 pl-14 pr-14">
-            <button type="button" onClick={goHome} disabled={busy} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-60">
+            <button
+              type="button"
+              onClick={goHome}
+              disabled={busy}
+              className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold transition-transform active:scale-[0.97] disabled:opacity-60"
+            >
               {t.navHome}
             </button>
-            <button type="button" onClick={goSubjectList} disabled={busy} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-60">
+            <button
+              type="button"
+              onClick={goSubjectList}
+              disabled={busy}
+              className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold transition-transform active:scale-[0.97] disabled:opacity-60"
+            >
               {t.navSubjectList}
             </button>
             <span className="flex-1" />
@@ -172,7 +182,7 @@ export function LessonNavBar({ subjectId, courseNav, extraControls }: { subjectI
               type="button"
               onClick={goHome}
               disabled={busy}
-              className="min-h-11 rounded-full border-2 border-text/40 bg-surface-alt px-4 text-sm font-bold text-text disabled:opacity-60"
+              className="min-h-11 rounded-full border-2 border-text/40 bg-surface-alt px-4 text-sm font-bold text-text transition-transform active:scale-[0.97] disabled:opacity-60"
             >
               {t.exitLesson}
             </button>
@@ -181,17 +191,28 @@ export function LessonNavBar({ subjectId, courseNav, extraControls }: { subjectI
             <div className="relative mt-2">
               <div className="flex flex-wrap items-center gap-2">
                 {prevLesson ? (
-                  <Link href={`${courseNav.basePath}/${prevLesson.id}`} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold leading-[2.5rem]">
+                  <Link
+                    href={`${courseNav.basePath}/${prevLesson.id}`}
+                    className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold leading-[2.5rem] transition-transform active:scale-[0.97]"
+                  >
                     {t.navPrevLesson}
                   </Link>
                 ) : (
                   <span className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold leading-[2.5rem] text-muted opacity-50">{t.navPrevLesson}</span>
                 )}
-                <button type="button" onClick={() => setTocOpen((v) => !v)} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold" aria-expanded={tocOpen}>
+                <button
+                  type="button"
+                  onClick={() => setTocOpen((v) => !v)}
+                  className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold transition-transform active:scale-[0.97]"
+                  aria-expanded={tocOpen}
+                >
                   📖 {t.navToc} {tocOpen ? "▲" : "▼"}
                 </button>
                 {nextLesson ? (
-                  <Link href={`${courseNav.basePath}/${nextLesson.id}`} className="min-h-11 rounded-full bg-primary px-3.5 text-sm font-bold leading-[2.5rem] text-white">
+                  <Link
+                    href={`${courseNav.basePath}/${nextLesson.id}`}
+                    className="min-h-11 rounded-full bg-primary px-3.5 text-sm font-bold leading-[2.5rem] text-white transition-transform active:scale-[0.97]"
+                  >
                     {t.navNextLesson}
                   </Link>
                 ) : (

@@ -407,11 +407,11 @@ function VoiceSession({ target, onTurn, onActiveChange }: Props) {
       </div>}
       <div className="flex flex-wrap gap-2">
         {phase === "idle" ? (
-          <button type="button" onClick={() => void start()} className="min-h-12 rounded-2xl bg-secondary px-4 font-bold text-white">{t.start}</button>
+          <button type="button" onClick={() => void start()} className="min-h-12 rounded-2xl bg-secondary px-4 font-bold text-white transition-transform active:scale-[0.97]">{t.start}</button>
         ) : <>
-          {phase === "speaking" && !ending && <button type="button" onClick={interrupt} className="min-h-12 rounded-2xl border-2 border-line px-4 font-bold">{t.interrupt}</button>}
-          {!ending && <button type="button" onClick={toggleMute} className="min-h-12 rounded-2xl border-2 border-line px-4 font-bold">{isMuted ? t.unmute : t.mute}</button>}
-          <button type="button" onClick={() => stop()} className="min-h-12 rounded-2xl border-2 border-line px-4 font-bold">{t.stop}</button>
+          {phase === "speaking" && !ending && <button type="button" onClick={interrupt} className="min-h-12 rounded-2xl border-2 border-line px-4 font-bold transition-transform active:scale-[0.97]">{t.interrupt}</button>}
+          {!ending && <button type="button" onClick={toggleMute} className="min-h-12 rounded-2xl border-2 border-line px-4 font-bold transition-transform active:scale-[0.97]">{isMuted ? t.unmute : t.mute}</button>}
+          <button type="button" onClick={() => stop()} className="min-h-12 rounded-2xl border-2 border-line px-4 font-bold transition-transform active:scale-[0.97]">{t.stop}</button>
         </>}
       </div>
       <label className="mt-3 flex min-h-11 items-center gap-2 text-sm">

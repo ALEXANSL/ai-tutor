@@ -60,7 +60,15 @@ export function FriendChatScreen({ initialMessages }: { initialMessages: Message
             {m.content}
           </div>
         ))}
-        {pending && <div className="max-w-[85%] rounded-2xl bg-surface-alt px-3.5 py-2.5 text-[15px] text-muted">{t.thinking}</div>}
+        {pending && (
+          <div className="max-w-[85%] rounded-2xl bg-surface-alt px-3.5 py-2.5 text-[15px] text-muted" role="status" aria-label={t.thinking}>
+            <span className="typing-dots" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
+          </div>
+        )}
       </div>
 
       <div className="flex gap-2 pb-4">
@@ -71,7 +79,12 @@ export function FriendChatScreen({ initialMessages }: { initialMessages: Message
           placeholder={t.placeholder}
           className="min-h-12 flex-1 rounded-2xl border-2 border-line bg-bg px-4 text-base outline-none focus:border-focus"
         />
-        <button type="button" disabled={pending || !question.trim()} onClick={send} className="min-h-12 rounded-2xl bg-primary px-5 text-base font-bold text-white disabled:opacity-60">
+        <button
+          type="button"
+          disabled={pending || !question.trim()}
+          onClick={send}
+          className="min-h-12 rounded-2xl bg-primary px-5 text-base font-bold text-white transition-transform active:scale-[0.97] disabled:opacity-60"
+        >
           {t.send}
         </button>
       </div>

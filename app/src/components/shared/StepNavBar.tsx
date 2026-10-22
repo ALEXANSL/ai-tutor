@@ -48,12 +48,22 @@ export function StepNavBar({
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <div className="mx-auto flex max-w-2xl flex-wrap items-center gap-2 px-4 py-2.5">
-        <button type="button" disabled={backDisabled} onClick={onBack} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-40">
+        <button
+          type="button"
+          disabled={backDisabled}
+          onClick={onBack}
+          className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold transition-transform active:scale-[0.97] disabled:opacity-40"
+        >
           ← Назад
         </button>
         <p className="min-w-0 flex-1 truncate text-center text-xs font-bold text-muted">{label}</p>
         {middleControl}
-        <button type="button" disabled={nextDisabled} onClick={onNext} className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold disabled:opacity-40">
+        <button
+          type="button"
+          disabled={nextDisabled}
+          onClick={onNext}
+          className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold transition-transform active:scale-[0.97] disabled:opacity-40"
+        >
           Далі →
         </button>
       </div>
