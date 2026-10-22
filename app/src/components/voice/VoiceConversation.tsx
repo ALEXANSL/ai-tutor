@@ -1,12 +1,31 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { TutorAvatar, type VoiceState } from "@/components/TutorAvatar";
 import { stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
 import { uk } from "@/i18n/uk";
 import type { VoiceTarget, VoiceTurn } from "@/lib/voice";
 import { playWaitingFeedback } from "./waitingFeedback";
 
 type Phase = "idle" | "connecting" | "listening" | "recording" | "thinking" | "speaking" | "muted";
+
+/**
+ * UI/UX research 2026-10-22 (`docs/09-ui-ux-teen-research.md`): this panel
+ * showed the voice state as plain text only — the "flame" avatar
+ * (`TutorAvatar`, docs/04 §5/§5.1) already has breathing/spin/sway
+ * animations for exactly these states but was never rendered here. No new
+ * design needed: its abstract glowing-orb look already matches the
+ * restrained, non-cartoonish tone Alex asked for (2026-10-22 decision).
+ */
+const AVATAR_STATE: Record<Phase, VoiceState> = {
+  idle: "idle",
+  connecting: "thinking",
+  listening: "listening",
+  recording: "listening",
+  thinking: "thinking",
+  speaking: "speaking",
+  muted: "paused",
+};
 interface VoiceLease { id: string; expiresAt: string }
 interface WaitingState { acknowledgement: ReturnType<typeof setTimeout>; tick: ReturnType<typeof setInterval>; stopSound?: () => void }
 interface Props {
@@ -27,8 +46,11 @@ function VoiceSession({ target, onTurn, onActiveChange }: Props) {
   const [notice, setNotice] = useState("");
   const [ending, setEnding] = useState(false);
   const [waitSeconds, setWaitSeconds] = useState(0);
-  const [waitingSound, setWaitingSound] = useState(true);
-  const waitingSoundEnabled = useRef(true);
+  // UI/UX decision 2026-10-22: sound feedback defaults OFF — a child could be
+  // wearing headphones or sitting next to a parent/sleeping sibling; it's an
+  // opt-IN, not opt-out (docs/09-ui-ux-teen-research.md Q4).
+  const [waitingSound, setWaitingSound] = useState(false);
+  const waitingSoundEnabled = useRef(false);
   const [isMuted, setIsMuted] = useState(false);
   const muted = useRef(false);
   const needsResume = useRef(false);
@@ -373,6 +395,11 @@ function VoiceSession({ target, onTurn, onActiveChange }: Props) {
 
   return (
     <section className="my-3 rounded-2xl border border-line bg-surface p-3.5" aria-label={t.title}>
+      {phase !== "idle" && (
+        <div className="mb-2 flex justify-center">
+          <TutorAvatar size="sm" state={AVATAR_STATE[phase]} badge={false} />
+        </div>
+      )}
       <p className="mb-2 text-sm font-semibold" role="status" aria-live="polite">{notice || t.phases[phase]}</p>
       {phase === "thinking" && <div className="mb-3 text-sm text-muted">
         <p aria-hidden="true">{t.waitElapsed(waitSeconds)}</p>

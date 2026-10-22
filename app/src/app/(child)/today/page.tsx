@@ -5,8 +5,10 @@ import { uk } from "@/i18n/uk";
 import { registerAll } from "@/modules";
 import { requireChild } from "@/server/auth/guards";
 import type { CourseGroupRow, SubjectRow } from "@/server/db/types";
+import { forFamily, getFamilyTimezone } from "@/server/db/family-scope";
 import { listUnlinkedMaterials } from "@/server/materials/other";
 import { createUserClient } from "@/server/supabase/clients";
+import { dayPartForHour, hourInTimeZone } from "@/server/time/dayPart";
 
 registerAll();
 
@@ -26,7 +28,7 @@ const tileBase = "flex min-h-24 flex-col items-center justify-center rounded-2xl
 export default async function TodayPage() {
   const { ctx, profile } = await requireChild();
   const supabase = await createUserClient();
-  const [{ data: subjects }, { data: groups }, otherMaterials] = await Promise.all([
+  const [{ data: subjects }, { data: groups }, otherMaterials, timeZone] = await Promise.all([
     supabase
       .from("subjects")
       .select("id, code, name_uk, active, is_stub, sort_order, config, kind, group_id")
@@ -34,7 +36,9 @@ export default async function TodayPage() {
       .returns<SubjectRow[]>(),
     supabase.from("course_groups").select("id, owner_family_id, name_uk, active, sort_order").returns<CourseGroupRow[]>(),
     listUnlinkedMaterials(ctx.familyId),
+    getFamilyTimezone(forFamily(ctx.familyId)),
   ]);
+  const dayPart = dayPartForHour(hourInTimeZone(new Date(), timeZone));
   const groupById = new Map((groups ?? []).map((g) => [g.id, g]));
   const schoolSubjects = (subjects ?? []).filter((s) => s.kind === "school_subject");
   const courses = (subjects ?? [])
@@ -50,7 +54,7 @@ export default async function TodayPage() {
     <div className="pb-28">
       <header className="flex flex-wrap items-center justify-between gap-3 px-6 pt-5 pb-2 pr-40">
         <div>
-          <h1 className="mb-1 text-2xl font-extrabold">{t.greeting(profile.nickname ?? "")}</h1>
+          <h1 className="mb-1 text-2xl font-extrabold">{t.greeting(profile.nickname ?? "", dayPart)}</h1>
           <p className="text-sm text-muted">{t.subtitle}</p>
         </div>
       </header>

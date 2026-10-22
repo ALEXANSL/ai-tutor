@@ -134,7 +134,21 @@ export const uk = {
       gender: { f: "Вона", m: "Він" } satisfies Record<TutorGender, string>,
     },
     today: {
-      greeting: (nickname: string) => `Привіт, ${nickname}!`,
+      // UI/UX research 2026-10-22: a static "Привіт" regardless of time of
+      // day read as flat/automated — warmer, still simple, no gimmicks.
+      greeting: (nickname: string, part: "morning" | "day" | "evening" | "night" = "day") => {
+        const name = nickname ? `, ${nickname}` : "";
+        switch (part) {
+          case "morning":
+            return `Доброго ранку${name}!`;
+          case "evening":
+            return `Доброго вечора${name}!`;
+          case "night":
+            return `Привіт${name}! Не засиджуйся допізна 🌙`;
+          default:
+            return `Привіт${name}!`;
+        }
+      },
       subtitle: "Гарного дня для навчання!",
       myTutor: "🧑‍🏫 Мій репетитор",
       aboutAi: "✦ Я — ШІ",
