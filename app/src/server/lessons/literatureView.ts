@@ -34,6 +34,7 @@ export interface LiteratureLessonView {
   id: string;
   /** 2026-10-02: lets the lesson screen's nav bar link back to `/subject/[subjectId]` ("Список уроків предмету"). */
   subjectId: string;
+  topicId?: string | null;
   /** PO feedback 2026-10-01: id of the book this lesson belongs to — lets the UI link to the full-book reader (`/literature/book/[materialId]`), which previously had no entry point from the lesson screen. */
   materialId: string;
   topicNo: number;
@@ -78,6 +79,7 @@ export interface LiteratureLessonView {
 interface LessonRow {
   id: string;
   subject_id: string;
+  topic_id: string | null;
   material_id: string;
   topic_no: number;
   section_title: string | null;
@@ -111,7 +113,7 @@ export async function getLiteratureLessonView(familyId: string, lessonId: string
     scope
       .select(
         "literature_lessons",
-        "id, subject_id, material_id, topic_no, section_title, title, textbook_page_from, textbook_page_to, pdf_page_from, pdf_page_to, goal_uk, key_concepts, explanation_md, work_title_uk, work_excerpts_uk, work_summary_uk, work_characters_uk, work_idea_uk, work_author_bio_uk, work_other_works_uk, work_full_text_drive_file_id, sublessons, teacher_note_uk, status",
+        "id, topic_id, subject_id, material_id, topic_no, section_title, title, textbook_page_from, textbook_page_to, pdf_page_from, pdf_page_to, goal_uk, key_concepts, explanation_md, work_title_uk, work_excerpts_uk, work_summary_uk, work_characters_uk, work_idea_uk, work_author_bio_uk, work_other_works_uk, work_full_text_drive_file_id, sublessons, teacher_note_uk, status",
       )
       .eq("id", lessonId)
       .maybeSingle<LessonRow>(),
@@ -122,6 +124,7 @@ export async function getLiteratureLessonView(familyId: string, lessonId: string
   return {
     id: lesson.id,
     subjectId: lesson.subject_id,
+    topicId: lesson.topic_id ?? null,
     materialId: lesson.material_id,
     topicNo: lesson.topic_no,
     sectionTitle: lesson.section_title,

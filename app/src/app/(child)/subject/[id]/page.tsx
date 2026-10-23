@@ -1,3 +1,4 @@
+import { SubjectVideoLessons } from "@/components/child/SubjectVideoLessons";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChildStartLessonButton } from "@/components/child/ChildStartLessonButton";
@@ -68,6 +69,7 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
       {hasMathCourseV2 && <MathCourseV2Search subjectId={subject.id} textbook={textbook} />}
       {hasLiteratureV2 && <LiteratureV2Search subjectId={subject.id} textbook={literatureTextbook} />}
       {hasLiteratureV3 && <LiteratureV3Search subjectId={subject.id} />}
+      <SubjectVideoLessons familyId={ctx.familyId} subjectId={subject.id} />
       {subject.topics.length > 0 ? (
         <div className="space-y-3">
           <p className="text-sm text-muted">{ts.topicsSubtitle}</p>

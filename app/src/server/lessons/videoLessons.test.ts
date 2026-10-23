@@ -12,6 +12,8 @@ interface TopicRow { [key: string]: unknown; id: string; title: string }
 
 let rows: VideoRow[] = [];
 const topics: TopicRow[] = [{ id: "t1", title: "Параграф 16" }, { id: "t2", title: "Параграф 17" }];
+let subjects: Record<string, unknown>[] = [];
+let groups: Record<string, unknown>[] = [];
 let nextId = 1;
 let nextCreatedAtMinute = 0;
 const removedPaths: string[][] = [];
@@ -37,6 +39,8 @@ function queryBuilder(list: Record<string, unknown>[], filters: [string, unknown
 function tableOf(table: string): Record<string, unknown>[] {
   if (table === "video_lessons") return rows;
   if (table === "topics") return topics;
+  if (table === "subjects") return subjects;
+  if (table === "course_groups") return groups;
   return [];
 }
 const scope = {
@@ -83,6 +87,8 @@ const { listVideoLessonsForSubject, listTopicIdsWithVideoLesson, listTopicVideos
 
 beforeEach(() => {
   rows = [];
+  subjects = [{ id: "subj1", owner_family_id: "fam1", active: true, kind: "school_subject", group_id: null, is_stub: false }];
+  groups = [];
   nextId = 1;
   nextCreatedAtMinute = 0;
   removedPaths.length = 0;
@@ -121,8 +127,8 @@ describe("video lessons (S47)", () => {
     const list = await listTopicVideos("fam1", "t1");
 
     expect(list).toEqual([
-      { id: "vl1", label: "Відео 1" },
-      { id: "vl2", label: "Відео 2" },
+      { id: "vl1", label: "Відео 1", sizeBytes: 100 },
+      { id: "vl2", label: "Відео 2", sizeBytes: 200 },
     ]);
   });
 
@@ -172,4 +178,11 @@ describe("video lessons (S47)", () => {
   it("refuses to delete a video lesson that does not exist", async () => {
     await expect(deleteVideoLesson("fam1", "missing")).rejects.toThrow("video lesson not found");
   });
+});
+
+describe("video signing access", () => {
+  function add() { rows.push({ id: "vl1", owner_family_id: "fam1", subject_id: "subj1", topic_id: "t1", storage_path: "fam1/a.mp4", mime_type: "video/mp4", size_bytes: 100, created_at: "2026-10-23T00:00:00Z" }); }
+  it("denies videos from an inactive subject", async () => { add(); subjects[0]!.active = false; expect(await getVideoLessonUrlById("fam1", "vl1")).toBeNull(); expect(signCalls).toEqual([]); });
+  it("denies courses whose group is inactive", async () => { add(); subjects[0]!.kind = "course"; subjects[0]!.group_id = "group"; groups.push({ id: "group", owner_family_id: "fam1", active: false }); expect(await getVideoLessonUrlById("fam1", "vl1")).toBeNull(); expect(signCalls).toEqual([]); });
+  it("never signs another family's storage object", async () => { add(); rows[0]!.storage_path = "another/private.mp4"; expect(await getVideoLessonUrlById("fam1", "vl1")).toBeNull(); expect(signCalls).toEqual([]); });
 });

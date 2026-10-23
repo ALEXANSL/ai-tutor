@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { listSubjectTopicsForVideoAction } from "@/app/actions/video-lessons";
 import { withBusySignal } from "@/lib/busy-signal";
 import { getBrowserSupabaseStorageClient } from "@/lib/supabase-browser";
@@ -30,8 +30,13 @@ export function VideoLessonUploadPanel({ subjects }: { subjects: SubjectOption[]
   const [message, setMessage] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
   const lock = useRef(false);
+  const topicRequest = useRef(0);
+  useEffect(() => () => { topicRequest.current++; }, []);
 
   async function onSubjectChange(value: string) {
+    const request = ++topicRequest.current;
+    setLoadingTopics(false);
+    if (fileInput.current) fileInput.current.value = "";
     setSubjectId(value);
     setTopicId("");
     setTopics([]);
@@ -40,9 +45,12 @@ export function VideoLessonUploadPanel({ subjects }: { subjects: SubjectOption[]
     if (!value) return;
     setLoadingTopics(true);
     try {
-      setTopics(await listSubjectTopicsForVideoAction(value));
+      const result = await listSubjectTopicsForVideoAction(value);
+      if (request === topicRequest.current) setTopics(result);
+    } catch {
+      if (request === topicRequest.current) setMessage(t.failed);
     } finally {
-      setLoadingTopics(false);
+      if (request === topicRequest.current) setLoadingTopics(false);
     }
   }
 
@@ -100,6 +108,7 @@ export function VideoLessonUploadPanel({ subjects }: { subjects: SubjectOption[]
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm leading-relaxed text-p-muted">{t.hint}</p>
+      <p className="text-xs text-p-muted">Для планшета рекомендовано MP4 з відео H.264 і звуком AAC. Саме розширення .mp4 не гарантує сумісність кодека.</p>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5 text-sm font-bold text-p-text">

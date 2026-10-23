@@ -1,3 +1,4 @@
+import { TopicVideoSupplement } from "@/components/child/SubjectVideoLessons";
 import { notFound } from "next/navigation";
 import { LiteratureV2LessonScreen } from "@/components/course-v2/LiteratureV2LessonView";
 import { requireChild } from "@/server/auth/guards";
@@ -22,5 +23,5 @@ export default async function LiteratureV2LessonPage({ params }: { params: Promi
     hasVideoLessonForTopic(ctx.familyId, lesson.topicId),
   ]);
 
-  return <LiteratureV2LessonScreen lesson={lesson} packageLessons={packageLessons} hasVideoLesson={hasVideoLesson} />;
+  return <>{!hasVideoLesson && <TopicVideoSupplement familyId={ctx.familyId} subjectId={lesson.subjectId} topicId={lesson.topicId} title={lesson.title} />}<LiteratureV2LessonScreen lesson={lesson} packageLessons={packageLessons} hasVideoLesson={hasVideoLesson} /></>;
 }
