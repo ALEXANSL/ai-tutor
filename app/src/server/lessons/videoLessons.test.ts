@@ -1,0 +1,160 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+/**
+ * S47: a small in-memory fake for `video_lessons` plus a stubbed Storage
+ * client (`createSignedUrl`/`remove`) — real enough to exercise the
+ * existence check, on-demand signing, upsert-replaces-and-cleans-up, and
+ * delete-removes-both behaviors without a real Supabase client.
+ */
+interface VideoRow { [key: string]: unknown; id: string; owner_family_id: string; subject_id: string; topic_id: string; storage_path: string; mime_type: string; size_bytes: number; created_at: string }
+interface TopicRow { [key: string]: unknown; id: string; title: string }
+
+let rows: VideoRow[] = [];
+const topics: TopicRow[] = [{ id: "t1", title: "Параграф 16" }, { id: "t2", title: "Параграф 17" }];
+let nextId = 1;
+const removedPaths: string[][] = [];
+const signCalls: string[] = [];
+
+function applyFilters(list: Record<string, unknown>[], filters: [string, unknown][]) {
+  return list.filter((row) => filters.every(([k, v]) => (Array.isArray(v) ? v.includes(row[k]) : row[k] === v)));
+}
+function queryBuilder(list: Record<string, unknown>[], filters: [string, unknown][] = [], sortKey: string | null = null, ascending = true) {
+  const builder = {
+    eq: (k: string, v: unknown) => queryBuilder(list, [...filters, [k, v]], sortKey, ascending),
+    in: (k: string, v: unknown[]) => queryBuilder(list, [...filters, [k, v]], sortKey, ascending),
+    order: (key: string, options?: { ascending?: boolean }) => queryBuilder(list, filters, key, options?.ascending ?? true),
+    returns: async () => {
+      const matched = applyFilters(list, filters);
+      if (sortKey) matched.sort((a, b) => (ascending ? 1 : -1) * String(a[sortKey]).localeCompare(String(b[sortKey])));
+      return { data: matched, error: null };
+    },
+    maybeSingle: async () => ({ data: applyFilters(list, filters)[0] ?? null, error: null }),
+  };
+  return builder;
+}
+function tableOf(table: string): Record<string, unknown>[] {
+  if (table === "video_lessons") return rows;
+  if (table === "topics") return topics;
+  return [];
+}
+const scope = {
+  select: (table: string) => queryBuilder(tableOf(table), [["owner_family_id", "fam1"]]),
+  upsert: (_table: string, row: Record<string, unknown>) => {
+    const existingIndex = rows.findIndex((r) => r.topic_id === row.topic_id);
+    const saved: VideoRow = { id: existingIndex >= 0 ? rows[existingIndex]!.id : `vl${nextId++}`, owner_family_id: "fam1", created_at: "2026-10-27T00:00:00Z", ...row } as VideoRow;
+    if (existingIndex >= 0) rows[existingIndex] = saved;
+    else rows.push(saved);
+    return { select: () => ({ single: async () => ({ data: { id: saved.id }, error: null }) }) };
+  },
+  delete: (_table: string) => ({
+    eq: (k: string, v: unknown) => {
+      rows = rows.filter((r) => r[k] !== v);
+      return Promise.resolve({ error: null });
+    },
+  }),
+  client: {
+    from: (table: string) => ({
+      select: (columns: string) => {
+        // `listVideoLessonsForSubject`'s raw `.select(...).eq(...).eq(...).order(...)` chain.
+        void columns;
+        return queryBuilder(
+          tableOf(table).map((r) => ({ ...r, topics: topics.find((t) => t.id === (r as VideoRow).topic_id) })),
+          [],
+        );
+      },
+    }),
+    storage: {
+      from: () => ({
+        createSignedUrl: async (path: string) => {
+          signCalls.push(path);
+          return { data: { signedUrl: `https://example.com/signed/${path}` }, error: null };
+        },
+        remove: async (paths: string[]) => {
+          removedPaths.push(paths);
+          return { data: null, error: null };
+        },
+      }),
+    },
+  },
+};
+vi.mock("@/server/db/family-scope", () => ({ forFamily: () => scope }));
+
+const { listVideoLessonsForSubject, listTopicIdsWithVideoLesson, getVideoLessonUrlForTopic, saveVideoLesson, deleteVideoLesson } = await import("./videoLessons");
+
+beforeEach(() => {
+  rows = [];
+  nextId = 1;
+  removedPaths.length = 0;
+  signCalls.length = 0;
+});
+
+describe("video lessons (S47)", () => {
+  it("lists a subject's video lessons with their topic title, newest first", async () => {
+    rows.push({ id: "vl1", owner_family_id: "fam1", subject_id: "subj1", topic_id: "t1", storage_path: "fam1/a.mp4", mime_type: "video/mp4", size_bytes: 100, created_at: "2026-10-27T00:00:00Z" });
+    rows.push({ id: "vl2", owner_family_id: "fam1", subject_id: "subj1", topic_id: "t2", storage_path: "fam1/b.mp4", mime_type: "video/mp4", size_bytes: 200, created_at: "2026-10-28T00:00:00Z" });
+
+    const list = await listVideoLessonsForSubject("fam1", "subj1");
+
+    expect(list).toEqual([
+      { id: "vl2", topicId: "t2", topicTitle: "Параграф 17", sizeBytes: 200, createdAt: "2026-10-28T00:00:00Z" },
+      { id: "vl1", topicId: "t1", topicTitle: "Параграф 16", sizeBytes: 100, createdAt: "2026-10-27T00:00:00Z" },
+    ]);
+  });
+
+  it("reports only the topic ids that actually have a video", async () => {
+    rows.push({ id: "vl1", owner_family_id: "fam1", subject_id: "subj1", topic_id: "t1", storage_path: "fam1/a.mp4", mime_type: "video/mp4", size_bytes: 100, created_at: "2026-10-27T00:00:00Z" });
+
+    const ids = await listTopicIdsWithVideoLesson("fam1", ["t1", "t2"]);
+
+    expect(ids).toEqual(new Set(["t1"]));
+  });
+
+  it("returns an empty set without querying when there are no topic ids", async () => {
+    expect(await listTopicIdsWithVideoLesson("fam1", [])).toEqual(new Set());
+  });
+
+  it("signs the playback URL on demand, not ahead of time", async () => {
+    rows.push({ id: "vl1", owner_family_id: "fam1", subject_id: "subj1", topic_id: "t1", storage_path: "fam1/a.mp4", mime_type: "video/mp4", size_bytes: 100, created_at: "2026-10-27T00:00:00Z" });
+
+    const url = await getVideoLessonUrlForTopic("fam1", "t1");
+
+    expect(url).toBe("https://example.com/signed/fam1/a.mp4");
+    expect(signCalls).toEqual(["fam1/a.mp4"]);
+  });
+
+  it("returns null when the topic has no video lesson", async () => {
+    expect(await getVideoLessonUrlForTopic("fam1", "t1")).toBeNull();
+    expect(signCalls).toEqual([]);
+  });
+
+  it("saves a new video lesson for a topic that has none yet", async () => {
+    const id = await saveVideoLesson("fam1", "t1", "subj1", "fam1/a.mp4", "video/mp4", 100);
+
+    expect(id).toBe("vl1");
+    expect(rows).toHaveLength(1);
+    expect(removedPaths).toEqual([]);
+  });
+
+  it("replaces a topic's existing video and deletes the old file", async () => {
+    await saveVideoLesson("fam1", "t1", "subj1", "fam1/old.mp4", "video/mp4", 100);
+    await saveVideoLesson("fam1", "t1", "subj1", "fam1/new.mp4", "video/mp4", 200);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.storage_path).toBe("fam1/new.mp4");
+    expect(removedPaths).toEqual([["fam1/old.mp4"]]);
+  });
+
+  it("deletes both the row and the stored file", async () => {
+    await saveVideoLesson("fam1", "t1", "subj1", "fam1/a.mp4", "video/mp4", 100);
+    const id = rows[0]!.id;
+
+    await deleteVideoLesson("fam1", id);
+
+    expect(rows).toHaveLength(0);
+    expect(removedPaths).toEqual([["fam1/a.mp4"]]);
+  });
+
+  it("refuses to delete a video lesson that does not exist", async () => {
+    await expect(deleteVideoLesson("fam1", "missing")).rejects.toThrow("video lesson not found");
+  });
+});

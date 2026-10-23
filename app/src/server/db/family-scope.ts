@@ -94,6 +94,8 @@ const FAMILY_COLUMN: Record<string, string> = {
   literature_v3_biographies: "owner_family_id",
   literature_v3_pages: "owner_family_id",
   literature_v3_reading_positions: "owner_family_id",
+  // S47 (video lessons, see supabase/migrations/20261027100000_s47_video_lessons.sql).
+  video_lessons: "owner_family_id",
 };
 
 export function familyColumn(table: string): string {
