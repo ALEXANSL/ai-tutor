@@ -127,8 +127,8 @@ describe("video lessons (S47)", () => {
     const list = await listTopicVideos("fam1", "t1");
 
     expect(list).toEqual([
-      { id: "vl1", label: "Відео 1" },
-      { id: "vl2", label: "Відео 2" },
+      { id: "vl1", label: "Відео 1", sizeBytes: 100 },
+      { id: "vl2", label: "Відео 2", sizeBytes: 200 },
     ]);
   });
 

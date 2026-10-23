@@ -60,3 +60,26 @@ describe("optional video modal", () => {
     await open(); pause.mockClear(); act(() => root.render(null)); expect(pause).toHaveBeenCalled();
   });
 });
+
+it("waits for a real contiguous minute, not metadata or a disconnected future range", async () => {
+  await open(); const video = document.querySelector("video")!;
+  Object.defineProperty(video, "duration", { configurable: true, value: 180 });
+  Object.defineProperty(video, "buffered", { configurable: true, value: { length: 2, start: (i: number) => i ? 120 : 0, end: (i: number) => i ? 180 : 10 } });
+  act(() => video.dispatchEvent(new Event("progress")));
+  expect(video.controls).toBe(false); expect(document.querySelector("progress")!.value).toBe(10);
+  Object.defineProperty(video, "buffered", { configurable: true, value: { length: 1, start: () => 0, end: () => 60 } });
+  act(() => video.dispatchEvent(new Event("progress"))); expect(video.controls).toBe(true);
+});
+it("keeps a multi-video picker and signs only the selected video", async () => {
+  mocks.list.mockResolvedValue([{ id: "v1", label: "Відео 1" }, { id: "v2", label: "Відео 2" }]);
+  await open(); expect(mocks.get).not.toHaveBeenCalled();
+  await act(async () => [...document.querySelectorAll("button")].find(button => button.textContent === "Відео 2")!.click());
+  expect(mocks.get).toHaveBeenCalledWith("v2");
+});
+
+it("accepts browser suspension just short of a minute without an endless loader", async () => {
+  await open(); const video = document.querySelector("video")!;
+  Object.defineProperty(video, "duration", { configurable: true, value: 180 });
+  Object.defineProperty(video, "buffered", { configurable: true, value: { length: 1, start: () => 0, end: () => 58.2 } });
+  act(() => video.dispatchEvent(new Event("suspend"))); expect(video.controls).toBe(true);
+});

@@ -43,12 +43,14 @@ export function VideoLessonButton({ topicId, title, videoId }: { topicId: string
       }
     }
     setTarget(goal); setBuffered(Math.max(0, ahead));
-    if (ahead >= goal - 0.25) setPrepared(true);
+    // Native preload may suspend just short of the target (Chrome can stop
+    // around 58 s). A five-second tolerance avoids waiting forever for 60.
+    if (ahead >= goal - Math.min(5, goal * 0.1)) setPrepared(true);
   }
   async function requestUrl(id: string) {
     const ticket = ++sequence.current;
     selected.current = id;
-    setError(false); setUrl(null); setPrepared(false); setBuffered(0); setTarget(60); setPreloadLimited(false);
+    setError(false); setUrl(null); setPrepared(false); setBuffered(0); setTarget(60); setPreloadLimited(false); setBuffering(false);
     try {
       const result = await getVideoLessonUrlAction(id);
       if (ticket !== sequence.current) return;
@@ -122,7 +124,7 @@ export function VideoLessonButton({ topicId, title, videoId }: { topicId: string
               : url ? <>
                 <video ref={video} src={url} controls={prepared} playsInline preload="auto"
                   onLoadedMetadata={updateBuffer} onProgress={updateBuffer} onCanPlay={updateBuffer} onCanPlayThrough={updateBuffer}
-                  onTimeUpdate={updateBuffer} onWaiting={() => setBuffering(true)} onPlaying={() => setBuffering(false)}
+                  onTimeUpdate={updateBuffer} onWaiting={() => { if (video.current && !video.current.paused) setBuffering(true); }} onPlaying={() => setBuffering(false)}
                   onSuspend={() => { updateBuffer(); setPreloadLimited(true); }} onError={() => setError(true)} onPlay={() => {
                     setPrepared(true); stopCurrentlyPlaying();
                     document.querySelectorAll<HTMLMediaElement>("audio,video").forEach(media => { if (media !== video.current) media.pause(); });
@@ -131,7 +133,7 @@ export function VideoLessonButton({ topicId, title, videoId }: { topicId: string
                   <p>Готую запас відео перед переглядом: {Math.floor(buffered)} із {Math.ceil(target)} с.</p>
                   <progress className="w-full" value={Math.min(buffered, target)} max={target} aria-label="Підготовка запасу відео" />
                   {preloadLimited && buffered > 0 && <p className="text-muted">Браузер може обмежувати попереднє завантаження. Можна почати з уже підготовленого фрагмента.</p>}
-                  {buffered >= Math.min(3, target) && <button type="button" className="min-h-12 rounded-xl bg-primary px-4 font-bold text-white" onClick={() => { setPrepared(true); void video.current?.play().catch(() => {}); }}>Почати зараз</button>}
+                  {(buffered >= Math.min(3, target) || preloadLimited) && <button type="button" className="min-h-12 rounded-xl bg-primary px-4 font-bold text-white" onClick={() => { setPrepared(true); void video.current?.play().catch(() => {}); }}>Почати зараз</button>}
                 </div>}
                 {prepared && buffering && <p role="status" className="text-sm text-muted">Підвантажую наступний фрагмент відео…</p>}
               </> : videos && videos.length > 1 ? <div className="flex flex-wrap gap-3">{videos.map(item => <button type="button" key={item.id} onClick={() => void requestUrl(item.id)} className="min-h-12 rounded-xl border border-line px-4 font-bold">{item.label}</button>)}</div>
