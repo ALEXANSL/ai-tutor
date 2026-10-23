@@ -289,11 +289,13 @@ export function LiteratureV3LessonScreen({
   packageLessons,
   bookIndex,
   savedPosition,
+  hasVideoLesson,
 }: {
   lesson: LiteratureV3LessonViewModel;
   packageLessons: LiteratureV3LessonListItem[];
   bookIndex: LiteratureV3BookPage[];
   savedPosition: LiteratureV3ReadingPosition | null;
+  hasVideoLesson?: boolean;
 }) {
   const { voiceMode, autoAdvance, changeVoiceMode, changeAutoAdvance } = useVoiceModeControls("literatureV3");
 
@@ -302,6 +304,7 @@ export function LiteratureV3LessonScreen({
       <LessonNavBar
         subjectId={lesson.subjectId}
         courseNav={{ basePath: "/literature-v3", currentLessonId: lesson.id, lessons: packageLessons, topicId: lesson.topicId }}
+        videoLessonTopicId={hasVideoLesson ? lesson.topicId : null}
         extraControls={
           <>
             <VoiceModeToggle voiceMode={voiceMode} onChange={changeVoiceMode} />

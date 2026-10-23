@@ -440,7 +440,7 @@ const KIND_LABEL: Record<MathV2LessonView["kind"], string> = {
   assessment: "Самостійна/перевірочна робота",
 };
 
-export function MathCourseV2LessonScreen({ lesson, packageLessons }: { lesson: MathV2LessonView; packageLessons: MathCourseV2LessonListItem[] }) {
+export function MathCourseV2LessonScreen({ lesson, packageLessons, hasVideoLesson }: { lesson: MathV2LessonView; packageLessons: MathCourseV2LessonListItem[]; hasVideoLesson?: boolean }) {
   const chatRef = useRef<LessonTopicChatHandle>(null);
   const [screenIndex, setScreenIndex] = useState(0);
   const [chatTarget, setChatTarget] = useState<VoiceTarget | undefined>(() => lesson.screens[0]
@@ -462,6 +462,7 @@ export function MathCourseV2LessonScreen({ lesson, packageLessons }: { lesson: M
       <LessonNavBar
         subjectId={lesson.subjectId}
         courseNav={{ basePath: "/math-course-v2", currentLessonId: lesson.id, lessons: packageLessons, topicId: lesson.topicId }}
+        videoLessonTopicId={hasVideoLesson ? lesson.topicId : null}
         extraControls={
           <>
             <VoiceModeToggle voiceMode={voiceMode} onChange={changeVoiceMode} />

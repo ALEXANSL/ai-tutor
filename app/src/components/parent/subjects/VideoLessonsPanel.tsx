@@ -66,7 +66,13 @@ export function VideoLessonsPanel({ topics, initialVideos }: { topics: VideoTopi
         const upload = (await init.json()) as { path: string; token: string };
         const client = getBrowserSupabaseStorageClient();
         if (!client) throw new Error(t.notConfigured);
-        const { error } = await client.storage.from("video_lessons").uploadToSignedUrl(upload.path, upload.token, file);
+        // Long Cache-Control on the stored object (S47 follow-up, Алекс:
+        // "відео завантажується уривками"): the browser then caches the
+        // bytes it already fetched for this signed URL instead of
+        // re-requesting them, so re-watching the same video within one
+        // open never re-downloads. The TTL-limited signed URL itself (not
+        // this header) is still what keeps the object private.
+        const { error } = await client.storage.from("video_lessons").uploadToSignedUrl(upload.path, upload.token, file, { contentType: mimeType, cacheControl: "31536000" });
         if (error) throw new Error(t.failed);
 
         const complete = await fetch("/api/parent/video-lessons/upload/complete", {
@@ -78,7 +84,7 @@ export function VideoLessonsPanel({ topics, initialVideos }: { topics: VideoTopi
         const { id } = (await complete.json()) as { id: string };
 
         const topicTitle = topics.find((tp) => tp.id === topicId)?.title ?? "?";
-        setVideos((prev) => [{ id, topicId, topicTitle, sizeBytes: file.size, createdAt: new Date().toISOString() }, ...prev.filter((v) => v.topicId !== topicId)]);
+        setVideos((prev) => [{ id, topicId, topicTitle, sizeBytes: file.size, createdAt: new Date().toISOString() }, ...prev]);
         setPhase("done");
         setMessage(t.done);
         router.refresh();

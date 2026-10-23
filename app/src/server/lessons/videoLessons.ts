@@ -2,12 +2,13 @@ import "server-only";
 import { forFamily } from "@/server/db/family-scope";
 
 /**
- * S47 (PO decision 2026-10-27): Pictory-generated video lessons, uploaded by
- * the parent and attached to an EXISTING topic as a supplement — never a
- * replacement for whatever text-lesson system (literature/course/math_v2/
- * literature_v2/literature_v3) already serves that topic, or lack thereof.
- * One video per topic (re-upload replaces it); see the migration header for
- * the storage-bucket/table shape.
+ * S47 (PO decision 2026-10-27, extended 2026-10-23): Pictory-generated
+ * video lessons, uploaded by the parent and attached to an EXISTING topic
+ * as a supplement — never a replacement for whatever text-lesson system
+ * (literature/course/math_v2/literature_v2/literature_v3) already serves
+ * that topic, or lack thereof. A topic can have SEVERAL videos (S47b,
+ * 20261028100000) — every upload adds a new row, never replaces one; see
+ * each migration's header for the storage-bucket/table shape.
  */
 
 const VIDEO_BUCKET = "video_lessons";
@@ -21,7 +22,7 @@ export interface VideoLessonRow {
   createdAt: string;
 }
 
-/** Parent-facing list for the subject's content-admin panel (S42-style). */
+/** Parent-facing list for the subject's content-admin panel (S42-style) — every video of the subject, newest first, several per topic included. */
 export async function listVideoLessonsForSubject(familyId: string, subjectId: string): Promise<VideoLessonRow[]> {
   const scope = forFamily(familyId);
   const { data } = await scope.client
@@ -37,7 +38,7 @@ export async function listVideoLessonsForSubject(familyId: string, subjectId: st
   });
 }
 
-/** Child-facing existence check for the subject screen's "🎬 Відео-урок" button — no signed URL minted yet (only on open). */
+/** Child-facing existence check for the subject screen's/lesson nav bar's "🎬 Відео-урок" button — no signed URL minted yet (only on open). */
 export async function listTopicIdsWithVideoLesson(familyId: string, topicIds: string[]): Promise<Set<string>> {
   if (topicIds.length === 0) return new Set();
   const { data } = await forFamily(familyId)
@@ -47,17 +48,40 @@ export async function listTopicIdsWithVideoLesson(familyId: string, topicIds: st
   return new Set((data ?? []).map((r) => r.topic_id));
 }
 
-/** Signs the video's playback URL on demand (not pre-signed on page load) — called when the child actually opens the modal. */
-export async function getVideoLessonUrlForTopic(familyId: string, topicId: string): Promise<string | null> {
+/** Single-topic existence check for the in-lesson nav bar (`LessonNavBar`), every course-v2-style viewer (math_v2/literature_v2/literature_v3). */
+export async function hasVideoLessonForTopic(familyId: string, topicId: string | null): Promise<boolean> {
+  if (!topicId) return false;
+  const ids = await listTopicIdsWithVideoLesson(familyId, [topicId]);
+  return ids.has(topicId);
+}
+
+export interface TopicVideoOption {
+  id: string;
+  /** "Відео 1", "Відео 2"... by upload order — this format carries no per-video title (S47 kept intentionally simple; see migration header). */
+  label: string;
+}
+
+/** The child's "🎬 Відео-урок" button fetches this list on open, before signing any URL — lets it show a picker when a topic has more than one video. */
+export async function listTopicVideos(familyId: string, topicId: string): Promise<TopicVideoOption[]> {
+  const { data } = await forFamily(familyId)
+    .select("video_lessons", "id, created_at")
+    .eq("topic_id", topicId)
+    .order("created_at")
+    .returns<{ id: string; created_at: string }[]>();
+  return (data ?? []).map((r, i) => ({ id: r.id, label: `Відео ${i + 1}` }));
+}
+
+/** Signs one video's playback URL on demand (not pre-signed on page load) — called when the child actually opens/picks it in the modal. */
+export async function getVideoLessonUrlById(familyId: string, videoId: string): Promise<string | null> {
   const scope = forFamily(familyId);
-  const { data } = await scope.select("video_lessons", "storage_path").eq("topic_id", topicId).maybeSingle<{ storage_path: string }>();
+  const { data } = await scope.select("video_lessons", "storage_path").eq("id", videoId).maybeSingle<{ storage_path: string }>();
   if (!data) return null;
   const { data: signed, error } = await scope.client.storage.from(VIDEO_BUCKET).createSignedUrl(data.storage_path, SIGNED_URL_TTL_S);
   if (error || !signed) return null;
   return signed.signedUrl;
 }
 
-/** Called by the upload-complete route once the browser has PUT the file straight to Storage. Returns the row id (for the panel's delete button). */
+/** Called by the upload-complete route once the browser has PUT the file straight to Storage. Always adds a NEW row (S47b: several videos per topic) — returns its id for the panel's delete button. */
 export async function saveVideoLesson(
   familyId: string,
   topicId: string,
@@ -67,16 +91,11 @@ export async function saveVideoLesson(
   sizeBytes: number,
 ): Promise<string> {
   const scope = forFamily(familyId);
-  const { data: existing } = await scope.select("video_lessons", "storage_path").eq("topic_id", topicId).maybeSingle<{ storage_path: string }>();
   const { data, error } = await scope
-    .upsert("video_lessons", { topic_id: topicId, subject_id: subjectId, storage_path: storagePath, mime_type: mimeType, size_bytes: sizeBytes }, "topic_id")
+    .insert("video_lessons", { topic_id: topicId, subject_id: subjectId, storage_path: storagePath, mime_type: mimeType, size_bytes: sizeBytes })
     .select("id")
     .single<{ id: string }>();
   if (error || !data) throw new Error(`saving the video lesson failed: ${error?.message}`);
-  // Re-upload replaced this topic's video — drop the now-orphaned old file so storage usage doesn't silently grow.
-  if (existing && existing.storage_path !== storagePath) {
-    await scope.client.storage.from(VIDEO_BUCKET).remove([existing.storage_path]);
-  }
   return data.id;
 }
 

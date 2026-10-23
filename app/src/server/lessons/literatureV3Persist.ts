@@ -19,6 +19,24 @@ import type { ParsedAsset, ParsedLiteratureV3Package } from "./literatureV3Impor
  */
 
 const LIT_V3_ASSETS_BUCKET = "course_assets"; // shared bucket (S34/S35/S36); v3-literature assets live under `lit-v3/{packageId}/...`.
+
+/**
+ * BUG follow-up (Алекс 2026-10-23, "знову бачу той самий баг... параграфи
+ * розміщені не в нумерологічному порядку"): the 2026-10-16 fix below made
+ * `sort_order` sequential WITHIN one import run, but two separate
+ * import/re-import runs (e.g. a package updated or re-uploaded in parts)
+ * each restart their own `lessonsImported` counter at 0 — so topics from
+ * different runs can still interleave out of paragraph order. Every lesson
+ * this package format actually ships has a title starting "§ N" or
+ * "§ N-M" (a textbook paragraph/range number) — extracting that number and
+ * using it as the sort key is stable across any number of import runs,
+ * unlike a per-run counter. Falls back to the old counter only for a title
+ * that doesn't start with "§" (keeps non-numbered packages unaffected).
+ */
+function leadingParagraphNumber(title: string): number | null {
+  const match = /^§\s*(\d+)/.exec(title);
+  return match ? Number(match[1]) : null;
+}
 const RETRYABLE_ERROR_RE = /bad gateway|502|503|504|gateway timeout|network|fetch failed|ECONNRESET|ETIMEDOUT/i;
 
 async function uploadAssetWithRetry(scope: FamilyScope, storagePath: string, bytes: Uint8Array, mimeType: string): Promise<{ error: { message: string } | null }> {
@@ -338,7 +356,7 @@ export async function persistLiteratureV3Package(
       page_from: printedPageFrom,
       page_to: printedPageTo,
       grade: lesson.grade,
-      sort_order: lessonsImported,
+      sort_order: leadingParagraphNumber(lesson.title) ?? lessonsImported,
     };
     if (!topicId) {
       const { data: topicRow, error: topicErr } = await scope.client
