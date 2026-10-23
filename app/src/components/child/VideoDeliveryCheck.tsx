@@ -28,11 +28,17 @@ export function VideoDeliveryCheck({ videoId, url, media, onSuspendPlayback, onB
     } catch { if (mounted.current) setNotice("Перевірку не завершено. Спробуй ще раз."); }
     finally { abort.current = null; if (mounted.current) { setBusy(false); onBusyChange?.(false); } }
   }
+  async function copyReport() {
+    try {
+      if (!navigator.clipboard) throw new Error("clipboard unavailable");
+      await navigator.clipboard.writeText(report); setNotice("Звіт скопійовано.");
+    } catch { setNotice("Виділи й скопіюй текст звіту вручну."); }
+  }
   return <details className="w-full border-t border-line pt-3 text-sm">
     <summary className="cursor-pointer text-muted">Проблеми з переглядом?</summary>
     <p className="my-2 text-muted">Перевірка призупинить відео й виміряє завантаження невеликого фрагмента. Звіт можна передати татові.</p>
     <button type="button" disabled={busy} onClick={() => void inspect()} className="min-h-11 rounded-xl border border-line px-3 font-bold">{busy ? "Перевіряю завантаження…" : "Перевірити завантаження"}</button>
-    {report && <><p role="status" className="my-2">Звіт готовий. Приватних посилань і ключів у ньому немає.</p><textarea readOnly value={report} aria-label="Звіт перевірки відео" className="h-40 w-full rounded-xl border border-line bg-bg p-2 font-mono text-xs" /><button type="button" className="min-h-11 rounded-xl border border-line px-3 font-bold" onClick={() => { void navigator.clipboard.writeText(report).then(() => setNotice("Звіт скопійовано.")).catch(() => setNotice("Виділи й скопіюй текст звіту вручну.")); }}>Скопіювати звіт</button></>}
+    {report && <><p role="status" className="my-2">Звіт готовий. Приватних посилань і ключів у ньому немає.</p><textarea readOnly value={report} aria-label="Звіт перевірки відео" className="h-40 w-full rounded-xl border border-line bg-bg p-2 font-mono text-xs" /><button type="button" className="min-h-11 rounded-xl border border-line px-3 font-bold" onClick={() => void copyReport()}>Скопіювати звіт</button></>}
     {notice && <p role="status" className="mt-2 text-muted">{notice}</p>}
   </details>;
 }
