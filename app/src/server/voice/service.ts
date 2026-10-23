@@ -3,6 +3,7 @@ import { z } from "zod";
 import { forFamily } from "@/server/db/family-scope";
 import type { ChildProfileRow } from "@/server/db/types";
 import { askTopicChat, getOrCreateTopicChat } from "@/server/lessons/chat";
+import { askFriendChat, getOrCreateFriendChat } from "@/server/lessons/friendChat";
 import { callAudio, transcribeAudio } from "@/server/ai/router";
 import { getBudgetState } from "@/server/ai/store";
 import { getServerSecret } from "@/server/env";
@@ -49,7 +50,9 @@ export async function manageVoice(actor: VoiceActor, raw: unknown) {
       const { data } = await scope.select("tutor_voices", "provider,provider_voice_id").eq("id", actor.child.tutor_voice_id).maybeSingle<{ provider: string; provider_voice_id: string }>();
       if (data?.provider === "openai" && ["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse", "marin", "cedar"].includes(data.provider_voice_id)) voiceId = data.provider_voice_id;
     }
-    const chatId = await getOrCreateTopicChat(actor.familyId, actor.child.id, lesson.subjectId, lesson.topicId);
+    const chatId = command.target.kind === "friend"
+      ? await getOrCreateFriendChat(actor.familyId, actor.child.id)
+      : await getOrCreateTopicChat(actor.familyId, actor.child.id, lesson.subjectId!, lesson.topicId!);
     const lease = await createLease(scope, actor.child.id, chatId, { ...command.target, voiceId });
     return { id: lease.id, expiresAt: lease.expires_at };
   }
@@ -94,17 +97,26 @@ export async function voiceTurn(actor: VoiceActor, id: string, audio: File): Pro
     const lesson = await contextFor(actor, lease.target);
     if (lesson.subjectId !== currentAccess.subjectId || lesson.topicId !== currentAccess.topicId || lesson.sessionId !== currentAccess.sessionId
       || lesson.subjectId !== access.subjectId || lesson.topicId !== access.topicId || lesson.sessionId !== access.sessionId) throw new Error("voice_expired");
-    const [gender, { data: subject }, { data: topic }] = await Promise.all([
-      getTutorGender(actor.familyId, actor.child),
-      scope.select("subjects", "name_uk").eq("id", lesson.subjectId).maybeSingle<{ name_uk: string }>(),
-      scope.select("topics", "title").eq("id", lesson.topicId).maybeSingle<{ title: string }>(),
-    ]);
-    if (!subject || !topic) throw new Error("voice_expired");
-    // Hydration and metadata reads can outlast a stop/navigation. Recheck
-    // immediately before starting the paid tutor response.
-    await active();
-    const message = await askTopicChat(actor.familyId, actor.child.id, actor.child.nickname ?? "", actor.child.tutor_name ?? "", gender,
-      lesson.subjectId, subject.name_uk, lesson.topicId, topic.title, text, lesson.sessionId, { voice: true, stepContext: lesson.context, ...(lesson.lessonRef ? { lessonRef: lesson.lessonRef } : {}) });
+    const isFriend = targetFor(lease.target).kind === "friend";
+    let message;
+    if (isFriend) {
+      // US-8.5 "ШІ-друг": no subject/topic to re-hydrate or re-check — the
+      // same free-topic path the text chat already uses.
+      await active();
+      message = await askFriendChat(actor.familyId, actor.child.id, actor.child.nickname ?? "", actor.child.tutor_name ?? "", actor.child.tutor_name_gender, text);
+    } else {
+      const [gender, { data: subject }, { data: topic }] = await Promise.all([
+        getTutorGender(actor.familyId, actor.child),
+        scope.select("subjects", "name_uk").eq("id", lesson.subjectId!).maybeSingle<{ name_uk: string }>(),
+        scope.select("topics", "title").eq("id", lesson.topicId!).maybeSingle<{ title: string }>(),
+      ]);
+      if (!subject || !topic) throw new Error("voice_expired");
+      // Hydration and metadata reads can outlast a stop/navigation. Recheck
+      // immediately before starting the paid tutor response.
+      await active();
+      message = await askTopicChat(actor.familyId, actor.child.id, actor.child.nickname ?? "", actor.child.tutor_name ?? "", gender,
+        lesson.subjectId!, subject.name_uk, lesson.topicId!, topic.title, text, lesson.sessionId, { voice: true, stepContext: lesson.context, ...(lesson.lessonRef ? { lessonRef: lesson.lessonRef } : {}) });
+    }
     const safetyEnd = message.content === URGENT_REPLY_UK;
     try { await active(); }
     catch { return { text, message, audio: null, endConversation: true, endReason: safetyEnd ? "safety" : "inactive" }; }

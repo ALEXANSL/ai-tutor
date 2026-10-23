@@ -14,6 +14,9 @@ export const lessonVoiceTargetSchema = z.discriminatedUnion("kind", [
     refTable: z.enum(["course_v2_screens", "course_v2_exercises", "literature_v2_screens", "literature_v2_tasks"]),
     refId: uuid,
   }).strict(),
+  // US-8.5 "ШІ-друг": free-topic chat, no lesson/subject/topic at all — no
+  // selector fields needed, access is just "this child's own friend chat".
+  z.object({ kind: z.literal("friend") }).strict(),
 ]);
 export type LessonVoiceTarget = z.infer<typeof lessonVoiceTargetSchema>;
 
@@ -27,8 +30,9 @@ export interface LessonVoiceLessonRef {
 }
 
 export interface LessonVoiceContext {
-  subjectId: string;
-  topicId: string;
+  /** Absent only for `{ kind: "friend" }` — no subject/topic exists to attach to. */
+  subjectId?: string;
+  topicId?: string;
   context: string;
   sessionId?: string;
   lessonRef?: LessonVoiceLessonRef;
@@ -111,6 +115,12 @@ async function courseManifest(scope: ReturnType<typeof forFamily>, lessonId: str
 /** Read only public lesson content. Private quiz keys and worked solutions never enter this context. */
 export async function resolveLessonVoiceTarget(familyId: string, childId: string, rawTarget: LessonVoiceTarget): Promise<LessonVoiceContext> {
   const target = lessonVoiceTargetSchema.parse(rawTarget);
+  if (target.kind === "friend") {
+    // No lesson content to narrate — `askFriendChat` builds its own context
+    // from the chat's own history. This is just enough for `callAudio`/the
+    // budget/lease plumbing shared with every other target kind.
+    return { context: "Вільна розмова з дитиною поза уроком (ШІ-друг)." };
+  }
   const scope = forFamily(familyId);
   let subjectId: string;
   let topicId: string;

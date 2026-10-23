@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChildProfileRow } from "@/server/db/types";
 import { URGENT_REPLY_UK } from "@/server/safety/urgentReplyUk";
-const m = vi.hoisted(() => ({ budget: vi.fn(), access: vi.fn(), context: vi.fn(), gender: vi.fn(), seed: vi.fn(), create: vi.fn(), read: vi.fn(), renew: vi.fn(), stop: vi.fn(), claim: vi.fn(), release: vi.fn(), stt: vi.fn(), tts: vi.fn(), chat: vi.fn(), topicChat: vi.fn() }));
+const m = vi.hoisted(() => ({ budget: vi.fn(), access: vi.fn(), context: vi.fn(), gender: vi.fn(), seed: vi.fn(), create: vi.fn(), read: vi.fn(), renew: vi.fn(), stop: vi.fn(), claim: vi.fn(), release: vi.fn(), stt: vi.fn(), tts: vi.fn(), chat: vi.fn(), topicChat: vi.fn(), friendChat: vi.fn(), friendGetOrCreate: vi.fn() }));
 vi.mock("@/server/voice/lessonContext", async importOriginal => ({ ...await importOriginal<typeof import("./lessonContext")>(), resolveLessonVoiceTarget: m.context }));
 vi.mock("@/server/voice/lessonAccess", () => ({ assertLessonVoiceAccess: m.access }));
 vi.mock("@/server/voice/leases", () => ({ createLease: m.create, readLease: m.read, renewLease: m.renew, stopLease: m.stop, claimLease: m.claim, releaseLease: m.release }));
@@ -11,12 +11,13 @@ vi.mock("@/server/ai/store", () => ({ getBudgetState: m.budget }));
 vi.mock("@/server/env", () => ({ getServerSecret: () => "test-key" }));
 vi.mock("@/server/persona/queries", () => ({ getTutorGender: m.gender }));
 vi.mock("@/server/lessons/chat", () => ({ askTopicChat: m.chat, getOrCreateTopicChat: m.topicChat }));
+vi.mock("@/server/lessons/friendChat", () => ({ askFriendChat: m.friendChat, getOrCreateFriendChat: m.friendGetOrCreate }));
 vi.mock("@/server/db/family-scope", () => ({ forFamily: (familyId: string) => ({ familyId, select: (table: string) => {
   const self = { eq: () => self, maybeSingle: async () => ({ data: table === "subjects" ? { name_uk: "Географія" } : table === "topics" ? { title: "Форма Землі" } : null }) }; return self;
 } }) }));
 const { manageVoice, voiceTurn } = await import("./service");
 const id = "10000000-0000-4000-8000-000000000001";
-const actor = { familyId: "family", child: { id: "child", nickname: "Зірочка", tutor_name: "Ліра" } as ChildProfileRow };
+const actor = { familyId: "family", child: { id: "child", nickname: "Зірочка", tutor_name: "Ліра", tutor_name_gender: "f" } as ChildProfileRow };
 const target = { kind: "chapter" as const, lessonId: id, stepId: "screen" };
 const lease = { id, target: { ...target, voiceId: "shimmer" }, expires_at: "2030-01-01T00:00:00.000Z", claim: "claim" };
 const context = { subjectId: "geography", topicId: "earth", context: "Полярний радіус менший за екваторіальний" };
@@ -27,6 +28,7 @@ beforeEach(() => {
   for (const f of [m.create, m.read, m.renew, m.stop, m.claim]) f.mockResolvedValue(lease);
   m.release.mockResolvedValue(undefined); m.topicChat.mockResolvedValue("chat"); m.stt.mockResolvedValue({ result: "Чому до полюса ближче?", audioSeconds: 4 });
   m.chat.mockResolvedValue(answer); m.tts.mockResolvedValue({ result: { audioBase64: "AAAA", mimeType: "audio/mpeg" } });
+  m.friendGetOrCreate.mockResolvedValue("friend-chat"); m.friendChat.mockResolvedValue(answer);
 });
 describe("lesson voice orchestration", () => {
   it("starts only with trusted context, allowed budget and configured routes", async () => {
@@ -73,6 +75,28 @@ describe("lesson voice orchestration", () => {
   });
   it("does not fabricate a reply for empty recognized speech", async () => {
     m.stt.mockResolvedValue({ result: "  ", audioSeconds: 1 }); expect(await voiceTurn(actor, id, audio)).toEqual({ text: "" }); expect(m.chat).not.toHaveBeenCalled(); expect(m.release).toHaveBeenCalled();
+  });
+});
+
+describe("friend-chat voice (US-8.5)", () => {
+  const friendTarget = { kind: "friend" as const };
+  const friendContext = { context: "Вільна розмова з дитиною поза уроком (ШІ-друг)." };
+  const friendLease = { id, target: { ...friendTarget, voiceId: "shimmer" }, expires_at: lease.expires_at, claim: "claim" };
+  beforeEach(() => {
+    m.context.mockResolvedValue(friendContext);
+    m.access.mockResolvedValue({});
+    for (const f of [m.create, m.read, m.renew, m.stop, m.claim]) f.mockResolvedValue(friendLease);
+  });
+  it("starts a session in the child's own friend chat, never a topic chat", async () => {
+    expect(await manageVoice(actor, { target: friendTarget })).toEqual({ id, expiresAt: lease.expires_at });
+    expect(m.friendGetOrCreate).toHaveBeenCalledWith("family", "child");
+    expect(m.topicChat).not.toHaveBeenCalled();
+    expect(m.create.mock.calls[0]!.slice(1)).toEqual(["child", "friend-chat", { ...friendTarget, voiceId: "shimmer" }]);
+  });
+  it("answers via the free-topic friend chat, not the subject/topic-bound one", async () => {
+    expect(await voiceTurn(actor, id, audio)).toMatchObject({ message: answer, audio: { audioBase64: "AAAA" } });
+    expect(m.friendChat).toHaveBeenCalledWith("family", "child", "Зірочка", "Ліра", "f", "Чому до полюса ближче?");
+    expect(m.chat).not.toHaveBeenCalled();
   });
 });
 

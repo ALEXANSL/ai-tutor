@@ -28,7 +28,7 @@ function friendChatPrompt(): { system: string; user: string } {
 
 const answerSchema = z.object({ answerUk: z.string().min(1).max(800) });
 
-async function getOrCreateFriendChat(familyId: string, childProfileId: string): Promise<string> {
+export async function getOrCreateFriendChat(familyId: string, childProfileId: string): Promise<string> {
   const scope = forFamily(familyId);
   const { data: existing } = await scope.select("chats", "id").eq("child_profile_id", childProfileId).eq("kind", "friend").maybeSingle<{ id: string }>();
   if (existing) return existing.id;
