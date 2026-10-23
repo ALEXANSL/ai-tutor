@@ -20,7 +20,7 @@ interface MessageView {
 // added to that namespace later can never re-trigger "Functions cannot be
 // passed directly to Client Components".
 /** US-8.5: no lesson framing at all — just a running chat, text without a time limit. */
-export function FriendChatScreen({ initialMessages }: { initialMessages: MessageView[] }) {
+export function FriendChatScreen({ chatId, initialMessages }: { chatId: string; initialMessages: MessageView[] }) {
   const t = uk.child.friend;
   const [messages, setMessages] = useState(initialMessages);
   const [question, setQuestion] = useState("");
@@ -33,7 +33,7 @@ export function FriendChatScreen({ initialMessages }: { initialMessages: Message
     setMessages((prev) => [...prev, { id: crypto.randomUUID(), author: "child", content: text, createdAt: new Date().toISOString() }]);
     setPending(true);
     try {
-      const res = await askFriendChatAction(text);
+      const res = await askFriendChatAction(chatId, text);
       setMessages((prev) => [...prev, res.message]);
     } finally {
       setPending(false);
@@ -89,7 +89,7 @@ export function FriendChatScreen({ initialMessages }: { initialMessages: Message
         )}
       </div>
 
-      <VoiceConversation target={{ kind: "friend" }} onTurn={onVoiceTurn} />
+      <VoiceConversation target={{ kind: "friend", chatId }} onTurn={onVoiceTurn} />
 
       <div className="flex gap-2 pb-4">
         <input

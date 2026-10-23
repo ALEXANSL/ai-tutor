@@ -8,6 +8,7 @@ vi.mock("@/server/db/family-scope", () => ({
     fixture.calls.push(call);
     const chain = {
       eq: (column: string, value: unknown) => { call.filters.push([column, value]); return chain; },
+      is: (column: string, value: unknown) => { call.filters.push([column, value]); return chain; },
       order: () => chain,
       limit: () => chain,
       returns: async () => ({ data: fixture.lists.get(table) ?? [], error: fixture.errors.get(table) ?? null }),
@@ -146,12 +147,18 @@ describe("trusted voice lesson context", () => {
     expect(result.context).not.toContain("PRIVATE");
     expect(fixture.calls.find(call => call.table === "course_v2_quiz_items")?.filters).toContainEqual(["quiz_id", "quiz-1"]);
   });
-  it("resolves a friend-chat target with no subject/topic and no database reads", async () => {
-    const result = await resolveLessonVoiceTarget("family", "child", { kind: "friend" });
+  it("resolves a friend-chat target (verifying chat ownership) with no subject/topic", async () => {
+    fixture.rows.set("chats", { id: "chat-1" });
+    const result = await resolveLessonVoiceTarget("family", "child", { kind: "friend", chatId: ids.ref });
     expect(result.subjectId).toBeUndefined();
     expect(result.topicId).toBeUndefined();
     expect(result.context.length).toBeGreaterThan(0);
-    expect(fixture.calls).toHaveLength(0);
+    expect(fixture.calls).toHaveLength(1);
+    expect(fixture.calls[0]).toMatchObject({ table: "chats", filters: [["id", ids.ref], ["child_profile_id", "child"], ["kind", "friend"], ["hidden_from_child_at", null]] });
+  });
+  it("rejects a friend-chat target that is not this child's own (or is hidden)", async () => {
+    fixture.rows.delete("chats");
+    await expect(resolveLessonVoiceTarget("family", "child", { kind: "friend", chatId: ids.ref })).rejects.toThrow("voice_lesson_unavailable");
   });
   it("does not accept arbitrary tables, answer keys or client-supplied context", () => {
     expect(lessonVoiceTargetSchema.safeParse({ kind: "course", refTable: "course_v2_question_keys", refId: ids.ref }).success).toBe(false);

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { forFamily } from "@/server/db/family-scope";
 import type { ChildProfileRow } from "@/server/db/types";
 import { askTopicChat, getOrCreateTopicChat } from "@/server/lessons/chat";
-import { askFriendChat, getOrCreateFriendChat } from "@/server/lessons/friendChat";
+import { askFriendChat } from "@/server/lessons/friendChat";
 import { callAudio, transcribeAudio } from "@/server/ai/router";
 import { getBudgetState } from "@/server/ai/store";
 import { getServerSecret } from "@/server/env";
@@ -50,8 +50,11 @@ export async function manageVoice(actor: VoiceActor, raw: unknown) {
       const { data } = await scope.select("tutor_voices", "provider,provider_voice_id").eq("id", actor.child.tutor_voice_id).maybeSingle<{ provider: string; provider_voice_id: string }>();
       if (data?.provider === "openai" && ["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse", "marin", "cedar"].includes(data.provider_voice_id)) voiceId = data.provider_voice_id;
     }
+    // S46: a friend-chat target already names the (ownership-checked by
+    // `contextFor` above) chat it belongs to — several now exist per child,
+    // so there is no longer a single one to get-or-create.
     const chatId = command.target.kind === "friend"
-      ? await getOrCreateFriendChat(actor.familyId, actor.child.id)
+      ? command.target.chatId
       : await getOrCreateTopicChat(actor.familyId, actor.child.id, lesson.subjectId!, lesson.topicId!);
     const lease = await createLease(scope, actor.child.id, chatId, { ...command.target, voiceId });
     return { id: lease.id, expiresAt: lease.expires_at };
@@ -97,13 +100,14 @@ export async function voiceTurn(actor: VoiceActor, id: string, audio: File): Pro
     const lesson = await contextFor(actor, lease.target);
     if (lesson.subjectId !== currentAccess.subjectId || lesson.topicId !== currentAccess.topicId || lesson.sessionId !== currentAccess.sessionId
       || lesson.subjectId !== access.subjectId || lesson.topicId !== access.topicId || lesson.sessionId !== access.sessionId) throw new Error("voice_expired");
-    const isFriend = targetFor(lease.target).kind === "friend";
+    const parsedTarget = targetFor(lease.target);
     let message;
-    if (isFriend) {
-      // US-8.5 "ШІ-друг": no subject/topic to re-hydrate or re-check — the
-      // same free-topic path the text chat already uses.
+    if (parsedTarget.kind === "friend") {
+      // US-8.5/S46 "ШІ-друг": no subject/topic to re-hydrate or re-check —
+      // the same free-topic path the text chat already uses, in the same
+      // named chat the target selected (already ownership-checked above).
       await active();
-      message = await askFriendChat(actor.familyId, actor.child.id, actor.child.nickname ?? "", actor.child.tutor_name ?? "", actor.child.tutor_name_gender, text);
+      message = await askFriendChat(actor.familyId, actor.child.id, parsedTarget.chatId, actor.child.nickname ?? "", actor.child.tutor_name ?? "", actor.child.tutor_name_gender, text);
     } else {
       const [gender, { data: subject }, { data: topic }] = await Promise.all([
         getTutorGender(actor.familyId, actor.child),

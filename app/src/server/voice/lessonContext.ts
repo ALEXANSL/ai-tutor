@@ -14,9 +14,9 @@ export const lessonVoiceTargetSchema = z.discriminatedUnion("kind", [
     refTable: z.enum(["course_v2_screens", "course_v2_exercises", "literature_v2_screens", "literature_v2_tasks"]),
     refId: uuid,
   }).strict(),
-  // US-8.5 "ШІ-друг": free-topic chat, no lesson/subject/topic at all — no
-  // selector fields needed, access is just "this child's own friend chat".
-  z.object({ kind: z.literal("friend") }).strict(),
+  // US-8.5/S46 "ШІ-друг": free-topic chat, no lesson/subject/topic at all —
+  // one of several named chats per child, so `chatId` says which.
+  z.object({ kind: z.literal("friend"), chatId: uuid }).strict(),
 ]);
 export type LessonVoiceTarget = z.infer<typeof lessonVoiceTargetSchema>;
 
@@ -118,7 +118,11 @@ export async function resolveLessonVoiceTarget(familyId: string, childId: string
   if (target.kind === "friend") {
     // No lesson content to narrate — `askFriendChat` builds its own context
     // from the chat's own history. This is just enough for `callAudio`/the
-    // budget/lease plumbing shared with every other target kind.
+    // budget/lease plumbing shared with every other target kind. Still
+    // verifies ownership — a forged chatId must never attach a reply to
+    // another child's (or a hidden/"deleted") chat.
+    const own = await forFamily(familyId).select("chats", "id").eq("id", target.chatId).eq("child_profile_id", childId).eq("kind", "friend").is("hidden_from_child_at", null).maybeSingle<{ id: string }>();
+    if (!own.data) unavailable();
     return { context: "Вільна розмова з дитиною поза уроком (ШІ-друг)." };
   }
   const scope = forFamily(familyId);

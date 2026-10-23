@@ -12,10 +12,15 @@ function unavailable(): never { throw new Error("voice_lesson_unavailable"); }
  * Called at every paid stage and heartbeat; never cached across turns. */
 export async function assertLessonVoiceAccess(familyId: string, childId: string, raw: LessonVoiceTarget): Promise<LessonVoiceAccess> {
   const target = lessonVoiceTargetSchema.parse(raw);
-  // US-8.5 "ШІ-друг": no lesson/subject/topic to re-validate against — the
-  // basic auth already performed to reach here (this child's own family) is
-  // the entire access rule, same as the text path (`askFriendChatAction`).
-  if (target.kind === "friend") return {};
+  // US-8.5/S46 "ШІ-друг": no subject/topic to re-validate — but, now that a
+  // child can have several chats, re-checking `chatId` ownership (and that
+  // it hasn't been hidden/"deleted" mid-turn) every stage/heartbeat, same
+  // rigor every other target kind gets.
+  if (target.kind === "friend") {
+    const own = await forFamily(familyId).select("chats", "id").eq("id", target.chatId).eq("child_profile_id", childId).eq("kind", "friend").is("hidden_from_child_at", null).maybeSingle<{ id: string }>();
+    if (!own.data) unavailable();
+    return {};
+  }
   const scope = forFamily(familyId);
   let lesson: LessonRow;
   let sessionId: string | undefined;

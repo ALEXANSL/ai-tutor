@@ -34,8 +34,10 @@ afterEach(() => {
   container.remove();
 });
 
+const chatId = "10000000-0000-4000-8000-000000000001";
+
 function render() {
-  act(() => root!.render(<FriendChatScreen initialMessages={[]} />));
+  act(() => root!.render(<FriendChatScreen chatId={chatId} initialMessages={[]} />));
 }
 
 describe("FriendChatScreen", () => {
@@ -56,7 +58,7 @@ describe("FriendChatScreen", () => {
     });
     const send = [...container.querySelectorAll("button")].find((b) => b.textContent === "Надіслати")!;
     await act(async () => { send.click(); });
-    expect(askFriendChatAction).toHaveBeenCalledWith("Привіт");
+    expect(askFriendChatAction).toHaveBeenCalledWith(chatId, "Привіт");
     expect(container.textContent).toContain("Привіт!");
   });
 

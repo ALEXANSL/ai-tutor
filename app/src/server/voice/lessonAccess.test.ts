@@ -6,6 +6,7 @@ vi.mock("@/server/db/family-scope", () => ({ forFamily: (family: string) => ({ s
   const call = { family, table, columns, filters: [] as [string, unknown][] }; f.calls.push(call);
   const self = {
     eq: (key: string, value: unknown) => { call.filters.push([key, value]); return self; },
+    is: (key: string, value: unknown) => { call.filters.push([key, value]); return self; },
     maybeSingle: async () => ({ error: f.errors.has(table) ? { message: "unavailable" } : null,
       data: (f.rows.get(table) ?? []).find(row => row.family === family && call.filters.every(([key, value]) => row[key] === value)) ?? null }),
   }; return self;
@@ -79,10 +80,18 @@ describe("lightweight voice authorization", () => {
     put("literature_v3_screens", { id: stepId, lesson_id: id, screen_key: "another-key" });
     await expect(assertLessonVoiceAccess("family", "child", chapter)).rejects.toThrow("voice_lesson_unavailable");
   });
-  it("grants friend-chat access with no subject/topic and no database reads", async () => {
+  it("grants friend-chat access with no subject/topic, after verifying chat ownership", async () => {
+    put("chats", { id, child_profile_id: "child", kind: "friend", hidden_from_child_at: null });
     f.calls.length = 0;
-    await expect(assertLessonVoiceAccess("family", "child", { kind: "friend" })).resolves.toEqual({});
-    expect(f.calls).toHaveLength(0);
+    await expect(assertLessonVoiceAccess("family", "child", { kind: "friend", chatId: id })).resolves.toEqual({});
+    expect(f.calls).toHaveLength(1);
+  });
+  it("rejects a friend-chat target that is not this child's own (or is hidden)", async () => {
+    await expect(assertLessonVoiceAccess("family", "child", { kind: "friend", chatId: id })).rejects.toThrow("voice_lesson_unavailable");
+    put("chats", { id, child_profile_id: "another-child", kind: "friend", hidden_from_child_at: null });
+    await expect(assertLessonVoiceAccess("family", "child", { kind: "friend", chatId: id })).rejects.toThrow("voice_lesson_unavailable");
+    put("chats", { id, child_profile_id: "child", kind: "friend", hidden_from_child_at: "2026-10-23T00:00:00Z" });
+    await expect(assertLessonVoiceAccess("family", "child", { kind: "friend", chatId: id })).rejects.toThrow("voice_lesson_unavailable");
   });
   it("rejects archived lessons, stale topics and database failures", async () => {
     const target = { kind: "course" as const, refTable: "course_v2_exercises" as const, refId: stepId };
