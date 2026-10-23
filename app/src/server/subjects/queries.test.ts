@@ -54,7 +54,7 @@ function makeScope(tables: Record<string, FakeRow[] | FakeRow>) {
 const scopeState = { tables: {} as Record<string, FakeRow[] | FakeRow> };
 vi.mock("../db/family-scope", () => ({ forFamily: () => makeScope(scopeState.tables) }));
 
-const { effectiveCourseVisible, getSubjectDetail } = await import("./queries");
+const { effectiveCourseVisible, getSubjectDetail, listSubjectTopicOptions } = await import("./queries");
 
 describe("getSubjectDetail (D-65)", () => {
   it("returns every topic of the subject, not only the current one", async () => {
@@ -175,6 +175,29 @@ describe("getSubjectDetail: literatureLessonId (S33/D-123)", () => {
     const detail = await getSubjectDetail("fam-1", "subj-math2");
 
     expect(detail?.topics.map((t) => t.id)).toEqual(["new-1"]);
+  });
+
+  /**
+   * S47 fix (2026-10-23, Алекс: завантажив відео для "Параграф 17", кнопка
+   * не з'явилась у дитини): the video-lesson topic picker must offer the
+   * exact same topics as the child's own screen — never an old,
+   * non-imported topic hidden by the rule above, which would let a video
+   * attach to a topic that can never render it.
+   */
+  it("excludes the same hidden old-pipeline topics from the video-lesson topic picker", async () => {
+    scopeState.tables = {
+      subjects: { id: "subj-math2b", code: "math2b", name_uk: "Математика", active: true, is_stub: false },
+      materials: [],
+      topics: [
+        { id: "old-1", subject_id: "subj-math2b", title: "Старий розділ (AI)", page_from: 1, page_to: 5, sort_order: 1, is_current: false },
+        { id: "new-1", subject_id: "subj-math2b", title: "§ 1. Відсотки", page_from: 10, page_to: 20, sort_order: 2, is_current: false },
+      ],
+      course_lessons: [{ id: "cl-1", topic_id: "new-1", status: "active" }],
+    };
+
+    const options = await listSubjectTopicOptions("fam-1", "subj-math2b");
+
+    expect(options).toEqual([{ id: "new-1", title: "§ 1. Відсотки" }]);
   });
 
   it("carries hasVideoLesson=true for a topic with an attached S47 video lesson, alongside its own text lesson", async () => {

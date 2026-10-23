@@ -26,6 +26,13 @@ export interface VideoTopicOption {
 export function VideoLessonsPanel({ topics, initialVideos }: { topics: VideoTopicOption[]; initialVideos: VideoLessonRow[] }) {
   const t = uk.parent.contentAdmin.videoLessons;
   const router = useRouter();
+  // S47 fix (2026-10-23, Алекс: завантажив відео для теми, що виявилась
+  // прихованою від дитини — відео зберіглося, кнопка ніде не з'явилась):
+  // `topics` here is ALREADY the same filtered list the child's own
+  // `/subject/[id]` screen renders (see `getSubjectDetail`'s visibility
+  // rule) — a video whose `topicId` isn't in it will never have anywhere to
+  // show up, so flag it right here instead of letting that be a silent gap.
+  const visibleTopicIds = new Set(topics.map((tp) => tp.id));
   const [videos, setVideos] = useState(initialVideos);
   const [topicId, setTopicId] = useState("");
   const [phase, setPhase] = useState<"idle" | "uploading" | "done">("idle");
@@ -149,6 +156,11 @@ export function VideoLessonsPanel({ topics, initialVideos }: { topics: VideoTopi
           {videos.map((video) => (
             <li key={video.id} className="flex flex-wrap items-center gap-3 px-3 py-2.5 text-[13px]">
               <span className="min-w-0 flex-1 truncate font-bold">🎬 {video.topicTitle}</span>
+              {!visibleTopicIds.has(video.topicId) && (
+                <span className="shrink-0 rounded-full bg-p-danger/10 px-2 py-0.5 text-[10.5px] font-extrabold text-p-danger" title={t.hiddenTopicWarningHint}>
+                  {t.hiddenTopicWarning}
+                </span>
+              )}
               <span className="shrink-0 text-[11.5px] text-p-muted">{(video.sizeBytes / 1024 / 1024).toFixed(1)} МБ</span>
               <button
                 type="button"
