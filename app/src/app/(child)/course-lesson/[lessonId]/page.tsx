@@ -1,3 +1,4 @@
+import { TopicVideoSupplement } from "@/components/child/SubjectVideoLessons";
 import { notFound } from "next/navigation";
 import { CourseLessonScreen } from "@/components/course/CourseLessonView";
 import { requireChild } from "@/server/auth/guards";
@@ -20,5 +21,5 @@ export default async function CourseLessonPage({ params }: { params: Promise<{ l
   const lesson = await getCourseLessonView(ctx.familyId, lessonId);
   if (!lesson) notFound();
 
-  return <CourseLessonScreen lesson={lesson} />;
+  return <><TopicVideoSupplement familyId={ctx.familyId} subjectId={lesson.subjectId} topicId={lesson.topicId ?? null} title={lesson.title} /><CourseLessonScreen lesson={lesson} /></>;
 }

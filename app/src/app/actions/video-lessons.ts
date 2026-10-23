@@ -30,6 +30,7 @@ export async function deleteVideoLessonAction(id: string): Promise<DeleteVideoLe
     return { status: "error", message: uk.common.error };
   }
   revalidatePath("/parent/subjects", "layout");
+  revalidatePath("/subject", "layout");
   return { status: "ok" };
 }
 
@@ -38,6 +39,8 @@ export async function getVideoLessonUrlAction(topicId: string): Promise<{ status
   const { ctx } = await requireChild();
   const parsed = uuidSchema.safeParse(topicId);
   if (!parsed.success) return { status: "error" };
-  const url = await getVideoLessonUrlForTopic(ctx.familyId, parsed.data);
-  return url ? { status: "ok", url } : { status: "error" };
+  try {
+    const url = await getVideoLessonUrlForTopic(ctx.familyId, parsed.data);
+    return url ? { status: "ok", url } : { status: "error" };
+  } catch { return { status: "error" }; }
 }

@@ -45,6 +45,7 @@ export interface CourseLessonView {
   id: string;
   /** 2026-10-02: lets the lesson screen's nav bar link back to `/subject/[subjectId]` ("Список уроків предмету"). */
   subjectId: string;
+  topicId?: string | null;
   packageId: string;
   packageTitle: string;
   lessonKey: string;
@@ -63,6 +64,7 @@ export interface CourseLessonView {
 interface LessonRow {
   id: string;
   subject_id: string;
+  topic_id: string | null;
   package_id: string;
   lesson_key: string;
   kind: "lesson" | "review" | "assessment";
@@ -139,7 +141,7 @@ export async function getCourseLessonView(familyId: string, lessonId: string): P
     scope
       .select(
         "course_lessons",
-        "id, subject_id, package_id, lesson_key, kind, title, source, teacher_notes_md, source_material, exercise_ids, exercise_count, status",
+        "id, topic_id, subject_id, package_id, lesson_key, kind, title, source, teacher_notes_md, source_material, exercise_ids, exercise_count, status",
       )
       .eq("id", lessonId)
       .maybeSingle<LessonRow>(),
@@ -175,6 +177,7 @@ export async function getCourseLessonView(familyId: string, lessonId: string): P
   return {
     id: lesson.id,
     subjectId: lesson.subject_id,
+    topicId: lesson.topic_id ?? null,
     packageId: lesson.package_id,
     packageTitle: pkg?.title ?? "",
     lessonKey: lesson.lesson_key,

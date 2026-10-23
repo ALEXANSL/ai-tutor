@@ -1,3 +1,4 @@
+import { TopicVideoSupplement } from "@/components/child/SubjectVideoLessons";
 import { notFound } from "next/navigation";
 import { LiteratureV3LessonScreen } from "@/components/course-v2/LiteratureV3LessonView";
 import { requireChild } from "@/server/auth/guards";
@@ -23,5 +24,5 @@ export default async function LiteratureV3LessonPage({ params }: { params: Promi
     getLiteratureV3ReadingPosition(ctx.familyId, profile.id, lesson.id),
   ]);
 
-  return <LiteratureV3LessonScreen lesson={lesson} packageLessons={packageLessons} bookIndex={bookIndex} savedPosition={savedPosition} />;
+  return <><TopicVideoSupplement familyId={ctx.familyId} subjectId={lesson.subjectId} topicId={lesson.topicId} title={lesson.title} /><LiteratureV3LessonScreen lesson={lesson} packageLessons={packageLessons} bookIndex={bookIndex} savedPosition={savedPosition} /></>;
 }

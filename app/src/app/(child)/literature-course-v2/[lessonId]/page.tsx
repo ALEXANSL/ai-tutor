@@ -1,3 +1,4 @@
+import { TopicVideoSupplement } from "@/components/child/SubjectVideoLessons";
 import { notFound } from "next/navigation";
 import { LiteratureV2LessonScreen } from "@/components/course-v2/LiteratureV2LessonView";
 import { requireChild } from "@/server/auth/guards";
@@ -18,5 +19,5 @@ export default async function LiteratureV2LessonPage({ params }: { params: Promi
   if (!lesson) notFound();
   const packageLessons = await listLiteratureV2Lessons(ctx.familyId, lesson.packageId);
 
-  return <LiteratureV2LessonScreen lesson={lesson} packageLessons={packageLessons} />;
+  return <><TopicVideoSupplement familyId={ctx.familyId} subjectId={lesson.subjectId} topicId={lesson.topicId} title={lesson.title} /><LiteratureV2LessonScreen lesson={lesson} packageLessons={packageLessons} /></>;
 }

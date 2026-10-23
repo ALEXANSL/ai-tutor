@@ -1,3 +1,4 @@
+import { TopicVideoSupplement } from "@/components/child/SubjectVideoLessons";
 import { notFound } from "next/navigation";
 import { MathCourseV2LessonScreen } from "@/components/course-v2/MathCourseV2LessonView";
 import { requireChild } from "@/server/auth/guards";
@@ -19,5 +20,5 @@ export default async function MathCourseV2LessonPage({ params }: { params: Promi
   if (!lesson) notFound();
   const packageLessons = await listMathCourseV2Lessons(ctx.familyId, lesson.packageId);
 
-  return <MathCourseV2LessonScreen lesson={lesson} packageLessons={packageLessons} />;
+  return <><TopicVideoSupplement familyId={ctx.familyId} subjectId={lesson.subjectId} topicId={lesson.topicId} title={lesson.title} /><MathCourseV2LessonScreen lesson={lesson} packageLessons={packageLessons} /></>;
 }

@@ -1,3 +1,4 @@
+import { TopicVideoSupplement } from "@/components/child/SubjectVideoLessons";
 import { notFound } from "next/navigation";
 import { LiteratureLessonScreen } from "@/components/literature/LiteratureLessonView";
 import { requireChild } from "@/server/auth/guards";
@@ -24,5 +25,5 @@ export default async function LiteratureLessonPage({ params }: { params: Promise
   const lesson = await getLiteratureLessonView(ctx.familyId, lessonId);
   if (!lesson) notFound();
 
-  return <LiteratureLessonScreen lesson={lesson} />;
+  return <><TopicVideoSupplement familyId={ctx.familyId} subjectId={lesson.subjectId} topicId={lesson.topicId ?? null} title={lesson.title} /><LiteratureLessonScreen lesson={lesson} /></>;
 }
