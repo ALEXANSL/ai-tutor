@@ -190,6 +190,15 @@ export const uk = {
       // instead of the old "Почати"/generation flow — see
       // `getSubjectDetail`'s `literatureLessonId` doc comment.
       openLesson: "Відкрити урок",
+      // S47 (PO decision 2026-10-27): "🎬 Відео-урок" — an additional video
+      // (Pictory) attached to a topic, alongside whatever text lesson it
+      // already has above.
+      video: {
+        button: "🎬 Відео-урок",
+        close: "✕ Закрити",
+        loading: "Завантажую відео…",
+        failed: "Не вдалося відкрити відео. Спробуй ще раз.",
+      },
       // S37 (PO 2026-10-08): "remember the last lesson and highlight it" —
       // shown on the topic the child last opened, so she can find her place
       // again without remembering which one it was.
@@ -958,6 +967,26 @@ export const uk = {
         delete: "Видалити",
         deleteConfirm: "Видалити цей урок остаточно? Дію не можна скасувати.",
         deleteBlockedHasProgress: "Видалення заблоковано: дитина вже має прогрес за цим уроком. Можна лише вимкнути (перемикач).",
+      },
+      // S47 (PO decision 2026-10-27): Pictory-generated video lessons —
+      // an additional "🎬 Відео-урок" attached to an existing topic, never
+      // a replacement for its text lesson.
+      videoLessons: {
+        title: "Відео-уроки",
+        hint: "Додайте готовий відеоурок (наприклад, зроблений у Pictory) до вже існуючої теми — дитина побачить кнопку «🎬 Відео-урок» поруч зі звичайним уроком. Повторне завантаження для тієї самої теми замінює попереднє відео.",
+        topicLabel: "Тема",
+        pickTopic: "Оберіть тему",
+        pickTopicFirst: "Спочатку оберіть тему.",
+        uploadButton: "Завантажити відео",
+        uploading: "Завантажую відео…",
+        tooLarge: (mb: number) => `Файл має бути не більшим за ${mb} МБ.`,
+        unsupportedType: "Підтримуються лише файли MP4, WebM або MOV.",
+        notConfigured: "Завантаження тимчасово недоступне.",
+        failed: "Не вдалося завантажити відео. Спробуйте ще раз.",
+        done: "Відео додано.",
+        empty: "Відеоуроків для цього предмета ще немає.",
+        delete: "Видалити",
+        deleteConfirm: "Видалити цей відеоурок? Дію не можна скасувати.",
       },
       textbook: {
         title: "Прив'язка до підручника",

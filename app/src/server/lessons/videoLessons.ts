@@ -1,0 +1,91 @@
+import "server-only";
+import { forFamily } from "@/server/db/family-scope";
+
+/**
+ * S47 (PO decision 2026-10-27): Pictory-generated video lessons, uploaded by
+ * the parent and attached to an EXISTING topic as a supplement — never a
+ * replacement for whatever text-lesson system (literature/course/math_v2/
+ * literature_v2/literature_v3) already serves that topic, or lack thereof.
+ * One video per topic (re-upload replaces it); see the migration header for
+ * the storage-bucket/table shape.
+ */
+
+const VIDEO_BUCKET = "video_lessons";
+const SIGNED_URL_TTL_S = 1800; // 30 minutes — comfortably more than one 3-5 min lesson, including seeking/rebuffering; still short-lived.
+
+export interface VideoLessonRow {
+  id: string;
+  topicId: string;
+  topicTitle: string;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+/** Parent-facing list for the subject's content-admin panel (S42-style). */
+export async function listVideoLessonsForSubject(familyId: string, subjectId: string): Promise<VideoLessonRow[]> {
+  const scope = forFamily(familyId);
+  const { data } = await scope.client
+    .from("video_lessons")
+    .select("id, topic_id, size_bytes, created_at, topics(title)")
+    .eq("owner_family_id", familyId)
+    .eq("subject_id", subjectId)
+    .order("created_at", { ascending: false })
+    .returns<{ id: string; topic_id: string; size_bytes: number; created_at: string; topics: { title: string } | { title: string }[] | null }[]>();
+  return (data ?? []).map((r) => {
+    const topic = Array.isArray(r.topics) ? r.topics[0] : r.topics;
+    return { id: r.id, topicId: r.topic_id, topicTitle: topic?.title ?? "?", sizeBytes: r.size_bytes, createdAt: r.created_at };
+  });
+}
+
+/** Child-facing existence check for the subject screen's "🎬 Відео-урок" button — no signed URL minted yet (only on open). */
+export async function listTopicIdsWithVideoLesson(familyId: string, topicIds: string[]): Promise<Set<string>> {
+  if (topicIds.length === 0) return new Set();
+  const { data } = await forFamily(familyId)
+    .select("video_lessons", "topic_id")
+    .in("topic_id", topicIds)
+    .returns<{ topic_id: string }[]>();
+  return new Set((data ?? []).map((r) => r.topic_id));
+}
+
+/** Signs the video's playback URL on demand (not pre-signed on page load) — called when the child actually opens the modal. */
+export async function getVideoLessonUrlForTopic(familyId: string, topicId: string): Promise<string | null> {
+  const scope = forFamily(familyId);
+  const { data } = await scope.select("video_lessons", "storage_path").eq("topic_id", topicId).maybeSingle<{ storage_path: string }>();
+  if (!data) return null;
+  const { data: signed, error } = await scope.client.storage.from(VIDEO_BUCKET).createSignedUrl(data.storage_path, SIGNED_URL_TTL_S);
+  if (error || !signed) return null;
+  return signed.signedUrl;
+}
+
+/** Called by the upload-complete route once the browser has PUT the file straight to Storage. Returns the row id (for the panel's delete button). */
+export async function saveVideoLesson(
+  familyId: string,
+  topicId: string,
+  subjectId: string,
+  storagePath: string,
+  mimeType: string,
+  sizeBytes: number,
+): Promise<string> {
+  const scope = forFamily(familyId);
+  const { data: existing } = await scope.select("video_lessons", "storage_path").eq("topic_id", topicId).maybeSingle<{ storage_path: string }>();
+  const { data, error } = await scope
+    .upsert("video_lessons", { topic_id: topicId, subject_id: subjectId, storage_path: storagePath, mime_type: mimeType, size_bytes: sizeBytes }, "topic_id")
+    .select("id")
+    .single<{ id: string }>();
+  if (error || !data) throw new Error(`saving the video lesson failed: ${error?.message}`);
+  // Re-upload replaced this topic's video — drop the now-orphaned old file so storage usage doesn't silently grow.
+  if (existing && existing.storage_path !== storagePath) {
+    await scope.client.storage.from(VIDEO_BUCKET).remove([existing.storage_path]);
+  }
+  return data.id;
+}
+
+/** Parent delete (S42-style panel) — removes both the DB row and the stored file. */
+export async function deleteVideoLesson(familyId: string, id: string): Promise<void> {
+  const scope = forFamily(familyId);
+  const { data } = await scope.select("video_lessons", "storage_path").eq("id", id).maybeSingle<{ storage_path: string }>();
+  if (!data) throw new Error("video lesson not found");
+  const { error } = await scope.delete("video_lessons").eq("id", id);
+  if (error) throw new Error(`deleting the video lesson failed: ${error.message}`);
+  await scope.client.storage.from(VIDEO_BUCKET).remove([data.storage_path]);
+}

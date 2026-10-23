@@ -1,5 +1,6 @@
 import "server-only";
 import { forFamily } from "../db/family-scope";
+import { listTopicIdsWithVideoLesson } from "../lessons/videoLessons";
 import { buildForecastPlan, type ForecastPlan } from "./plan";
 
 /** Read models for "Предмети" (US-3.1, US-3.2) and, since E-22 (ADR-030), "Курси". */
@@ -164,6 +165,15 @@ export interface SubjectTopicOption {
    * a fifth hand-written lookup was NOT simply added here the same way.
    */
   literatureV3LessonId: string | null;
+  /**
+   * S47 (PO decision 2026-10-27): a Pictory-generated video lesson is a
+   * SUPPLEMENT, attached directly to this topic rather than resolved
+   * through `getActiveImportedLessonsForTopics` — it can coexist with
+   * whichever (if any) of the five text-lesson kinds above this topic
+   * already has. `true` when the child screen should offer the extra
+   * "🎬 Відео-урок" button for this topic.
+   */
+  hasVideoLesson: boolean;
 }
 
 export type ImportedLessonKind = "literature" | "course" | "math_v2" | "literature_v2" | "literature_v3";
@@ -300,7 +310,10 @@ export async function getSubjectDetail(familyId: string, subjectId: string): Pro
   // to RLS) because this same query also serves the PARENT cabinet, where
   // RLS would return `needs_review` rows too.
   const topicIds = topicList.map((t) => t.id);
-  const importedLessonByTopic = await getActiveImportedLessonsForTopics(familyId, topicIds);
+  const [importedLessonByTopic, videoLessonTopicIds] = await Promise.all([
+    getActiveImportedLessonsForTopics(familyId, topicIds),
+    listTopicIdsWithVideoLesson(familyId, topicIds),
+  ]);
   const lessonIdOfKind = (kind: ImportedLessonKind, topicId: string) => {
     const entry = importedLessonByTopic.get(topicId);
     return entry && entry.kind === kind ? entry.lessonId : null;
@@ -338,6 +351,7 @@ export async function getSubjectDetail(familyId: string, subjectId: string): Pro
       mathCourseV2LessonId: lessonIdOfKind("math_v2", t.id),
       literatureV2LessonId: lessonIdOfKind("literature_v2", t.id),
       literatureV3LessonId: lessonIdOfKind("literature_v3", t.id),
+      hasVideoLesson: videoLessonTopicIds.has(t.id),
     })),
     currentTopicId: visibleTopics.find((t) => t.is_current)?.id ?? null,
     kind,

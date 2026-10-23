@@ -13,3 +13,11 @@ export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
  * instant client-side feedback, same pattern as `MAX_UPLOAD_BYTES` above.
  */
 export const MAX_COURSE_ZIP_BYTES = 300 * 1024 * 1024;
+
+/**
+ * S47: the video-lesson file itself goes to Supabase Storage (same signed-
+ * upload-URL pattern as the course zip above), whose `video_lessons`
+ * bucket's own `file_size_limit` (migration 20261027100000) is the real
+ * ceiling — this constant mirrors it for instant client-side feedback.
+ */
+export const MAX_VIDEO_LESSON_BYTES = 500 * 1024 * 1024;

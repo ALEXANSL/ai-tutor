@@ -119,7 +119,7 @@ describe("getSubjectDetail: literatureLessonId (S33/D-123)", () => {
     const detail = await getSubjectDetail("fam-1", "subj-lit");
 
     expect(detail?.topics).toEqual([
-      { id: "t1", title: "Розділ 1", pageFrom: 1, pageTo: 10, literatureLessonId: "ll-1", courseLessonId: null, mathCourseV2LessonId: null, literatureV2LessonId: null, literatureV3LessonId: null },
+      { id: "t1", title: "Розділ 1", pageFrom: 1, pageTo: 10, literatureLessonId: "ll-1", courseLessonId: null, mathCourseV2LessonId: null, literatureV2LessonId: null, literatureV3LessonId: null, hasVideoLesson: false },
     ]);
   });
 
@@ -175,6 +175,20 @@ describe("getSubjectDetail: literatureLessonId (S33/D-123)", () => {
     const detail = await getSubjectDetail("fam-1", "subj-math2");
 
     expect(detail?.topics.map((t) => t.id)).toEqual(["new-1"]);
+  });
+
+  it("carries hasVideoLesson=true for a topic with an attached S47 video lesson, alongside its own text lesson", async () => {
+    scopeState.tables = {
+      subjects: { id: "subj-hist", code: "hist2", name_uk: "Історія", active: true, is_stub: false },
+      materials: [],
+      topics: [{ id: "t5", subject_id: "subj-hist", title: "Параграф 18-19", page_from: 100, page_to: 110, sort_order: 1, is_current: false }],
+      literature_lessons: [{ id: "ll-5", topic_id: "t5", status: "active" }],
+      video_lessons: [{ id: "vl-1", topic_id: "t5" }],
+    };
+
+    const detail = await getSubjectDetail("fam-1", "subj-hist");
+
+    expect(detail?.topics[0]).toMatchObject({ id: "t5", literatureLessonId: "ll-5", hasVideoLesson: true });
   });
 
   it("keeps every topic when none of them are imported yet (no regression for untouched subjects)", async () => {

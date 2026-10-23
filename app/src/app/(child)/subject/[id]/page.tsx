@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ChildStartLessonButton } from "@/components/child/ChildStartLessonButton";
 import { LastLessonHighlight } from "@/components/child/LastLessonHighlight";
 import { PrepareTopicButton } from "@/components/child/PrepareTopicButton";
+import { VideoLessonButton } from "@/components/child/VideoLessonButton";
 import { LiteratureV2Search } from "@/components/course-v2/LiteratureV2Search";
 import { LiteratureV3Search } from "@/components/course-v2/LiteratureV3Search";
 import { MathCourseV2Search } from "@/components/course-v2/MathCourseV2Search";
@@ -161,6 +162,7 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
                     )}
                   </>
                 )}
+                {topic.hasVideoLesson && <VideoLessonButton topicId={topic.id} title={topic.title} />}
               </div>
               </div>
             </LastLessonHighlight>

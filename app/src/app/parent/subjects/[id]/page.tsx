@@ -9,10 +9,12 @@ import { RenameSubjectForm } from "@/components/parent/subjects/RenameSubjectFor
 import { StartLessonButton } from "@/components/parent/subjects/StartLessonButton";
 import { SubjectLessonsPanel } from "@/components/parent/subjects/SubjectLessonsPanel";
 import { TextbookLinkPanel } from "@/components/parent/subjects/TextbookLinkPanel";
+import { VideoLessonsPanel } from "@/components/parent/subjects/VideoLessonsPanel";
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
 import { listLibraryCardsForTopic } from "@/server/lessons/library";
 import { getTopicWarmupStatuses } from "@/server/lessons/warmup";
+import { listVideoLessonsForSubject } from "@/server/lessons/videoLessons";
 import { getSubjectDetail, getSubjectForecastPlan } from "@/server/subjects/queries";
 import { listSubjectLessons, listSubjectPackages, listSubjectPdfMaterials } from "@/server/subjects/contentAdmin";
 import { PageTitle, Panel } from "../../ui";
@@ -51,10 +53,11 @@ export default async function SubjectDetailPage({ params }: { params: Promise<{ 
   // all-empty-array fallbacks when the subject has no imported content yet)
   // since this screen is also the preview source for "Очистити старий
   // контент" above.
-  const [contentLessons, contentPackages, pdfOptions] = await Promise.all([
+  const [contentLessons, contentPackages, pdfOptions, videoLessons] = await Promise.all([
     listSubjectLessons(familyId, subject.id),
     listSubjectPackages(familyId, subject.id),
     listSubjectPdfMaterials(familyId, subject.id),
+    listVideoLessonsForSubject(familyId, subject.id),
   ]);
 
   return (
@@ -122,6 +125,12 @@ export default async function SubjectDetailPage({ params }: { params: Promise<{ 
             <h3 className="mb-2 text-[14px] font-extrabold">{uk.parent.contentAdmin.lessons.title}</h3>
             <SubjectLessonsPanel initialLessons={contentLessons} />
           </div>
+          {subject.topics.length > 0 && (
+            <div>
+              <h3 className="mb-2 text-[14px] font-extrabold">{uk.parent.contentAdmin.videoLessons.title}</h3>
+              <VideoLessonsPanel topics={subject.topics.map((tp) => ({ id: tp.id, title: tp.title }))} initialVideos={videoLessons} />
+            </div>
+          )}
         </div>
       </Panel>
     </>
