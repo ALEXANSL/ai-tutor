@@ -13,12 +13,17 @@ import type { TutorGender } from "@/i18n/uk";
 import type { ChatMessageView } from "./chat";
 
 /**
- * "ШІ-друг" (US-8.5): a free-topic chat, one per child, separate from every
- * subject/topic chat. **The parent sees it verbatim** (КП-3) — same
- * `messages` table, `parent_visibility = 'full'` default, no separate code
- * path needed for that part. Every child message is moderated exactly like
- * a topic-chat question or a lesson answer (NFR-SAFE-4, US-12.1 КП-3: "works
- * the same in text, voice and ШІ-друг").
+ * "ШІ-друг" (US-8.5, S46 2026-10-23 "окремі іменовані чати"): several
+ * free-topic chats per child, each its own `chats` row (`kind = 'friend'`),
+ * separate from every subject/topic chat. **The parent always sees every
+ * chat verbatim** (КП-3) — same `messages` table, `parent_visibility =
+ * 'full'` default, no separate code path, and NO row is ever deleted here:
+ * "deleting" a chat (Алекс 2026-10-23) only sets `hidden_from_child_at`,
+ * removing it from the child's own list while `/parent/conversations`
+ * (which selects every `chats` row with no filter) keeps showing it
+ * unchanged. Every child message is moderated exactly like a topic-chat
+ * question or a lesson answer (NFR-SAFE-4, US-12.1 КП-3: "works the same in
+ * text, voice and ШІ-друг").
  */
 let promptCache: { system: string; user: string } | null = null;
 function friendChatPrompt(): { system: string; user: string } {
@@ -28,39 +33,86 @@ function friendChatPrompt(): { system: string; user: string } {
 
 const answerSchema = z.object({ answerUk: z.string().min(1).max(800) });
 
-export async function getOrCreateFriendChat(familyId: string, childProfileId: string): Promise<string> {
-  const scope = forFamily(familyId);
-  const { data: existing } = await scope.select("chats", "id").eq("child_profile_id", childProfileId).eq("kind", "friend").maybeSingle<{ id: string }>();
-  if (existing) return existing.id;
-  const { data, error } = await scope.client
-    .from("chats")
-    .insert({ family_id: familyId, child_profile_id: childProfileId, kind: "friend" })
-    .select("id")
-    .single<{ id: string }>();
-  if (error || !data) throw new Error(`creating the friend chat failed: ${error?.message}`);
-  return data.id;
+export interface FriendChatSummary {
+  id: string;
+  title: string;
+  createdAt: string;
 }
 
-export async function listFriendChatMessages(familyId: string, childProfileId: string): Promise<{ chatId: string; messages: ChatMessageView[] }> {
-  const chatId = await getOrCreateFriendChat(familyId, childProfileId);
+function fallbackTitle(createdAt: string): string {
+  const date = new Date(createdAt);
+  return Number.isNaN(date.getTime()) ? "Розмова" : `Розмова від ${date.toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit" })}`;
+}
+
+/** Visible to the child — hidden chats (soft-"deleted") are excluded. The
+ * parent's own reader (`/parent/conversations`) queries `chats` directly
+ * with no such filter, by design (КП-3). */
+export async function listFriendChats(familyId: string, childProfileId: string): Promise<FriendChatSummary[]> {
+  const { data } = await forFamily(familyId)
+    .select("chats", "id, title, created_at")
+    .eq("child_profile_id", childProfileId)
+    .eq("kind", "friend")
+    .is("hidden_from_child_at", null)
+    .order("created_at", { ascending: false })
+    .returns<{ id: string; title: string | null; created_at: string }[]>();
+  return (data ?? []).map((c) => ({ id: c.id, title: c.title ?? fallbackTitle(c.created_at), createdAt: c.created_at }));
+}
+
+/** A new, separately named chat ("окремі іменовані чати") — never reuses or
+ * clears an existing one, unlike the old single-chat `getOrCreateFriendChat`. */
+export async function createFriendChat(familyId: string, childProfileId: string): Promise<FriendChatSummary> {
+  const scope = forFamily(familyId);
+  const { count } = await scope.count("chats").eq("child_profile_id", childProfileId).eq("kind", "friend");
+  const title = `Розмова ${(count ?? 0) + 1}`;
+  const { data, error } = await scope.client
+    .from("chats")
+    .insert({ family_id: familyId, child_profile_id: childProfileId, kind: "friend", title })
+    .select("id, title, created_at")
+    .single<{ id: string; title: string; created_at: string }>();
+  if (error || !data) throw new Error(`creating the friend chat failed: ${error?.message}`);
+  return { id: data.id, title: data.title, createdAt: data.created_at };
+}
+
+/** Child-facing "delete": hides the chat from the child's own list only —
+ * never deletes it, so the parent keeps seeing it (КП-3). Throws if `chatId`
+ * is not this child's own friend chat (never trust a client-supplied id). */
+export async function hideFriendChat(familyId: string, childProfileId: string, chatId: string): Promise<void> {
+  const scope = forFamily(familyId);
+  const { data: owned } = await scope.select("chats", "id").eq("id", chatId).eq("child_profile_id", childProfileId).eq("kind", "friend").maybeSingle<{ id: string }>();
+  if (!owned) throw new Error("friend chat not found");
+  const { error } = await scope.client.from("chats").update({ hidden_from_child_at: new Date().toISOString() }).eq("id", chatId);
+  if (error) throw new Error(`hiding the friend chat failed: ${error.message}`);
+}
+
+/** A hidden chat ("deleted" by the child, S46) is off-limits to further
+ * child-initiated reads/writes too, not just absent from their list — it
+ * still exists for the parent, just never through child-facing actions. */
+async function requireOwnFriendChat(familyId: string, childProfileId: string, chatId: string): Promise<void> {
+  const { data } = await forFamily(familyId).select("chats", "id").eq("id", chatId).eq("child_profile_id", childProfileId).eq("kind", "friend").is("hidden_from_child_at", null).maybeSingle<{ id: string }>();
+  if (!data) throw new Error("friend chat not found");
+}
+
+export async function listFriendChatMessages(familyId: string, childProfileId: string, chatId: string): Promise<ChatMessageView[]> {
+  await requireOwnFriendChat(familyId, childProfileId, chatId);
   const { data } = await forFamily(familyId)
     .select("messages", "id, author, content, created_at")
     .eq("chat_id", chatId)
     .order("created_at")
     .returns<{ id: string; author: ChatMessageView["author"]; content: string; created_at: string }[]>();
-  return { chatId, messages: (data ?? []).map((m) => ({ id: m.id, author: m.author, content: m.content, createdAt: m.created_at })) };
+  return (data ?? []).map((m) => ({ id: m.id, author: m.author, content: m.content, createdAt: m.created_at }));
 }
 
 export async function askFriendChat(
   familyId: string,
   childProfileId: string,
+  chatId: string,
   nickname: string,
   tutorName: string,
   tutorGender: TutorGender,
   message: string,
 ): Promise<ChatMessageView> {
   const scope = forFamily(familyId);
-  const chatId = await getOrCreateFriendChat(familyId, childProfileId);
+  await requireOwnFriendChat(familyId, childProfileId, chatId);
   const cleanMessage = message.trim().slice(0, 800);
 
   const { data: history } = await scope

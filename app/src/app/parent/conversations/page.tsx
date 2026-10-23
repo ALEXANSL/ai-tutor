@@ -8,6 +8,9 @@ interface ChatRow {
   id: string;
   kind: "subject_topic" | "friend" | "private";
   topic_id: string | null;
+  /** S46 (2026-10-23): "ШІ-друг" is now several named chats, not one — a
+   * hidden (child-side "deleted") one still shows here (КП-3, no filter). */
+  title: string | null;
   topics: { title: string; subjects: { name_uk: string } | { name_uk: string }[] | null } | { title: string; subjects: { name_uk: string } | { name_uk: string }[] | null }[] | null;
 }
 interface MessageRow {
@@ -30,7 +33,7 @@ export default async function ConversationsPage({ searchParams }: { searchParams
 
   const { data: chats } = await scope.client
     .from("chats")
-    .select("id, kind, topic_id, topics(title, subjects(name_uk))")
+    .select("id, kind, topic_id, title, topics(title, subjects(name_uk))")
     .eq("family_id", familyId)
     .order("created_at", { ascending: false })
     .returns<ChatRow[]>();
@@ -51,7 +54,7 @@ export default async function ConversationsPage({ searchParams }: { searchParams
     : { data: [] as MessageRow[] };
 
   function labelOf(c: ChatRow): string {
-    if (c.kind === "friend") return t.friendChat;
+    if (c.kind === "friend") return c.title ? `💬 ${c.title}` : t.friendChat;
     const topic = Array.isArray(c.topics) ? c.topics[0] : c.topics;
     const subject = topic ? (Array.isArray(topic.subjects) ? topic.subjects[0] : topic.subjects) : null;
     return topic ? `${subject?.name_uk ?? "?"} — ${topic.title}` : t.unknownChat;

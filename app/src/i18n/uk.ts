@@ -445,6 +445,16 @@ export const uk = {
       placeholder: "Напиши повідомлення…",
       send: "Надіслати",
       thinking: "Секунду…",
+      // S46 (2026-10-23, "окремі іменовані чати"): a list of several named
+      // chats instead of one continuous one.
+      list: {
+        title: "ШІ-друг",
+        back: "← Сьогодні",
+        newChat: "+ Нова розмова",
+        empty: "Ще немає жодної розмови — почни нову! 🙂",
+        deleteConfirm: "Прибрати цю розмову зі списку? Тато й далі зможе її переглянути.",
+        delete: "Прибрати",
+      },
     },
     voice: {
       title: "Голосова розмова",
