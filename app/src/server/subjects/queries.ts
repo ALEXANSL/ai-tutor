@@ -9,18 +9,21 @@ export interface TopicOption {
 }
 
 /**
- * S47: the plain "pick an existing topic by its own title" list for the
- * video-lesson uploader on "Завантажити матеріали" (the subject there is
- * chosen first, so this is the lightweight topic-only follow-up query —
- * `getSubjectDetail` below does far more work than this screen needs).
+ * S47 (fix 2026-10-23, Алекс: завантажив відео для "Параграф 17", кнопка не
+ * з'явилась у дитини): this MUST return exactly the topics the child's own
+ * `/subject/[id]` screen renders — not every `topics` row of the subject.
+ * `getSubjectDetail` below hides old-pipeline topics once the subject has
+ * ANY actively-imported one (see its own "2026-10-02 incident" comment) —
+ * a raw, unfiltered `topics` query let the parent attach a video to a topic
+ * that was never going to render on the child's screen at all, so the
+ * upload "worked" (saved fine) but had nowhere to show up. Delegating to
+ * `getSubjectDetail` keeps this list and the child's screen permanently in
+ * sync, at the cost of the extra queries it also does (textbook, imported
+ * lessons) — an acceptable trade for an occasional parent admin action.
  */
 export async function listSubjectTopicOptions(familyId: string, subjectId: string): Promise<TopicOption[]> {
-  const { data } = await forFamily(familyId)
-    .select("topics", "id, title")
-    .eq("subject_id", subjectId)
-    .order("sort_order")
-    .returns<TopicOption[]>();
-  return data ?? [];
+  const detail = await getSubjectDetail(familyId, subjectId);
+  return (detail?.topics ?? []).map((t) => ({ id: t.id, title: t.title }));
 }
 
 /** Read models for "Предмети" (US-3.1, US-3.2) and, since E-22 (ADR-030), "Курси". */
