@@ -403,7 +403,7 @@ function TaskList({ tasks, subjectId, topicId, textbook, onFocusTarget }: { task
   );
 }
 
-export function LiteratureV2LessonScreen({ lesson, packageLessons }: { lesson: LiteratureV2LessonView; packageLessons: LiteratureV2LessonListItem[] }) {
+export function LiteratureV2LessonScreen({ lesson, packageLessons, hasVideoLesson }: { lesson: LiteratureV2LessonView; packageLessons: LiteratureV2LessonListItem[]; hasVideoLesson?: boolean }) {
   const chatRef = useRef<LessonTopicChatHandle>(null);
   const [screenIndex, setScreenIndex] = useState(0);
   const [chatTarget, setChatTarget] = useState<VoiceTarget | undefined>(() => lesson.screens[0]
@@ -425,6 +425,7 @@ export function LiteratureV2LessonScreen({ lesson, packageLessons }: { lesson: L
       <LessonNavBar
         subjectId={lesson.subjectId}
         courseNav={{ basePath: "/literature-course-v2", currentLessonId: lesson.id, lessons: packageLessons, topicId: lesson.topicId }}
+        videoLessonTopicId={hasVideoLesson ? lesson.topicId : null}
         extraControls={
           <>
             <VoiceModeToggle voiceMode={voiceMode} onChange={changeVoiceMode} />

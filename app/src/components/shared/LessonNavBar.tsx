@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { VideoLessonButton } from "@/components/child/VideoLessonButton";
 import { uk } from "@/i18n/uk";
 
 const t = uk.child.lesson;
@@ -116,7 +117,26 @@ function useMeasuredHeight<T extends HTMLElement>() {
  *    fix for "налізає на текст": no fixed constant can account for every
  *    viewport width this bar might wrap at.
  */
-export function LessonNavBar({ subjectId, courseNav, extraControls }: { subjectId: string; courseNav?: CourseNavProps; extraControls?: React.ReactNode }) {
+export function LessonNavBar({
+  subjectId,
+  courseNav,
+  extraControls,
+  videoLessonTopicId,
+}: {
+  subjectId: string;
+  courseNav?: CourseNavProps;
+  extraControls?: React.ReactNode;
+  /**
+   * S47 follow-up (2026-10-23, Алекс: кнопка з'являлась лише на списку тем
+   * предмета, куди дитина не завжди повертається після першого відкриття
+   * уроку) — "🎬 Відео-урок" lives HERE too, in the universal nav bar every
+   * lesson-kind viewer already shares, so it shows up regardless of how the
+   * child got into this lesson. The caller already knows whether this
+   * topic actually has a video (`hasVideoLessonForTopic`); `null`/omitted
+   * when it doesn't, so this stays a no-op for every other lesson.
+   */
+  videoLessonTopicId?: string | null;
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [tocOpen, setTocOpen] = useState(false);
@@ -177,6 +197,7 @@ export function LessonNavBar({ subjectId, courseNav, extraControls }: { subjectI
             >
               {t.navSubjectList}
             </button>
+            {videoLessonTopicId && <VideoLessonButton topicId={videoLessonTopicId} />}
             <span className="flex-1" />
             <button
               type="button"

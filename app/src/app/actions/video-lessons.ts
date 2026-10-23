@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireChild, requireParentAccess } from "@/server/auth/guards";
-import { deleteVideoLesson, getVideoLessonUrlForTopic } from "@/server/lessons/videoLessons";
+import { deleteVideoLesson, getVideoLessonUrlById, listTopicVideos, type TopicVideoOption } from "@/server/lessons/videoLessons";
 import { listSubjectTopicOptions, type TopicOption } from "@/server/subjects/queries";
 import { uk } from "@/i18n/uk";
 
@@ -33,11 +33,19 @@ export async function deleteVideoLessonAction(id: string): Promise<DeleteVideoLe
   return { status: "ok" };
 }
 
-/** Child's subject screen (S47) — signs the video's playback URL only when the "🎬 Відео-урок" modal actually opens. */
-export async function getVideoLessonUrlAction(topicId: string): Promise<{ status: "ok"; url: string } | { status: "error" }> {
+/** Child's "🎬 Відео-урок" button (S47, every lesson viewer + the subject topic list) — the list of this topic's videos, fetched before any URL is signed (lets the button show a picker when there's more than one). */
+export async function listTopicVideosAction(topicId: string): Promise<TopicVideoOption[]> {
   const { ctx } = await requireChild();
   const parsed = uuidSchema.safeParse(topicId);
+  if (!parsed.success) return [];
+  return listTopicVideos(ctx.familyId, parsed.data);
+}
+
+/** Signs one specific video's playback URL only when the child actually opens/picks it in the modal (S47b: a topic can have several). */
+export async function getVideoLessonUrlAction(videoId: string): Promise<{ status: "ok"; url: string } | { status: "error" }> {
+  const { ctx } = await requireChild();
+  const parsed = uuidSchema.safeParse(videoId);
   if (!parsed.success) return { status: "error" };
-  const url = await getVideoLessonUrlForTopic(ctx.familyId, parsed.data);
+  const url = await getVideoLessonUrlById(ctx.familyId, parsed.data);
   return url ? { status: "ok", url } : { status: "error" };
 }
