@@ -4,6 +4,7 @@ import { MaterialsImportPanel } from "@/components/parent/materials/MaterialsImp
 import { MathCourseV2ImportPanel } from "@/components/parent/materials/MathCourseV2ImportPanel";
 import { LiteratureV2ImportPanel } from "@/components/parent/materials/LiteratureV2ImportPanel";
 import { LiteratureV3ImportPanel } from "@/components/parent/materials/LiteratureV3ImportPanel";
+import { VideoLessonUploadPanel } from "@/components/parent/materials/VideoLessonUploadPanel";
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
 import { listSubjects } from "@/server/books/queries";
@@ -26,6 +27,9 @@ export default async function MaterialsImportPage() {
       <PageTitle>{t.title}</PageTitle>
       <Panel title="Готовий курс — один ZIP">
         <UnifiedCourseImportPanel subjects={subjects} />
+      </Panel>
+      <Panel title={uk.parent.contentAdmin.videoLessons.title}>
+        <VideoLessonUploadPanel subjects={subjects} />
       </Panel>
       <Panel title="Потрібно додати лише підручник?">
         <p className="text-sm leading-relaxed text-p-muted">Книга у PDF або EPUB додається окремо. Готові уроки з архіву завантажуйте у формі вище.</p>

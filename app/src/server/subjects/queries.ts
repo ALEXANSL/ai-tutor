@@ -3,6 +3,26 @@ import { forFamily } from "../db/family-scope";
 import { listTopicIdsWithVideoLesson } from "../lessons/videoLessons";
 import { buildForecastPlan, type ForecastPlan } from "./plan";
 
+export interface TopicOption {
+  id: string;
+  title: string;
+}
+
+/**
+ * S47: the plain "pick an existing topic by its own title" list for the
+ * video-lesson uploader on "Завантажити матеріали" (the subject there is
+ * chosen first, so this is the lightweight topic-only follow-up query —
+ * `getSubjectDetail` below does far more work than this screen needs).
+ */
+export async function listSubjectTopicOptions(familyId: string, subjectId: string): Promise<TopicOption[]> {
+  const { data } = await forFamily(familyId)
+    .select("topics", "id, title")
+    .eq("subject_id", subjectId)
+    .order("sort_order")
+    .returns<TopicOption[]>();
+  return data ?? [];
+}
+
 /** Read models for "Предмети" (US-3.1, US-3.2) and, since E-22 (ADR-030), "Курси". */
 export interface SubjectOverviewItem {
   id: string;

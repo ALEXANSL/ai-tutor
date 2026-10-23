@@ -4,9 +4,18 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireChild, requireParentAccess } from "@/server/auth/guards";
 import { deleteVideoLesson, getVideoLessonUrlForTopic } from "@/server/lessons/videoLessons";
+import { listSubjectTopicOptions, type TopicOption } from "@/server/subjects/queries";
 import { uk } from "@/i18n/uk";
 
 const uuidSchema = z.string().uuid();
+
+/** "Завантажити матеріали" video-lesson uploader (S47) — topic dropdown populated after the parent picks a subject. */
+export async function listSubjectTopicsForVideoAction(subjectId: string): Promise<TopicOption[]> {
+  const { familyId } = await requireParentAccess();
+  const parsed = uuidSchema.safeParse(subjectId);
+  if (!parsed.success) return [];
+  return listSubjectTopicOptions(familyId, parsed.data);
+}
 
 export type DeleteVideoLessonState = { status: "ok" } | { status: "error"; message: string };
 
