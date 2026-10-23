@@ -79,7 +79,9 @@ export function VideoLessonUploadPanel({ subjects }: { subjects: SubjectOption[]
         const upload = (await init.json()) as { path: string; token: string };
         const client = getBrowserSupabaseStorageClient();
         if (!client) throw new Error(t.notConfigured);
-        const { error } = await client.storage.from("video_lessons").uploadToSignedUrl(upload.path, upload.token, file);
+        // Long Cache-Control on the stored object — see the same call in
+        // `VideoLessonsPanel.tsx` for why.
+        const { error } = await client.storage.from("video_lessons").uploadToSignedUrl(upload.path, upload.token, file, { contentType: mimeType, cacheControl: "31536000" });
         if (error) throw new Error(t.failed);
 
         const complete = await fetch("/api/parent/video-lessons/upload/complete", {

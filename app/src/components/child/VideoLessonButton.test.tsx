@@ -2,8 +2,8 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ get: vi.fn(), stop: vi.fn() }));
-vi.mock("@/app/actions/video-lessons", () => ({ getVideoLessonUrlAction: mocks.get }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), list: vi.fn(), stop: vi.fn() }));
+vi.mock("@/app/actions/video-lessons", () => ({ getVideoLessonUrlAction: mocks.get, listTopicVideosAction: mocks.list }));
 vi.mock("@/components/shared/singleAudioPlayback", () => ({ stopCurrentlyPlaying: mocks.stop }));
 import { VideoLessonButton } from "./VideoLessonButton";
 let root: Root, container: HTMLDivElement;
@@ -11,6 +11,7 @@ const pause = vi.fn();
 beforeEach(() => {
   vi.clearAllMocks(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(pause);
+  mocks.list.mockResolvedValue([{ id: "video", label: "Відео 1" }]);
   mocks.get.mockResolvedValue({ status: "ok", url: "https://example.com/signed.mp4" });
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
   act(() => root.render(<VideoLessonButton topicId="topic" title="Параграф 16" />));
@@ -21,9 +22,13 @@ function closeButton() { return document.querySelector<HTMLButtonElement>('[role
 describe("optional video modal", () => {
   it("signs on open only, stops narration and provides native inline controls", async () => {
     expect(mocks.get).not.toHaveBeenCalled(); await open();
-    expect(mocks.stop).toHaveBeenCalled(); expect(mocks.get).toHaveBeenCalledWith("topic");
+    expect(mocks.stop).toHaveBeenCalled(); expect(mocks.get).toHaveBeenCalledWith("video");
     const video = document.querySelector("video")!;
-    expect(video.controls).toBe(true); expect(video.playsInline).toBe(true);
+    expect(video.controls).toBe(false); expect(video.playsInline).toBe(true);
+    Object.defineProperty(video, "duration", { configurable: true, value: 180 });
+    Object.defineProperty(video, "buffered", { configurable: true, value: { length: 1, start: () => 0, end: () => 60 } });
+    act(() => video.dispatchEvent(new Event("progress")));
+    expect(video.controls).toBe(true);
     expect(document.querySelector('[role="dialog"]')?.getAttribute("aria-labelledby")).toBeTruthy();
     act(() => closeButton().click()); expect(pause).toHaveBeenCalled(); expect(document.querySelector("video")).toBeNull();
   });

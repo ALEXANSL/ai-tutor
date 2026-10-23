@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
- * S47: a small in-memory fake for `video_lessons` plus a stubbed Storage
- * client (`createSignedUrl`/`remove`) — real enough to exercise the
- * existence check, on-demand signing, upsert-replaces-and-cleans-up, and
+ * S47 (+ S47b, several videos per topic): a small in-memory fake for
+ * `video_lessons` plus a stubbed Storage client (`createSignedUrl`/
+ * `remove`) — real enough to exercise the existence check, the per-topic
+ * video list, on-demand signing by video id, insert-always-adds, and
  * delete-removes-both behaviors without a real Supabase client.
  */
 interface VideoRow { [key: string]: unknown; id: string; owner_family_id: string; subject_id: string; topic_id: string; storage_path: string; mime_type: string; size_bytes: number; created_at: string }
@@ -14,6 +15,7 @@ const topics: TopicRow[] = [{ id: "t1", title: "Параграф 16" }, { id: "t
 let subjects: Record<string, unknown>[] = [];
 let groups: Record<string, unknown>[] = [];
 let nextId = 1;
+let nextCreatedAtMinute = 0;
 const removedPaths: string[][] = [];
 const signCalls: string[] = [];
 
@@ -43,11 +45,9 @@ function tableOf(table: string): Record<string, unknown>[] {
 }
 const scope = {
   select: (table: string) => queryBuilder(tableOf(table), [["owner_family_id", "fam1"]]),
-  upsert: (_table: string, row: Record<string, unknown>) => {
-    const existingIndex = rows.findIndex((r) => r.topic_id === row.topic_id);
-    const saved: VideoRow = { id: existingIndex >= 0 ? rows[existingIndex]!.id : `vl${nextId++}`, owner_family_id: "fam1", created_at: "2026-10-27T00:00:00Z", ...row } as VideoRow;
-    if (existingIndex >= 0) rows[existingIndex] = saved;
-    else rows.push(saved);
+  insert: (_table: string, row: Record<string, unknown>) => {
+    const saved: VideoRow = { id: `vl${nextId++}`, owner_family_id: "fam1", created_at: `2026-10-27T00:${String(nextCreatedAtMinute++).padStart(2, "0")}:00Z`, ...row } as VideoRow;
+    rows.push(saved);
     return { select: () => ({ single: async () => ({ data: { id: saved.id }, error: null }) }) };
   },
   delete: (_table: string) => ({
@@ -83,13 +83,14 @@ const scope = {
 };
 vi.mock("@/server/db/family-scope", () => ({ forFamily: () => scope }));
 
-const { listVideoLessonsForSubject, listTopicIdsWithVideoLesson, getVideoLessonUrlForTopic, saveVideoLesson, deleteVideoLesson } = await import("./videoLessons");
+const { listVideoLessonsForSubject, listTopicIdsWithVideoLesson, listTopicVideos, getVideoLessonUrlById, saveVideoLesson, deleteVideoLesson } = await import("./videoLessons");
 
 beforeEach(() => {
   rows = [];
   subjects = [{ id: "subj1", owner_family_id: "fam1", active: true, kind: "school_subject", group_id: null, is_stub: false }];
   groups = [];
   nextId = 1;
+  nextCreatedAtMinute = 0;
   removedPaths.length = 0;
   signCalls.length = 0;
 });
@@ -119,17 +120,29 @@ describe("video lessons (S47)", () => {
     expect(await listTopicIdsWithVideoLesson("fam1", [])).toEqual(new Set());
   });
 
-  it("signs the playback URL on demand, not ahead of time", async () => {
+  it("lists a topic's videos in upload order, labelled Відео 1/2/...", async () => {
+    await saveVideoLesson("fam1", "t1", "subj1", "fam1/a.mp4", "video/mp4", 100);
+    await saveVideoLesson("fam1", "t1", "subj1", "fam1/b.mp4", "video/mp4", 200);
+
+    const list = await listTopicVideos("fam1", "t1");
+
+    expect(list).toEqual([
+      { id: "vl1", label: "Відео 1" },
+      { id: "vl2", label: "Відео 2" },
+    ]);
+  });
+
+  it("signs the playback URL of one specific video on demand, not ahead of time", async () => {
     rows.push({ id: "vl1", owner_family_id: "fam1", subject_id: "subj1", topic_id: "t1", storage_path: "fam1/a.mp4", mime_type: "video/mp4", size_bytes: 100, created_at: "2026-10-27T00:00:00Z" });
 
-    const url = await getVideoLessonUrlForTopic("fam1", "t1");
+    const url = await getVideoLessonUrlById("fam1", "vl1");
 
     expect(url).toBe("https://example.com/signed/fam1/a.mp4");
     expect(signCalls).toEqual(["fam1/a.mp4"]);
   });
 
-  it("returns null when the topic has no video lesson", async () => {
-    expect(await getVideoLessonUrlForTopic("fam1", "t1")).toBeNull();
+  it("returns null for a video id that doesn't exist", async () => {
+    expect(await getVideoLessonUrlById("fam1", "missing")).toBeNull();
     expect(signCalls).toEqual([]);
   });
 
@@ -141,22 +154,24 @@ describe("video lessons (S47)", () => {
     expect(removedPaths).toEqual([]);
   });
 
-  it("replaces a topic's existing video and deletes the old file", async () => {
-    await saveVideoLesson("fam1", "t1", "subj1", "fam1/old.mp4", "video/mp4", 100);
-    await saveVideoLesson("fam1", "t1", "subj1", "fam1/new.mp4", "video/mp4", 200);
+  it("adds a SECOND video for a topic that already has one, without touching or deleting the first (S47b)", async () => {
+    const first = await saveVideoLesson("fam1", "t1", "subj1", "fam1/a.mp4", "video/mp4", 100);
+    const second = await saveVideoLesson("fam1", "t1", "subj1", "fam1/b.mp4", "video/mp4", 200);
 
-    expect(rows).toHaveLength(1);
-    expect(rows[0]!.storage_path).toBe("fam1/new.mp4");
-    expect(removedPaths).toEqual([["fam1/old.mp4"]]);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.id)).toEqual([first, second]);
+    expect(removedPaths).toEqual([]);
   });
 
-  it("deletes both the row and the stored file", async () => {
+  it("deletes both the row and the stored file, leaving the topic's other videos untouched", async () => {
     await saveVideoLesson("fam1", "t1", "subj1", "fam1/a.mp4", "video/mp4", 100);
+    await saveVideoLesson("fam1", "t1", "subj1", "fam1/b.mp4", "video/mp4", 200);
     const id = rows[0]!.id;
 
     await deleteVideoLesson("fam1", id);
 
-    expect(rows).toHaveLength(0);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.storage_path).toBe("fam1/b.mp4");
     expect(removedPaths).toEqual([["fam1/a.mp4"]]);
   });
 
@@ -167,7 +182,7 @@ describe("video lessons (S47)", () => {
 
 describe("video signing access", () => {
   function add() { rows.push({ id: "vl1", owner_family_id: "fam1", subject_id: "subj1", topic_id: "t1", storage_path: "fam1/a.mp4", mime_type: "video/mp4", size_bytes: 100, created_at: "2026-10-23T00:00:00Z" }); }
-  it("denies videos from an inactive subject", async () => { add(); subjects[0]!.active = false; expect(await getVideoLessonUrlForTopic("fam1", "t1")).toBeNull(); expect(signCalls).toEqual([]); });
-  it("denies courses whose group is inactive", async () => { add(); subjects[0]!.kind = "course"; subjects[0]!.group_id = "group"; groups.push({ id: "group", owner_family_id: "fam1", active: false }); expect(await getVideoLessonUrlForTopic("fam1", "t1")).toBeNull(); expect(signCalls).toEqual([]); });
-  it("never signs another family's storage object", async () => { add(); rows[0]!.storage_path = "another/private.mp4"; expect(await getVideoLessonUrlForTopic("fam1", "t1")).toBeNull(); expect(signCalls).toEqual([]); });
+  it("denies videos from an inactive subject", async () => { add(); subjects[0]!.active = false; expect(await getVideoLessonUrlById("fam1", "vl1")).toBeNull(); expect(signCalls).toEqual([]); });
+  it("denies courses whose group is inactive", async () => { add(); subjects[0]!.kind = "course"; subjects[0]!.group_id = "group"; groups.push({ id: "group", owner_family_id: "fam1", active: false }); expect(await getVideoLessonUrlById("fam1", "vl1")).toBeNull(); expect(signCalls).toEqual([]); });
+  it("never signs another family's storage object", async () => { add(); rows[0]!.storage_path = "another/private.mp4"; expect(await getVideoLessonUrlById("fam1", "vl1")).toBeNull(); expect(signCalls).toEqual([]); });
 });

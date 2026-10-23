@@ -13,7 +13,7 @@ export async function SubjectVideoLessons({ familyId, subjectId }: { familyId: s
       <p className="mt-1 text-sm text-muted">Додаткові пояснення у відео. Звичайні уроки залишаються нижче.</p>
       <ul className="mt-3 space-y-3">{videos.map(video => <li key={video.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line p-3">
         <span className="min-w-0 font-bold">{video.topicTitle}</span>
-        <VideoLessonButton topicId={video.topicId} title={video.topicTitle} />
+        <VideoLessonButton topicId={video.topicId} videoId={video.id} title={video.topicTitle} />
       </li>)}</ul>
     </section>;
 }
@@ -27,6 +27,6 @@ export async function TopicVideoSupplement({ familyId, subjectId, topicId, title
   if (!video) return null;
   return <aside aria-label="Відео до цього уроку" className="mx-4 mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-surface p-4">
       <p className="text-sm font-bold">Додатково до уроку</p>
-      <VideoLessonButton topicId={video.topicId} title={video.topicTitle} />
+      <VideoLessonButton topicId={video.topicId} videoId={video.id} title={video.topicTitle} />
     </aside>;
 }

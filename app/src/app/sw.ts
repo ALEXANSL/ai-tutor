@@ -1,4 +1,5 @@
 /// <reference lib="webworker" />
+import { isDirectVideoRequest } from "@/lib/direct-video-request";
 import type { PrecacheEntry, SerwistGlobalConfig } from "serwist";
 import { CacheFirst, ExpirationPlugin, NetworkOnly, Serwist } from "serwist";
 
@@ -29,7 +30,7 @@ const serwist = new Serwist({
         plugins: [new ExpirationPlugin({ maxEntries: 200, maxAgeSeconds: 30 * 24 * 60 * 60 })],
       }),
     },
-    { matcher: () => true, handler: new NetworkOnly() },
+    { matcher: ({ request, url }) => !isDirectVideoRequest(request, url), handler: new NetworkOnly() },
   ],
   fallbacks: {
     entries: [{ url: "/offline", matcher: ({ request }) => request.destination === "document" }],
