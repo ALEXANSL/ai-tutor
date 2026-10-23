@@ -52,3 +52,15 @@ export async function getVideoLessonUrlAction(videoId: string): Promise<{ status
     return url ? { status: "ok", url } : { status: "error" };
   } catch { return { status: "error" }; }
 }
+
+/** Same family/visibility check as playback; caller never supplies a URL. */
+export async function inspectVideoDeliveryAction(videoId: string) {
+  const { ctx } = await requireChild();
+  if (!uuidSchema.safeParse(videoId).success) return { status: "error" as const };
+  try {
+    const url = await getVideoLessonUrlById(ctx.familyId, videoId);
+    if (!url) return { status: "error" as const };
+    const { probeVideoDelivery } = await import("@/lib/video-delivery-probe");
+    return { status: "ok" as const, report: await probeVideoDelivery(url) };
+  } catch { return { status: "error" as const }; }
+}

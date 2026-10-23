@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { getVideoLessonUrlAction, listTopicVideosAction } from "@/app/actions/video-lessons";
 import { stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
 import type { TopicVideoOption } from "@/server/lessons/videoLessons";
+import { VideoDeliveryCheck } from "./VideoDeliveryCheck";
 import { uk } from "@/i18n/uk";
 
 /** Optional supplement; never changes the underlying lesson or its progress. */
@@ -13,9 +14,14 @@ export function VideoLessonButton({ topicId, title, videoId }: { topicId: string
   const modalTitle = title ?? t.button;
   const [videos, setVideos] = useState<TopicVideoOption[] | null>(null);
   const selected = useRef<string | null>(videoId ?? null);
+  const [selectedId, setSelectedId] = useState<string | null>(videoId ?? null);
   const [buffered, setBuffered] = useState(0);
   const [target, setTarget] = useState(60);
   const [prepared, setPrepared] = useState(false);
+  const [prepareMinute, setPrepareMinute] = useState(false);
+  const [diagnosticsPaused, setDiagnosticsPaused] = useState(false);
+  const [diagnosticBusy, setDiagnosticBusy] = useState(false);
+  const [mediaVersion, setMediaVersion] = useState(0);
   const [buffering, setBuffering] = useState(false);
   const [preloadLimited, setPreloadLimited] = useState(false);
   const [open, setOpen] = useState(false);
@@ -28,7 +34,7 @@ export function VideoLessonButton({ topicId, title, videoId }: { topicId: string
   const video = useRef<HTMLVideoElement>(null);
   const close = useCallback(() => {
     sequence.current++;
-    video.current?.pause();
+    if (video.current) { video.current.pause(); video.current.removeAttribute("src"); video.current.load(); }
     setOpen(false); setUrl(null); setError(false); setVideos(null); setPrepared(false); setBuffering(false);
   }, []);
 
@@ -49,8 +55,8 @@ export function VideoLessonButton({ topicId, title, videoId }: { topicId: string
   }
   async function requestUrl(id: string) {
     const ticket = ++sequence.current;
-    selected.current = id;
-    setError(false); setUrl(null); setPrepared(false); setBuffered(0); setTarget(60); setPreloadLimited(false); setBuffering(false);
+    selected.current = id; setSelectedId(id);
+    setError(false); setUrl(null); setPrepared(false); setBuffered(0); setTarget(60); setPreloadLimited(false); setBuffering(false); setPrepareMinute(false); setDiagnosticsPaused(false); setDiagnosticBusy(false);
     try {
       const result = await getVideoLessonUrlAction(id);
       if (ticket !== sequence.current) return;
@@ -60,7 +66,7 @@ export function VideoLessonButton({ topicId, title, videoId }: { topicId: string
   async function load() {
     if (videoId) { await requestUrl(videoId); return; }
     const ticket = ++sequence.current;
-    setError(false); setUrl(null); setVideos(null); selected.current = null;
+    setError(false); setUrl(null); setVideos(null); selected.current = null; setSelectedId(null);
     try {
       const list = await listTopicVideosAction(topicId);
       if (ticket !== sequence.current) return;
@@ -107,8 +113,8 @@ export function VideoLessonButton({ topicId, title, videoId }: { topicId: string
   }, [open, close]);
   useEffect(() => {
     const element = video.current;
-    return () => { element?.pause(); };
-  }, [url]);
+    return () => { if (element) { element.pause(); element.removeAttribute("src"); element.load(); } };
+  }, [url, mediaVersion]);
 
   return <>
     <button ref={trigger} type="button" onClick={show} disabled={open} className="inline-flex min-h-12 items-center rounded-2xl border-2 border-line bg-surface px-4 text-base font-bold">{t.button}</button>
@@ -122,20 +128,27 @@ export function VideoLessonButton({ topicId, title, videoId }: { topicId: string
           <div className="flex min-h-[200px] flex-col items-center justify-center gap-4 p-3">
             {error ? <><p role="alert" className="text-sm text-muted">{t.failed}</p><button type="button" onClick={() => void (selected.current ? requestUrl(selected.current) : load())} className="min-h-12 rounded-xl bg-primary px-4 font-bold text-white">Спробувати ще раз</button></>
               : url ? <>
-                <video ref={video} src={url} controls={prepared} playsInline preload="auto"
+                <video key={mediaVersion} ref={video} src={url} controls={!prepareMinute || prepared} playsInline preload="auto"
                   onLoadedMetadata={updateBuffer} onProgress={updateBuffer} onCanPlay={updateBuffer} onCanPlayThrough={updateBuffer}
                   onTimeUpdate={updateBuffer} onWaiting={() => { if (video.current && !video.current.paused) setBuffering(true); }} onPlaying={() => setBuffering(false)}
                   onSuspend={() => { updateBuffer(); setPreloadLimited(true); }} onError={() => setError(true)} onPlay={() => {
                     setPrepared(true); stopCurrentlyPlaying();
                     document.querySelectorAll<HTMLMediaElement>("audio,video").forEach(media => { if (media !== video.current) media.pause(); });
                   }} className="max-h-[65dvh] w-full rounded-xl bg-black" />
-                {!prepared && <div role="status" className="w-full space-y-2 text-sm">
+                {prepareMinute && !prepared && <div role="status" className="w-full space-y-2 text-sm">
                   <p>Готую запас відео перед переглядом: {Math.floor(buffered)} із {Math.ceil(target)} с.</p>
                   <progress className="w-full" value={Math.min(buffered, target)} max={target} aria-label="Підготовка запасу відео" />
                   {preloadLimited && buffered > 0 && <p className="text-muted">Браузер може обмежувати попереднє завантаження. Можна почати з уже підготовленого фрагмента.</p>}
                   {(buffered >= Math.min(3, target) || preloadLimited) && <button type="button" className="min-h-12 rounded-xl bg-primary px-4 font-bold text-white" onClick={() => { setPrepared(true); void video.current?.play().catch(() => {}); }}>Почати зараз</button>}
                 </div>}
-                {prepared && buffering && <p role="status" className="text-sm text-muted">Підвантажую наступний фрагмент відео…</p>}
+                {(!prepareMinute || prepared) && buffering && <p role="status" className="text-sm text-muted">Підвантажую наступний фрагмент відео…</p>}
+                {!diagnosticsPaused && !prepareMinute && <button type="button" className="min-h-11 rounded-xl border border-line px-3 text-sm font-bold" onClick={() => { video.current?.pause(); setPrepareMinute(true); setPrepared(false); updateBuffer(); }}>Підготувати запас на хвилину</button>}
+                {diagnosticsPaused && <button type="button" disabled={diagnosticBusy} className="min-h-11 rounded-xl border border-line px-3 font-bold" onClick={() => { setDiagnosticsPaused(false); setMediaVersion(version => version + 1); }}>Повернутися до відео</button>}
+                {selectedId && <VideoDeliveryCheck key={url} videoId={selectedId} url={url} onBusyChange={setDiagnosticBusy} media={() => video.current} onSuspendPlayback={() => {
+                  const element = video.current;
+                  if (element) { element.pause(); element.removeAttribute("src"); element.load(); }
+                  setDiagnosticsPaused(true); setBuffering(false);
+                }} />}
               </> : videos && videos.length > 1 ? <div className="flex flex-wrap gap-3">{videos.map(item => <button type="button" key={item.id} onClick={() => void requestUrl(item.id)} className="min-h-12 rounded-xl border border-line px-4 font-bold">{item.label}</button>)}</div>
                 : <p role="status" className="text-sm text-muted">{t.loading}</p>}
           </div>

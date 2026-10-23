@@ -11,6 +11,7 @@ const pause = vi.fn();
 beforeEach(() => {
   vi.clearAllMocks(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(pause);
+  vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
   mocks.list.mockResolvedValue([{ id: "video", label: "Відео 1" }]);
   mocks.get.mockResolvedValue({ status: "ok", url: "https://example.com/signed.mp4" });
   container = document.createElement("div"); document.body.append(container); root = createRoot(container);
@@ -24,7 +25,7 @@ describe("optional video modal", () => {
     expect(mocks.get).not.toHaveBeenCalled(); await open();
     expect(mocks.stop).toHaveBeenCalled(); expect(mocks.get).toHaveBeenCalledWith("video");
     const video = document.querySelector("video")!;
-    expect(video.controls).toBe(false); expect(video.playsInline).toBe(true);
+    expect(video.controls).toBe(true); expect(video.playsInline).toBe(true);
     Object.defineProperty(video, "duration", { configurable: true, value: 180 });
     Object.defineProperty(video, "buffered", { configurable: true, value: { length: 1, start: () => 0, end: () => 60 } });
     act(() => video.dispatchEvent(new Event("progress")));
@@ -63,6 +64,7 @@ describe("optional video modal", () => {
 
 it("waits for a real contiguous minute, not metadata or a disconnected future range", async () => {
   await open(); const video = document.querySelector("video")!;
+  act(() => [...document.querySelectorAll("button")].find(button => button.textContent === "Підготувати запас на хвилину")!.click());
   Object.defineProperty(video, "duration", { configurable: true, value: 180 });
   Object.defineProperty(video, "buffered", { configurable: true, value: { length: 2, start: (i: number) => i ? 120 : 0, end: (i: number) => i ? 180 : 10 } });
   act(() => video.dispatchEvent(new Event("progress")));
@@ -82,4 +84,9 @@ it("accepts browser suspension just short of a minute without an endless loader"
   Object.defineProperty(video, "duration", { configurable: true, value: 180 });
   Object.defineProperty(video, "buffered", { configurable: true, value: { length: 1, start: () => 0, end: () => 58.2 } });
   act(() => video.dispatchEvent(new Event("suspend"))); expect(video.controls).toBe(true);
+});
+
+it("releases the network source on close, not just audio playback", async () => {
+  await open(); const video = document.querySelector("video")!;
+  act(() => closeButton().click()); expect(video.getAttribute("src")).toBeNull(); expect(video.load).toHaveBeenCalled();
 });
