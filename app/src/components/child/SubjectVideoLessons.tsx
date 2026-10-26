@@ -7,16 +7,16 @@ import { VideoLessonButton } from "./VideoLessonButton";
  * reachable. No topic/lesson rows are migrated or regenerated. */
 export async function SubjectVideoLessons({ familyId, subjectId }: { familyId: string; subjectId: string }) {
   const videos = await listVideoLessonsForSubject(familyId, subjectId).catch(() => null);
-  if (!videos) return <p role="status" className="mb-4 rounded-xl border border-line p-3 text-sm text-muted">Не вдалося завантажити список відео. Онови сторінку, щоб спробувати ще раз. Текстові уроки доступні нижче.</p>;
+  if (!videos) return <p role="status" className="mt-5 rounded-xl border border-line p-3 text-sm text-muted">Не вдалося завантажити список відео. Онови сторінку, щоб спробувати ще раз. Текстові уроки доступні вище.</p>;
   if (!videos.length) return null;
-  return <section aria-label="Відеоматеріали предмета" className="mb-5 rounded-2xl border border-line bg-surface p-4">
-      <h2 className="text-xl font-bold">Відеоматеріали до тем</h2>
-      <p className="mt-1 text-sm text-muted">Додаткові пояснення у відео. Звичайні уроки залишаються нижче.</p>
+  return <details aria-label="Відеоматеріали предмета" className="mt-5 rounded-2xl border border-line bg-surface p-4">
+      <summary className="min-h-11 cursor-pointer content-center text-base font-bold">Відеоматеріали до тем ({videos.length})</summary>
+      <p className="mt-1 text-sm text-muted">Додаткові пояснення у відео. Їх також можна відкривати кнопкою «Відеоурок» у відповідних уроках.</p>
       <ul className="mt-3 space-y-3">{orderParagraphs(videos, video => video.topicTitle).map(video => <li key={video.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line p-3">
         <span className="min-w-0 font-bold">{video.topicTitle}</span>
         <VideoLessonButton topicId={video.topicId} videoId={video.id} title={video.topicTitle} />
       </li>)}</ul>
-    </section>;
+    </details>;
 }
 
 /** Additive entry point in all existing lesson readers. Failed optional

@@ -1,5 +1,9 @@
 # Статус проєкту — ШІ-Репетитор
 
+## 2026-10-26 — додаткові відео після уроків
+
+На дитячій сторінці предмета окремий відеокаталог переміщено після уроків і згорнуто за замовчуванням. Кнопки відеоуроків у картках та читачах збережені; старі вкладення також доступні після розгортання каталогу.
+
 ## 2026-10-26 — предмет як каталог готових уроків, без legacy generation UI
 
 PO підтвердив: масова підготовка й індексація більше не використовуються, матеріали готуються за промптом у ChatGPT. Parent subjects overview/detail більше не вимагають indexed textbook: основа — active imported lessons усіх п’яти readers, пошук і додаткові відео. Налаштування назви/наявних PDF згорнуті. Bulk warmup, old current-topic picker/forecast, library cards, legacy generation start і broad cleanup прибрано зі сторінки. Child subject показує лише готові імпортовані уроки й не завантажує warmup statuses/не пропонує підготовку indexed-only topics. Прямі посилання не змінюють існуючих reader authorization; parent account бачить readonly catalog, tablet parent mode може перейти до reader.
