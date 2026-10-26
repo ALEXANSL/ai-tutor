@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { redirect } from "next/navigation";
 const mock = vi.hoisted(() => ({ auth: vi.fn(), parse: vi.fn(), download: vi.fn(), remove: vi.fn(), persist: vi.fn(), replay: vi.fn(), acquire: vi.fn(), complete: vi.fn(), fail: vi.fn(), packageSubject: null as string | null }));
 vi.mock("@/server/auth/guards", () => ({ requireParentAccess: mock.auth }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -68,4 +69,13 @@ describe("unified import server boundary", () => {
     expect(result).toMatchObject({ status: "error", retryable: true });
     expect(JSON.stringify(result)).toContain("Частина матеріалів"); expect(mock.fail).toHaveBeenCalled(); expect(mock.remove).not.toHaveBeenCalled();
   });
+});
+
+
+it.each(["/today", "/login", "/denied"])("lets Next handle auth redirect to %s before touching the staged ZIP", async destination => {
+  mock.auth.mockImplementation(async () => redirect(destination));
+  await expect(inspectUnifiedCourseAction(input)).rejects.toMatchObject({ message: "NEXT_REDIRECT", digest: expect.stringContaining(destination) });
+  await expect(importUnifiedCourseAction({ ...input, fingerprint: "a".repeat(64) })).rejects.toMatchObject({ message: "NEXT_REDIRECT", digest: expect.stringContaining(destination) });
+  expect(mock.download).not.toHaveBeenCalled(); expect(mock.persist).not.toHaveBeenCalled();
+  expect(mock.acquire).not.toHaveBeenCalled(); expect(mock.remove).not.toHaveBeenCalled();
 });
