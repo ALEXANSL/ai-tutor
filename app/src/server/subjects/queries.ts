@@ -92,7 +92,6 @@ export async function listSubjectsOverview(familyId: string, kind: SubjectKind =
   const [{ data: subjects }, { data: textbooks }, { data: currentTopics }, { data: groups }] = await Promise.all([
     scope
       .select("subjects", "id, code, name_uk, active, sort_order, kind, group_id")
-      .eq("is_stub", false)
       .eq("kind", kind)
       .order("sort_order")
       .returns<(SubjectRow & { sort_order: number })[]>(),
@@ -301,7 +300,6 @@ export async function getSubjectDetail(familyId: string, subjectId: string): Pro
   const { data: subject } = await scope
     .select("subjects", "id, code, name_uk, active, kind, group_id")
     .eq("id", subjectId)
-    .eq("is_stub", false)
     .maybeSingle<SubjectRow>();
   if (!subject) return null;
 

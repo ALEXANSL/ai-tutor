@@ -54,7 +54,7 @@ function makeScope(tables: Record<string, FakeRow[] | FakeRow>) {
 const scopeState = { tables: {} as Record<string, FakeRow[] | FakeRow> };
 vi.mock("../db/family-scope", () => ({ forFamily: () => makeScope(scopeState.tables) }));
 
-const { effectiveCourseVisible, getSubjectDetail, listSubjectTopicOptions } = await import("./queries");
+const { effectiveCourseVisible, getSubjectDetail, listSubjectTopicOptions, listSubjectsOverview } = await import("./queries");
 
 describe("getSubjectDetail (D-65)", () => {
   it("returns every topic of the subject, not only the current one", async () => {
@@ -312,4 +312,14 @@ it("sorts existing chapter topics by paragraph without reimporting or losing vid
   const detail = await getSubjectDetail("family", "history");
   expect(detail?.topics.map(topic => topic.id)).toEqual(["p2", "p18", "p20"]);
   expect(detail?.currentTopicId).toBe("p20"); expect(detail?.topics[1]).toMatchObject({ literatureV3LessonId: "l18", hasVideoLesson: true });
+});
+
+
+it("keeps former placeholder subjects manageable and selectable for import using the same ID", async () => {
+  const art = { id: "art-existing", code: "art", name_uk: "Мистецтво", active: false, is_stub: true, kind: "school_subject" };
+  scopeState.tables = { subjects: [art], materials: [], topics: [] };
+  const { listSubjects } = await import("../books/queries");
+  expect(await listSubjectsOverview("fam-1")).toMatchObject([{ id: art.id, name: art.name_uk, active: false }]);
+  expect(await listSubjects("fam-1")).toContainEqual({ id: art.id, code: art.code, name: art.name_uk });
+  expect(await getSubjectDetail("fam-1", art.id)).toMatchObject({ id: art.id, name: art.name_uk, childVisible: false });
 });

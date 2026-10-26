@@ -6,9 +6,8 @@ import { idleState, type FormState } from "@/app/actions/state";
 /**
  * Generic active/inactive switch (US-22.1 КП-5, US-22.2 КП-6, US-22.3 КП-3):
  * shared by a school subject card, a course card and a course-group card —
- * all three write to the same shape of RPC (`set_subject_active` or
- * `set_course_group_active`), only the wording and the hidden id field name
- * differ.
+ * each action enforces its own family-scoped server write; errors remain
+ * visible beside the control.
  */
 export function ActiveToggle({
   action,
@@ -23,7 +22,7 @@ export function ActiveToggle({
   active: boolean;
   labels: { activate: string; deactivate: string };
 }) {
-  const [, formAction, pending] = useActionState(action, idleState);
+  const [state, formAction, pending] = useActionState(action, idleState);
   return (
     <form action={formAction}>
       <input type="hidden" name={idFieldName} value={id} />
@@ -37,6 +36,7 @@ export function ActiveToggle({
       >
         {active ? labels.deactivate : labels.activate}
       </button>
+      {state.status === "error" && <p role="alert" className="mt-1 max-w-64 text-xs text-p-danger">{state.message}</p>}
     </form>
   );
 }
