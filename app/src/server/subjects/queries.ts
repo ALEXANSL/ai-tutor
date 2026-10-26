@@ -1,3 +1,4 @@
+import { orderParagraphs } from "@/lib/paragraph-order";
 import "server-only";
 import { forFamily } from "../db/family-scope";
 import { listTopicIdsWithVideoLesson } from "../lessons/videoLessons";
@@ -355,7 +356,8 @@ export async function getSubjectDetail(familyId: string, subjectId: string): Pro
   // PO-prepared imports replace AI generation) — so filter the old,
   // import-less topics out entirely rather than showing a confusing mix.
   const hasAnyImportedTopic = importedLessonByTopic.size > 0;
-  const visibleTopics = hasAnyImportedTopic ? topicList.filter((t) => importedLessonByTopic.has(t.id)) : topicList;
+  const filteredTopics = hasAnyImportedTopic ? topicList.filter((t) => importedLessonByTopic.has(t.id)) : topicList;
+  const visibleTopics = orderParagraphs(filteredTopics, topic => topic.title, topic => importedLessonByTopic.get(topic.id)?.kind === "literature_v3");
 
   return {
     id: subject.id,

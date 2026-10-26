@@ -1,3 +1,4 @@
+import { leadingParagraphNumber } from "@/lib/paragraph-order";
 import "server-only";
 import { createHash } from "node:crypto";
 import type { FamilyScope } from "@/server/db/family-scope";
@@ -33,10 +34,7 @@ const LIT_V3_ASSETS_BUCKET = "course_assets"; // shared bucket (S34/S35/S36); v3
  * unlike a per-run counter. Falls back to the old counter only for a title
  * that doesn't start with "§" (keeps non-numbered packages unaffected).
  */
-function leadingParagraphNumber(title: string): number | null {
-  const match = /^§\s*(\d+)/.exec(title);
-  return match ? Number(match[1]) : null;
-}
+
 const RETRYABLE_ERROR_RE = /bad gateway|502|503|504|gateway timeout|network|fetch failed|ECONNRESET|ETIMEDOUT/i;
 
 async function uploadAssetWithRetry(scope: FamilyScope, storagePath: string, bytes: Uint8Array, mimeType: string): Promise<{ error: { message: string } | null }> {

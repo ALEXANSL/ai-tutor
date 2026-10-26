@@ -301,3 +301,15 @@ describe("getSubjectDetail: kind/childVisible (E-22, ADR-030)", () => {
     expect(detail).toMatchObject({ kind: "course", childVisible: true });
   });
 });
+
+it("sorts existing chapter topics by paragraph without reimporting or losing video/current ids", async () => {
+  scopeState.tables = {
+    subjects: [{ id: "history", code: "history", name_uk: "Історія", active: true, is_stub: false }],
+    topics: [{ id: "p20", subject_id: "history", title: "§20. Тема", is_current: true, sort_order: 1 }, { id: "p2", subject_id: "history", title: "§2. Тема", sort_order: 9 }, { id: "p18", subject_id: "history", title: "§18–19. Тема", sort_order: 2 }],
+    literature_v3_lessons: [{ id: "l20", topic_id: "p20", status: "active" }, { id: "l2", topic_id: "p2", status: "active" }, { id: "l18", topic_id: "p18", status: "active" }],
+    video_lessons: [{ id: "video", topic_id: "p18" }],
+  };
+  const detail = await getSubjectDetail("family", "history");
+  expect(detail?.topics.map(topic => topic.id)).toEqual(["p2", "p18", "p20"]);
+  expect(detail?.currentTopicId).toBe("p20"); expect(detail?.topics[1]).toMatchObject({ literatureV3LessonId: "l18", hasVideoLesson: true });
+});

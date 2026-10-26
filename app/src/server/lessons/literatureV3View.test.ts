@@ -80,3 +80,12 @@ describe("geography virtual textbook index", () => {
     ]);
   });
 });
+
+it("orders an already stored chapter package for TOC and previous/next without writes", async () => {
+  mock.rows.set("literature_v3_lessons", [{ id: "p20", title: "§20. Тема", order_no: 1, status: "active" }, { id: "p2", title: "§2. Тема", order_no: 10, status: "active" }, { id: "p18", title: "§18–19. Тема", order_no: 2, status: "active" }]);
+  const { listLiteratureV3Lessons } = await import("./literatureV3View");
+  const lessons = await listLiteratureV3Lessons("family", "package");
+  expect(lessons.map(lesson => lesson.id)).toEqual(["p2", "p18", "p20"]);
+  expect(lessons.map(lesson => lesson.orderNo)).toEqual([1, 2, 3]);
+  expect(mock.calls[0]).toMatchObject({ familyId: "family", filters: [["package_id", "package"]] });
+});
