@@ -74,3 +74,31 @@ describe("bounded ZIP decoding", () => {
     expect(() => readSafeCourseZip(bytes.slice(0, -3))).toThrow();
   });
 });
+
+
+describe("printed source page compatibility", () => {
+  function archive(sourcePages: unknown[], pages: { id: string; printed_page: number; source_pdf_page: number }[]) {
+    const files = example();
+    const course = JSON.parse(new TextDecoder().decode(files["public/course.json"]));
+    course.lessons[0].source_pages = sourcePages;
+    files["public/course.json"] = strToU8(JSON.stringify(course));
+    files["catalog/pages.json"] = strToU8(JSON.stringify({ book_id: course.book_id, items: pages }));
+    return parseUnifiedCourseArchive(zipSync(files));
+  }
+  it("maps only numeric source_pages through actual printed numbers, preserving existing IDs, repeats and numeric grade", () => {
+    const parsed = archive([4, "book-P006", 4], [{ id: "book-P004", printed_page: 4, source_pdf_page: 7 }, { id: "book-P006", printed_page: 6, source_pdf_page: 9 }]);
+    expect(parsed.errors).toEqual([]);
+    if (parsed.format !== "chapter_v3") throw new Error("chapter expected");
+    expect(parsed.parsed.lessons[0]!.source_pages).toEqual(["book-P004", "book-P006", "book-P004"]);
+    expect(parsed.parsed.lessons[0]!.grade).toBe(6);
+    expect(parsed.warnings).toContainEqual(expect.objectContaining({ field: "lessons.source_pages", message: expect.stringContaining("2") }));
+  });
+  it.each([0, -1, 4.5, 999, Number.MAX_SAFE_INTEGER + 1])("rejects unresolved or invalid printed number %s without inventing an ID", value => {
+    const parsed = archive([value], [{ id: "book-P004", printed_page: 4, source_pdf_page: 7 }]);
+    expect(parsed.errors).toContainEqual(expect.objectContaining({ field: "lessons[0].source_pages[0]" }));
+  });
+  it("requires an explicit ID when multiple catalog pages have the same printed number", () => {
+    const parsed = archive([4], [{ id: "part1-P004", printed_page: 4, source_pdf_page: 7 }, { id: "part2-P004", printed_page: 4, source_pdf_page: 70 }]);
+    expect(parsed.errors).toContainEqual(expect.objectContaining({ message: expect.stringContaining("кільком") }));
+  });
+});
