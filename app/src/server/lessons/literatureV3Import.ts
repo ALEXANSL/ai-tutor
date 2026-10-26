@@ -274,6 +274,21 @@ export type ParsedAsset = z.infer<typeof zAsset>;
 export type ParsedPage = z.infer<typeof zPage>;
 export type ParsedPackageManifest = z.infer<typeof zPackageManifest>;
 
+/** Report schema paths, never payload values (teacher files may contain answers). */
+function schemaIssues(file: string, error: z.ZodError): ImportIssue[] {
+  const expectedTypes: Record<string, string> = {
+    string: "текстовий рядок", number: "число", boolean: "true або false", array: "масив", object: "об’єкт",
+  };
+  return error.issues.map(issue => ({
+    file,
+    field: issue.path.reduce<string>((path, part) => typeof part === "number" ? `${path}[${part}]` : path ? `${path}.${String(part)}` : String(part), "") || "$",
+    message: issue.code === "invalid_type"
+      ? `Очікується ${expectedTypes[issue.expected] ?? issue.expected}. Перевірте тип значення у JSON.`
+      : issue.code === "invalid_value" ? "Значення не входить до дозволених варіантів контракту."
+      : issue.message,
+  }));
+}
+
 /** Parses one array field with a zod item schema; invalid items are skipped and reported, never silently dropped nor thrown. */
 function parseArray<T extends z.ZodTypeAny>(raw: unknown, schema: T, file: string, listField: string, errors: ImportIssue[]): z.infer<T>[] {
   if (!Array.isArray(raw)) {
@@ -295,7 +310,7 @@ function parseArray<T extends z.ZodTypeAny>(raw: unknown, schema: T, file: strin
 export function parseLiteratureV3PackageManifest(raw: unknown): { manifest: ParsedPackageManifest | null; errors: ImportIssue[] } {
   const file = "package.json";
   const result = zPackageManifest.safeParse(raw);
-  if (!result.success) return { manifest: null, errors: [{ file, field: "$", message: `не відповідає контракту: ${result.error.issues.map((i) => i.message).join("; ")}` }] };
+  if (!result.success) return { manifest: null, errors: schemaIssues(file, result.error) };
   return { manifest: result.data, errors: [] };
 }
 
@@ -311,7 +326,7 @@ export function parseLiteratureV3Course(raw: unknown): ParsedCourse {
   const file = "public/course.json";
   const top = zCourseTop.safeParse(raw);
   if (!top.success) {
-    errors.push({ file, field: "$", message: `не відповідає контракту: ${top.error.issues.map((i) => i.message).join("; ")}` });
+    errors.push(...schemaIssues(file, top.error));
     return { bookId: null, lessons: [], tasks: [], errors };
   }
   // zCourseTop already validates lessons/tasks strictly — re-parse via
@@ -337,7 +352,7 @@ export function parseLiteratureV3Readings(raw: unknown): ParsedReadings {
   const top = zReadingsTop.safeParse(raw);
   const bookId = typeof (raw as Record<string, unknown>)?.book_id === "string" ? ((raw as Record<string, unknown>).book_id as string) : null;
   if (!top.success && !Array.isArray((raw as Record<string, unknown>)?.works)) {
-    errors.push({ file, field: "$", message: `не відповідає контракту: ${top.success ? "" : top.error.issues.map((i) => i.message).join("; ")}` });
+    errors.push(...schemaIssues(file, top.error));
     return { bookId, works: [], items: [], biographies: [], errors };
   }
   const obj = raw as Record<string, unknown>;
@@ -444,7 +459,7 @@ export function parseLiteratureV3TaskTables(raw: unknown): { warnings: ImportIss
   const file = "catalog/task_tables.json";
   const top = zTaskTablesTop.safeParse(raw);
   if (!top.success) {
-    errors.push({ file, field: "$", message: `не відповідає контракту: ${top.error.issues.map((i) => i.message).join("; ")}` });
+    errors.push(...schemaIssues(file, top.error));
     return { warnings, errors };
   }
   if (top.data.items.length > 0) {

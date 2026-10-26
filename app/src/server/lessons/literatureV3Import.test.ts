@@ -190,3 +190,17 @@ describe("literatureV3Import (real fixture subset)", () => {
     expect(combined.warnings.some((w) => w.message.includes("no-such-option"))).toBe(true);
   });
 });
+
+
+it("reports exact nested paths for numeric text fields without echoing their values", () => {
+  const raw = readJson("public/course.json") as { lessons: { source_pages: unknown; screens: { content: { display: unknown } }[] }[] };
+  raw.lessons[0]!.source_pages = [7];
+  raw.lessons[0]!.screens[0]!.content.display = 123456789;
+  const result = parseLiteratureV3Course(raw);
+  expect(result.errors).toEqual(expect.arrayContaining([
+    expect.objectContaining({ file: "public/course.json", field: "lessons[0].source_pages[0]", message: expect.stringContaining("текстовий рядок") }),
+    expect.objectContaining({ field: "lessons[0].screens[0].content.display" }),
+  ]));
+  expect(JSON.stringify(result.errors)).not.toContain("123456789");
+  expect(result.lessons).toEqual([]);
+});

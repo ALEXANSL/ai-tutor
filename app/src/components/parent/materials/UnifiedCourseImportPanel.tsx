@@ -178,7 +178,7 @@ export function UnifiedCourseImportPanel({ subjects }: { subjects: SubjectOption
       {phase === "uploading" ? "Передаю архів…" : phase === "checking" ? "Перевіряю вміст…" : storagePath ? "Повторити перевірку" : "Перевірити архів"}
     </button>}
     {busy && <p role="status" className="text-sm text-p-muted">{phase === "uploading" ? "Архів передається. Залиште цю сторінку відкритою." : phase === "checking" ? "Перевіряю структуру й посилання на матеріали. Курс ще не змінюється." : "Додаю матеріали курсу. Не закривайте сторінку до завершення."}</p>}
-    {message && <p role="alert" className="rounded-xl border border-p-danger p-3 text-sm font-semibold text-p-danger">{message}</p>}
+    {message && <p role="alert" className="whitespace-pre-line break-words rounded-xl border border-p-danger p-3 text-sm font-semibold text-p-danger">{message}</p>}
 
     {preview && phase !== "done" && <section aria-label="Вміст архіву" className="space-y-4 rounded-2xl border border-p-line bg-p-bg p-4">
       <div><h3 className="font-bold text-p-text">{preview.title}</h3><p className="mt-1 text-xs text-p-muted">{preview.formatLabel}</p></div>
