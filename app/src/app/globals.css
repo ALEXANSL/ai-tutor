@@ -692,3 +692,31 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* Compact lesson chrome: retain reading space on phones and short landscape screens. */
+.lesson-compact-heading, .lesson-compact-only, .lesson-compact-theme,
+.lesson-menu-backdrop, [data-parent-icon] { display: none; }
+@media (max-width: 1023px), (max-height: 520px) {
+  body:has([data-lesson-nav]) [data-child-theme] { display: none; }
+  .lesson-compact-heading { display: flex; align-items: center; gap: 8px; height: 56px; padding: 6px 8px 6px 60px; }
+  .lesson-compact-only { display: inline; }
+  .lesson-alarm-full, .lesson-step-full { display: none; }
+  .course-lesson button[data-lesson-alarm], button[data-lesson-alarm] { top: calc(env(safe-area-inset-top, 0px) + 6px); left: 8px; width: 44px; min-height: 44px; padding: 0; border-radius: 12px; }
+  .lesson-nav-panel { display: none; position: absolute; top: 100%; left: 0; right: 0; max-height: calc(100dvh - 136px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); overflow-y: auto; overscroll-behavior: contain; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .lesson-nav-panel[data-open="true"] { display: block; }
+  .lesson-menu-backdrop { display: block; position: fixed; inset: 0; z-index: 35; background: rgb(0 0 0 / 35%); }
+  .lesson-main-actions { padding-left: 0; padding-right: 0; }
+  .lesson-compact-theme { display: block; }
+  .course-lesson [data-lesson-nav] button, .course-lesson [data-step-nav] button { min-height: 44px; font-size: 14px; padding-inline: 12px; }
+  [data-lesson-nav] .lesson-compact-heading button { min-width: 44px; min-height: 44px; }
+  .lesson-step-row { flex-wrap: nowrap; gap: 6px; padding: 6px 8px; }
+  body:has([data-child-parent-trigger]) .lesson-step-row { padding-right: 60px; }
+  [data-step-nav] button { flex-shrink: 0; }
+  [data-step-nav] [data-book-control] { flex-shrink: 0; }
+  .course-lesson [data-step-nav] [data-book-control] > button { min-width: 44px; width: 44px; font-size: 0; padding-inline: 0; }
+  [data-step-nav] [data-book-control] > button::before { content: "📖"; font-size: 20px; }
+  body:has([data-lesson-nav]) [data-child-parent-trigger] { right: 8px; bottom: calc(env(safe-area-inset-bottom, 0px) + 6px); width: 44px; height: 44px; min-height: 44px; padding: 0; justify-content: center; }
+  body:has([data-lesson-nav]) [data-parent-label] { display: none; }
+  body:has([data-lesson-nav]) [data-parent-icon] { display: inline; }
+  .course-lesson { padding-inline: 12px; }
+}
