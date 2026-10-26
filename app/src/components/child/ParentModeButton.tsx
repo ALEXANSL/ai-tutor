@@ -20,10 +20,12 @@ export function ParentModeButton({ pinSet }: { pinSet: boolean }) {
     <>
       <button
         type="button"
+        data-child-parent-trigger
+        aria-label={t.button}
         onClick={() => setOpen(true)}
         className="fixed right-4 bottom-4 z-40 flex min-h-11 items-center gap-2 rounded-full border border-line bg-surface px-4 py-2.5 font-parent text-[13px] font-semibold text-muted shadow-sm"
       >
-        {t.button}
+        <span data-parent-label>{t.button}</span><span data-parent-icon aria-hidden="true">🔒</span>
       </button>
       {open && (pinSet ? <PinDialog onClose={() => setOpen(false)} /> : <NotSetDialog onClose={() => setOpen(false)} />)}
     </>

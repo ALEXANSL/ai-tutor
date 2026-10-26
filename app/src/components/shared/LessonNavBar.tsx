@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { VideoLessonButton } from "@/components/child/VideoLessonButton";
 import { uk } from "@/i18n/uk";
 
@@ -64,7 +65,7 @@ function useMeasuredHeight<T extends HTMLElement>() {
     if (!el || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
-      if (entry) setHeight(entry.contentRect.height);
+      if (entry) setHeight(el.getBoundingClientRect().height);
     });
     observer.observe(el);
     return () => observer.disconnect();
@@ -140,18 +141,32 @@ export function LessonNavBar({
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [tocOpen, setTocOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuId = useId();
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const tocButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && (menuOpen || tocOpen) && !document.querySelector('[role="dialog"]')) { setMenuOpen(false); setTocOpen(false); (menuOpen ? menuButton.current : tocButton.current)?.focus(); }
+    };
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, [menuOpen, tocOpen]);
   const [barRef, barHeight] = useMeasuredHeight<HTMLDivElement>();
   useRememberLastLesson(subjectId, courseNav);
 
   const goHome = () => {
+    setMenuOpen(false);
     setBusy(true);
     router.push("/today");
   };
   const goSubjectList = () => {
+    setMenuOpen(false);
     setBusy(true);
     router.push(`/subject/${subjectId}`);
   };
   const goAlarm = () => {
+    setMenuOpen(false);
     setBusy(true);
     router.push("/today");
   };
@@ -166,29 +181,28 @@ export function LessonNavBar({
       {/* Spacer in normal document flow — reserves exactly as much room as
           the fixed bar below actually renders at, so lesson content never
           starts underneath it. */}
-      <div style={{ height: barHeight }} aria-hidden="true" />
+      <div style={{ height: barHeight || 56 }} aria-hidden="true" />
       <button
         type="button"
+        data-lesson-alarm
+        aria-label={t.alarmButton}
         onClick={goAlarm}
         className="fixed top-3.5 left-3.5 z-50 min-h-11 rounded-full bg-danger px-4 text-sm font-bold text-white shadow-sm"
       >
-        {t.alarmButton}
+        <span className="lesson-alarm-full">{t.alarmButton}</span><span className="lesson-compact-only" aria-hidden="true">🚨</span>
       </button>
-      <div ref={barRef} className="fixed inset-x-0 top-0 z-40 border-b border-line bg-surface/95 backdrop-blur" style={{ paddingTop: "env(safe-area-inset-top)" }}>
-        <div className="mx-auto max-w-2xl px-4 py-2.5">
+      {menuOpen && <div className="lesson-menu-backdrop" onClick={() => setMenuOpen(false)} aria-hidden="true" />}
+      <div data-lesson-nav ref={barRef} className="fixed inset-x-0 top-0 z-40 border-b border-line bg-surface/95 backdrop-blur" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+        <div className="lesson-compact-heading">
+          <p className="min-w-0 flex-1 truncate text-sm font-bold">{courseNav?.lessons.find(lesson => lesson.id === courseNav.currentLessonId)?.title ?? "Урок"}</p>
+          <button ref={menuButton} type="button" aria-label="Меню уроку" aria-expanded={menuOpen} aria-controls={menuId} onClick={() => setMenuOpen(value => !value)} className="rounded-xl border border-line px-3 font-bold">{menuOpen ? "✕" : "☰"}</button>
+        </div>
+        <div id={menuId} data-open={menuOpen} className="lesson-nav-panel mx-auto max-w-4xl px-4 py-2.5" onClick={event => { if ((event.target as Element).closest("a")) setMenuOpen(false); }}>
           {/* `pl-14`/`pr-14` reserve room for the alarm button (top-left) and
               the always-on-top `ThemeToggle` pill (top-right, `fixed
               top-3.5 right-3.5 z-50` in the child layout) so this row's own
               buttons never render underneath either one. */}
-          <div className="flex flex-wrap items-center gap-2 pl-14 pr-14">
-            <button
-              type="button"
-              onClick={goHome}
-              disabled={busy}
-              className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold transition-transform active:scale-[0.97] disabled:opacity-60"
-            >
-              {t.navHome}
-            </button>
+          <div className="lesson-main-actions flex flex-wrap items-center gap-2 pl-14 pr-36">
             <button
               type="button"
               onClick={goSubjectList}
@@ -223,6 +237,7 @@ export function LessonNavBar({
                 )}
                 <button
                   type="button"
+                  ref={tocButton}
                   onClick={() => setTocOpen((v) => !v)}
                   className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold transition-transform active:scale-[0.97]"
                   aria-expanded={tocOpen}
@@ -259,6 +274,7 @@ export function LessonNavBar({
             </div>
           )}
           {extraControls && <div className="mt-2 flex flex-wrap gap-2">{extraControls}</div>}
+          <div className="lesson-compact-theme mt-3"><ThemeToggle /></div>
         </div>
       </div>
     </>

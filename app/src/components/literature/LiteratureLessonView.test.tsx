@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from "react-dom/test-utils";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * PO correction 2026-10-02: "обов'язково кнопка пропустити завдання в
@@ -34,11 +34,17 @@ const questions = [
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 
+beforeEach(() => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} })));
+});
+
 afterEach(() => {
   act(() => root?.unmount());
   container?.remove();
   container = null;
   root = null;
+  vi.unstubAllGlobals();
 });
 
 function render() {

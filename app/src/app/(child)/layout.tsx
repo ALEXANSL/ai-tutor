@@ -14,7 +14,7 @@ export default async function ChildLayout({ children }: { children: React.ReactN
   const pinSet = isChild && ctx.kind === "user" ? !!(await loadParentSettings(forFamily(ctx.familyId))).pin_hash : false;
   return (
     <div className="min-h-screen bg-bg font-child text-text">
-      <div className="fixed top-3.5 right-3.5 z-50">
+      <div data-child-theme className="fixed top-3.5 right-3.5 z-50">
         <ThemeToggle />
       </div>
       {children}

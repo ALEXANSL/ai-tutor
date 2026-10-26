@@ -44,20 +44,22 @@ export function StepNavBar({
 }) {
   return (
     <div
+      data-step-nav
       className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface/95 backdrop-blur"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <div className="mx-auto flex max-w-2xl flex-wrap items-center gap-2 px-4 py-2.5">
+      <div className="lesson-step-row mx-auto flex max-w-2xl flex-wrap items-center gap-2 px-4 py-2.5">
         <button
           type="button"
+          aria-label="Назад"
           disabled={backDisabled}
           onClick={onBack}
           className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold transition-transform active:scale-[0.97] disabled:opacity-40"
         >
-          ← Назад
+          <span className="lesson-step-full">← Назад</span><span className="lesson-compact-only" aria-hidden="true">←</span>
         </button>
         <p className="min-w-0 flex-1 truncate text-center text-xs font-bold text-muted">{label}</p>
-        {middleControl}
+        {middleControl && <div data-book-control title="Відкрити підручник">{middleControl}</div>}
         <button
           type="button"
           disabled={nextDisabled}
