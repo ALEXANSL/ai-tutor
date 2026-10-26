@@ -119,10 +119,10 @@ export async function listBooks(familyId: string): Promise<BookListItem[]> {
   return rows.map((r) => toItem(r, costs.get(r.id) ?? 0));
 }
 
+/** Include former placeholders: ready-course import supports every subject. */
 export async function listSubjects(familyId: string): Promise<SubjectOption[]> {
   const { data } = await forFamily(familyId)
     .select("subjects", "id, code, name_uk, is_stub, sort_order")
-    .eq("is_stub", false)
     .order("sort_order")
     .returns<{ id: string; code: string; name_uk: string }[]>();
   return (data ?? []).map((s) => ({ id: s.id, code: s.code, name: s.name_uk }));

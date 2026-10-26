@@ -129,7 +129,7 @@ export async function updateBookAction(_prev: FormState, formData: FormData): Pr
   if (!sourceTypes.has(kind)) return { status: "error", message: uk.common.error };
   let subjectId: string | null = null;
   if (subjectRaw) {
-    const { data: subject } = await scope.select("subjects", "id").eq("id", subjectRaw).eq("is_stub", false).maybeSingle();
+    const { data: subject } = await scope.select("subjects", "id").eq("id", subjectRaw).maybeSingle();
     if (!subject) return { status: "error", message: uk.common.error };
     subjectId = subjectRaw;
   }

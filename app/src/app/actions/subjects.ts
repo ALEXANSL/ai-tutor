@@ -88,8 +88,15 @@ export async function toggleSubjectActiveAction(_prev: FormState, formData: Form
   const active = String(formData.get("active") ?? "") === "true";
   if (!UUID.test(subjectId)) return { status: "error", message: uk.common.error };
   const scope = forFamily(familyId);
-  const { error } = await scope.client.rpc("set_subject_active", { p_family_id: familyId, p_subject_id: subjectId, p_active: active });
-  if (error) return { status: "error", message: rpcErrorMessage(uk.parent.subjects.errors, error.code) };
+  // Prepared courses work for every school subject, including old "coming
+  // soon" placeholders. Promote the SAME row and change visibility atomically.
+  // The legacy RPC excludes is_stub=true; course toggles still use that RPC.
+  const { data, error } = await scope.update("subjects", { active, is_stub: false })
+    .eq("id", subjectId).eq("kind", "school_subject").select("id").maybeSingle<{ id: string }>();
+  if (error) return { status: "error", message: uk.common.error };
+  if (!data) return { status: "error", message: uk.parent.subjects.errors.notFound };
+  revalidatePath("/today");
+  revalidatePath("/parent/materials");
   revalidatePath("/parent/subjects", "layout");
   return { status: "ok", message: active ? uk.parent.subjects.toggleActive.activated : uk.parent.subjects.toggleActive.deactivated };
 }
