@@ -7,7 +7,7 @@ import { parseCoursePackageZip, type ParsedCoursePackage, type ImportIssue } fro
 import { parseLiteratureCourseZip, type ParsedCourseResult } from "./literatureImport";
 import { combineMathCourseV2Package, parseMathCourseV2Public, parseMathCourseV2Private, type ParsedMathCourseV2Package } from "./mathCourseV2Import";
 import { combineLiteratureV2Package, parseLiteratureV2Course, parseLiteratureV2Teacher, parseLiteratureV2Assets, parseLiteratureV2TaskTables, type ParsedLiteratureV2Package } from "./literatureV2Import";
-import { combineLiteratureV3Package, parseLiteratureV3PackageManifest, parseLiteratureV3Course, parseLiteratureV3Readings, parseLiteratureV3Teacher, parseLiteratureV3Assets, parseLiteratureV3Pages, parseLiteratureV3TaskTables, type ParsedLiteratureV3Package } from "./literatureV3Import";
+import { combineLiteratureV3Package, parseLiteratureV3PackageManifest, parseLiteratureV3Course, parseLiteratureV3Readings, parseLiteratureV3Teacher, parseLiteratureV3Assets, parseLiteratureV3Pages, parseLiteratureV3TaskTables, type ParsedLiteratureV3Package, type ImportIssue as ChapterImportIssue } from "./literatureV3Import";
 
 export type UnifiedArchiveFormat = "chapter_v3" | "math_v2" | "literature_v2" | "course_v1" | "markdown_v1";
 interface ArchiveBase {
@@ -93,6 +93,38 @@ function packageEntries(all: Record<string, Uint8Array>): Record<string, Uint8Ar
   return entries;
 }
 
+/** Compatibility for generated packages using printed page numbers in this
+ * one metadata field. Resolve against the real catalog; never stringify or
+ * invent page IDs, and never change numeric values in educational content. */
+function resolvePrintedSourcePages(raw: unknown, pages: ReturnType<typeof parseLiteratureV3Pages>) {
+  const byNumber = new Map<number, Set<string>>();
+  for (const page of pages.pages) {
+    const ids = byNumber.get(page.printed_page) ?? new Set<string>();
+    ids.add(page.id);
+    byNumber.set(page.printed_page, ids);
+  }
+  const errors: ChapterImportIssue[] = [];
+  let resolved = 0;
+  const obj = record(raw);
+  if (!Array.isArray(obj.lessons)) return { course: raw, errors, warnings: [] as ChapterImportIssue[] };
+  const lessons = obj.lessons.map((rawLesson, lessonIndex) => {
+    const lesson = record(rawLesson);
+    if (!Array.isArray(lesson.source_pages)) return rawLesson;
+    const source_pages = lesson.source_pages.map((value, pageIndex) => {
+      if (typeof value !== "number") return value;
+      const ids = Number.isSafeInteger(value) && value > 0 ? byNumber.get(value) : undefined;
+      if (ids?.size === 1) { resolved++; return [...ids][0]!; }
+      errors.push({ file: "public/course.json", field: `lessons[${lessonIndex}].source_pages[${pageIndex}]`, message: ids && ids.size > 1
+        ? "Номер відповідає кільком сторінкам каталогу. Вкажіть точний текстовий ID сторінки."
+        : "Для цього номера немає однозначної сторінки в catalog/pages.json. Вкажіть наявний текстовий ID сторінки або доповніть каталог." });
+      return value;
+    });
+    return { ...lesson, source_pages };
+  });
+  const warnings: ChapterImportIssue[] = resolved ? [{ file: "public/course.json", field: "lessons.source_pages", message: `Номери сторінок узгоджено з ID наявного каталогу: ${resolved} посилань. Вміст уроків не змінено.` }] : [];
+  return { course: { ...obj, lessons }, errors, warnings };
+}
+
 /** Pure parser only: no storage, SQL, AI, shell execution or child-facing keys.
  * `parsed` contains server-private teacher data and MUST stay server-side.
  * Callers must block persistence when `errors.length > 0`. */
@@ -125,7 +157,11 @@ export function parseUnifiedCourseArchive(zipBytes: Uint8Array): UnifiedCourseAr
     const assets = json(entries, ["catalog/assets.json", "assets.json"], false) ?? { items: [] };
     const pages = json(entries, ["catalog/pages.json", "pages.json"], false) ?? { items: [] };
     const taskTables = json(entries, ["catalog/task_tables.json", "task_tables.json"], false);
-    const parsed = combineLiteratureV3Package(parseLiteratureV3PackageManifest(packageJson), parseLiteratureV3Course(course), parseLiteratureV3Readings(readings), parseLiteratureV3Teacher(teacher), parseLiteratureV3Assets(assets), parseLiteratureV3Pages(pages), taskTables === undefined ? { warnings: [], errors: [] } : parseLiteratureV3TaskTables(taskTables));
+    const parsedPages = parseLiteratureV3Pages(pages);
+    const resolvedPages = resolvePrintedSourcePages(course, parsedPages);
+    const parsed = combineLiteratureV3Package(parseLiteratureV3PackageManifest(packageJson), parseLiteratureV3Course(resolvedPages.course), parseLiteratureV3Readings(readings), parseLiteratureV3Teacher(teacher), parseLiteratureV3Assets(assets), parsedPages, taskTables === undefined ? { warnings: [], errors: [] } : parseLiteratureV3TaskTables(taskTables));
+    parsed.errors.push(...resolvedPages.errors);
+    parsed.warnings.push(...resolvedPages.warnings);
     const id = parsed.manifest?.book_id ?? "";
     for (const [label, raw] of [["course", course], ["readings", readings], ["teacher", teacher], ["assets", assets], ["pages", pages], ["task_tables", taskTables]] as const) {
       if (record(raw).book_id != null && record(raw).book_id !== id) parsed.errors.push({ file: `${label}.json`, field: "book_id", message: "book_id не збігається з package.json." });
