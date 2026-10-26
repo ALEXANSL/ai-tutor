@@ -1,6 +1,7 @@
 "use server";
 import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
+import { unstable_rethrow } from "next/navigation";
 import { z } from "zod";
 import { requireParentAccess } from "@/server/auth/guards";
 import { forFamily, type FamilyScope } from "@/server/db/family-scope";
@@ -58,7 +59,7 @@ export async function inspectUnifiedCourseAction(input: Input): Promise<{ status
     const { archive, fingerprint } = await read(scope, input);
     const destination = await target(scope, input.subjectId, archive);
     return { status: "ready", preview: { title: archive.title, formatLabel: labels[archive.format], ...archive.counts, fingerprint, existing: destination.existing, canImport: true, warnings: notes([...archive.warnings.map(issue => `${issue.file ?? "Пакет"}: ${issue.message}`), ...(destination.existing ? ["Курс буде оновлено за стабільними ідентифікаторами. Якщо імпорт перерветься, частина матеріалів може оновитися; повторіть імпорт того самого архіву."] : [])]) } };
-  } catch (error) { return { status: "error", message: message(error) }; }
+  } catch (error) { unstable_rethrow(error); return { status: "error", message: message(error) }; }
 }
 export async function importUnifiedCourseAction(input: Input & { fingerprint: string }): Promise<{ status: "ok"; summary: UnifiedImportSavedSummary } | Failure> {
   let active: { scope: FamilyScope; jobId: string } | undefined;
@@ -97,6 +98,7 @@ export async function importUnifiedCourseAction(input: Input & { fingerprint: st
     revalidatePath("/parent/materials");
     return { status: "ok", summary };
   } catch (error) {
+    unstable_rethrow(error);
     if (active) {
       await failUnifiedImport(active.scope, active.jobId).catch(() => undefined);
       return { status: "error", message: `Імпорт перервано. Частина матеріалів могла оновитися. Повторіть імпорт цього архіву. ${message(error)}`, retryable: true };

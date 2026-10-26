@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { unstable_rethrow } from "next/navigation";
 import { inspectUnifiedCourseAction, importUnifiedCourseAction } from "@/app/actions/unified-course-import";
 import { getBrowserSupabaseStorageClient } from "@/lib/supabase-browser";
 import { withBusySignal } from "@/lib/busy-signal";
@@ -100,6 +101,7 @@ export function UnifiedCourseImportPanel({ subjects }: { subjects: SubjectOption
         }
       });
     } catch (error) {
+      unstable_rethrow(error);
       if (valid()) {
         setMessage(error instanceof Error ? error.message : "Не вдалося перевірити архів. Спробуйте ще раз.");
         setPhase("idle");
@@ -127,7 +129,8 @@ export function UnifiedCourseImportPanel({ subjects }: { subjects: SubjectOption
           setPhase("ready");
         }
       });
-    } catch {
+    } catch (error) {
+      unstable_rethrow(error);
       if (valid()) {
         setMessage("Не вдалося завершити імпорт. Можна повторити спробу з уже переданим архівом.");
         setPhase("ready");
