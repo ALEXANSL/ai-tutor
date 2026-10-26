@@ -13,7 +13,7 @@ vi.mock("@/server/lessons/mathCourseV2Search", () => ({ getMathCourseV2TextbookF
 vi.mock("@/components/parent/subjects/RenameSubjectForm", () => ({ RenameSubjectForm: () => <span>Назва</span> }));
 vi.mock("@/components/parent/subjects/TextbookLinkPanel", () => ({ TextbookLinkPanel: () => null }));
 vi.mock("@/components/parent/subjects/VideoLessonsPanel", () => ({ VideoLessonsPanel: () => <span>Відеоматеріали</span> }));
-vi.mock("@/components/child/SubjectVideoLessons", () => ({ SubjectVideoLessons: () => null }));
+vi.mock("@/components/child/SubjectVideoLessons", () => ({ SubjectVideoLessons: () => <span>Додатковий відеокаталог</span> }));
 vi.mock("@/components/child/LastLessonHighlight", () => ({ LastLessonHighlight: ({ children }: { children: React.ReactNode }) => children }));
 vi.mock("@/components/child/VideoLessonButton", () => ({ VideoLessonButton: () => <button>Відео</button> }));
 vi.mock("@/components/course-v2/LiteratureV2Search", () => ({ LiteratureV2Search: () => null }));
@@ -31,7 +31,7 @@ it("parent sees the actual chapter catalog without requiring an indexed textbook
 });
 it("child enters the same existing reader without warming a new lesson", async () => {
   const html = renderToStaticMarkup(await ChildPage({ params: Promise.resolve({ id }) }));
-  expect(html).toContain('href="/literature-v3/chapter"'); expect(mock.legacy).not.toHaveBeenCalled();
+  expect(html).toContain('href="/literature-v3/chapter"'); expect(html.indexOf("Цивілізації")).toBeLessThan(html.indexOf("Додатковий відеокаталог")); expect(mock.legacy).not.toHaveBeenCalled();
 });
 it("indexed-only leftovers do not offer the retired generation pipeline", async () => {
   mock.detail.mockResolvedValue({ id, name: "Історія", childVisible: true, hasTextbook: true, topics: [{ ...topic, title: "Стара індексована тема", literatureV3LessonId: null }] });

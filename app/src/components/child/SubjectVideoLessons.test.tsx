@@ -10,6 +10,7 @@ describe("additional videos remain reachable without changing text topics", () =
   it("renders all three old attachments without requiring them in the filtered topic list", async () => {
     const html = renderToStaticMarkup(await SubjectVideoLessons({ familyId: "family", subjectId: "history" }));
     for (const video of videos) expect(html).toContain(`data-topic="${video.topicId}"`);
+    expect(html).toContain("<details"); expect(html).toContain("<summary"); expect(html).not.toMatch(/<details[^>]*\sopen(?:[\s=>])/);
     expect(mocks.list).toHaveBeenCalledWith("family", "history"); expect(html).not.toContain("signedUrl");
   });
   it("offers an existing topic's video within its lesson as optional material", async () => {

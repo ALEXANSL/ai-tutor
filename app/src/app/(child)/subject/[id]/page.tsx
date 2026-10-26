@@ -47,7 +47,6 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
       {hasMathCourseV2 && <MathCourseV2Search subjectId={subject.id} textbook={textbook} />}
       {hasLiteratureV2 && <LiteratureV2Search subjectId={subject.id} textbook={literatureTextbook} />}
       {hasLiteratureV3 && <LiteratureV3Search subjectId={subject.id} />}
-      <SubjectVideoLessons familyId={ctx.familyId} subjectId={subject.id} />
       {topics.length > 0 ? (
         <div className="space-y-3">
           <p className="text-sm text-muted">{ts.topicsSubtitle}</p>
@@ -72,6 +71,7 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
       ) : (
         <p className="text-sm text-muted">Готових уроків поки немає. Тато ще не додав матеріали цього предмета.</p>
       )}
+      <SubjectVideoLessons familyId={ctx.familyId} subjectId={subject.id} />
     </div>
   );
 }
