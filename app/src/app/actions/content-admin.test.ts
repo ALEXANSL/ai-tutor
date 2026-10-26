@@ -52,25 +52,16 @@ describe("previewSubjectCleanupAction", () => {
     expect(getSubjectCleanupPreview).not.toHaveBeenCalled();
   });
 
-  it("returns the preview counts on a valid subject", async () => {
-    (getSubjectCleanupPreview as ReturnType<typeof vi.fn>).mockResolvedValue({ lessonsCount: 38, topicsCount: 12, tasksCount: 200, hasChildProgress: true });
+  it("blocks retired broad cleanup without reading a misleading preview", async () => {
     const result = await previewSubjectCleanupAction(SUBJECT_ID);
-    expect(result).toEqual({ status: "ok", lessonsCount: 38, topicsCount: 12, tasksCount: 200, hasChildProgress: true });
+    expect(result.status).toBe("error"); expect(getSubjectCleanupPreview).not.toHaveBeenCalled();
   });
 });
 
-describe("confirmSubjectCleanupAction (US-29.1 КП-3/КП-4)", () => {
-  it("archives via the RPC and reports the counts back", async () => {
-    rpc.mockReturnValue({ maybeSingle: () => Promise.resolve({ data: { out_lessons_archived: 38, out_topics_archived: 12 }, error: null }) });
+describe("retired bulk archive", () => {
+  it("cannot archive current topics through an old open tab", async () => {
     const result = await confirmSubjectCleanupAction(SUBJECT_ID);
-    expect(result).toEqual({ status: "ok", lessonsArchived: 38, topicsArchived: 12 });
-    expect(rpc).toHaveBeenCalledWith("admin_archive_subject_content", { p_family_id: "fam1", p_subject_id: SUBJECT_ID });
-  });
-
-  it("subject_not_found (P0002) -> a specific message, not the generic one", async () => {
-    rpc.mockReturnValue({ maybeSingle: () => Promise.resolve({ data: null, error: { code: "P0002" } }) });
-    const result = await confirmSubjectCleanupAction(SUBJECT_ID);
-    expect(result.status).toBe("error");
+    expect(result.status).toBe("error"); expect(rpc).not.toHaveBeenCalled();
   });
 });
 
