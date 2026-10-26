@@ -5,7 +5,7 @@ import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
 import {
-  getSubjectCleanupPreview,
+  type SubjectCleanupPreview,
   listSubjectLessons,
   listSubjectPackages,
   listSubjectPdfMaterials,
@@ -23,6 +23,7 @@ import {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SYSTEMS: readonly LessonSystem[] = ["literature", "course", "course_v2", "literature_v2"];
 const t = uk.parent.contentAdmin;
+const legacyCleanupMessage = "Стара масова очистка вимкнена: вона не відрізняє актуальні курси від залишків імпорту. Для прибирання потрібен вибірковий аудит матеріалів.";
 
 function isSystem(v: string): v is LessonSystem {
   return (SYSTEMS as readonly string[]).includes(v);
@@ -33,32 +34,22 @@ function isSystem(v: string): v is LessonSystem {
 // ---------------------------------------------------------------------------
 
 export type CleanupPreviewState =
-  | ({ status: "ok" } & Awaited<ReturnType<typeof getSubjectCleanupPreview>>)
+  | ({ status: "ok" } & SubjectCleanupPreview)
   | { status: "error"; message: string };
 
 export async function previewSubjectCleanupAction(subjectId: string): Promise<CleanupPreviewState> {
-  const { familyId } = await requireParentAccess();
+  await requireParentAccess();
   if (!UUID.test(subjectId)) return { status: "error", message: uk.common.error };
-  const preview = await getSubjectCleanupPreview(familyId, subjectId);
-  return { status: "ok", ...preview };
+  return { status: "error", message: legacyCleanupMessage };
 }
 
 export type CleanupConfirmState = { status: "ok"; lessonsArchived: number; topicsArchived: number } | { status: "error"; message: string };
 
 /** КП-3/КП-4: called only after the UI's own second explicit confirmation step. */
 export async function confirmSubjectCleanupAction(subjectId: string): Promise<CleanupConfirmState> {
-  const { familyId } = await requireParentAccess();
+  await requireParentAccess();
   if (!UUID.test(subjectId)) return { status: "error", message: uk.common.error };
-  const scope = forFamily(familyId);
-  const { data, error } = await scope.client.rpc("admin_archive_subject_content", { p_family_id: familyId, p_subject_id: subjectId }).maybeSingle<{
-    out_lessons_archived: number;
-    out_topics_archived: number;
-  }>();
-  if (error || !data) return { status: "error", message: error?.code === "P0002" ? t.errors.subjectNotFound : uk.common.error };
-  revalidatePath(`/parent/subjects/${subjectId}`, "page");
-  revalidatePath(`/parent/subjects/${subjectId}/content`, "page");
-  revalidatePath("/parent/subjects", "layout");
-  return { status: "ok", lessonsArchived: data.out_lessons_archived, topicsArchived: data.out_topics_archived };
+  return { status: "error", message: legacyCleanupMessage };
 }
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,15 @@
 # Статус проєкту — ШІ-Репетитор
 
+## 2026-10-26 — предмет як каталог готових уроків, без legacy generation UI
+
+PO підтвердив: масова підготовка й індексація більше не використовуються, матеріали готуються за промптом у ChatGPT. Parent subjects overview/detail більше не вимагають indexed textbook: основа — active imported lessons усіх п’яти readers, пошук і додаткові відео. Налаштування назви/наявних PDF згорнуті. Bulk warmup, old current-topic picker/forecast, library cards, legacy generation start і broad cleanup прибрано зі сторінки. Child subject показує лише готові імпортовані уроки й не завантажує warmup statuses/не пропонує підготовку indexed-only topics. Прямі посилання не змінюють існуючих reader authorization; parent account бачить readonly catalog, tablet parent mode може перейти до reader.
+
+Retired bulk estimate/confirm/poll і broad cleanup server actions блокують старі вкладки без enqueue/RPC; set_current_topic більше не запускає warm-ahead. Старий cleanup охоплював чотири системи та всі topics, не враховуючи V3, тому його не застосовували до даних. Записи/файли/прогрес і вже наявні jobs не видалялися/не скасовувалися без inventory. Інші legacy APIs/readers не видалені; наявні PDF лишаються джерелами перегляду.
+
+[Аудит і майбутня навчальна програма](tutor-evolution/subject-catalog-and-study-programs.md): ручна міжпредметна черга → optional dates → child today/resume → перевірений progress adapter → лише потім AI-рекомендації. Зараз це вимоги та план, composer/SQL програми ще не реалізовані. Відокремлено від старого ForecastPlan одного предмета і від каталогу «Курси».
+
+Перевірено: 1773 unit, TypeScript, production build, ESLint 0 errors / 8 existing warnings, bundle scan 100 files / 0 marked leaks, 66 public browser smoke. SSR/client integration тести: chapter lessons без indexed PDF, legacy-only теми не запускають generation, routing усіх readers, пошук, stale cleanup/bulk не роблять побічних дій. Реальний production inventory дублікатів недоступний через відсутній runtime service-role доступ. Нових міграцій/AI-викликів/DB writes немає.
+
 ## 2026-10-26 — порядок уже збережених параграфів без повторного імпорту
 
 [BUG-049](bugs/BUG-049-existing-paragraph-order.md): виправлення при import не змінювало наявні topics/order_no. Read-time сортування явних § N / Параграф N застосовано до V3 topics у спільній сторінці предмета, V3 TOC/prev-next й дитячого відеосписку. Незанумеровані позиції та stable ties збережені; інші import-системи не перевпорядковуються. Порядок видимих пунктів змісту послідовний, IDs/прогрес/файли незмінні. Немає DB writes, міграції чи повторного upload. Перевірено 1760 unit, TypeScript, production build, ESLint 0 errors / 8 existing warnings. Реальний приватний список історії не прочитано в runtime.

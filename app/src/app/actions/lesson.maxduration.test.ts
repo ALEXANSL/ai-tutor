@@ -21,7 +21,6 @@ import { describe, expect, it } from "vitest";
 const PAGES = [
   "../(child)/subject/[id]/page.tsx",
   "../(child)/lesson/[sessionId]/page.tsx",
-  "../parent/subjects/[id]/page.tsx",
 ] as const;
 
 describe("maxDuration on every page that can trigger the lesson pipeline", () => {

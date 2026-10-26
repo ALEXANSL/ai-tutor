@@ -1,138 +1,47 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { BulkWarmupPanel } from "@/components/parent/subjects/BulkWarmupPanel";
-import { CleanupContentPanel } from "@/components/parent/subjects/CleanupContentPanel";
-import { CurrentTopicPicker } from "@/components/parent/subjects/CurrentTopicPicker";
-import { ForecastPlanPanel } from "@/components/parent/subjects/ForecastPlanPanel";
-import { LibraryCardsList } from "@/components/parent/subjects/LibraryCardsList";
+import { ReadyLessonCatalog } from "@/components/parent/subjects/ReadyLessonCatalog";
 import { RenameSubjectForm } from "@/components/parent/subjects/RenameSubjectForm";
-import { StartLessonButton } from "@/components/parent/subjects/StartLessonButton";
-import { SubjectLessonsPanel } from "@/components/parent/subjects/SubjectLessonsPanel";
 import { TextbookLinkPanel } from "@/components/parent/subjects/TextbookLinkPanel";
 import { VideoLessonsPanel } from "@/components/parent/subjects/VideoLessonsPanel";
+import { importedLessonHref } from "@/lib/imported-lesson-link";
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
-import { listLibraryCardsForTopic } from "@/server/lessons/library";
-import { getTopicWarmupStatuses } from "@/server/lessons/warmup";
 import { listVideoLessonsForSubject } from "@/server/lessons/videoLessons";
-import { getSubjectDetail, getSubjectForecastPlan } from "@/server/subjects/queries";
-import { listSubjectLessons, listSubjectPackages, listSubjectPdfMaterials } from "@/server/subjects/contentAdmin";
+import { getSubjectDetail } from "@/server/subjects/queries";
+import { listSubjectPackages, listSubjectPdfMaterials } from "@/server/subjects/contentAdmin";
 import { PageTitle, Panel } from "../../ui";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// BUG (urgent, pre-D-65 demo fix): `StartLessonButton` on this page calls
-// `startLessonAction`, which can run the full lesson-generation pipeline
-// synchronously (planning + generation on Claude, then review) — routinely
-// past the platform's default Server Function timeout, so the request was
-// cut off with no error ("Почати урок" just hung). Same 300s budget as the
-// books indexing routes (`parent/books/*`).
-export const maxDuration = 300;
-
-/**
- * Subject detail (US-3.1, US-3.2): activate the subject by picking its
- * current topic, or — if it has no ready textbook yet — a plain explanation
- * instead of letting the parent try and fail silently (US-3.1 KP-2).
- */
+/** Prepared ZIP courses are the catalog. Legacy generation/indexing is not
+ * a prerequisite; existing PDF links remain optional source material. */
 export default async function SubjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!UUID.test(id)) notFound();
-  const { familyId } = await requireParentAccess();
+  const access = await requireParentAccess();
+  const { familyId } = access;
   const subject = await getSubjectDetail(familyId, id);
   if (!subject) notFound();
-  const t = uk.parent.subjects;
-  const plan = subject.currentTopicId ? await getSubjectForecastPlan(familyId, id) : null;
-  const libraryCards = subject.currentTopicId ? await listLibraryCardsForTopic(familyId, subject.currentTopicId) : [];
-  // US-22.4 (D-108, S33): every topic's current warm-up status, for the
-  // bulk-select panel's badges — computed even before the parent picks
-  // anything, so a topic already warmed up by an automatic trigger shows
-  // "Готово" from the very first render (КП-5).
-  const bulkWarmupStatuses = subject.topics.length > 0 ? await getTopicWarmupStatuses(familyId, subject.topics.map((tp) => tp.id)) : {};
-
-  // S42 (E-29): content-admin read models — fetched unconditionally (cheap,
-  // all-empty-array fallbacks when the subject has no imported content yet)
-  // since this screen is also the preview source for "Очистити старий
-  // контент" above.
-  const [contentLessons, contentPackages, pdfOptions, videoLessons] = await Promise.all([
-    listSubjectLessons(familyId, subject.id),
-    listSubjectPackages(familyId, subject.id),
-    listSubjectPdfMaterials(familyId, subject.id),
-    listVideoLessonsForSubject(familyId, subject.id),
+  const topics = subject.topics.filter(topic => importedLessonHref(topic));
+  const [packages, pdfOptions, videos] = await Promise.all([
+    listSubjectPackages(familyId, id), listSubjectPdfMaterials(familyId, id),
+    listVideoLessonsForSubject(familyId, id).catch(() => null),
   ]);
-
-  return (
-    <>
-      <PageTitle>
-        <Link href="/parent/subjects" className="mb-1 block text-[13px] font-normal text-p-primary">
-          {t.detail.back}
-        </Link>
-        {subject.name}
-      </PageTitle>
-
-      <Panel>
-        <RenameSubjectForm subjectId={subject.id} name={subject.name} />
-      </Panel>
-
-      {!subject.hasTextbook ? (
-        <Panel title={t.noTextbook.title}>
-          <p className="mb-3 text-[14px] text-p-text">{t.noTextbook.body}</p>
-          <Link href="/parent/books" className="inline-flex min-h-11 items-center rounded-xl bg-p-primary px-4 text-[14px] font-bold text-white">
-            {t.noTextbook.cta}
-          </Link>
-        </Panel>
-      ) : (
-        <Panel title={t.detail.pickerTitle}>
-          {subject.topics.length === 0 ? (
-            <p className="text-[13px] text-p-muted">{t.noTopicsYet}</p>
-          ) : (
-            <CurrentTopicPicker subjectId={subject.id} topics={subject.topics} currentTopicId={subject.currentTopicId} />
-          )}
-        </Panel>
-      )}
-
-      {subject.hasTextbook && subject.topics.length > 0 && (
-        <Panel title={t.bulkWarmup.title}>
-          <BulkWarmupPanel subjectId={subject.id} topics={subject.topics.map((tp) => ({ id: tp.id, title: tp.title }))} initialStatuses={bulkWarmupStatuses} />
-        </Panel>
-      )}
-
-      {plan && <ForecastPlanPanel plan={plan} />}
-
-      {subject.currentTopicId && (
-        <Panel title={t.detail.lessonTitle}>
-          <p className="mb-3 text-[13px] text-p-muted">{t.detail.lessonHint}</p>
-          <StartLessonButton subjectId={subject.id} topicId={subject.currentTopicId} />
-        </Panel>
-      )}
-
-      {subject.currentTopicId && (
-        <Panel title={t.library.title}>
-          <LibraryCardsList cards={libraryCards} />
-        </Panel>
-      )}
-
-      {/* S42 (E-29, US-29.1/29.2/29.3): admin content operations, no SQL. */}
-      <Panel title={uk.parent.contentAdmin.title}>
-        <div className="flex flex-col gap-6">
-          <CleanupContentPanel subjectId={subject.id} />
-          {contentPackages.length > 0 && (
-            <div>
-              <h3 className="mb-2 text-[14px] font-extrabold">{uk.parent.contentAdmin.textbook.title}</h3>
-              <TextbookLinkPanel packages={contentPackages} pdfOptions={pdfOptions} />
-            </div>
-          )}
-          <div>
-            <h3 className="mb-2 text-[14px] font-extrabold">{uk.parent.contentAdmin.lessons.title}</h3>
-            <SubjectLessonsPanel initialLessons={contentLessons} />
-          </div>
-          {subject.topics.length > 0 && (
-            <div>
-              <h3 className="mb-2 text-[14px] font-extrabold">{uk.parent.contentAdmin.videoLessons.title}</h3>
-              <VideoLessonsPanel topics={subject.topics.map((tp) => ({ id: tp.id, title: tp.title }))} initialVideos={videoLessons} />
-            </div>
-          )}
-        </div>
-      </Panel>
-    </>
-  );
+  return <>
+    <PageTitle><Link href="/parent/subjects" className="mb-1 block text-[13px] font-normal text-p-primary">{uk.parent.subjects.detail.back}</Link>{subject.name}</PageTitle>
+    <div className="mb-4 flex flex-wrap gap-3"><Link href="/parent/materials" className="inline-flex min-h-11 items-center rounded-xl bg-p-primary px-4 text-sm font-bold text-white">Додати готовий курс ZIP</Link></div>
+    <Panel title="Уроки предмета">
+      {topics.length ? <ReadyLessonCatalog topics={topics} canOpen={access.via === "tablet"} /> : <p className="text-sm text-p-muted">Готових уроків поки немає. Підготуйте матеріали у ChatGPT за універсальним промптом і завантажте ZIP курсу в розділі «Завантажити матеріали».</p>}
+    </Panel>
+    <Panel title="Додаткові відеоматеріали">
+      {videos ? <VideoLessonsPanel topics={topics.map(topic => ({ id: topic.id, title: topic.title }))} initialVideos={videos} /> : <p role="status" className="text-sm text-p-muted">Не вдалося завантажити відеосписок. Оновіть сторінку, щоб спробувати ще раз.</p>}
+    </Panel>
+    <details className="mt-4 rounded-2xl border border-p-line bg-p-surface p-4">
+      <summary className="cursor-pointer text-sm font-bold text-p-muted">Налаштування предмета та джерел PDF</summary>
+      <div className="mt-4 space-y-5"><RenameSubjectForm subjectId={subject.id} name={subject.name} />
+        {packages.length > 0 && <div><h2 className="mb-2 text-sm font-bold">PDF-джерела наявних уроків</h2><TextbookLinkPanel packages={packages} pdfOptions={pdfOptions} /></div>}
+      </div>
+    </details>
+  </>;
 }
