@@ -1,3 +1,4 @@
+import { orderParagraphs } from "@/lib/paragraph-order";
 import "server-only";
 import { forFamily } from "@/server/db/family-scope";
 import type { CourseV2QuestionView } from "@/components/course-v2/QuestionCard";
@@ -277,7 +278,7 @@ export async function listLiteratureV3Lessons(familyId: string, packageId: strin
     .eq("package_id", packageId)
     .order("order_no")
     .returns<{ id: string; order_no: number; title: string; status: "active" | "needs_review" }[]>();
-  return (data ?? []).map((r) => ({ id: r.id, orderNo: r.order_no, title: r.title, status: r.status }));
+  return orderParagraphs(data ?? [], row => row.title).map((r, index) => ({ id: r.id, orderNo: index + 1, title: r.title, status: r.status }));
 }
 
 export interface LiteratureV3BookPage {
