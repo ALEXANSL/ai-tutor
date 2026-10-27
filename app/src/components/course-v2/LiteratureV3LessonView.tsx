@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { NarrationButton } from "@/components/shared/NarrationButton";
+import { LessonStage } from "@/components/shared/LessonStage";
+import { ReadingText } from "@/components/shared/ReadingText";
 import { LessonText } from "@/components/shared/LessonText";
 import { LessonVoicePanel } from "@/components/voice/LessonVoicePanel";
 import { AutoAdvanceToggle, VoiceModeToggle, useVoiceModeControls } from "@/components/shared/VoiceModeControls";
@@ -63,34 +65,23 @@ function ListenButton(props: {
 
 function ScreenStep({ step, voiceMode, onNarrationEnded }: { step: Extract<LiteratureV3FlowStep, { kind: "screen" }>; voiceMode: boolean; onNarrationEnded?: () => void }) {
   return (
-    <section className="lit-v3-step lit-v3-step-screen">
-      {step.title && <h3>{step.title}</h3>}
-      <LessonText text={step.displayText} />
-      {step.illustrations.map((a) =>
-        a.url ? (
-          // eslint-disable-next-line @next/next/no-img-element -- short-lived signed Supabase Storage URL
-          <img key={a.assetKey} src={a.url} alt={a.alt} className="course-exercise-asset mt-2" style={{ maxWidth: "100%", height: "auto" }} />
-        ) : null,
-      )}
+    <LessonStage title={step.title || "Пояснення"} actions={<ListenButton key={step.id} refTable="literature_v3_screens" refId={step.id} field="tts" text={step.ttsText} autoPlay={voiceMode} onEnded={onNarrationEnded} />}>
+      <LessonText text={step.displayText} reflow />
+      {step.illustrations.map((a) => a.url ? (
+        // eslint-disable-next-line @next/next/no-img-element -- signed Supabase Storage URL
+        <img key={a.assetKey} src={a.url} alt={a.alt} className="course-exercise-asset mt-2" style={{ maxWidth: "100%", height: "auto" }} />
+      ) : null)}
       {step.illustrations.map((a) => a.caption && <p key={a.assetKey} className="text-xs text-muted">{a.caption}</p>)}
-      <div className="mt-2">
-        <ListenButton key={step.id} refTable="literature_v3_screens" refId={step.id} field="tts" text={step.ttsText} autoPlay={voiceMode} onEnded={onNarrationEnded} />
-      </div>
-    </section>
+    </LessonStage>
   );
 }
 
 /** US-31.2 КП-5: passive, never evaluated, no response required. */
 function BiographyStep({ step, voiceMode, onNarrationEnded }: { step: Extract<LiteratureV3FlowStep, { kind: "biography" }>; voiceMode: boolean; onNarrationEnded?: () => void }) {
   return (
-    <section className="lit-v3-step lit-v3-step-biography">
-      <p className="course-eyebrow">Про автора</p>
-      <h3>{step.authorName}</h3>
-      <LessonText text={step.displayText} />
-      <div className="mt-2">
-        <ListenButton key={step.id} refTable="literature_v3_biographies" refId={step.id} field="tts" text={step.ttsText} autoPlay={voiceMode} onEnded={onNarrationEnded} />
-      </div>
-    </section>
+    <LessonStage eyebrow="Про автора" title={step.authorName} actions={<ListenButton key={step.id} refTable="literature_v3_biographies" refId={step.id} field="tts" text={step.ttsText} autoPlay={voiceMode} onEnded={onNarrationEnded} />}>
+      <LessonText text={step.displayText} reflow />
+    </LessonStage>
   );
 }
 
@@ -174,23 +165,13 @@ function ReadingStep({
   }, [lessonId, step.id]);
 
   return (
-    <section className="lit-v3-step lit-v3-step-reading">
-      <p className="course-eyebrow">
-        {step.workAuthor ? `${step.workAuthor} · ` : ""}
-        {step.workTitle}
-      </p>
-      {step.title && <h3>{step.title}</h3>}
-      <div ref={containerRef} onScroll={onScroll} className="lesson-reading-scroll" style={{ maxHeight: "60vh", overflowY: "auto" }}>
-        <LessonText text={step.displayText} preserveLines />
-      </div>
-      <div className="mt-2 flex flex-wrap gap-2">
-        <ListenButton key={`${step.id}-${playKey}`} refTable="literature_v3_reading_items" refId={step.id} field="tts" text={step.ttsText} autoPlay={voiceMode} />
-        <button type="button" onClick={() => setPlayKey((k) => k + 1)} className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold">
-          🔁 Повторити
-        </button>
-        <OpenVirtualBookButton title={packageTitle} pageIndex={bookIndex} printedPage={step.bookPage} />
-      </div>
-    </section>
+    <LessonStage title={step.title || step.workTitle || "Читаємо"} eyebrow={[step.workAuthor, step.workTitle].filter(Boolean).join(" · ")} scrollRef={containerRef} onScroll={onScroll} actions={<>
+      <ListenButton key={`${step.id}-${playKey}`} refTable="literature_v3_reading_items" refId={step.id} field="tts" text={step.ttsText} autoPlay={voiceMode} />
+      <button type="button" onClick={() => setPlayKey((k) => k + 1)} className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold">🔁 Повторити</button>
+      <OpenVirtualBookButton title={packageTitle} pageIndex={bookIndex} printedPage={step.bookPage} />
+    </>}>
+      <ReadingText text={step.displayText} initialLayout={step.readingLayout} />
+    </LessonStage>
   );
 }
 
@@ -226,9 +207,9 @@ function FlowStepRenderer({
       // questions too — a pre-existing gap, not introduced by this reuse;
       // out of scope to fix here, see handback report).
       return (
-        <ol className="lit-test-list">
+        <LessonStage title="Перевір себе"><ol className="lit-test-list">
           <QuestionCard question={step.question} />
-        </ol>
+        </ol></LessonStage>
       );
   }
 }
@@ -300,7 +281,7 @@ export function LiteratureV3LessonScreen({
   const { voiceMode, autoAdvance, changeVoiceMode, changeAutoAdvance } = useVoiceModeControls("literatureV3");
 
   return (
-    <article className={`course-lesson ${STEP_NAV_BAR_SPACER_CLASS}`}>
+    <article className={`course-lesson literature-reader ${STEP_NAV_BAR_SPACER_CLASS}`}>
       <LessonNavBar
         subjectId={lesson.subjectId}
         courseNav={{ basePath: "/literature-v3", currentLessonId: lesson.id, lessons: packageLessons, topicId: lesson.topicId }}
@@ -325,14 +306,14 @@ export function LiteratureV3LessonScreen({
       </header>
 
       {lesson.objectives.length > 0 && (
-        <section>
-          <h2>Чого навчимось</h2>
+        <details className="reading-objectives">
+          <summary>Чого навчимось</summary>
           <ul>
             {lesson.objectives.map((o, i) => (
               <li key={i}>{o}</li>
             ))}
           </ul>
-        </section>
+        </details>
       )}
 
       <FlowNav lesson={lesson} bookIndex={bookIndex} savedPosition={savedPosition} voiceMode={voiceMode} autoAdvance={autoAdvance} />

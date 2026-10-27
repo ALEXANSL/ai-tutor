@@ -720,3 +720,45 @@ body {
   body:has([data-lesson-nav]) [data-parent-icon] { display: inline; }
   .course-lesson { padding-inline: 12px; }
 }
+
+/* Reading lessons: compact chrome, quiet metadata and a stable step frame. */
+.course-lesson.literature-reader { padding-top: 12px; padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
+.course-lesson.literature-reader > header { margin-top: 8px; padding: 16px 20px; border-radius: 18px; box-shadow: none; }
+.course-lesson.literature-reader > header::before { display: none; }
+.course-lesson.literature-reader h1 { max-width: none; margin: 4px 0 8px; font-size: clamp(22px, 2.8vw, 28px); text-wrap: initial; }
+.literature-reader .reading-objectives { margin-top: 12px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 12px; }
+.reading-objectives summary { cursor: pointer; min-height: 28px; font-weight: 750; }
+.reading-objectives ul { padding: 12px 0 0 20px; list-style: disc; }
+.course-lesson.literature-reader .lesson-stage { display: flex; flex-direction: column; height: clamp(280px, calc(100svh - 360px), 640px); margin-top: 16px; padding: 0; overflow: hidden; border: 2px solid color-mix(in srgb, var(--accent-voice) 35%, var(--border)); border-radius: 20px; box-shadow: none; }
+.lesson-stage-header { flex-shrink: 0; max-height: 50%; overflow-y: auto; padding: 16px 20px 12px; border-bottom: 1px solid var(--border); background: var(--surface-alt); }
+.literature-reader .lesson-stage-header h3 { margin: 0 0 10px; font-size: clamp(18px, 2.1vw, 22px); text-wrap: initial; }
+.lesson-stage-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.lesson-stage-body { flex: 1; min-height: 0; overflow: auto; padding: 18px 22px; scrollbar-gutter: stable; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--text-muted) transparent; }
+.lesson-stage-body:focus-visible { outline: 2px solid var(--accent-voice); outline-offset: -3px; }
+.lesson-stage-body .lesson-prose { max-width: 65ch; font-size: clamp(18px, 2vw, 20px); line-height: 1.65; }
+.lesson-prose--reflow .lesson-prose__paragraph { white-space: normal; }
+.reading-layout { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 16px; font-size: 13px; }
+.reading-layout > span { margin-right: 4px; color: var(--text-muted); }
+.course-lesson .reading-layout button { min-height: 44px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 13px; background: var(--surface); }
+.course-lesson .reading-layout button[aria-pressed="true"] { border-color: var(--accent-voice); background: color-mix(in srgb, var(--accent-voice) 12%, var(--surface)); }
+.literature-reader .reading-source-note { margin: 0 0 16px; padding: 10px 12px; border-left: 3px solid var(--primary); border-radius: 6px; background: var(--surface-alt); font-size: 13px; line-height: 1.5; }
+/* Use the existing accessible lesson menu on desktop as well as tablets. */
+body:has(.literature-reader) [data-child-theme] { display: none; }
+.literature-reader .lesson-compact-heading { display: flex; align-items: center; gap: 8px; height: 56px; padding: 6px 8px 6px 60px; }
+.literature-reader .lesson-compact-only { display: inline; }
+.literature-reader .lesson-alarm-full { display: none; }
+.course-lesson.literature-reader button[data-lesson-alarm] { top: calc(env(safe-area-inset-top, 0px) + 6px); left: 8px; width: 44px; min-height: 44px; padding: 0; border-radius: 12px; }
+.literature-reader .lesson-nav-panel { display: none; position: absolute; top: 100%; left: 0; right: 0; max-height: calc(100dvh - 136px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); overflow-y: auto; overscroll-behavior: contain; background: var(--surface); border-bottom: 1px solid var(--border); }
+.literature-reader .lesson-nav-panel[data-open="true"] { display: block; }
+.literature-reader .lesson-menu-backdrop { display: block; position: fixed; inset: 0; z-index: 35; background: rgb(0 0 0 / 35%); }
+.literature-reader .lesson-main-actions { padding-inline: 0; }
+.literature-reader .lesson-compact-theme { display: block; }
+.literature-reader [data-lesson-nav] .lesson-compact-heading button { min-width: 44px; min-height: 44px; padding-inline: 12px; }
+@media (max-width: 480px) {
+  .reading-layout > span { display: none; }
+  .lesson-stage-header { padding: 12px; }
+  .lesson-stage-body { padding: 14px; }
+  .course-lesson.literature-reader > header { padding: 12px 14px; }
+}
+.reading-source-note summary { cursor: pointer; min-height: 24px; font-weight: 650; }
+.reading-source-note p { margin-top: 8px; }

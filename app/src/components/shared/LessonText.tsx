@@ -66,9 +66,9 @@ function InlineText({ text }: { text: string }) {
   )}</>;
 }
 
-export function LessonText({ text, preserveLines = false }: { text: string; preserveLines?: boolean }) {
+export function LessonText({ text, preserveLines = false, reflow = false }: { text: string; preserveLines?: boolean; reflow?: boolean }) {
   if (preserveLines) return <div className="lesson-prose lesson-prose--reading"><div className="lesson-prose__paragraph"><MathText text={text} /></div></div>;
-  return <div className="lesson-prose">{lessonTextBlocks(text).map((block, index) => {
+  return <div className={`lesson-prose${reflow ? " lesson-prose--reflow" : ""}`}>{lessonTextBlocks(text).map((block, index) => {
     if (block.kind === "heading") {
       const Heading = `h${block.level}` as "h4" | "h5" | "h6";
       return <Heading key={index}><InlineText text={block.text} /></Heading>;
