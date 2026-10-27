@@ -15,7 +15,7 @@ import { persistCoursePackage } from "@/server/lessons/coursePersist";
 import { persistLiteratureTopic } from "@/server/lessons/literatureExtraction";
 import { acquireUnifiedImport, completeUnifiedImport, failUnifiedImport, findCompletedUnifiedImport, isUnifiedImportStoragePath, type UnifiedImportSavedSummary } from "@/server/lessons/unifiedImportLifecycle";
 interface Input { subjectId: string; storagePath: string }
-interface Preview { title: string; formatLabel: string; lessons: number; tasks: number; images: number; pdfs: number; warnings: string[]; existing: boolean; fingerprint: string; canImport: boolean }
+interface Preview { readingBlocks?: number; biographyBlocks?: number; title: string; formatLabel: string; lessons: number; tasks: number; images: number; pdfs: number; warnings: string[]; existing: boolean; fingerprint: string; canImport: boolean }
 type Failure = { status: "error"; message: string; retryable?: boolean };
 const bucket = "course_import_staging";
 const labels = { chapter_v3: "Універсальний пакет курсу", math_v2: "Пакет математики", literature_v2: "Пакет літератури", course_v1: "Пакет уроків", markdown_v1: "Текстові уроки" };
@@ -58,7 +58,11 @@ export async function inspectUnifiedCourseAction(input: Input): Promise<{ status
     const scope = await context(input);
     const { archive, fingerprint } = await read(scope, input);
     const destination = await target(scope, input.subjectId, archive);
-    return { status: "ready", preview: { title: archive.title, formatLabel: labels[archive.format], ...archive.counts, fingerprint, existing: destination.existing, canImport: true, warnings: notes([...archive.warnings.map(issue => `${issue.file ?? "Пакет"}: ${issue.message}`), ...(destination.existing ? ["Курс буде оновлено за стабільними ідентифікаторами. Якщо імпорт перерветься, частина матеріалів може оновитися; повторіть імпорт того самого архіву."] : [])]) } };
+    const contentBlocks = archive.format === "chapter_v3" ? {
+      readingBlocks: archive.parsed.lessons.reduce((count, lesson) => count + lesson.flow.filter(step => step.kind === "reading").length, 0),
+      biographyBlocks: archive.parsed.lessons.reduce((count, lesson) => count + lesson.flow.filter(step => step.kind === "biography").length, 0),
+    } : {};
+    return { status: "ready", preview: { ...contentBlocks, title: archive.title, formatLabel: labels[archive.format], ...archive.counts, fingerprint, existing: destination.existing, canImport: true, warnings: notes([...archive.warnings.map(issue => `${issue.file ?? "Пакет"}: ${issue.message}`), ...(destination.existing ? ["Курс буде оновлено за стабільними ідентифікаторами. Якщо імпорт перерветься, частина матеріалів може оновитися; повторіть імпорт того самого архіву."] : [])]) } };
   } catch (error) { unstable_rethrow(error); return { status: "error", message: message(error) }; }
 }
 export async function importUnifiedCourseAction(input: Input & { fingerprint: string }): Promise<{ status: "ok"; summary: UnifiedImportSavedSummary } | Failure> {

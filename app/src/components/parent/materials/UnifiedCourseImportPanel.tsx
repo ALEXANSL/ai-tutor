@@ -186,7 +186,7 @@ export function UnifiedCourseImportPanel({ subjects }: { subjects: SubjectOption
     {preview && phase !== "done" && <section aria-label="Вміст архіву" className="space-y-4 rounded-2xl border border-p-line bg-p-bg p-4">
       <div><h3 className="font-bold text-p-text">{preview.title}</h3><p className="mt-1 text-xs text-p-muted">{preview.formatLabel}</p></div>
       <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-        {[["Уроків", preview.lessons], ["Завдань", preview.tasks], ["Ілюстрацій", preview.images], ["PDF уроків", preview.pdfs]].map(([label, count]) => <div key={label} className="rounded-xl bg-p-surface p-3"><dt className="text-p-muted">{label}</dt><dd className="mt-1 text-xl font-bold text-p-text">{count}</dd></div>)}
+        {[["Уроків", preview.lessons], ["Завдань", preview.tasks], ["Ілюстрацій", preview.images], ["PDF уроків", preview.pdfs], ...(preview.readingBlocks != null ? [["Блоків читання", preview.readingBlocks], ["Блоків біографій", preview.biographyBlocks ?? 0]] : [])].map(([label, count]) => <div key={label} className="rounded-xl bg-p-surface p-3"><dt className="text-p-muted">{label}</dt><dd className="mt-1 text-xl font-bold text-p-text">{count}</dd></div>)}
       </dl>
       {preview.existing && <p className="text-sm leading-relaxed text-p-muted">Такий курс уже є в цьому предметі. Перевірте зауваження перед оновленням матеріалів.</p>}
       {preview.warnings.length > 0 && <Warnings title="Зверніть увагу перед завантаженням" items={preview.warnings} />}

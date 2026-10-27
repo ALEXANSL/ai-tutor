@@ -28,7 +28,7 @@ beforeEach(() => {
   mock.remove.mockResolvedValue({ error: null }); mock.replay.mockResolvedValue(null);
   mock.acquire.mockResolvedValue({ jobId: "job" }); mock.complete.mockResolvedValue(undefined); mock.fail.mockResolvedValue(undefined);
   mock.persist.mockResolvedValue({ assetsUploaded: 0, assetUploadFailures: [] });
-  mock.parse.mockReturnValue({ format: "chapter_v3", title: "Курс", packageId: "book", counts: { lessons: 1, tasks: 2, images: 0, pdfs: 0 }, errors: [], warnings: [], assetFiles: new Map(), parsed: { taskKeys: [{ answer: "PRIVATE ANSWER" }] } });
+  mock.parse.mockReturnValue({ format: "chapter_v3", title: "Курс", packageId: "book", counts: { lessons: 1, tasks: 2, images: 0, pdfs: 0 }, errors: [], warnings: [], assetFiles: new Map(), parsed: { lessons: [], taskKeys: [{ answer: "PRIVATE ANSWER" }] } });
 });
 async function verified() { const result = await inspectUnifiedCourseAction(input); if (result.status !== "ready") throw new Error(result.message); return { ...input, fingerprint: result.preview.fingerprint }; }
 describe("unified import server boundary", () => {
@@ -78,4 +78,12 @@ it.each(["/today", "/login", "/denied"])("lets Next handle auth redirect to %s b
   await expect(importUnifiedCourseAction({ ...input, fingerprint: "a".repeat(64) })).rejects.toMatchObject({ message: "NEXT_REDIRECT", digest: expect.stringContaining(destination) });
   expect(mock.download).not.toHaveBeenCalled(); expect(mock.persist).not.toHaveBeenCalled();
   expect(mock.acquire).not.toHaveBeenCalled(); expect(mock.remove).not.toHaveBeenCalled();
+});
+
+it("previews reachable reading and biography blocks without returning their content", async () => {
+  const archive = mock.parse.getMockImplementation()!();
+  mock.parse.mockReturnValue({ ...archive, parsed: { ...archive.parsed, lessons: [{ flow: [{ kind: "screen" }, { kind: "reading" }, { kind: "reading" }, { kind: "biography" }, { kind: "quiz" }] }] } });
+  const result = await inspectUnifiedCourseAction(input);
+  expect(result).toMatchObject({ status: "ready", preview: { readingBlocks: 2, biographyBlocks: 1 } });
+  expect(JSON.stringify(result)).not.toContain("PRIVATE ANSWER");
 });

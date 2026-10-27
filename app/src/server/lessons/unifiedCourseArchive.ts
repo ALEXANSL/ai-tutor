@@ -1,4 +1,5 @@
 import "server-only";
+import { hasReadingExtractionArtifacts } from "@/lib/reading-presentation";
 import { zipSync } from "fflate";
 import { createHash } from "node:crypto";
 import { readSafeCourseZip } from "./safeCourseZip";
@@ -162,6 +163,10 @@ export function parseUnifiedCourseArchive(zipBytes: Uint8Array): UnifiedCourseAr
     const parsed = combineLiteratureV3Package(parseLiteratureV3PackageManifest(packageJson), parseLiteratureV3Course(resolvedPages.course), parseLiteratureV3Readings(readings), parseLiteratureV3Teacher(teacher), parseLiteratureV3Assets(assets), parsedPages, taskTables === undefined ? { warnings: [], errors: [] } : parseLiteratureV3TaskTables(taskTables));
     parsed.errors.push(...resolvedPages.errors);
     parsed.warnings.push(...resolvedPages.warnings);
+    const artifactCount = parsed.readingItems.filter(item => hasReadingExtractionArtifacts(item.content.display) || hasReadingExtractionArtifacts(item.content.tts.text)).length;
+    if (artifactCount) parsed.warnings.push({ file: "public/readings.json", field: "items", message: `У ${artifactCount} фрагментах є ознаки проблем витягування PDF (прогалини між колонками або пошкоджені літери). Звірте текст і озвучення з оригіналом перед заняттям.` });
+    const pageTranscripts = parsed.readingItems.filter(item => item.content_type === "textbook_page_transcription").length;
+    if (pageTranscripts) parsed.warnings.push({ file: "public/readings.json", field: "items", message: `Фрагментів із дослівною транскрипцією сторінок: ${pageTranscripts}. Питання, підписи й основний текст можуть озвучуватися разом. Це не підтвердження готовності навчального сценарію.` });
     const id = parsed.manifest?.book_id ?? "";
     for (const [label, raw] of [["course", course], ["readings", readings], ["teacher", teacher], ["assets", assets], ["pages", pages], ["task_tables", taskTables]] as const) {
       if (record(raw).book_id != null && record(raw).book_id !== id) parsed.errors.push({ file: `${label}.json`, field: "book_id", message: "book_id не збігається з package.json." });

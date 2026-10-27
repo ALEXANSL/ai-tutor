@@ -1,5 +1,6 @@
 import { orderParagraphs } from "@/lib/paragraph-order";
 import "server-only";
+import { preferredReadingLayout } from "@/lib/reading-presentation";
 import { forFamily } from "@/server/db/family-scope";
 import type { CourseV2QuestionView } from "@/components/course-v2/QuestionCard";
 
@@ -55,6 +56,7 @@ export interface LiteratureV3ReadingStep {
   title: string;
   displayText: string;
   ttsText: string;
+  readingLayout?: "paragraphs" | "lines";
   /** US-31.3: printed-book page this fragment starts on, when known (`literature_v3_reading_items.primary_page_id` resolved against `literature_v3_pages`) — lets "📖 Подивитись у підручнику" open the virtual book at the RIGHT page for this step, not just the lesson's first page. */
   bookPage: number | null;
 }
@@ -110,6 +112,7 @@ interface IllustrationAssetRow {
   alt: string;
 }
 interface ReadingItemRow {
+  content_type: string;
   id: string;
   reading_key: string;
   title: string;
@@ -119,6 +122,7 @@ interface ReadingItemRow {
   primary_page_id: string | null;
 }
 interface WorkRow {
+  form: string;
   id: string;
   title: string;
   author: string;
@@ -158,7 +162,7 @@ export async function getLiteratureV3LessonView(familyId: string, lessonId: stri
       ? scope.select("literature_v3_screens", "id, screen_key, title, content_display, content_tts, asset_ids").eq("lesson_id", lessonId).in("screen_key", screenKeys).returns<ScreenRow[]>()
       : Promise.resolve({ data: [] as ScreenRow[] }),
     readingKeys.length
-      ? scope.select("literature_v3_reading_items", "id, reading_key, title, content_display, content_tts, work_id, primary_page_id").in("reading_key", readingKeys).returns<ReadingItemRow[]>()
+      ? scope.select("literature_v3_reading_items", "id, reading_key, title, content_display, content_tts, work_id, primary_page_id, content_type").in("reading_key", readingKeys).returns<ReadingItemRow[]>()
       : Promise.resolve({ data: [] as ReadingItemRow[] }),
     biographyKeys.length
       ? scope.select("literature_v3_biographies", "id, biography_key, author_name, content_display, content_tts").in("biography_key", biographyKeys).returns<BiographyRow[]>()
@@ -169,7 +173,7 @@ export async function getLiteratureV3LessonView(familyId: string, lessonId: stri
   ]);
 
   const workIds = [...new Set((readingItems ?? []).map((r) => r.work_id))];
-  const { data: works } = workIds.length ? await scope.select("literature_v3_works", "id, title, author").in("id", workIds).returns<WorkRow[]>() : { data: [] as WorkRow[] };
+  const { data: works } = workIds.length ? await scope.select("literature_v3_works", "id, title, author, form").in("id", workIds).returns<WorkRow[]>() : { data: [] as WorkRow[] };
   const workById = new Map((works ?? []).map((w) => [w.id, w]));
 
   const primaryPageIds = [...new Set((readingItems ?? []).map((r) => r.primary_page_id).filter((id): id is string => !!id))];
@@ -226,6 +230,7 @@ export async function getLiteratureV3LessonView(familyId: string, lessonId: stri
       flow.push({
         kind: "reading",
         id: r.id,
+        readingLayout: preferredReadingLayout(r.content_type, work?.form),
         workTitle: work?.title ?? "",
         workAuthor: work?.author ?? "",
         title: r.title,
