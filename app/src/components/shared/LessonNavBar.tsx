@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
+import { HomeLink } from "./HomeLink";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { VideoLessonButton } from "@/components/child/VideoLessonButton";
 import { uk } from "@/i18n/uk";
@@ -194,6 +195,7 @@ export function LessonNavBar({
       {menuOpen && <div className="lesson-menu-backdrop" onClick={() => setMenuOpen(false)} aria-hidden="true" />}
       <div data-lesson-nav ref={barRef} className="fixed inset-x-0 top-0 z-40 border-b border-line bg-surface/95 backdrop-blur" style={{ paddingTop: "env(safe-area-inset-top)" }}>
         <div className="lesson-compact-heading">
+          <HomeLink iconOnly />
           <p className="min-w-0 flex-1 truncate text-sm font-bold">{courseNav?.lessons.find(lesson => lesson.id === courseNav.currentLessonId)?.title ?? "Урок"}</p>
           <button ref={menuButton} type="button" aria-label="Меню уроку" aria-expanded={menuOpen} aria-controls={menuId} onClick={() => setMenuOpen(value => !value)} className="rounded-xl border border-line px-3 font-bold">{menuOpen ? "✕" : "☰"}</button>
         </div>
@@ -203,6 +205,7 @@ export function LessonNavBar({
               top-3.5 right-3.5 z-50` in the child layout) so this row's own
               buttons never render underneath either one. */}
           <div className="lesson-main-actions flex flex-wrap items-center gap-2 pl-14 pr-36">
+            <HomeLink iconOnly />
             <button
               type="button"
               onClick={goSubjectList}

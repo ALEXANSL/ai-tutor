@@ -6,10 +6,11 @@ import { getVideoLessonUrlAction, listTopicVideosAction } from "@/app/actions/vi
 import { stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
 import type { TopicVideoOption } from "@/server/lessons/videoLessons";
 import { VideoDeliveryCheck } from "./VideoDeliveryCheck";
+import { HomeLink } from "@/components/shared/HomeLink";
 import { uk } from "@/i18n/uk";
 
 /** Optional supplement; never changes the underlying lesson or its progress. */
-export function VideoLessonButton({ topicId, title, videoId }: { topicId: string; title?: string; videoId?: string }) {
+export function VideoLessonButton({ topicId, title, videoId, compact = false }: { topicId: string; title?: string; videoId?: string; compact?: boolean }) {
   const t = uk.child.subject.video;
   const modalTitle = title ?? t.button;
   const [videos, setVideos] = useState<TopicVideoOption[] | null>(null);
@@ -93,7 +94,7 @@ export function VideoLessonButton({ topicId, title, videoId }: { topicId: string
     const keys = (event: KeyboardEvent) => {
       if (event.key === "Escape") { event.preventDefault(); close(); }
       if (event.key === "Tab") {
-        const targets = dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled),video[controls],[tabindex="0"]');
+        const targets = dialog.current?.querySelectorAll<HTMLElement>('a[href],button:not(:disabled),video[controls],[tabindex="0"]');
         if (!targets?.length) return;
         const first = targets[0]!, last = targets[targets.length - 1]!;
         if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
@@ -117,11 +118,12 @@ export function VideoLessonButton({ topicId, title, videoId }: { topicId: string
   }, [url, mediaVersion]);
 
   return <>
-    <button ref={trigger} type="button" onClick={show} disabled={open} className="inline-flex min-h-12 items-center rounded-2xl border-2 border-line bg-surface px-4 text-base font-bold">{t.button}</button>
+    <button ref={trigger} type="button" aria-label={t.button} title={t.button} onClick={show} disabled={open} className="inline-flex min-h-12 items-center rounded-2xl border-2 border-line bg-surface px-4 text-base font-bold">{compact ? <><span aria-hidden="true">🎬</span><span className="video-short-label">Відео</span></> : t.button}</button>
     {open && createPortal(
       <div role="dialog" aria-modal="true" aria-labelledby={headingId} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-2 sm:p-4" onClick={close}>
         <div ref={dialog} onClick={event => event.stopPropagation()} className="flex max-h-[95dvh] w-full max-w-4xl flex-col overflow-auto rounded-2xl bg-bg">
           <div className="flex items-center justify-between gap-3 border-b border-line p-3">
+            <HomeLink iconOnly />
             <h2 id={headingId} className="min-w-0 text-base font-bold">{modalTitle}</h2>
             <button type="button" onClick={close} className="min-h-12 shrink-0 rounded-full border-2 border-line bg-surface px-4 font-bold">{t.close}</button>
           </div>

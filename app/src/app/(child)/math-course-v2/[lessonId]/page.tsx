@@ -1,9 +1,8 @@
-import { TopicVideoSupplement } from "@/components/child/SubjectVideoLessons";
 import { notFound } from "next/navigation";
 import { MathCourseV2LessonScreen } from "@/components/course-v2/MathCourseV2LessonView";
 import { requireChild } from "@/server/auth/guards";
 import { getMathCourseV2LessonView, listMathCourseV2Lessons } from "@/server/lessons/mathCourseV2View";
-import { hasVideoLessonForTopic } from "@/server/lessons/videoLessons";
+import { resolveLessonVideoTopicId } from "@/server/lessons/lessonVideo";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -19,10 +18,10 @@ export default async function MathCourseV2LessonPage({ params }: { params: Promi
   const { ctx } = await requireChild();
   const lesson = await getMathCourseV2LessonView(ctx.familyId, lessonId);
   if (!lesson) notFound();
-  const [packageLessons, hasVideoLesson] = await Promise.all([
+  const [packageLessons, videoLessonTopicId] = await Promise.all([
     listMathCourseV2Lessons(ctx.familyId, lesson.packageId),
-    hasVideoLessonForTopic(ctx.familyId, lesson.topicId),
+    resolveLessonVideoTopicId(ctx.familyId, lesson.subjectId, lesson.topicId, lesson.title),
   ]);
 
-  return <>{!hasVideoLesson && <TopicVideoSupplement familyId={ctx.familyId} subjectId={lesson.subjectId} topicId={lesson.topicId} title={lesson.title} />}<MathCourseV2LessonScreen lesson={lesson} packageLessons={packageLessons} hasVideoLesson={hasVideoLesson} /></>;
+  return <MathCourseV2LessonScreen lesson={lesson} packageLessons={packageLessons} videoLessonTopicId={videoLessonTopicId} />;
 }

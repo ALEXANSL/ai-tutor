@@ -1,5 +1,7 @@
 "use client";
 
+import { HomeLink } from "@/components/shared/HomeLink";
+
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { VirtualBookReader } from "@/components/child/VirtualBookReader";
@@ -44,6 +46,7 @@ export function OpenVirtualBookButton({
           <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 sm:p-4" onClick={() => setOpen(false)}>
             <div onClick={(e) => e.stopPropagation()} className="flex h-[95vh] w-[95vw] max-w-4xl flex-col overflow-hidden rounded-2xl bg-bg">
               <div className="flex items-center justify-between border-b border-line p-3">
+                <HomeLink iconOnly />
                 <p className="truncate text-sm font-bold">{title}</p>
                 <button type="button" onClick={() => setOpen(false)} className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-sm font-bold">
                   ✕ Закрити

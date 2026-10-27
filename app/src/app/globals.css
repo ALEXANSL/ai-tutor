@@ -762,3 +762,36 @@ body:has(.literature-reader) [data-child-theme] { display: none; }
 }
 .reading-source-note summary { cursor: pointer; min-height: 24px; font-weight: 650; }
 .reading-source-note p { margin-top: 8px; }
+
+/* A stable home route on every child page; lessons supply it in their bar. */
+.app-home-link { display: inline-flex; flex-shrink: 0; min-width: 44px; min-height: 44px; align-items: center; justify-content: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); font-size: 14px; font-weight: 750; }
+.app-home-link:focus-visible { outline: 2px solid var(--accent-voice); outline-offset: 3px; }
+.child-home-bar { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; height: 60px; padding: 8px 168px 8px 8px; background: var(--bg); border-bottom: 1px solid var(--border); }
+body:has([data-lesson-nav]) [data-child-home] { display: none; }
+.lesson-step-layout { display: flex; align-items: center; gap: 12px; max-width: 960px; margin-inline: auto; padding: 8px 16px; }
+[data-step-nav] .lesson-step-tools { display: flex; flex: 1; flex-wrap: nowrap; align-items: center; gap: 8px; min-width: 0; padding: 0; }
+.lesson-step-primary { display: flex; align-items: center; gap: 8px; }
+.lesson-step-button { display: inline-flex; min-height: 44px; align-items: center; justify-content: center; flex-shrink: 0; padding: 8px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); font-size: 14px; font-weight: 750; white-space: nowrap; }
+.lesson-step-button:disabled { opacity: .4; }
+.lesson-next-lesson { background: var(--primary); color: #2b211b; border-color: var(--primary); }
+[data-step-nav] [data-video-control] > button { min-height: 44px; gap: 6px; padding: 8px 10px; border-radius: 12px; font-size: 14px; }
+[data-step-nav] [data-book-control] > button { min-width: 44px; width: 44px; min-height: 44px; padding-inline: 0; font-size: 0; }
+[data-step-nav] [data-book-control] > button::before { content: "📖"; font-size: 20px; }
+body:has([data-child-parent-trigger]) .lesson-step-layout { padding-right: 72px; }
+body:has([data-step-nav]) [data-child-parent-trigger] { right: 8px; width: 44px; height: 44px; min-height: 44px; padding: 0; justify-content: center; }
+body:has([data-step-nav]) [data-parent-label] { display: none; }
+body:has([data-step-nav]) [data-parent-icon] { display: inline; }
+@media (max-width: 640px) {
+  [data-step-nav] .lesson-step-layout { display: block; padding: 6px 8px; }
+  [data-step-nav] .lesson-step-primary { margin-top: 6px; }
+  [data-step-nav] .lesson-step-primary > * { flex: 1; padding-inline: 8px; font-size: 14px; }
+  body:has([data-child-parent-trigger]) [data-step-nav] .lesson-step-tools { padding-right: 56px; }
+  body:has([data-step-nav]) [data-child-parent-trigger] { bottom: calc(env(safe-area-inset-bottom, 0px) + 59px); }
+  .course-lesson.literature-reader { padding-bottom: calc(144px + env(safe-area-inset-bottom, 0px)); }
+  .course-lesson.literature-reader .lesson-stage { height: clamp(220px, calc(100svh - 416px), 584px); }
+}
+@media (max-width: 340px) { [data-video-control] .video-short-label { display: none; } }
+
+.lesson-progress-short, [data-step-nav] .lesson-compact-only { display: none; }
+@media (max-width: 1023px), (max-height: 520px) { [data-step-nav] .lesson-compact-only { display: inline; } }
+@media (max-width: 640px) { .lesson-progress-full { display: none; } .lesson-progress-short { display: inline; } }
