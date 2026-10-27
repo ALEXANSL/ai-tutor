@@ -1,5 +1,7 @@
 "use client";
 
+import { nextActiveLessonHref } from "@/lib/lesson-navigation";
+
 import type { VoiceTarget } from "@/lib/voice";
 import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
@@ -123,7 +125,7 @@ function ScopedExplainButton({ subjectId, topicId, stepText, refTable, refId }: 
   );
 }
 
-function ScreenNav({ lesson, voiceMode, autoAdvance, index, onIndexChange }: { lesson: LiteratureV2LessonView; voiceMode: boolean; autoAdvance: boolean; index: number; onIndexChange: (index: number) => void }) {
+function ScreenNav({ lesson, voiceMode, autoAdvance, index, onIndexChange, nextLessonHref, videoTopicId }: { lesson: LiteratureV2LessonView; voiceMode: boolean; autoAdvance: boolean; index: number; onIndexChange: (index: number) => void; nextLessonHref: string | null; videoTopicId: string | null }) {
   const screen = lesson.screens[index];
   if (!screen) return <p className="course-note">Екранів ще немає.</p>;
 
@@ -146,6 +148,9 @@ function ScreenNav({ lesson, voiceMode, autoAdvance, index, onIndexChange }: { l
         <ExplainButton subjectId={lesson.subjectId} topicId={lesson.topicId} stepText={screen.content.display} refTable="literature_v2_screens" refId={screen.id} />
       </div>
       <StepNavBar
+        isLessonEnd={isLast}
+        nextLessonHref={nextLessonHref}
+        videoTopicId={videoTopicId}
         label={`Екран ${index + 1} з ${lesson.screens.length}`}
         backDisabled={index === 0}
         onBack={() => onIndexChange(Math.max(0, index - 1))}
@@ -403,7 +408,7 @@ function TaskList({ tasks, subjectId, topicId, textbook, onFocusTarget }: { task
   );
 }
 
-export function LiteratureV2LessonScreen({ lesson, packageLessons, hasVideoLesson }: { lesson: LiteratureV2LessonView; packageLessons: LiteratureV2LessonListItem[]; hasVideoLesson?: boolean }) {
+export function LiteratureV2LessonScreen({ lesson, packageLessons, hasVideoLesson, videoLessonTopicId }: { lesson: LiteratureV2LessonView; packageLessons: LiteratureV2LessonListItem[]; hasVideoLesson?: boolean; videoLessonTopicId?: string | null }) {
   const chatRef = useRef<LessonTopicChatHandle>(null);
   const [screenIndex, setScreenIndex] = useState(0);
   const [chatTarget, setChatTarget] = useState<VoiceTarget | undefined>(() => lesson.screens[0]
@@ -425,7 +430,7 @@ export function LiteratureV2LessonScreen({ lesson, packageLessons, hasVideoLesso
       <LessonNavBar
         subjectId={lesson.subjectId}
         courseNav={{ basePath: "/literature-course-v2", currentLessonId: lesson.id, lessons: packageLessons, topicId: lesson.topicId }}
-        videoLessonTopicId={hasVideoLesson ? lesson.topicId : null}
+        videoLessonTopicId={videoLessonTopicId ?? (hasVideoLesson ? lesson.topicId : null)}
         extraControls={
           <>
             <VoiceModeToggle voiceMode={voiceMode} onChange={changeVoiceMode} />
@@ -469,7 +474,7 @@ export function LiteratureV2LessonScreen({ lesson, packageLessons, hasVideoLesso
         </section>
       )}
 
-      <ScreenNav lesson={lesson} voiceMode={voiceMode} autoAdvance={autoAdvance} index={screenIndex} onIndexChange={changeScreenIndex} />
+      <ScreenNav lesson={lesson} voiceMode={voiceMode} autoAdvance={autoAdvance} index={screenIndex} onIndexChange={changeScreenIndex} nextLessonHref={nextActiveLessonHref("/literature-course-v2", lesson.id, packageLessons)} videoTopicId={videoLessonTopicId ?? (hasVideoLesson ? lesson.topicId : null)} />
 
       {lesson.topicId && <LessonTopicChat ref={chatRef} subjectId={lesson.subjectId} topicId={lesson.topicId} target={chatTarget} />}
 

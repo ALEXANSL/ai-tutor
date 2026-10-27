@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { useHomeExit } from "@/components/shared/HomeNavigation";
 import { useRouter } from "next/navigation";
 import { DragSortStep } from "@/lesson-components/drag_sort/DragSortStep";
 import type { DragSortProps } from "@/lesson-components/drag_sort";
@@ -174,6 +175,8 @@ export function LessonRunner({
       .catch(() => router.push("/today"))
       .finally(() => setBusy(false));
   }, [sessionId, router]);
+
+  useHomeExit(navHome);
 
   // US-6.16 КП-4 ("Повернутись до списку уроків з предмету").
   const navSubjectList = useCallback(() => {

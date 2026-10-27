@@ -1,5 +1,7 @@
 "use client";
 
+import { nextActiveLessonHref } from "@/lib/lesson-navigation";
+
 import { useEffect, useRef, useState } from "react";
 import { LessonNavBar } from "@/components/shared/LessonNavBar";
 import { NarrationButton } from "@/components/shared/NarrationButton";
@@ -220,12 +222,16 @@ function FlowNav({
   savedPosition,
   voiceMode,
   autoAdvance,
+  nextLessonHref,
+  videoTopicId,
 }: {
   lesson: LiteratureV3LessonViewModel;
   bookIndex: LiteratureV3BookPage[];
   savedPosition: LiteratureV3ReadingPosition | null;
   voiceMode: boolean;
   autoAdvance: boolean;
+  nextLessonHref: string | null;
+  videoTopicId: string | null;
 }) {
   const savedStepIndex = savedPosition ? lesson.flow.findIndex((s) => s.id === savedPosition.refId) : -1;
   const [index, setIndex] = useState(savedStepIndex >= 0 ? savedStepIndex : 0);
@@ -254,6 +260,9 @@ function FlowNav({
       />
       {lesson.topicId && <LessonVoicePanel target={{ kind: "chapter", lessonId: lesson.id, stepId: step.id }} onActiveChange={active => { if (active) setInterruptedStep(step.id); }} />}
       <StepNavBar
+        isLessonEnd={isLast}
+        nextLessonHref={nextLessonHref}
+        videoTopicId={videoTopicId}
         label={`Крок ${index + 1} з ${lesson.flow.length}`}
         backDisabled={index === 0}
         onBack={() => setIndex((i) => Math.max(0, i - 1))}
@@ -271,12 +280,14 @@ export function LiteratureV3LessonScreen({
   bookIndex,
   savedPosition,
   hasVideoLesson,
+  videoLessonTopicId,
 }: {
   lesson: LiteratureV3LessonViewModel;
   packageLessons: LiteratureV3LessonListItem[];
   bookIndex: LiteratureV3BookPage[];
   savedPosition: LiteratureV3ReadingPosition | null;
   hasVideoLesson?: boolean;
+  videoLessonTopicId?: string | null;
 }) {
   const { voiceMode, autoAdvance, changeVoiceMode, changeAutoAdvance } = useVoiceModeControls("literatureV3");
 
@@ -285,7 +296,7 @@ export function LiteratureV3LessonScreen({
       <LessonNavBar
         subjectId={lesson.subjectId}
         courseNav={{ basePath: "/literature-v3", currentLessonId: lesson.id, lessons: packageLessons, topicId: lesson.topicId }}
-        videoLessonTopicId={hasVideoLesson ? lesson.topicId : null}
+        videoLessonTopicId={videoLessonTopicId ?? (hasVideoLesson ? lesson.topicId : null)}
         extraControls={
           <>
             <VoiceModeToggle voiceMode={voiceMode} onChange={changeVoiceMode} />
@@ -316,7 +327,7 @@ export function LiteratureV3LessonScreen({
         </details>
       )}
 
-      <FlowNav lesson={lesson} bookIndex={bookIndex} savedPosition={savedPosition} voiceMode={voiceMode} autoAdvance={autoAdvance} />
+      <FlowNav lesson={lesson} bookIndex={bookIndex} savedPosition={savedPosition} voiceMode={voiceMode} autoAdvance={autoAdvance} nextLessonHref={nextActiveLessonHref("/literature-v3", lesson.id, packageLessons)} videoTopicId={videoLessonTopicId ?? (hasVideoLesson ? lesson.topicId : null)} />
     </article>
   );
 }

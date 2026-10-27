@@ -1,5 +1,7 @@
 import { ParentModeAutoExit } from "@/components/child/ParentModeAutoExit";
 import { ParentModeButton } from "@/components/child/ParentModeButton";
+import { HomeNavigationProvider } from "@/components/shared/HomeNavigation";
+import { HomeLink } from "@/components/shared/HomeLink";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { getSessionContext } from "@/server/auth/session";
 import { forFamily } from "@/server/db/family-scope";
@@ -13,13 +15,14 @@ export default async function ChildLayout({ children }: { children: React.ReactN
   // тата" can explain right away instead of after a guessed PIN attempt.
   const pinSet = isChild && ctx.kind === "user" ? !!(await loadParentSettings(forFamily(ctx.familyId))).pin_hash : false;
   return (
-    <div className="min-h-screen bg-bg font-child text-text">
+    <HomeNavigationProvider><div className="min-h-screen bg-bg font-child text-text">
       <div data-child-theme className="fixed top-3.5 right-3.5 z-50">
         <ThemeToggle />
       </div>
+      <div data-child-home className="child-home-bar"><HomeLink /></div>
       {children}
       {isChild && <ParentModeButton pinSet={pinSet} />}
       <ParentModeAutoExit active={isChild && ctx.parentMode !== "none"} />
-    </div>
+    </div></HomeNavigationProvider>
   );
 }

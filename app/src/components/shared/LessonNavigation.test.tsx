@@ -41,3 +41,17 @@ it("retains next/back actions and the original book control", () => {
   act(() => container.querySelector<HTMLButtonElement>('[data-book-control] button')!.click()); expect(book).toHaveBeenCalledOnce();
   act(() => [...container.querySelectorAll("button")].at(-1)!.click()); expect(next).toHaveBeenCalledOnce();
 });
+
+it("shows video without opening the menu, and exposes next lesson plus exit at the end", () => {
+  act(() => root.render(<StepNavBar label="Крок 4 з 4" onBack={vi.fn()} onNext={vi.fn()} backDisabled={false} nextDisabled={true} videoTopicId="topic" isLessonEnd nextLessonHref="/literature-v3/next" />));
+  expect(container.querySelector('[data-video-control] button')?.textContent).toBe("Відео");
+  expect(container.querySelector('a[href="/literature-v3/next"]')?.textContent).toContain("Наступний урок");
+  expect(container.querySelector('a[href="/today"]')?.textContent).toBe("Вийти з уроку");
+  expect([...container.querySelectorAll("button")].some(button => button.textContent?.includes("Далі"))).toBe(false);
+});
+it("does not offer a dead next-lesson link at the end of the list", () => {
+  act(() => root.render(<StepNavBar label="Останній крок" onBack={vi.fn()} onNext={vi.fn()} backDisabled={false} nextDisabled isLessonEnd nextLessonHref={null} />));
+  expect(container.querySelector('.lesson-next-lesson')).toBeNull();
+  expect(container.querySelector('a[href="/today"]')).not.toBeNull();
+  expect(container.querySelector('[data-video-control]')).toBeNull();
+});
