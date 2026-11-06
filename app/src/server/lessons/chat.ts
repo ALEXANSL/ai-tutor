@@ -14,6 +14,7 @@ import { recordSafetyEvent } from "@/server/safety/events";
 import type { LessonVoiceLessonRef } from "@/server/voice/lessonContext";
 import { extractLessonExerciseRequest, isLessonExerciseFollowUp, resolveLessonExerciseContext } from "./lessonExerciseContext";
 import { URGENT_REPLY_UK } from "@/server/safety/urgentReplyUk";
+import { ExplanationUnavailableError } from "./explanationError";
 
 /**
  * Topic chat (US-8.1, 8.2): one chat per subject+topic per child; answers
@@ -649,7 +650,7 @@ export async function explainStepAgain(
 
   const answerText = await callStructured("tutor_chat", { system: system2, prompt, schema: explainSchema }, { familyId, sessionId })
     .then((res) => res.result.explanationUk)
-    .catch(() => "Зараз не вдалося пояснити ще раз — спробуй, будь ласка, за хвилинку, або запитай про це в чаті.");
+    .catch((error: unknown) => { throw new ExplanationUnavailableError(error); });
 
   const { data: saved, error } = await scope.client
     .from("messages")

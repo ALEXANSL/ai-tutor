@@ -136,6 +136,7 @@ export function LessonRunner({
   // starts, rather than read directly on every render.
   const [blockOrder, setBlockOrder] = useState(initialCurrentBlockOrder ?? 1);
   const [explainBusy, setExplainBusy] = useState(false);
+  const [explainError, setExplainError] = useState<string | null>(null);
   const chatRef = useRef<TopicChatHandle>(null);
   const lastInteractionRef = useRef<number>(0);
   useEffect(() => {
@@ -250,10 +251,13 @@ export function LessonRunner({
   const navExplain = useCallback(() => {
     touch();
     setExplainBusy(true);
+    setExplainError(null);
     explainStepAction(sessionId, step.stepId, subjectId, topicId)
       .then((res) => {
         if (res.status === "ok") chatRef.current?.pushAndOpen(res.message.content);
+        else setExplainError(res.message);
       })
+      .catch(() => setExplainError("Не вдалося отримати пояснення. Перевір з’єднання й спробуй ще раз."))
       .finally(() => setExplainBusy(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, step.stepId, subjectId, topicId]);
@@ -569,6 +573,8 @@ export function LessonRunner({
       <div className="mb-4 h-2 w-full overflow-hidden rounded-full bg-surface-alt">
         <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${(step.stepNumber / step.totalSteps) * 100}%` }} />
       </div>
+
+      {explainError && <p role="alert" className="mb-3 text-sm">{explainError}</p>}
 
       {/* US-6.16 КП-1…КП-4/КП-7: navigation rail (docs/04 §11.4) — "Перейти"
           group, then the pre-existing "Безпека" group (BUG-020/026) kept
