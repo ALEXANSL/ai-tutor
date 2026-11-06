@@ -5,6 +5,7 @@ import { linkTextbookBestEffort } from "@/app/actions/content-admin";
 import { requireChild, requireParentAccess } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
 import { explainStepAgain } from "@/server/lessons/chat";
+import { explanationErrorMessage } from "@/server/lessons/explanationError";
 import { combineLiteratureV2Package, parseLiteratureV2Assets, parseLiteratureV2Course, parseLiteratureV2TaskTables, parseLiteratureV2Teacher, type ImportIssue } from "@/server/lessons/literatureV2Import";
 import { narrationTextHash, synthesizeNarration } from "@/server/lessons/narration";
 import { persistLiteratureV2Package } from "@/server/lessons/literatureV2Persist";
@@ -300,7 +301,7 @@ export async function explainLiteratureV2Action(input: { subjectId: string; topi
     );
     return { status: "ok", content: message.content };
   } catch (e) {
-    return { status: "error", message: `Не вдалося пояснити (${(e as Error).message}). Спробуй ще раз.` };
+    return { status: "error", message: explanationErrorMessage(e) };
   }
 }
 

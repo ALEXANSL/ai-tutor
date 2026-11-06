@@ -5,6 +5,7 @@ import { linkTextbookBestEffort } from "@/app/actions/content-admin";
 import { requireChild, requireParentAccess } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
 import { explainStepAgain } from "@/server/lessons/chat";
+import { explanationErrorMessage } from "@/server/lessons/explanationError";
 import { narrationTextHash, synthesizeNarration } from "@/server/lessons/narration";
 import { combineMathCourseV2Package, parseMathCourseV2Private, parseMathCourseV2Public, type ImportIssue } from "@/server/lessons/mathCourseV2Import";
 import { persistMathCourseV2Package } from "@/server/lessons/mathCourseV2Persist";
@@ -391,6 +392,6 @@ export async function explainMathCourseV2Action(input: { subjectId: string; topi
     );
     return { status: "ok", content: message.content };
   } catch (e) {
-    return { status: "error", message: `Не вдалося пояснити (${(e as Error).message}). Спробуй ще раз.` };
+    return { status: "error", message: explanationErrorMessage(e) };
   }
 }

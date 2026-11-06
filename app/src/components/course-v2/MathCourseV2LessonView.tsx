@@ -81,7 +81,7 @@ function ExplainButton(props: ExplainButtonProps) {
 }
 
 function ScopedExplainButton({ subjectId, topicId, stepText, refTable, refId }: ExplainButtonProps) {
-  const [state, setState] = useState<{ status: "idle" } | { status: "pending" } | { status: "done"; content: string }>({ status: "idle" });
+  const [state, setState] = useState<{ status: "idle" } | { status: "pending" } | { status: "done"; content: string } | { status: "error"; content: string }>({ status: "idle" });
   const [audio, setAudio] = useState<{ base64: string; mime: string } | null>(null);
   const [playing, setPlaying] = useState(false);
   const playback = useAudioPlaybackScope();
@@ -104,7 +104,7 @@ function ScopedExplainButton({ subjectId, topicId, stepText, refTable, refId }: 
       const res = await explainMathCourseV2Action({ subjectId, topicId: topicId!, stepText });
       if (!playback.isMounted()) return;
       const content = res.status === "ok" ? res.content : res.message;
-      setState({ status: "done", content });
+      setState({ status: res.status === "ok" ? "done" : "error", content });
       if (res.status === "ok" && request.isCurrent()) {
         try {
           const narration = await narrateMathCourseV2Action({ refTable, refId, field: "explanation", text: content });
@@ -117,9 +117,9 @@ function ScopedExplainButton({ subjectId, topicId, stepText, refTable, refId }: 
           // TTS failure here must not surface as an "explain" failure.
         }
       }
-    } catch (e) {
+    } catch {
       if (!playback.isMounted()) return;
-      setState({ status: "done", content: `Не вдалося пояснити (${(e as Error).message}). Спробуй ще раз.` });
+      setState({ status: "error", content: "Не вдалося отримати пояснення. Перевір з’єднання й спробуй ще раз." });
     }
   }
 
@@ -127,7 +127,7 @@ function ScopedExplainButton({ subjectId, topicId, stepText, refTable, refId }: 
     <div>
       <div className="flex items-center gap-1.5">
         <button type="button" onClick={() => void explain()} disabled={state.status === "pending"} className="min-h-9 rounded-full border-2 border-line bg-surface px-3 text-xs font-bold disabled:opacity-60">
-          {state.status === "pending" ? "…" : "💡 Пояснити"}
+          {state.status === "pending" ? "Пояснюю…" : state.status === "error" ? "Повторити пояснення" : "💡 Пояснити"}
         </button>
         {audio && (
           <button
@@ -140,8 +140,8 @@ function ScopedExplainButton({ subjectId, topicId, stepText, refTable, refId }: 
           </button>
         )}
       </div>
-      {state.status === "done" && (
-        <div className="mt-2 rounded-xl border border-line bg-surface-alt p-2.5 text-sm">
+      {(state.status === "done" || state.status === "error") && (
+        <div role={state.status === "error" ? "alert" : undefined} className="mt-2 rounded-xl border border-line bg-surface-alt p-2.5 text-sm">
           <MathText text={state.content} />
         </div>
       )}

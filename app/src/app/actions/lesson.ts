@@ -10,6 +10,7 @@ import type { VoiceTarget } from "@/lib/voice";
 import { lessonVoiceTargetSchema, resolveLessonVoiceTarget, type LessonVoiceContext } from "@/server/voice/lessonContext";
 import { kickJobs } from "@/server/jobs/kick";
 import { askTopicChat, explainStepAgain } from "@/server/lessons/chat";
+import { explanationErrorMessage } from "@/server/lessons/explanationError";
 import { recordChildFeedback, type ChildFeedbackKind } from "@/server/lessons/generate";
 import { readableTextForStep } from "@/server/lessons/narration";
 import { getOrSynthesizeStepNarration } from "@/server/lessons/narrationCache";
@@ -300,20 +301,24 @@ export async function explainStepAction(sessionId: string, stepId: string, subje
     return { status: "error" as const, message: uk.common.error };
   }
   const child = await onlyChild(familyId);
-  const message = await explainStepAgain(
-    familyId,
-    child.id,
-    child.tutor_name ?? "",
-    child.tutor_name_gender,
-    subjectId,
-    subject.name_uk,
-    topicId,
-    topic.title,
-    child.nickname ?? "",
-    readableTextForStep(stepRow),
-    sessionId,
-  );
-  return { status: "ok" as const, message };
+  try {
+    const message = await explainStepAgain(
+      familyId,
+      child.id,
+      child.tutor_name ?? "",
+      child.tutor_name_gender,
+      subjectId,
+      subject.name_uk,
+      topicId,
+      topic.title,
+      child.nickname ?? "",
+      readableTextForStep(stepRow),
+      sessionId,
+    );
+    return { status: "ok" as const, message };
+  } catch (error) {
+    return { status: "error" as const, message: explanationErrorMessage(error) };
+  }
 }
 
 const presentationModeSchema = z.enum(["voice", "auto", "text"]);

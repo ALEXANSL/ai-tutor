@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { BudgetBlockedError, ProviderError } from "@/server/ai/types";
 
 /**
  * QA-added: `askTopicChat` had zero tests, same finding as `friendChat.ts`.
@@ -16,14 +17,15 @@ function chain(result: unknown) {
   };
   return self;
 }
+const insert = vi.fn(() => ({
+  select: () => ({ single: () => Promise.resolve({ data: { id: "msg1", created_at: "2026-10-01T00:00:00Z" }, error: null }) }),
+}));
 const scope = {
   select: (table: string) => (table === "chats" ? chain({ id: "chat1" }) : chain([])),
   client: {
     from: () => ({
       select: () => chain([]),
-      insert: () => ({
-        select: () => ({ single: () => Promise.resolve({ data: { id: "msg1", created_at: "2026-10-01T00:00:00Z" }, error: null }) }),
-      }),
+      insert,
     }),
   },
 };
@@ -38,12 +40,35 @@ vi.mock("@/server/safety/moderate", () => ({ moderateMessage: (...a: unknown[]) 
 const recordSafetyEvent = vi.fn().mockResolvedValue({ flagged: true, urgent: true, eventId: "e1" });
 vi.mock("@/server/safety/events", () => ({ recordSafetyEvent: (...a: unknown[]) => recordSafetyEvent(...a) }));
 
-const { askTopicChat } = await import("./chat");
+const { askTopicChat, explainStepAgain } = await import("./chat");
 
 beforeEach(() => {
   callStructured.mockReset();
   moderateMessage.mockReset();
   recordSafetyEvent.mockClear();
+  insert.mockClear();
+});
+
+describe("explainStepAgain failure handling", () => {
+  const explain = () => explainStepAgain("fam1", "child1", "Ліра", "f", "subj1", "Математика", "top1", "Рівняння", "Зірочка", "2,17 + x = 3,42");
+
+  it.each([
+    [new BudgetBlockedError("hard_stop", "tutor_chat"), "EXPLAIN-BUDGET"],
+    [new ProviderError("private provider payload", "anthropic", 400, false), "EXPLAIN-HTTP-400"],
+  ])("does not save or return an AI failure as an explanation (%s)", async (error, code) => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    callStructured.mockRejectedValue(error);
+    await expect(explain()).rejects.toThrow(code);
+    expect(insert).not.toHaveBeenCalled();
+    expect(JSON.stringify(log.mock.calls)).not.toContain("private provider payload");
+    log.mockRestore();
+  });
+
+  it("still saves a successful explanation verbatim", async () => {
+    callStructured.mockResolvedValue({ result: { explanationUk: "Від суми відніми відомий доданок." } });
+    expect((await explain()).content).toBe("Від суми відніми відомий доданок.");
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ content: "Від суми відніми відомий доданок." }));
+  });
 });
 
 describe("askTopicChat + urgent moderation (NFR-SAFE-4)", () => {

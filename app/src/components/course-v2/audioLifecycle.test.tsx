@@ -114,6 +114,21 @@ describe.each<Kind>(["math", "literature", "literatureV3"])("%s lesson narration
 });
 
 describe.each<"math" | "literature">(["math", "literature"])("%s explanation narration", (kind) => {
+  it("shows a retryable error without narration and recovers on retry", async () => {
+    const explain = kind === "math" ? actions.explainMath : actions.explainLiterature;
+    explain.mockResolvedValueOnce({ status: "error", message: "Ліміт витрат. Код: EXPLAIN-BUDGET." });
+    render(kind);
+    await click("💡 Пояснити");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("EXPLAIN-BUDGET");
+    expect(actions[kind]).not.toHaveBeenCalled();
+    expect(audios).toHaveLength(0);
+    expect(container.textContent).not.toContain("🔁 Ще раз");
+    await click("Повторити пояснення");
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.textContent).toContain("Додаткове пояснення");
+    expect(audios).toHaveLength(1);
+  });
+
   it("drops explanation TTS that finishes after moving to another screen", async () => {
     const pending = deferred<typeof speech>();
     actions[kind].mockReturnValueOnce(pending.promise);
