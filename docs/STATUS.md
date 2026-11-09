@@ -1,3 +1,7 @@
+## 2026-11-09 — аудит провайдерів ШІ
+
+[Звіт](tutor-evolution/ai-provider-audit-2026-11-09.md): seed діалогу/пояснень — Claude, live Anthropic підтверджено логом власника; STT/TTS — OpenAI; Gemini adapter/API generation відсутні. Знайдено непрацюючий Gemini fallback у seed озвучення, розбіжність документації з кодом, вузький prompt пояснень (2–4 речення / 900 символів / поточний текст). Розрізнено seed і невідомі live model_routes; prepared read-only SQL без чатів/ключів, не виконувався. План: live inventory → GPT dialogue/explanations та контекст → Gemini preparation/media → явно визначений Claude analysis. 73 existing routing/provider/voice tests passed, no paid API calls; runtime code/config unchanged.
+
 ## 2026-11-06 — пояснення: помилка більше не є навчальним матеріалом
 
 [BUG-055](bugs/BUG-055-explanation-errors-masquerade-as-content.md): невдалий AI-запит більше не зберігається/не озвучується як готове пояснення. Безпечна категорія збою та повторна спроба замість загального fallback. Причина конкретного production-запиту потребує повторної перевірки; приватних журналів у цьому середовищі немає. Матеріали/бюджет/модель незмінні.
