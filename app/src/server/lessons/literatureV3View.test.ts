@@ -89,3 +89,12 @@ it("orders an already stored chapter package for TOC and previous/next without w
   expect(lessons.map(lesson => lesson.orderNo)).toEqual([1, 2, 3]);
   expect(mock.calls[0]).toMatchObject({ familyId: "family", filters: [["package_id", "package"]] });
 });
+it("uses the same book sequence for literature TOC and next/previous navigation", async () => {
+  mock.rows.set("literature_v3_lessons", [
+    { id: "poem", title: "Євшан-зілля", order_no: 3, printed_page_from: 70, status: "active" },
+    { id: "intro", title: "Вступ", order_no: 0, printed_page_from: null, status: "active" },
+    { id: "folk", title: "Народна пісня", order_no: 1, printed_page_from: 10, status: "active" },
+  ]);
+  const { listLiteratureV3Lessons } = await import("./literatureV3View");
+  expect((await listLiteratureV3Lessons("family", "book")).map(lesson => lesson.id)).toEqual(["intro", "folk", "poem"]);
+});

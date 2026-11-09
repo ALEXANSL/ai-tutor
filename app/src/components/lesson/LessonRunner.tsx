@@ -821,7 +821,7 @@ const TopicChat = forwardRef<TopicChatHandle, { sessionId: string; subjectId: st
   { sessionId, subjectId, topicId, labels: t },
   ref,
 ) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<{ author: string; content: string }[]>([]);
   const [pending, setPending] = useState(false);
@@ -865,6 +865,8 @@ const TopicChat = forwardRef<TopicChatHandle, { sessionId: string; subjectId: st
             <input
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
+              aria-label="Запитання репетитору"
+              maxLength={800}
               placeholder={t.chatPlaceholder}
               className="min-h-12 flex-1 rounded-2xl border-2 border-line bg-bg px-3.5 text-sm outline-none focus:border-focus"
             />

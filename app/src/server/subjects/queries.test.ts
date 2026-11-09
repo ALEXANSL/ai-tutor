@@ -313,6 +313,25 @@ it("sorts existing chapter topics by paragraph without reimporting or losing vid
   expect(detail?.topics.map(topic => topic.id)).toEqual(["p2", "p18", "p20"]);
   expect(detail?.currentTopicId).toBe("p20"); expect(detail?.topics[1]).toMatchObject({ literatureV3LessonId: "l18", hasVideoLesson: true });
 });
+it("sorts Ukrainian literature by the linked book's pages and lesson order instead of stale topic sort_order", async () => {
+  scopeState.tables = {
+    subjects: [{ id: "ukrlit", code: "ukrlit", name_uk: "Українська література", active: true }],
+    topics: [
+      { id: "poem", subject_id: "ukrlit", title: "Євшан-зілля", page_from: 70, sort_order: 1, is_current: true },
+      { id: "intro", subject_id: "ukrlit", title: "Вступ", page_from: null, sort_order: 9 },
+      { id: "folk", subject_id: "ukrlit", title: "Народна пісня", page_from: 10, sort_order: 3 },
+    ],
+    literature_v3_lessons: [
+      { id: "lesson-poem", topic_id: "poem", package_id: "book", status: "active", printed_page_from: 70, order_no: 3 },
+      { id: "lesson-intro", topic_id: "intro", package_id: "book", status: "active", printed_page_from: null, order_no: 0 },
+      { id: "lesson-folk", topic_id: "folk", package_id: "book", status: "active", printed_page_from: 10, order_no: 1 },
+    ],
+  };
+  const detail = await getSubjectDetail("family", "ukrlit");
+  expect(detail?.topics.map(topic => topic.id)).toEqual(["intro", "folk", "poem"]);
+  expect(detail?.currentTopicId).toBe("poem");
+  expect(detail?.topics[2]?.literatureV3LessonId).toBe("lesson-poem");
+});
 
 
 it("keeps former placeholder subjects manageable and selectable for import using the same ID", async () => {
