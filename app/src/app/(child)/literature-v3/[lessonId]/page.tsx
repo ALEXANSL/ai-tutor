@@ -27,3 +27,5 @@ export default async function LiteratureV3LessonPage({ params }: { params: Promi
 
   return <LiteratureV3LessonScreen lesson={lesson} packageLessons={packageLessons} bookIndex={bookIndex} savedPosition={savedPosition} videoLessonTopicId={videoLessonTopicId} />;
 }
+
+export const maxDuration = 180;

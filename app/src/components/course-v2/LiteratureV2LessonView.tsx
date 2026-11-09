@@ -1,5 +1,6 @@
 "use client";
 
+import { MAX_LESSON_QUESTION_CHARS } from "@/lib/lesson-chat";
 import { nextActiveLessonHref } from "@/lib/lesson-navigation";
 
 import type { VoiceTarget } from "@/lib/voice";
@@ -193,16 +194,14 @@ const LessonTopicChat = forwardRef<LessonTopicChatHandle, { subjectId: string; t
   async function send() {
     const q = question.trim();
     if (!q || pending) return;
-    setMessages((prev) => [...prev, { author: "child", content: q }]);
-    setQuestion("");
     setPending(true);
     setError(null);
     try {
       const res = await askTopicChatAction(null, subjectId, topicId, q, target);
-      if (res.status === "ok") setMessages((prev) => [...prev, { author: "ai", content: res.message.content }]);
-      else setError("Не вдалося надіслати запитання. Спробуй ще раз.");
-    } catch (e) {
-      setError(`Не вдалося надіслати запитання (${(e as Error).message}). Спробуй ще раз.`);
+      if (res.status === "ok") { setMessages((prev) => [...prev, { author: "child", content: q }, { author: "ai", content: res.message.content }]); setQuestion(""); }
+      else setError(res.message || "Не вдалося надіслати запитання. Спробуй ще раз.");
+    } catch {
+      setError("Не вдалося надіслати запитання. Текст залишився у полі — спробуй ще раз.");
     } finally {
       setPending(false);
     }
@@ -216,20 +215,23 @@ const LessonTopicChat = forwardRef<LessonTopicChatHandle, { subjectId: string; t
       {open && (
         <div className="mt-2 rounded-2xl border border-line bg-surface p-3.5">
           {messages.length > 0 && (
-            <div className="mb-2 flex max-h-40 flex-col gap-1.5 overflow-y-auto text-sm">
+            <div className="mb-2 flex max-h-80 flex-col gap-1.5 overflow-y-auto text-sm">
               {messages.map((m, i) => (
-                <p key={i} className={m.author === "child" ? "font-bold" : "text-muted"}>
-                  <MathText text={m.content} />
-                </p>
+                <div key={i} className={m.author === "child" ? "font-bold" : "text-muted"}>
+                  <LessonText text={m.content} reflow />
+                </div>
               ))}
             </div>
           )}
           <div className="flex gap-2">
-            <input
+            <textarea
+              rows={4}
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && void send()}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }}
               placeholder="Поясни цю тему…"
+              aria-label="Запитання репетитору"
+              maxLength={MAX_LESSON_QUESTION_CHARS}
               disabled={pending}
               className="min-h-11 min-w-0 flex-1 rounded-xl border-2 border-line bg-surface px-3 text-sm"
             />

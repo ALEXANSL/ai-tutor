@@ -82,7 +82,7 @@ export const defaultRouterDeps: RouterDeps = {
   providers: {
     structured: { anthropic: (req) => anthropicStructured(req), openai: (req) => openaiStructured(req) },
     embed: { openai: (req) => openaiEmbed(req) },
-    vision: { anthropic: (req) => anthropicVisionStructured(req) },
+    vision: { anthropic: (req) => anthropicVisionStructured(req), openai: (req) => openaiStructured(req) },
     // No `gemini` adapter yet (ADR-025's alternative/fallback provider) — the
     // `passive_narration` route's fallback stays inert until one is added
     // (documented in the seed migration), same caveat pattern already used

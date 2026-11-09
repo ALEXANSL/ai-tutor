@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const f = vi.hoisted(() => ({ rows: new Map<string, unknown>(), queries: [] as { familyId: string; table: string; filters: [string, unknown][] }[], resolve: vi.fn(), chat: vi.fn() }));
+const f = vi.hoisted(() => ({ rows: new Map<string, unknown>(), queries: [] as { familyId: string; table: string; filters: [string, unknown][] }[], resolve: vi.fn(), chat: vi.fn(), pages: vi.fn() }));
+vi.mock("@/server/lessons/chatPages", async importOriginal => ({ ...await importOriginal<typeof import("@/server/lessons/chatPages")>(), resolveChatPages: f.pages }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/server/auth/guards", () => ({ requireLessonAccess: async () => ({ familyId: "family1" }), requireChild: vi.fn() }));
 vi.mock("@/server/db/family-scope", () => ({ forFamily: (familyId: string) => ({ select: (table: string) => {
@@ -22,13 +23,30 @@ const step = "10000000-0000-4000-8000-000000000004";
 const target = { kind: "course" as const, refTable: "course_v2_exercises", refId: step };
 const trusted = { subjectId: subject, topicId: topic, context: "Серверна умова вправи 357", lessonRef: { kind: "math", lessonId: session, currentItemId: step } };
 beforeEach(() => {
-  f.rows.clear(); f.queries.length = 0; f.resolve.mockReset(); f.chat.mockReset();
+  f.rows.clear(); f.queries.length = 0; f.resolve.mockReset(); f.chat.mockReset(); f.pages.mockReset();
   f.rows.set("child_profile", { id: "child1", nickname: "Зірка", tutor_name: "Ліра", tutor_name_gender: "f" });
   f.rows.set("subjects", { name_uk: "Математика" }); f.rows.set("topics", { title: "Дроби" });
   f.rows.set("lesson_sessions", { current_step_id: step, subject_id: subject, topic_id: topic, status: "active" });
   f.resolve.mockResolvedValue(trusted); f.chat.mockResolvedValue({ id: "answer", content: "Пояснення" });
 });
 describe("text lesson chat uses trusted lesson selectors", () => {
+  it("accepts a full-page request without clipping it and rejects oversize input before calling AI", async () => {
+    const page = "Поясни цю сторінку. ".repeat(600);
+    expect((await askTopicChatAction(null, subject, topic, page, target)).status).toBe("ok");
+    expect(f.chat.mock.calls[0]?.[9]).toBe(page.trim());
+    f.chat.mockClear();
+    await expect(askTopicChatAction(null, subject, topic, "x".repeat(20_001), target)).rejects.toThrow();
+    expect(f.chat).not.toHaveBeenCalled();
+  });
+  it("passes only server-resolved textbook pages and metadata to the tutor", async () => {
+    const chapterTarget = { kind: "chapter" as const, lessonId: session, stepId: "reading-step" };
+    const chapterRef = { kind: "chapter", lessonId: session, currentItemId: "reading-step", packageId: "book" };
+    f.resolve.mockResolvedValue({ ...trusted, lessonRef: chapterRef });
+    f.pages.mockResolvedValue({ documents: [{ mediaType: "application/pdf", data: "SELECTED" }], printedPages: [20], context: "Друкована сторінка 20" });
+    expect((await askTopicChatAction(null, subject, topic, "Розбери сторінку", chapterTarget, { printedPages: [20] })).status).toBe("ok");
+    expect(f.pages).toHaveBeenCalledWith("family1", chapterRef, { printedPages: [20] });
+    expect(f.chat.mock.calls[0]?.at(-1)).toMatchObject({ sourcePages: [20], documents: [{ mediaType: "application/pdf", data: "SELECTED" }] });
+  });
   it("passes server-resolved exercise context rather than client text", async () => {
     expect((await askTopicChatAction(null, subject, topic, "Поясни 357", target)).status).toBe("ok");
     expect(f.resolve).toHaveBeenCalledWith("family1", "child1", target);

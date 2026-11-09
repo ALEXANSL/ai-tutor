@@ -7,9 +7,12 @@ import { requireChild, requireLessonAccess } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
 import type { ChildProfileRow } from "@/server/db/types";
 import type { VoiceTarget } from "@/lib/voice";
+import { MAX_LESSON_QUESTION_CHARS, type LessonChatAttachments } from "@/lib/lesson-chat";
+import { lessonChatAttachmentsSchema, LessonPageError, resolveChatPages } from "@/server/lessons/chatPages";
 import { lessonVoiceTargetSchema, resolveLessonVoiceTarget, type LessonVoiceContext } from "@/server/voice/lessonContext";
 import { kickJobs } from "@/server/jobs/kick";
 import { askTopicChat, explainStepAgain } from "@/server/lessons/chat";
+import { tutorFailureMessage } from "@/server/lessons/tutorModel";
 import { explanationErrorMessage } from "@/server/lessons/explanationError";
 import { recordChildFeedback, type ChildFeedbackKind } from "@/server/lessons/generate";
 import { readableTextForStep } from "@/server/lessons/narration";
@@ -202,9 +205,9 @@ export async function submitBlockFeedbackAction(libraryItemId: string, feedback:
   return { status: "ok" as const };
 }
 
-const chatSchema = z.string().trim().min(1).max(800);
+const chatSchema = z.string().trim().min(1).max(MAX_LESSON_QUESTION_CHARS);
 
-export async function askTopicChatAction(sessionId: string | null, subjectId: string, topicId: string, question: string, rawTarget?: VoiceTarget) {
+export async function askTopicChatAction(sessionId: string | null, subjectId: string, topicId: string, question: string, rawTarget?: VoiceTarget, rawAttachments?: LessonChatAttachments) {
   const { familyId } = await requireLessonAccess();
   UUID.parse(subjectId);
   UUID.parse(topicId);
@@ -237,21 +240,32 @@ export async function askTopicChatAction(sessionId: string | null, subjectId: st
     scope.select("topics", "title").eq("id", topicId).eq("subject_id", subjectId).maybeSingle<{ title: string }>(),
   ]);
   if (!subject || !topic) return { status: "error" as const, message: uk.common.error };
-  const message = await askTopicChat(
-    familyId,
-    child.id,
-    child.nickname ?? "",
-    child.tutor_name ?? "",
-    child.tutor_name_gender,
-    subjectId,
-    subject.name_uk,
-    topicId,
-    topic.title,
-    q,
-    lessonContext?.sessionId ?? sessionId ?? undefined,
-    lessonContext ? { stepContext: lessonContext.context, lessonRef: lessonContext.lessonRef } : {},
-  );
-  return { status: "ok" as const, message };
+  let attachment;
+  if (rawAttachments) {
+    const parsed = lessonChatAttachmentsSchema.safeParse(rawAttachments);
+    if (!parsed.success) return { status: "error" as const, message: "Можна додати до двох цілих друкованих номерів сторінок." };
+    try { attachment = await resolveChatPages(familyId, lessonContext?.lessonRef, parsed.data); }
+    catch (error) { return { status: "error" as const, message: error instanceof LessonPageError ? error.message : "Не вдалося підготувати сторінки підручника. Спробуй ще раз або встав їх текст." }; }
+  }
+  try {
+    const message = await askTopicChat(
+      familyId,
+      child.id,
+      child.nickname ?? "",
+      child.tutor_name ?? "",
+      child.tutor_name_gender,
+      subjectId,
+      subject.name_uk,
+      topicId,
+      topic.title,
+      q,
+      lessonContext?.sessionId ?? sessionId ?? undefined,
+      { ...(lessonContext ? { stepContext: lessonContext.context, lessonRef: lessonContext.lessonRef } : {}), ...(attachment?.documents.length ? { documents: attachment.documents, attachmentContext: attachment.context, sourcePages: attachment.printedPages } : {}) },
+    );
+    return { status: "ok" as const, message };
+  } catch (error) {
+    return { status: "error" as const, message: tutorFailureMessage(error) };
+  }
 }
 
 /** US-12.2 КП-1: a heartbeat from the running lesson screen (≈ every 20 s). */

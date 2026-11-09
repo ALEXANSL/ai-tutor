@@ -158,9 +158,9 @@ describe.each<"math" | "literature">(["math", "literature"])("%s text lesson con
   it("sends the actual current screen selector after navigation", async () => {
     render(kind);
     await click("Далі →");
-    const input = container.querySelector<HTMLInputElement>("input[placeholder^='Поясни']")!;
+    const input = container.querySelector<HTMLTextAreaElement>("textarea[placeholder^='Поясни']")!;
     await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Поясни це");
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, "Поясни це");
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await click("Надіслати");

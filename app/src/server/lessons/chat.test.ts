@@ -33,6 +33,7 @@ vi.mock("@/server/db/family-scope", () => ({ forFamily: () => scope }));
 
 const callStructured = vi.fn();
 vi.mock("@/server/ai/router", () => ({ callStructured: (...a: unknown[]) => callStructured(...a) }));
+vi.mock("./tutorModel", () => ({ callLessonTutor: (...args: unknown[]) => callStructured("lesson_tutor", ...args) }));
 
 const moderateMessage = vi.fn();
 vi.mock("@/server/safety/moderate", () => ({ moderateMessage: (...a: unknown[]) => moderateMessage(...a) }));
@@ -91,5 +92,35 @@ describe("askTopicChat + urgent moderation (NFR-SAFE-4)", () => {
     const reply = await askTopicChat("fam1", "child1", "Зірочка", "Ліра", "f", "subj1", "Математика", "top1", "Дроби", "поясни ще раз");
 
     expect(reply.content).toBe("Скорочення дробів — це...");
+  });
+});
+describe("complete text replies and explicit subject/style", () => {
+  const args = ["fam1", "child1", "Зірочка", "Ліра", "f", "subj1", "Українська мова", "top1", "Власні та загальні назви"] as const;
+  const safe = { category: "none", severity: "none", confidence: 1, layer1Flagged: false, escalated: false, reasonUk: "" };
+  it("keeps a whole page and uses a larger text answer contract with task-specific quality instructions", async () => {
+    moderateMessage.mockResolvedValue(safe);
+    callStructured.mockResolvedValue({ result: { answerUk: "Правило та приклади." } });
+    const page = "Розбери цю сторінку. ".repeat(600);
+    await askTopicChat(...args, page);
+    const [role, request] = callStructured.mock.calls[0]!;
+    expect(role).toBe("lesson_tutor"); expect(request.prompt).toContain(page.trim());
+    expect(request.system).toContain("Українська мова"); expect(request.system).toContain("Власні та загальні назви");
+    expect(request.system).toContain("текстовий навчальний чат"); expect(request.system).toContain("КОЖЕН приклад");
+    expect(request.system).toContain("це тато, я тестую");
+    expect(request.schema.safeParse({ answerUk: "x".repeat(6000) }).success).toBe(true);
+  });
+  it("retains a shorter spoken answer contract without forcing it on text", async () => {
+    moderateMessage.mockResolvedValue(safe); callStructured.mockResolvedValue({ result: { answerUk: "Коротке пояснення." } });
+    await askTopicChat(...args, "Поясни правило", undefined, { voice: true });
+    const request = callStructured.mock.calls[0]![1];
+    expect(request.system).toContain("РЕЖИМ: голосова розмова");
+    expect(request.schema.safeParse({ answerUk: "x".repeat(2000) }).success).toBe(false);
+  });
+  it("does not save a failed model response as educational content, but urgent safety still overrides failures", async () => {
+    moderateMessage.mockResolvedValue(safe); callStructured.mockRejectedValue(new Error("model failed"));
+    await expect(askTopicChat(...args, "Склади приклади")).rejects.toThrow("model failed");
+    expect(insert).not.toHaveBeenCalledWith(expect.objectContaining({ author: "ai" }));
+    moderateMessage.mockResolvedValue({ ...safe, severity: "urgent" });
+    expect((await askTopicChat(...args, "Потрібна допомога")).content).toContain("зараз піди й скажи про це тату");
   });
 });

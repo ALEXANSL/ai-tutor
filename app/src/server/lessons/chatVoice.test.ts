@@ -48,6 +48,7 @@ vi.mock("./lessonExerciseContext", async importOriginal => ({
   resolveLessonExerciseContext: calls.exercise,
 }));
 vi.mock("@/server/ai/router", () => ({ callStructured: calls.structured }));
+vi.mock("./tutorModel", () => ({ callLessonTutor: (...args: unknown[]) => calls.structured("lesson_tutor", ...args) }));
 vi.mock("@/server/safety/moderate", () => ({ moderateMessage: calls.moderate }));
 vi.mock("@/server/safety/events", () => ({ recordSafetyEvent: calls.safetyEvent }));
 
@@ -134,7 +135,7 @@ describe("voice clarification stays grounded in the current prepared lesson", ()
     expect(result.content).toContain("спільні частини");
     expect(calls.structured).toHaveBeenCalledTimes(1);
     const [role, request] = calls.structured.mock.calls[0]!;
-    expect(role).toBe("tutor_chat");
+    expect(role).toBe("lesson_tutor");
     expect(request.prompt).toContain(context);
     expect(request.system).toMatch(/(?:поточн|готов|надан)[\s\S]*(?:урок|крок)/iu);
     expect(request.system).toMatch(/не[\s\S]{0,40}вигад[\s\S]{0,40}сторін/iu);

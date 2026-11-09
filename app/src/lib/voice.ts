@@ -7,6 +7,8 @@ export type VoiceTarget =
    * now one of several named chats per child, so the target must say which. */
   | { kind: "friend"; chatId: string };
 export interface VoiceTurn {
+  /** Only populated by the text composer when actual textbook pages were attached. */
+  sourcePages?: number[];
   text: string;
   message: { id: string; author: "child" | "ai" | "system" | "parent"; content: string; createdAt: string };
   audio: { audioBase64: string; mimeType: string } | null;
