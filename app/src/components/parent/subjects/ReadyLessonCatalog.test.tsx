@@ -19,3 +19,8 @@ it("lets the parent search by paragraph without creating a lesson", () => {
   act(() => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "16"); input.dispatchEvent(new Event("input", { bubbles: true })); });
   expect(container.querySelectorAll("li")).toHaveLength(1); expect(container.textContent).toContain("Цивілізації"); expect(container.querySelector("a")).toBeNull();
 });
+it("offers the script generator in the parent's own account without granting child-reader access", () => {
+  act(() => root.render(<ReadyLessonCatalog topics={topics} canOpen={false} subjectId="subject" />));
+  expect(container.querySelector('a[href="/parent/subjects/subject/video-script?topic=ready"]')).not.toBeNull();
+  expect(container.querySelector('a[href="/literature-v3/chapter"]')).toBeNull();
+});

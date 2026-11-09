@@ -1,3 +1,7 @@
+## 2026-11-09 — сценарій Pictory для вибраного уроку
+
+[Реалізація та перевірки](design/2026-11-09-pictory-scripts.md). У parent subject catalog додано «Сценарій Pictory» для кожного готового уроку. Parent-only page/action, вибір 2–12 хв, стиль, OpenAI-only окрема роль lesson_video_script (default gpt-4.1-mini), бюджет і облік. Джерело — серверний вибір активного уроку в межах сім’ї/предмета/теми, всі 5 readers, display + narration без ключів/URL/чатів; замалі/надмірні sources відхиляються без обрізання. Сцени з озвученням/visual prompt/source refs; незмінна заборона тексту в зображеннях у кожній сцені; окремі brief/narration/visual exports і TXT. Private JSON drafts у lazy-created bucket, source hash/stale warning, платний результат не губиться при storage error. Немає Pictory/Gemini API calls чи змін до існуючих уроків/маршрутів репетитора. 1850 unit + 20 final focused, build/TS/lint, browser 8 viewport/theme variants, client bundle 102/0 leaks. Live paid generation/storage не тестувалися в цьому сеансі.
+
 ## 2026-11-06 — пояснення: помилка більше не є навчальним матеріалом
 
 [BUG-055](bugs/BUG-055-explanation-errors-masquerade-as-content.md): невдалий AI-запит більше не зберігається/не озвучується як готове пояснення. Безпечна категорія збою та повторна спроба замість загального fallback. Причина конкретного production-запиту потребує повторної перевірки; приватних журналів у цьому середовищі немає. Матеріали/бюджет/модель незмінні.
