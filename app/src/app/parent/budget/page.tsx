@@ -2,6 +2,8 @@ import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
 import { loadBudgetDashboard } from "@/server/budget/queries";
 import { PageTitle, Panel } from "../ui";
+import { loadModelDiagnostics } from "@/server/budget/modelDiagnostics";
+import { ModelDiagnostics } from "@/components/parent/ModelDiagnostics";
 
 const money = (n: number) => `$${n.toFixed(2)}`;
 
@@ -20,7 +22,7 @@ const STATE_BADGE: Record<string, string> = {
  */
 export default async function BudgetPage() {
   const { familyId } = await requireParentAccess();
-  const data = await loadBudgetDashboard(familyId);
+  const [data, diagnostics] = await Promise.all([loadBudgetDashboard(familyId), loadModelDiagnostics(familyId)]);
   const t = uk.parent.budget;
   const { forecast } = data;
   const trackPct = Math.min(forecast.pctOfLimit, 110);
@@ -30,6 +32,7 @@ export default async function BudgetPage() {
   return (
     <>
       <PageTitle>{t.title}</PageTitle>
+      <Panel title="Моделі за функціями та фактичні виклики"><ModelDiagnostics {...diagnostics} timeZone={data.timeZone} /></Panel>
 
       <Panel title={t.monthPanelTitle}>
         <p className="mb-3 text-[13px] text-p-muted">{t.monthPanelDesc}</p>

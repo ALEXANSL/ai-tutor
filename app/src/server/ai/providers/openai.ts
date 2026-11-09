@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { getServerSecret } from "../../env";
-import { AiNotConfiguredError, ProviderError, type AudioResult, type PromptContent, type RouteParams, type Usage } from "../types";
+import { AiNotConfiguredError, ProviderError, type AudioResult, type PromptContent, type RouteParams, type Usage, type VisionDocument } from "../types";
 
 export interface EmbedRequest {
   model: string;
@@ -118,6 +118,7 @@ export interface OpenAiStructuredRequest<S extends z.ZodType> {
   prompt: PromptContent;
   schema: S;
   params: RouteParams;
+  documents?: VisionDocument[];
 }
 
 export interface OpenAiStructuredResult<T> {
@@ -171,7 +172,12 @@ export async function openaiStructured<S extends z.ZodType>(
       body: JSON.stringify({
         model: req.model,
         instructions: req.system,
-        input,
+        input: req.documents?.length ? [{ role: "user", content: [
+          { type: "input_text", text: input },
+          ...req.documents.map((document, index) => document.mediaType === "application/pdf"
+            ? { type: "input_file", filename: `textbook-page-${index + 1}.pdf`, file_data: `data:application/pdf;base64,${document.data}` }
+            : { type: "input_image", image_url: `data:${document.mediaType};base64,${document.data}` }),
+        ] }] : input,
         ...(req.params.effort ? { reasoning: { effort: req.params.effort === "xhigh" || req.params.effort === "max" ? "high" : req.params.effort } } : {}),
         max_output_tokens: req.params.max_tokens ?? 16000,
         text: { format: { type: "json_schema", name: "response", strict: true, schema: jsonSchema } },

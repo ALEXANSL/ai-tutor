@@ -1,4 +1,6 @@
 "use client";
+import { LessonText } from "@/components/shared/LessonText";
+import { MAX_LESSON_QUESTION_CHARS } from "@/lib/lesson-chat";
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useHomeExit } from "@/components/shared/HomeNavigation";
@@ -825,6 +827,7 @@ const TopicChat = forwardRef<TopicChatHandle, { sessionId: string; subjectId: st
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<{ author: string; content: string }[]>([]);
   const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
 
   useImperativeHandle(ref, () => ({
     pushAndOpen(content: string) {
@@ -835,14 +838,14 @@ const TopicChat = forwardRef<TopicChatHandle, { sessionId: string; subjectId: st
 
   async function send() {
     const q = question.trim();
-    if (!q) return;
-    setMessages((prev) => [...prev, { author: "child", content: q }]);
-    setQuestion("");
+    if (!q || pending) return;
     setPending(true);
+    setError("");
     try {
       const res = await askTopicChatAction(sessionId, subjectId, topicId, q);
-      if (res.status === "ok") setMessages((prev) => [...prev, { author: "ai", content: res.message.content }]);
-    } finally {
+      if (res.status === "ok") { setMessages((prev) => [...prev, { author: "child", content: q }, { author: "ai", content: res.message.content }]); setQuestion(""); }
+      else setError(res.message);
+    } catch { setError("Не вдалося отримати відповідь. Текст залишився у полі — спробуй ще раз."); } finally {
       setPending(false);
     }
   }
@@ -854,19 +857,21 @@ const TopicChat = forwardRef<TopicChatHandle, { sessionId: string; subjectId: st
       </button>
       {open && (
         <div className="mt-2 rounded-2xl border border-line bg-surface p-3.5">
-          <div className="mb-2 flex max-h-40 flex-col gap-1.5 overflow-y-auto text-sm">
+          <div className="mb-2 flex max-h-80 flex-col gap-1.5 overflow-y-auto text-sm">
             {messages.map((m, i) => (
-              <p key={i} className={m.author === "child" ? "font-bold" : "text-muted"}>
-                {m.content}
-              </p>
+              <div key={i} className={m.author === "child" ? "font-bold" : "text-muted"}>
+                <LessonText text={m.content} reflow />
+              </div>
             ))}
           </div>
+          {error && <p role="alert" className="mb-2 text-sm text-danger">{error}</p>}
           <div className="flex gap-2">
-            <input
+            <textarea
+              rows={4}
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               aria-label="Запитання репетитору"
-              maxLength={800}
+              maxLength={MAX_LESSON_QUESTION_CHARS}
               placeholder={t.chatPlaceholder}
               className="min-h-12 flex-1 rounded-2xl border-2 border-line bg-bg px-3.5 text-sm outline-none focus:border-focus"
             />

@@ -13,8 +13,8 @@ const target: VoiceTarget = { kind: "chapter", lessonId: "lesson", stepId: "step
 const message = { id: "answer", author: "ai" as const, content: "Тема твору — пам’ять про батьківщину. Ідея — заклик берегти своє коріння.", createdAt: "2026-11-09" };
 const question = "4. Сформулюй тему та ідею твору «Євшан-зілля».";
 beforeEach(() => { vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); f.ask.mockReset().mockResolvedValue({ status: "ok", message }); container = document.createElement("div"); document.body.append(container); root = createRoot(container); });
-afterEach(() => { act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); });
-function render(next = target) { act(() => root.render(<LessonVoicePanel target={next} textChat={{ subjectId: "literature", topicId: "topic" }} />)); }
+afterEach(() => { act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+function render(next = target, pages: number[] = []) { act(() => root.render(<LessonVoicePanel target={next} sourcePages={pages} textChat={{ subjectId: "literature", topicId: "topic" }} />)); }
 function fill(text: string) { const input = container.querySelector("textarea")!; act(() => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(input, text); input.dispatchEvent(new Event("input", { bubbles: true })); }); }
 async function send() { await act(async () => { container.querySelector<HTMLButtonElement>('button[type="submit"]')!.click(); }); }
 it("shows a composer immediately and sends the exact textbook question with current chapter selectors", async () => {
@@ -54,4 +54,28 @@ it("locks duplicate submissions while waiting for the reply", async () => {
   expect(container.querySelector("fieldset")?.disabled).toBe(true);
   await act(async () => finish({ status: "ok", message }));
   expect(container.querySelector("fieldset")?.disabled).toBe(false);
+});
+it("accepts a whole page and adds a quoted selection without truncating it", async () => {
+  render();
+  const page = "Поясни уривок. ".repeat(900);
+  fill(page);
+  expect(container.querySelector("textarea")?.maxLength).toBe(20_000);
+  vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "Окремо виділений уривок твору." } as Selection);
+  await act(async () => { [...container.querySelectorAll("button")].find(button => button.textContent === "Додати виділений уривок")!.click(); });
+  await send();
+  expect(f.ask.mock.calls[0]?.[3]).toContain(page.trim());
+  expect(f.ask.mock.calls[0]?.[3]).toContain("Окремо виділений уривок твору.");
+});
+it("attaches at most two printed page selectors and keeps them on an API failure", async () => {
+  f.ask.mockResolvedValue({ status: "error", message: "Сторінка недоступна" });
+  render(target, [10, 20, 30]);
+  for (const value of [10, 20]) {
+    act(() => { const select = container.querySelector("select")!; select.value = String(value); select.dispatchEvent(new Event("change", { bubbles: true })); });
+    await act(async () => { [...container.querySelectorAll("button")].find(button => button.textContent === "Додати сторінку")!.click(); });
+  }
+  expect(container.querySelector("select")?.disabled).toBe(true);
+  fill(question); await send();
+  expect(f.ask).toHaveBeenCalledWith(null, "literature", "topic", question, target, { printedPages: [10, 20] });
+  expect(container.querySelector("textarea")?.value).toBe(question);
+  expect(container.textContent).toContain("Сторінка недоступна");
 });

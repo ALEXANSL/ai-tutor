@@ -92,6 +92,7 @@ vi.mock("@/server/db/family-scope", () => ({ forFamily: () => makeScope() }));
 
 const callStructured = vi.fn();
 vi.mock("@/server/ai/router", () => ({ callStructured: (...a: unknown[]) => callStructured(...a) }));
+vi.mock("./tutorModel", () => ({ callLessonTutor: (...args: unknown[]) => callStructured("lesson_tutor", ...args) }));
 
 const moderateMessage = vi.fn();
 vi.mock("@/server/safety/moderate", () => ({ moderateMessage: (...a: unknown[]) => moderateMessage(...a) }));
