@@ -1,4 +1,4 @@
-import { orderParagraphs } from "@/lib/paragraph-order";
+import { orderChapterLessons } from "@/lib/chapter-order";
 import "server-only";
 import { preferredReadingLayout } from "@/lib/reading-presentation";
 import { forFamily } from "@/server/db/family-scope";
@@ -280,11 +280,11 @@ export interface LiteratureV3LessonListItem {
 export async function listLiteratureV3Lessons(familyId: string, packageId: string): Promise<LiteratureV3LessonListItem[]> {
   const scope = forFamily(familyId);
   const { data } = await scope
-    .select("literature_v3_lessons", "id, order_no, title, status")
+    .select("literature_v3_lessons", "id, order_no, title, status, printed_page_from")
     .eq("package_id", packageId)
     .order("order_no")
-    .returns<{ id: string; order_no: number; title: string; status: "active" | "needs_review" }[]>();
-  return orderParagraphs(data ?? [], row => row.title).map((r, index) => ({ id: r.id, orderNo: index + 1, title: r.title, status: r.status }));
+    .returns<{ id: string; order_no: number; title: string; status: "active" | "needs_review"; printed_page_from?: number | null }[]>();
+  return orderChapterLessons(data ?? [], row => ({ title: row.title, packageId, page: row.printed_page_from, order: row.order_no })).map((r, index) => ({ id: r.id, orderNo: index + 1, title: r.title, status: r.status }));
 }
 
 export interface LiteratureV3BookPage {

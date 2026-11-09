@@ -1,4 +1,4 @@
-import { orderParagraphs } from "@/lib/paragraph-order";
+import { orderChapterLessons } from "@/lib/chapter-order";
 import "server-only";
 import { forFamily } from "../db/family-scope";
 import { listTopicIdsWithVideoLesson } from "../lessons/videoLessons";
@@ -204,6 +204,9 @@ export type ImportedLessonKind = "literature" | "course" | "math_v2" | "literatu
 export interface ActiveImportedLesson {
   kind: ImportedLessonKind;
   lessonId: string;
+  packageId?: string;
+  pageFrom?: number | null;
+  orderNo?: number;
 }
 
 /**
@@ -235,9 +238,9 @@ export async function getActiveImportedLessonsForTopics(familyId: string, topicI
     scope.select("course_lessons", "id, topic_id").in("topic_id", topicIds).eq("status", "active").returns<{ id: string; topic_id: string }[]>(),
     scope.select("course_v2_lessons", "id, topic_id").in("topic_id", topicIds).eq("status", "active").returns<{ id: string; topic_id: string }[]>(),
     scope.select("literature_v2_lessons", "id, topic_id").in("topic_id", topicIds).eq("status", "active").returns<{ id: string; topic_id: string }[]>(),
-    scope.select("literature_v3_lessons", "id, topic_id").in("topic_id", topicIds).eq("status", "active").returns<{ id: string; topic_id: string }[]>(),
+    scope.select("literature_v3_lessons", "id, topic_id, package_id, printed_page_from, order_no").in("topic_id", topicIds).eq("status", "active").returns<{ id: string; topic_id: string; package_id?: string; printed_page_from?: number | null; order_no?: number }[]>(),
   ]);
-  const bySystem: [ImportedLessonKind, { id: string; topic_id: string }[] | null][] = [
+  const bySystem: [ImportedLessonKind, { id: string; topic_id: string; package_id?: string; printed_page_from?: number | null; order_no?: number }[] | null][] = [
     ["literature", literatureRows],
     ["course", courseRows],
     ["math_v2", mathV2Rows],
@@ -246,7 +249,7 @@ export async function getActiveImportedLessonsForTopics(familyId: string, topicI
   ];
   for (const [kind, rows] of bySystem) {
     for (const row of rows ?? []) {
-      if (!map.has(row.topic_id)) map.set(row.topic_id, { kind, lessonId: row.id });
+      if (!map.has(row.topic_id)) map.set(row.topic_id, { kind, lessonId: row.id, ...(kind === "literature_v3" ? { packageId: row.package_id, pageFrom: row.printed_page_from, orderNo: row.order_no } : {}) });
     }
   }
   return map;
@@ -355,7 +358,10 @@ export async function getSubjectDetail(familyId: string, subjectId: string): Pro
   // import-less topics out entirely rather than showing a confusing mix.
   const hasAnyImportedTopic = importedLessonByTopic.size > 0;
   const filteredTopics = hasAnyImportedTopic ? topicList.filter((t) => importedLessonByTopic.has(t.id)) : topicList;
-  const visibleTopics = orderParagraphs(filteredTopics, topic => topic.title, topic => importedLessonByTopic.get(topic.id)?.kind === "literature_v3");
+  const visibleTopics = orderChapterLessons(filteredTopics, topic => {
+    const lesson = importedLessonByTopic.get(topic.id);
+    return lesson?.kind === "literature_v3" ? { title: topic.title, packageId: lesson.packageId, page: lesson.pageFrom ?? topic.page_from, order: lesson.orderNo } : null;
+  });
 
   return {
     id: subject.id,

@@ -258,7 +258,7 @@ function FlowNav({
         voiceMode={voiceMode && interruptedStep !== step.id}
         onNarrationEnded={onNarrationEnded}
       />
-      {lesson.topicId && <LessonVoicePanel target={{ kind: "chapter", lessonId: lesson.id, stepId: step.id }} onActiveChange={active => { if (active) setInterruptedStep(step.id); }} />}
+      {lesson.topicId && <LessonVoicePanel textChat={{ subjectId: lesson.subjectId, topicId: lesson.topicId }} target={{ kind: "chapter", lessonId: lesson.id, stepId: step.id }} onActiveChange={active => { if (active) setInterruptedStep(step.id); }} />}
       <StepNavBar
         isLessonEnd={isLast}
         nextLessonHref={nextLessonHref}

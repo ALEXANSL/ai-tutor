@@ -1,0 +1,9 @@
+# BUG-057 — текстовий чат відсутній у chapter lessons; порядок літератури
+
+У chapter reader був лише LessonVoicePanel/VoiceConversation із транскриптом голосу, без composer. Фраза про доступність текстового чату не відповідала UI. У двох V2 readers і legacy runner існуючий composer був прихований default-open=false.
+
+Chapter panel отримує видиме текстове поле, send через існуючий askTopicChatAction з chapter/lesson/step target, той самий server-derived контекст та moderation. Відповідь текстова, не запускає TTS. Голосові/текстові репліки показуються разом у межах поточного уроку; зміна кроку зупиняє мікрофон як раніше, але не стирає цей транскрипт. На помилці запитання зберігається для retry. Голосова розмова й текстовий запит не запускаються паралельно. Інші text composers видимі одразу. Серверне збереження історії працює існуючим шляхом; нової схеми чи окремого чат-сервісу немає.
+
+Доповнення PO: українська література має йти за підручником. Read-time chapter ordering використовує пакет курсу, друковані сторінки та order_no як tie-break/fallback. Явні § N зберігають числовий порядок. Subject catalog і chapter TOC/prev-next використовують один helper. Дані/IDs/прогрес не переписуються, reimport не потрібен. Live порядок конкретних private rows у цьому середовищі не прочитано.
+
+Перевірено: 1862 unit tests, TypeScript / production build, ESLint 0 errors / 8 existing warnings, bundle scan 102 files / 0 leaks. Після фінального розміщення відповіді й Enter-send — 50 focused voice/chat lifecycle tests та повторний production build. Actual components + production CSS у Chromium: 320/390/768/1440 px, light/dark; поле відразу доступне без mic support, точний вставлений запит, текстова відповідь, збереження транскрипту при next module і новий step target, touch target >=44px/no horizontal overflow. AI action у browser fixtures mocked, платних викликів немає.

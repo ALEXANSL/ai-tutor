@@ -223,7 +223,7 @@ export interface LessonTopicChatHandle {
 }
 
 const LessonTopicChat = forwardRef<LessonTopicChatHandle, { subjectId: string; topicId: string; target?: VoiceTarget }>(function LessonTopicChat({ subjectId, topicId, target }, ref) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<{ author: "child" | "ai"; content: string }[]>([]);
   const [pending, setPending] = useState(false);
@@ -275,9 +275,11 @@ const LessonTopicChat = forwardRef<LessonTopicChatHandle, { subjectId: string; t
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && void send()}
+              aria-label="Запитання репетитору"
+              maxLength={800}
               placeholder="Поясни цю задачу…"
               disabled={pending}
-              className="min-h-11 flex-1 rounded-xl border-2 border-line bg-surface px-3 text-sm"
+              className="min-h-11 min-w-0 flex-1 rounded-xl border-2 border-line bg-surface px-3 text-sm"
             />
             <button type="button" onClick={() => void send()} disabled={pending || !question.trim()} className="min-h-11 rounded-full bg-primary px-4 text-sm font-bold text-white disabled:opacity-60">
               {pending ? "…" : "Надіслати"}

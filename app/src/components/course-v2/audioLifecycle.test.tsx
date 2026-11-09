@@ -158,7 +158,6 @@ describe.each<"math" | "literature">(["math", "literature"])("%s text lesson con
   it("sends the actual current screen selector after navigation", async () => {
     render(kind);
     await click("Далі →");
-    await click("💬 Запитати репетитора про цю тему");
     const input = container.querySelector<HTMLInputElement>("input[placeholder^='Поясни']")!;
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Поясни це");
