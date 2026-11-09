@@ -161,11 +161,12 @@ export async function getLiteratureV3LessonView(familyId: string, lessonId: stri
     screenKeys.length
       ? scope.select("literature_v3_screens", "id, screen_key, title, content_display, content_tts, asset_ids").eq("lesson_id", lessonId).in("screen_key", screenKeys).returns<ScreenRow[]>()
       : Promise.resolve({ data: [] as ScreenRow[] }),
+    // Reading keys are local to a course; their package belongs to the parent work.
     readingKeys.length
-      ? scope.select("literature_v3_reading_items", "id, reading_key, title, content_display, content_tts, work_id, primary_page_id, content_type").in("reading_key", readingKeys).returns<ReadingItemRow[]>()
+      ? scope.select("literature_v3_reading_items", "id, reading_key, title, content_display, content_tts, work_id, primary_page_id, content_type, literature_v3_works!inner(package_id)").eq("literature_v3_works.package_id", lesson.package_id).in("reading_key", readingKeys).returns<ReadingItemRow[]>()
       : Promise.resolve({ data: [] as ReadingItemRow[] }),
     biographyKeys.length
-      ? scope.select("literature_v3_biographies", "id, biography_key, author_name, content_display, content_tts").in("biography_key", biographyKeys).returns<BiographyRow[]>()
+      ? scope.select("literature_v3_biographies", "id, biography_key, author_name, content_display, content_tts").eq("package_id", lesson.package_id).in("biography_key", biographyKeys).returns<BiographyRow[]>()
       : Promise.resolve({ data: [] as BiographyRow[] }),
     quizKeys.length
       ? scope.select("course_v2_questions", "id, question_key, max_points, display_md, narration, options").eq("literature_v3_lesson_id", lessonId).in("question_key", quizKeys).returns<QuestionRow[]>()
