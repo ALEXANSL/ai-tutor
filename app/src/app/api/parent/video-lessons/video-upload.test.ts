@@ -2,9 +2,9 @@ import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const family = "11111111-1111-4111-8111-111111111111", topic = "22222222-2222-4222-8222-222222222222";
 const path = `${family}/${topic}-33333333-3333-4333-8333-333333333333.mp4`;
-const mock = vi.hoisted(() => ({ auth: vi.fn(), save: vi.fn(), info: vi.fn(), sign: vi.fn() }));
+const mock = vi.hoisted(() => ({ auth: vi.fn(), save: vi.fn(), replace: vi.fn(), info: vi.fn(), sign: vi.fn() }));
 vi.mock("@/server/auth/guards", () => ({ requireParentAccess: mock.auth }));
-vi.mock("@/server/lessons/videoLessons", () => ({ saveVideoLesson: mock.save }));
+vi.mock("@/server/lessons/videoLessons", () => ({ saveVideoLesson: mock.save, replaceVideoLesson: mock.replace }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/server/supabase/clients", () => ({ createServiceClient: () => ({ storage: { from: () => ({ createSignedUploadUrl: mock.sign }) } }) }));
 vi.mock("@/server/db/family-scope", () => ({ forFamily: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: "topic", subject_id: "history" }, error: null }) }) }), client: { storage: { from: () => ({ info: mock.info }) } } }) }));
@@ -37,6 +37,17 @@ describe("video upload server boundary", () => {
   it("saves verified storage metadata, not a claimed MIME", async () => {
     expect((await complete(request({ ...body(), mimeType: "text/plain" }))).status).toBe(200);
     expect(mock.save).toHaveBeenCalledWith(family, topic, "history", path, "video/mp4", 100);
+  });
+  it("replaces only after object verification and forwards the selected existing ID", async () => {
+    const id = "55555555-5555-4555-8555-555555555555";
+    mock.replace.mockResolvedValue({ id, cleanupPending: false });
+    expect((await complete(request({ ...body(), replaceVideoId: id }))).status).toBe(200);
+    expect(mock.replace).toHaveBeenCalledWith(family, id, topic, path, "video/mp4", 100);
+    expect(mock.save).not.toHaveBeenCalled();
+    mock.replace.mockClear(); mock.info.mockResolvedValueOnce({ data: null, error: true });
+    expect((await complete(request({ ...body(), replaceVideoId: id }))).status).toBe(400);
+    expect(mock.replace).not.toHaveBeenCalled();
+    expect((await complete(request({ ...body(), replaceVideoId: "invalid" }))).status).toBe(400);
   });
   it("rejects zero/absent/oversized declarations and unsupported file types", async () => {
     for (const size of [0, -1, 600 * 1024 * 1024]) expect((await init(request({ topicId: topic, size, mimeType: "video/mp4" }))).status).toBeGreaterThanOrEqual(400);

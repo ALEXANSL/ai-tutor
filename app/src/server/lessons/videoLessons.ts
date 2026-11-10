@@ -22,6 +22,39 @@ export interface VideoLessonRow {
   createdAt: string;
 }
 
+export interface VideoLibraryRow extends VideoLessonRow { subjectId: string; subjectName: string; }
+/** Parent library includes inactive subjects/courses; visibility rules apply only to child playback. */
+export async function listVideoLibrary(familyId: string): Promise<VideoLibraryRow[]> {
+  const { data, error } = await forFamily(familyId).select("video_lessons", "id,topic_id,subject_id,size_bytes,created_at,topics(title),subjects(name_uk)")
+    .order("created_at", { ascending: false }).returns<{ id: string; topic_id: string; subject_id: string; size_bytes: number; created_at: string; topics: { title: string } | { title: string }[] | null; subjects: { name_uk: string } | { name_uk: string }[] | null }[]>();
+  if (error) throw new Error("Не вдалося прочитати відеотеку.");
+  return (data ?? []).map(row => ({ id: row.id, topicId: row.topic_id, topicTitle: (Array.isArray(row.topics) ? row.topics[0] : row.topics)?.title ?? "Тема недоступна", subjectId: row.subject_id, subjectName: (Array.isArray(row.subjects) ? row.subjects[0] : row.subjects)?.name_uk ?? "Предмет недоступний", sizeBytes: row.size_bytes, createdAt: row.created_at }));
+}
+
+export async function getParentVideoUrl(familyId: string, id: string, download = false): Promise<string | null> {
+  const scope = forFamily(familyId);
+  const { data, error } = await scope.select("video_lessons", "storage_path").eq("id", id).maybeSingle<{ storage_path: string }>();
+  if (error) throw new Error("Не вдалося знайти відео.");
+  if (!data || !data.storage_path.startsWith(`${familyId}/`)) return null;
+  const extension = /\.(mp4|mov|webm)$/i.exec(data.storage_path)?.[1] ?? "mp4";
+  const { data: signed, error: signError } = await scope.client.storage.from(VIDEO_BUCKET).createSignedUrl(data.storage_path, SIGNED_URL_TTL_S, download ? { download: `video-${id}.${extension}` } : undefined);
+  if (signError || !signed) throw new Error("Не вдалося відкрити файл.");
+  return signed.signedUrl;
+}
+
+/** New object is already verified by upload completion. Optimistic update preserves ID/topic/order and never deletes the old file before switching. */
+export async function replaceVideoLesson(familyId: string, id: string, topicId: string, storagePath: string, mimeType: string, sizeBytes: number): Promise<{ id: string; cleanupPending: boolean }> {
+  const scope = forFamily(familyId);
+  const { data: old, error } = await scope.select("video_lessons", "storage_path,topic_id").eq("id", id).maybeSingle<{ storage_path: string; topic_id: string }>();
+  if (error || !old || old.topic_id !== topicId || !old.storage_path.startsWith(`${familyId}/`) || !storagePath.startsWith(`${familyId}/${topicId}-`)) throw new Error("Не вдалося перевірити заміну відео.");
+  if (old.storage_path === storagePath) return { id, cleanupPending: false };
+  const oldPath = old.storage_path;
+  const { data: updated, error: updateError } = await scope.update("video_lessons", { storage_path: storagePath, mime_type: mimeType, size_bytes: sizeBytes }).eq("id", id).eq("storage_path", oldPath).select("id").maybeSingle<{ id: string }>();
+  if (updateError || !updated) throw new Error("Відео вже змінено або заміну не вдалося зберегти. Старий файл не видалено.");
+  const removed = await scope.client.storage.from(VIDEO_BUCKET).remove([oldPath]).catch(() => ({ error: true }));
+  return { id: updated.id, cleanupPending: !!removed.error };
+}
+
 /** Parent-facing list for the subject's content-admin panel (S42-style) — every video of the subject, newest first, several per topic included. */
 export async function listVideoLessonsForSubject(familyId: string, subjectId: string): Promise<VideoLessonRow[]> {
   const scope = forFamily(familyId);
@@ -115,11 +148,12 @@ export async function saveVideoLesson(
 }
 
 /** Parent delete (S42-style panel) — removes both the DB row and the stored file. */
-export async function deleteVideoLesson(familyId: string, id: string): Promise<void> {
+export async function deleteVideoLesson(familyId: string, id: string): Promise<{ cleanupPending: boolean }> {
   const scope = forFamily(familyId);
   const { data } = await scope.select("video_lessons", "storage_path").eq("id", id).maybeSingle<{ storage_path: string }>();
-  if (!data) throw new Error("video lesson not found");
-  const { error } = await scope.delete("video_lessons").eq("id", id);
-  if (error) throw new Error(`deleting the video lesson failed: ${error.message}`);
-  await scope.client.storage.from(VIDEO_BUCKET).remove([data.storage_path]);
+  if (!data || !data.storage_path.startsWith(`${familyId}/`)) throw new Error("video lesson not found");
+  const { data: deleted, error } = await scope.delete("video_lessons").eq("id", id).eq("storage_path", data.storage_path).select("id").maybeSingle<{ id: string }>();
+  if (error || !deleted) throw new Error("Відео змінилося або видалення не вдалося. Оновіть список.");
+  const removed = await scope.client.storage.from(VIDEO_BUCKET).remove([data.storage_path]).catch(() => ({ error: true }));
+  return { cleanupPending: !!removed.error };
 }

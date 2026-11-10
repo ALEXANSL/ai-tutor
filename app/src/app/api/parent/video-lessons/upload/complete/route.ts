@@ -4,7 +4,7 @@ import { MAX_VIDEO_LESSON_BYTES } from "@/lib/upload-limits";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireParentAccess } from "@/server/auth/guards";
 import { forFamily } from "@/server/db/family-scope";
-import { saveVideoLesson } from "@/server/lessons/videoLessons";
+import { replaceVideoLesson, saveVideoLesson } from "@/server/lessons/videoLessons";
 
 /**
  * S47 video-lesson upload, step 2 of 2 — same shape as
@@ -19,6 +19,7 @@ interface CompleteBody {
   storagePath?: unknown;
   mimeType?: unknown;
   sizeBytes?: unknown;
+  replaceVideoId?: unknown;
 }
 
 export async function POST(request: NextRequest) {
@@ -28,6 +29,8 @@ export async function POST(request: NextRequest) {
   const storagePath = typeof body?.storagePath === "string" ? body.storagePath : null;
   const mimeType = typeof body?.mimeType === "string" ? body.mimeType : "video/mp4";
   const sizeBytes = typeof body?.sizeBytes === "number" && Number.isFinite(body.sizeBytes) ? body.sizeBytes : 0;
+  const replaceVideoId = body?.replaceVideoId;
+  if (replaceVideoId !== undefined && !z.string().uuid().safeParse(replaceVideoId).success) return NextResponse.json({ error: "failed" }, { status: 400 });
   // The storage path is namespaced `${familyId}/...` by the init route, so a
   // path belonging to another family can never be completed here either.
   if (!z.string().uuid().safeParse(topicId).success || !storagePath || !topicId || !new RegExp(`^${familyId}/${topicId}-[a-f0-9-]{36}\\.(mp4|webm|mov)$`, "i").test(storagePath)) {
@@ -46,10 +49,12 @@ export async function POST(request: NextRequest) {
     const actualMime = info.contentType ?? mimeType;
     if (typeof actualSize !== "number" || actualSize <= 0 || actualSize > MAX_VIDEO_LESSON_BYTES || !["video/mp4", "video/webm", "video/quicktime"].includes(actualMime)) return NextResponse.json({ error: "invalid_file" }, { status: 400 });
     if (sizeBytes !== actualSize) return NextResponse.json({ error: "incomplete_file" }, { status: 400 });
-    const id = await saveVideoLesson(familyId, topicId, topic.subject_id, storagePath, actualMime, actualSize);
+    const replacement = typeof replaceVideoId === "string" ? await replaceVideoLesson(familyId, replaceVideoId, topicId, storagePath, actualMime, actualSize) : null;
+    const id = replacement?.id ?? await saveVideoLesson(familyId, topicId, topic.subject_id, storagePath, actualMime, actualSize);
     revalidatePath(`/subject/${topic.subject_id}`);
     revalidatePath("/parent/subjects", "layout");
-    return NextResponse.json({ ok: true, id });
+    revalidatePath("/parent/videos");
+    return NextResponse.json({ ok: true, id, ...(replacement ? { cleanupPending: replacement.cleanupPending } : {}) });
   } catch (e) {
     console.error(`video-lesson upload complete failed: ${(e as Error).message}`);
     return NextResponse.json({ error: "failed" }, { status: 500 });

@@ -163,8 +163,8 @@ export function UnifiedCourseImportPanel({ subjects }: { subjects: SubjectOption
     <p className="text-sm leading-relaxed text-p-muted">Завантажте один готовий архів курсу. Застосунок сам знайде уроки, завдання та наявні ілюстрації й PDF. Якщо медіа не потрібні, їх можна не додавати.</p>
     <div className="grid gap-4 sm:grid-cols-2">
       <label className="flex flex-col gap-1.5 text-sm font-bold text-p-text">
-        Предмет
-        <select className={parentInput} value={subjectId} disabled={busy} onChange={event => { reset(); setSubjectId(event.target.value); }}>
+        Предмет або курс
+        <select aria-label="Предмет або курс" className={parentInput} value={subjectId} disabled={busy} onChange={event => { reset(); setSubjectId(event.target.value); }}>
           <option value="">Оберіть предмет</option>
           {subjects.map(subject => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
         </select>

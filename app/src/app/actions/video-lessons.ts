@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireChild, requireParentAccess } from "@/server/auth/guards";
-import { deleteVideoLesson, getVideoLessonUrlById, listTopicVideos, type TopicVideoOption } from "@/server/lessons/videoLessons";
+import { deleteVideoLesson, getParentVideoUrl, getVideoLessonUrlById, listTopicVideos, type TopicVideoOption } from "@/server/lessons/videoLessons";
 import { listSubjectTopicOptions, type TopicOption } from "@/server/subjects/queries";
 import { uk } from "@/i18n/uk";
 
@@ -17,21 +17,31 @@ export async function listSubjectTopicsForVideoAction(subjectId: string): Promis
   return listSubjectTopicOptions(familyId, parsed.data);
 }
 
-export type DeleteVideoLessonState = { status: "ok" } | { status: "error"; message: string };
+export type DeleteVideoLessonState = { status: "ok"; cleanupPending?: boolean } | { status: "error"; message: string };
 
 /** Parent's "Відео-уроки" panel (S47) — removes both the DB row and the stored file. */
 export async function deleteVideoLessonAction(id: string): Promise<DeleteVideoLessonState> {
   const { familyId } = await requireParentAccess();
   const parsed = uuidSchema.safeParse(id);
   if (!parsed.success) return { status: "error", message: uk.common.error };
+  let cleanupPending = false;
   try {
-    await deleteVideoLesson(familyId, parsed.data);
+    cleanupPending = (await deleteVideoLesson(familyId, parsed.data)).cleanupPending;
   } catch {
     return { status: "error", message: uk.common.error };
   }
   revalidatePath("/parent/subjects", "layout");
   revalidatePath("/subject", "layout");
-  return { status: "ok" };
+  revalidatePath("/parent/videos");
+  return { status: "ok", cleanupPending };
+}
+
+/** Parent may manage their own video even when its subject is hidden from the child. */
+export async function getParentVideoUrlAction(id: string, download = false): Promise<{ status: "ok"; url: string } | { status: "error" }> {
+  const { familyId } = await requireParentAccess();
+  if (!uuidSchema.safeParse(id).success || typeof download !== "boolean") return { status: "error" };
+  try { const url = await getParentVideoUrl(familyId, id, download); return url ? { status: "ok", url } : { status: "error" }; }
+  catch { return { status: "error" }; }
 }
 
 /** Child's "🎬 Відео-урок" button (S47, every lesson viewer + the subject topic list) — the list of this topic's videos, fetched before any URL is signed (lets the button show a picker when there's more than one). */

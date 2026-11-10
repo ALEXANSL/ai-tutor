@@ -19,6 +19,7 @@ export function registerCoreNavigation(): void {
     { key: "courses", label: n.courses, icon: "🗂️", href: "/parent/courses", order: 67 },
     { key: "books", label: n.books, icon: "📚", href: "/parent/books", order: 70 },
     { key: "materials", label: n.materials, icon: "⬆️", href: "/parent/materials", order: 71 },
+    { key: "videos", label: n.videos, icon: "🎬", href: "/parent/videos", order: 72 },
     { key: "settings", label: n.settings, icon: "⚙️", href: "/parent/settings", order: 80 },
   ];
   for (const item of items) parentNav.register({ ...item, status: "active" });

@@ -581,6 +581,7 @@ export const uk = {
       courses: "Курси",
       books: "Мої книги",
       materials: "Завантажити матеріали",
+      videos: "Відеотека",
       settings: "Налаштування",
       modulesSoon: "Модулі (скоро)",
     },
