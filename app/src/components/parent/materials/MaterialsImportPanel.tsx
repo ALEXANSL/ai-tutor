@@ -46,10 +46,10 @@ type UiState =
   | { status: "guide_done" }
   | { status: "error"; message: string };
 
-export function MaterialsImportPanel({ subjects, uploadEnabled }: { subjects: SubjectOption[]; uploadEnabled: boolean }) {
+export function MaterialsImportPanel({ subjects, uploadEnabled, materialsOnly = false }: { subjects: SubjectOption[]; uploadEnabled: boolean; materialsOnly?: boolean }) {
   const t = uk.parent.materials;
   const [subjectId, setSubjectId] = useState("");
-  const [category, setCategory] = useState<Category>("book_lessons");
+  const [category, setCategory] = useState<Category>(materialsOnly ? "additional_guide" : "book_lessons");
   const [state, setState] = useState<UiState>({ status: "idle" });
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -184,7 +184,7 @@ export function MaterialsImportPanel({ subjects, uploadEnabled }: { subjects: Su
       <label className="flex flex-col gap-1.5">
         <span className="text-[13px] font-bold text-p-text">{t.categoryLabel}</span>
         <select className={parentInput} value={category} onChange={(e) => setCategory(e.target.value as Category)} disabled={busy}>
-          <option value="book_lessons">{t.category.book_lessons}</option>
+          {!materialsOnly && <option value="book_lessons">{t.category.book_lessons}</option>}
           <option value="additional_guide">{t.category.additional_guide}</option>
           <option value="other">{t.category.other}</option>
         </select>

@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { deleteVideoLessonAction } from "@/app/actions/video-lessons";
@@ -98,13 +100,14 @@ export function VideoLessonsPanel({ topics, initialVideos }: { topics: VideoTopi
     if (!window.confirm(t.deleteConfirm)) return;
     setBusyId(video.id);
     setMessage("");
-    const result = await withBusySignal(() => deleteVideoLessonAction(video.id));
-    setBusyId(null);
-    if (result.status === "error") {
-      setMessage(result.message);
-      return;
-    }
-    setVideos((prev) => prev.filter((v) => v.id !== video.id));
+    try {
+      const result = await withBusySignal(() => deleteVideoLessonAction(video.id));
+      if (result.status === "error") { setMessage(result.message); return; }
+      setVideos((prev) => prev.filter((v) => v.id !== video.id));
+      setMessage(result.cleanupPending ? "Відео прибрано зі списку, але старий файл залишився у сховищі. Для очищення потрібна перевірка сховища." : "Відео видалено. Текстовий урок збережено.");
+      setPhase("done");
+    } catch { setMessage("Не вдалося завершити видалення. Онови список і спробуй ще раз."); }
+    finally { setBusyId(null); }
   }
 
   const busy = phase === "uploading";
@@ -112,6 +115,7 @@ export function VideoLessonsPanel({ topics, initialVideos }: { topics: VideoTopi
   return (
     <div className="flex flex-col gap-4">
       <p className="text-[13px] text-p-muted">{t.hint}</p>
+      <Link href="/parent/videos" className="inline-flex min-h-11 items-center text-sm font-semibold text-p-primary">Відеотека: переглянути, скачати або замінити відео →</Link>
 
       <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
         <label className="flex flex-col gap-1.5 text-[13px] font-bold text-p-text">

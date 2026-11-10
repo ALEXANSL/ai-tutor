@@ -39,7 +39,7 @@ export function Sidebar({
         <div className="fixed inset-0 z-[85] bg-black/45 min-[820px]:hidden" onClick={() => setOpen(false)} aria-hidden="true" />
       )}
       <aside
-        className={`${open ? "fixed inset-y-0 left-0 z-[90] flex w-[82vw] max-w-[300px] shadow-2xl" : "hidden"} flex-col gap-1 border-r border-p-line bg-p-surface px-3.5 py-5 min-[820px]:sticky min-[820px]:top-0 min-[820px]:flex min-[820px]:h-screen min-[820px]:w-60`}
+        className={`${open ? "fixed inset-y-0 left-0 z-[90] flex h-dvh w-[82vw] max-w-[300px] shadow-2xl" : "hidden"} min-h-0 flex-col gap-1 border-r border-p-line bg-p-surface px-3.5 py-5 min-[820px]:sticky min-[820px]:top-0 min-[820px]:flex min-[820px]:h-dvh min-[820px]:w-60`}
       >
         <div className="mb-2 flex justify-end min-[820px]:hidden">
           <button type="button" onClick={() => setOpen(false)} aria-label={t.closeMenu} className="h-11 w-11 text-2xl text-p-muted">
@@ -49,7 +49,7 @@ export function Sidebar({
         <div className="flex items-center gap-2.5 px-2.5 pb-4 text-base font-extrabold">
           <span className="h-2.5 w-2.5 rounded-full bg-p-primary" /> {uk.app.name}
         </div>
-        <nav className="flex flex-col gap-1" aria-label={t.menu}>
+        <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto" aria-label={t.menu}>
           {items.map((item) =>
             item.href ? (
               <Link

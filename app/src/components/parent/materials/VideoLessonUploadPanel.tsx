@@ -112,8 +112,8 @@ export function VideoLessonUploadPanel({ subjects }: { subjects: SubjectOption[]
 
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5 text-sm font-bold text-p-text">
-          Предмет
-          <select className={parentInput} value={subjectId} disabled={busy} onChange={(e) => void onSubjectChange(e.target.value)}>
+          Предмет або курс
+          <select aria-label="Предмет або курс" className={parentInput} value={subjectId} disabled={busy} onChange={(e) => void onSubjectChange(e.target.value)}>
             <option value="">Оберіть предмет</option>
             {subjects.map((s) => (
               <option key={s.id} value={s.id}>{s.name}</option>
