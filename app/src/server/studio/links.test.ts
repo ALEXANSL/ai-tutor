@@ -11,7 +11,7 @@ vi.mock("@/server/db/family-scope", () => ({ forFamily: (family: string) => ({ s
     const value = row.payload as ReturnType<typeof studioProjectFixture>;
     return { id: row.id, title: value.plan?.title, requestTitle: value.request.title, mode: value.request.mode, baseTopicId: value.request.topicId, baseHref: value.baseHref, publication: value.publication };
   });
-  const chain = { eq: (field: string, value: unknown) => { filters.push([field, value]); f.filters.push([family, field, value]); return chain; }, order: () => chain, limit: () => chain, range: () => chain, maybeSingle: async () => ({ data: map()[0] ?? null, error: null }), returns: async () => ({ data: map(), error: null }) }; return chain;
+  const chain = { or: (value: string) => { f.filters.push([family, "or", value]); return chain; }, eq: (field: string, value: unknown) => { filters.push([field, value]); f.filters.push([family, field, value]); return chain; }, order: () => chain, limit: () => chain, range: () => chain, maybeSingle: async () => ({ data: map()[0] ?? null, error: null }), returns: async () => ({ data: map(), error: null }) }; return chain;
 } }) }));
 import { studioLinksForPath } from "./links";
 const baseId = "11111111-1111-4111-8111-111111111111", generatedId = "22222222-2222-4222-8222-222222222222", projectId = "33333333-3333-4333-8333-333333333333";
@@ -28,4 +28,12 @@ it("ignores arbitrary paths and does not query a nonexistent package column on t
   expect(await studioLinksForPath("family", "https://other.invalid/lesson")).toEqual({ back: null, links: [] }); expect(f.filters).toEqual([]);
   f.rows.set("literature_lessons", [{ id: baseId, subject_id: "subject", topic_id: "base-topic", status: "active" }]); await studioLinksForPath("family", `/literature/${baseId}`);
   expect(f.filters).toContainEqual(["family", "literature_lessons", "subject_id,topic_id,status"]);
+});
+
+it("keeps links to the published version visible while a correction draft is being prepared", async () => {
+  const value = f.rows.get("jobs")![0]!.payload as ReturnType<typeof studioProjectFixture>;
+  value.state = "generating"; value.publicationRevision = true;
+  const result = await studioLinksForPath("family", `/literature-v3/${baseId}`);
+  expect(result.links[0]!.href).toBe(`/literature-v3/${generatedId}`);
+  expect(f.filters).toContainEqual(["family", "or", "payload->>state.eq.published,payload->>publicationRevision.eq.true"]);
 });

@@ -36,7 +36,10 @@ export interface StudioSource { id: string; title: string; text: string; page: n
 export interface StudioUnit { content: StudioLesson; visuals: StudioVisual[]; review: StudioReview | null; }
 export type StudioState = "planning" | "plan_ready" | "generating" | "ready" | "needs_changes" | "failed" | "paused" | "publishing" | "published" | "withdrawn";
 export interface StudioProject {
-  version: 1; revision: number; request: StudioRequest; state: StudioState; createdAt: string;
+  version: 1; revision: number;
+  /** Draft corrections over an existing publication; child content changes only on republish. */
+  publicationRevision?: boolean;
+  request: StudioRequest; state: StudioState; createdAt: string;
   sources: StudioSource[]; sourceNotes: string[]; subjectName: string | null; baseHref: string | null; baseTitle: string | null;
   plan: StudioPlan | null; units: StudioUnit[]; cursor: number; phase: "plan" | "author" | "design" | "review" | "publish";
   token: string; activeCall: boolean; spentUsd: number; heldUsd: number; feedback: string; error: string | null;

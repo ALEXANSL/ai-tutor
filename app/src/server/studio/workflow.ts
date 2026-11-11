@@ -55,10 +55,10 @@ export async function runStudioStep(job: JobRow, deadline: number) {
   if (project.activeCall) throw new Error("STUDIO-UNCERTAIN-CALL");
   if (deadline - Date.now() < 145000) return { requeue: true as const, delaySeconds: 10 };
   if (project.phase === "publish") {
-    const publication = project.publication ?? await prepareStudioPublication(job.family_id, id, project);
+    const publication = project.publicationRevision ? await prepareStudioPublication(job.family_id, id, project) : project.publication ?? await prepareStudioPublication(job.family_id, id, project);
     project = await saveStudioProject(job.family_id, id, project, { publication });
-    await activateStudioPublication(job.family_id, publication, !project.request.subjectId);
-    await saveStudioProject(job.family_id, id, project, { state: "published", error: null }); return;
+    await activateStudioPublication(job.family_id, publication, !project.request.subjectId && !project.publicationRevision);
+    await saveStudioProject(job.family_id, id, project, { state: "published", publicationRevision: false, error: null }); return;
   }
   const role: StudioRole = project.phase === "plan" ? "studio.plan" : project.phase === "author" ? "studio.author" : project.phase === "design" ? "studio.design" : "studio.review";
   const schema = project.phase === "plan" ? studioPlanSchema : project.phase === "author" ? studioLessonSchema : project.phase === "design" ? studioDesignSchema : studioReviewResponseSchema;
@@ -112,7 +112,7 @@ export async function runStudioStep(job: JobRow, deadline: number) {
 }
 export async function resumeStudio(familyId: string, id: string, revision: number, command: "approve" | "retry" | "revise" | "publish", plan?: StudioPlan, feedback = "", budgetUsd?: number, lessonIndex?: number) {
   const project = await readStudioProject(familyId, id);
-  if (!project || project.revision !== revision || studioActive(project.state) || ["published", "withdrawn"].includes(project.state)) throw new Error("Онови чернетку перед дією.");
+  if (!project || project.revision !== revision || studioActive(project.state) || (project.state === "withdrawn" || (project.state === "published" && command !== "revise"))) throw new Error("Онови чернетку перед дією.");
   const token = randomUUID();
   let changes: Partial<StudioProject> = { token, activeCall: false, error: null };
   if (budgetUsd !== undefined) changes.request = { ...project.request, budgetUsd };
@@ -124,12 +124,13 @@ export async function resumeStudio(familyId: string, id: string, revision: numbe
     changes = { ...changes, state: "publishing", phase: "publish" };
   } else if (command === "revise") {
     const cursor = lessonIndex ?? project.cursor;
-    if (!["needs_changes", "ready"].includes(project.state) || !Number.isSafeInteger(cursor) || !project.units[cursor]) throw new Error("Немає уроку для виправлення.");
+    if (!["needs_changes", "ready", "published"].includes(project.state) || !Number.isSafeInteger(cursor) || !project.units[cursor]) throw new Error("Немає уроку для виправлення.");
+    if (project.state === "published" && !feedback.trim()) throw new Error("Опиши, що потрібно виправити в опублікованому уроці.");
     const review = project.units[cursor]!.review;
     // Only structured, exclusively visual corrections can skip authoring. Legacy reviews
     // and parent instructions still receive a full, contextual revision.
     const designOnly = !feedback.trim() && review?.corrections?.length && review.corrections.every(fix => fix.role === "design");
-    changes = { ...changes, state: "generating", phase: designOnly ? "design" : "author", cursor, feedback: `${studioReviewFeedback(review)}\nПобажання тата: ${feedback}` };
+    changes = { ...changes, state: "generating", publicationRevision: project.publicationRevision || project.state === "published", phase: designOnly ? "design" : "author", cursor, feedback: `${studioReviewFeedback(review)}\nПобажання тата: ${feedback}` };
   } else {
     if (!["failed", "paused"].includes(project.state)) throw new Error("Продовження доступне після паузи або збою етапу.");
     changes.state = project.phase === "plan" ? "planning" : project.phase === "publish" ? "publishing" : "generating";

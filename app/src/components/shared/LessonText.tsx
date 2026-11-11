@@ -4,6 +4,7 @@ import { Fragment } from "react";
 import { MathText } from "./MathText";
 
 type TextBlock =
+  | { kind: "table"; headers: string[]; rows: string[][] }
   | { kind: "code"; text: string }
   | { kind: "paragraph" | "quote"; text: string }
   | { kind: "heading"; text: string; level: number }
@@ -12,6 +13,10 @@ type TextBlock =
 /** Small presentation-only subset: paragraphs, explicit headings, lists and
  * emphasis. HTML, links and embedded instructions stay escaped plain text.
  * Display-math fences keep their original newlines, even across blank lines. */
+function tableCells(line: string): string[] {
+  return line.trim().replace(/^\\?\|/, "").replace(/\|\s*$/, "").split(/(?<!\\)\|/).map(cell => cell.trim().replace(/\\\|/g, "|"));
+}
+const tableSeparator = (line: string) => { const cells = tableCells(line); return cells.length >= 2 && cells.every(cell => /^:?-{3,}:?$/.test(cell)); };
 export function lessonTextBlocks(text: string): TextBlock[] {
   const blocks: TextBlock[] = [];
   let paragraph: string[] = [];
@@ -21,7 +26,14 @@ export function lessonTextBlocks(text: string): TextBlock[] {
     if (paragraph.length) blocks.push({ kind: "paragraph", text: paragraph.join("\n") });
     paragraph = [];
   };
-  for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
+  const sourceLines = text.replace(/\r\n/g, "\n").split("\n");
+  const inputLines = [...sourceLines];
+  for (let lineIndex = 0; lineIndex < inputLines.length; lineIndex++) {
+    let line = inputLines[lineIndex]!;
+    if (!code && !inDisplayMath && /\|\s*:?-{3,}:?\s*\|/.test(line) && /\|\s+\|/.test(line)) {
+      const rows = line.split(/(?<=\|)\s+(?=\|)/);
+      inputLines.splice(lineIndex, 1, ...rows); line = rows[0]!;
+    }
     if (/^\s*```/.test(line) && !inDisplayMath) {
       if (code) { blocks.push({ kind: "code", text: code.join("\n") }); code = null; }
       else { flush(); code = []; }
@@ -34,8 +46,20 @@ export function lessonTextBlocks(text: string): TextBlock[] {
       if (fences % 2) inDisplayMath = !inDisplayMath;
       continue;
     }
+    if (/^\s*\\?\|/.test(line) && inputLines[lineIndex + 1] && tableSeparator(inputLines[lineIndex + 1]!)) {
+      const headers = tableCells(line); const rows: string[][] = [];
+      let next = lineIndex + 2;
+      while (next < inputLines.length && /^\s*\|/.test(inputLines[next]!)) {
+        const cells = tableCells(inputLines[next]!);
+        if (cells.length !== headers.length) break;
+        rows.push(cells); next++;
+      }
+      if (headers.length === tableCells(inputLines[lineIndex + 1]!).length) {
+        flush(); blocks.push({ kind: "table", headers, rows }); lineIndex = next - 1; continue;
+      }
+    }
     if (!line.trim()) { flush(); continue; }
-    const heading = /^(#{1,4})\s+(.+)$/.exec(line);
+    const heading = /^(#{1,6})\s+(.+)$/.exec(line);
     if (heading) {
       flush();
       blocks.push({ kind: "heading", level: Math.min(6, heading[1]!.length + 3), text: heading[2]! });
@@ -78,6 +102,7 @@ function InlineText({ text }: { text: string }) {
 export function LessonText({ text, preserveLines = false, reflow = false }: { text: string; preserveLines?: boolean; reflow?: boolean }) {
   if (preserveLines) return <div className="lesson-prose lesson-prose--reading"><div className="lesson-prose__paragraph"><MathText text={text} /></div></div>;
   return <div className={`lesson-prose${reflow ? " lesson-prose--reflow" : ""}`}>{lessonTextBlocks(text).map((block, index) => {
+    if (block.kind === "table") return <div key={index} role="region" aria-label="Навчальна таблиця" tabIndex={0} className="my-4 max-w-full overflow-x-auto rounded-xl border border-line"><table className="w-full border-collapse text-left text-sm"><thead className="bg-surface-alt"><tr>{block.headers.map((header, cell) => <th key={cell} scope="col" className="min-w-32 border-b border-line px-3 py-3 font-extrabold"><InlineText text={header} /></th>)}</tr></thead><tbody>{block.rows.map((row, rowIndex) => <tr key={rowIndex} className="even:bg-surface-alt">{row.map((cell, cellIndex) => <td key={cellIndex} className="border-b border-line px-3 py-3 align-top"><InlineText text={cell} /></td>)}</tr>)}</tbody></table></div>;
     if (block.kind === "code") return <pre key={index} className="max-w-full overflow-x-auto rounded-xl border border-line bg-surface-alt p-4 text-sm"><code>{block.text}</code></pre>;
     if (block.kind === "heading") {
       const Heading = `h${block.level}` as "h4" | "h5" | "h6";
