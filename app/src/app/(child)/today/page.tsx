@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SchoolReminder } from "@/components/eschool/SchoolReminder";
 import { childTiles, sortedNav } from "@/core/registries/navigation";
 import { sourceTypes } from "@/core/registries/learning";
 import { uk } from "@/i18n/uk";
@@ -60,6 +61,7 @@ export default async function TodayPage() {
       </header>
 
       <nav className="flex flex-wrap gap-2.5 px-6 pb-3.5">
+        <Link href="/school" className="flex min-h-12 items-center gap-1.5 rounded-2xl border border-line bg-surface px-4 text-sm font-bold">📅 Шкільний щоденник і ДЗ</Link>
         <Link href="/library" className="flex min-h-12 items-center gap-1.5 rounded-2xl border border-line bg-surface px-4 text-sm font-bold">📚 Бібліотека й аудіокниги</Link>
         <Link href="/my-tutor" className="flex min-h-12 items-center gap-1.5 rounded-2xl border border-line bg-surface px-4 text-sm font-bold">
           {t.myTutor}
@@ -72,6 +74,7 @@ export default async function TodayPage() {
         </Link>
       </nav>
 
+      <SchoolReminder familyId={ctx.familyId} childId={profile.id} />
       <main className="grid grid-cols-1 gap-5 px-6 pt-3 landscape:min-[900px]:grid-cols-[1.15fr_0.85fr] landscape:min-[900px]:items-start">
         <section className="rounded-[22px] bg-[linear-gradient(120deg,var(--accent-voice),var(--primary))] p-6 text-white shadow-lg">
           <b className="block text-lg">{t.emptyPlanTitle}</b>

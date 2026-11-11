@@ -4,11 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import type { HomeworkFormat, HomeworkView } from "@/lib/homework";
 import type { VoiceTarget } from "@/lib/voice";
 import { LessonText } from "@/components/shared/LessonText";
-interface Props { target: VoiceTarget; lessonTitle: string; backHref: string; pages: number[]; initial: HomeworkView[]; initialId?: string; }
-export function HomeworkWorkspace({ target, lessonTitle, backHref, pages, initial, initialId }: Props) {
+interface Props { target: VoiceTarget; lessonTitle: string; backHref: string; pages: number[]; initial: HomeworkView[]; initialId?: string; initialQuestion?: string; assignmentId?: string; }
+export function HomeworkWorkspace({ target, lessonTitle, backHref, pages, initial, initialId, initialQuestion = "", assignmentId }: Props) {
   const [works, setWorks] = useState(initial);
   const [current, setCurrent] = useState<HomeworkView | null>(initial.find(item => item.id === initialId) ?? null);
-  const [question, setQuestion] = useState("");
+  const [question, setQuestion] = useState(initialQuestion);
   const [format, setFormat] = useState<HomeworkFormat>(current?.work.format ?? "chat");
   const [selectedPages, setSelectedPages] = useState<number[]>([]);
   const [files, setFiles] = useState<File[]>([]);
@@ -57,7 +57,7 @@ export function HomeworkWorkspace({ target, lessonTitle, backHref, pages, initia
     const id = current?.id ?? (draftId.current ||= crypto.randomUUID()); activeId.current = id;
     const signature = JSON.stringify([id, question.trim(), format, selectedPages, files.map(file => [file.name, file.size, file.lastModified])]);
     if (request.current.signature !== signature) request.current = { signature, id: crypto.randomUUID() };
-    const data = new FormData(); data.set("command", JSON.stringify({ id, requestId: request.current.id, revision: current?.work.revision ?? 0, question: question.trim(), format, pages: selectedPages, target }));
+    const data = new FormData(); data.set("command", JSON.stringify({ id, requestId: request.current.id, revision: current?.work.revision ?? 0, question: question.trim(), format, pages: selectedPages, target, ...(current?.work.assignmentId || assignmentId ? { assignmentId: current?.work.assignmentId ?? assignmentId } : {}) }));
     files.forEach(file => data.append("files", file));
     try {
       const response = await fetch("/api/homework", { method: "POST", body: data }); const body = await response.json();

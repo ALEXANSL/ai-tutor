@@ -12,17 +12,18 @@ import { safetyPreambleUk } from "@/server/safety/preamble";
 import { URGENT_REPLY_UK } from "@/server/safety/urgentReplyUk";
 import type { homeworkUploads } from "./uploads";
 
-export async function beginHomework(familyId: string, childId: string, id: string, source: Awaited<ReturnType<typeof homeworkSource>>, input: { requestId: string; question: string; format: HomeworkFormat; pages: number[]; files: string[]; revision: number }) {
+export async function beginHomework(familyId: string, childId: string, id: string, source: Awaited<ReturnType<typeof homeworkSource>>, input: { requestId: string; question: string; format: HomeworkFormat; pages: number[]; files: string[]; revision: number; assignmentId?: string }) {
   let work = await readHomework(familyId, childId, id);
   if (work?.turns.some(turn => turn.requestId === input.requestId)) return { work, started: false };
   if (work && (work.state === "running" || work.revision !== input.revision || work.lessonKey !== source.lessonKey)) throw new Error("Робота вже готується або змінилась. Онови її перед наступним запитом.");
+  if (work?.assignmentId && input.assignmentId && work.assignmentId !== input.assignmentId) throw new Error("Ця робота прив’язана до іншого шкільного завдання. Почни нову роботу.");
   if (work && work.turns.length >= 30) throw new Error("Цей діалог уже довгий. Почни нову роботу — попередню збережено.");
   const at = new Date().toISOString();
   const turn = { requestId: input.requestId, question: input.question, format: input.format, pages: input.pages, files: input.files, answer: null, at };
   if (!work) {
-    work = { version: 1, revision: 0, childId, lessonKey: source.lessonKey, target: source.target, title: input.question.slice(0, 100), lessonTitle: source.lessonTitle, backHref: source.backHref, context: source.context, subject: source.subject, topic: source.topic, createdAt: at, updatedAt: at, state: "running", activeRequestId: input.requestId, turns: [turn], result: null, format: input.format, error: null };
+    work = { version: 1, revision: 0, ...(input.assignmentId ? { assignmentId: input.assignmentId } : {}), childId, lessonKey: source.lessonKey, target: source.target, title: input.question.slice(0, 100), lessonTitle: source.lessonTitle, backHref: source.backHref, context: source.context, subject: source.subject, topic: source.topic, createdAt: at, updatedAt: at, state: "running", activeRequestId: input.requestId, turns: [turn], result: null, format: input.format, error: null };
     await createHomework(familyId, id, work);
-  } else work = await saveHomework(familyId, id, work, { state: "running", activeRequestId: input.requestId, turns: [...work.turns, turn], format: input.format, error: null, context: source.context, target: source.target });
+  } else work = await saveHomework(familyId, id, work, { ...(input.assignmentId ? { assignmentId: input.assignmentId } : {}), state: "running", activeRequestId: input.requestId, turns: [...work.turns, turn], format: input.format, error: null, context: source.context, target: source.target });
   return { work, started: true };
 }
 export async function runHomework(familyId: string, childId: string, id: string, requestId: string, source: Awaited<ReturnType<typeof homeworkSource>>, uploads: Awaited<ReturnType<typeof homeworkUploads>>) {

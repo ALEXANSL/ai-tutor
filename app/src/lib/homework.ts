@@ -15,7 +15,7 @@ export const homeworkResultSchema = z.object({
 export type HomeworkResult = z.infer<typeof homeworkResultSchema>;
 export interface HomeworkTurn { requestId: string; question: string; format: HomeworkFormat; pages: number[]; files: string[]; answer: string | null; at: string; }
 export interface HomeworkWork {
-  version: 1; revision: number; childId: string; lessonKey: string; target: VoiceTarget;
+  version: 1; revision: number; assignmentId?: string; childId: string; lessonKey: string; target: VoiceTarget;
   title: string; lessonTitle: string; backHref: string; context: string; subject: string; topic: string;
   createdAt: string; updatedAt: string; state: "running" | "ready" | "failed"; activeRequestId: string | null;
   turns: HomeworkTurn[]; result: HomeworkResult | null; format: HomeworkFormat; error: string | null;
