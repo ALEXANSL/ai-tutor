@@ -4,7 +4,7 @@ import type { HomeworkWork } from "@/lib/homework";
 import type { homeworkSource } from "./source";
 const f = vi.hoisted(() => ({ read: vi.fn(), create: vi.fn(), save: vi.fn(), call: vi.fn(), moderate: vi.fn(), event: vi.fn(), pages: vi.fn() }));
 vi.mock("./store", () => ({ readHomework: f.read, createHomework: f.create, saveHomework: f.save }));
-vi.mock("@/server/lessons/tutorModel", () => ({ callLessonTutor: f.call, tutorFailureMessage: () => "Не вдалося отримати відповідь." }));
+vi.mock("@/server/lessons/tutorModel", () => ({ callLessonTutor: f.call, tutorFailureMessage: () => "Не вдалося отримати відповідь. Запит залишився у полі — спробуй ще раз." }));
 vi.mock("@/server/safety/moderate", () => ({ moderateMessage: f.moderate }));
 vi.mock("@/server/safety/events", () => ({ recordSafetyEvent: f.event }));
 vi.mock("@/server/lessons/chatPages", () => ({ resolveChatPages: f.pages }));
@@ -36,7 +36,7 @@ it("includes real lesson context, prior artifact, dialogue and selected pages wh
 it("keeps the last successful artifact after failures and never automatically retries a model call", async () => {
   await beginHomework("family", "child", "id", source, input); f.call.mockRejectedValueOnce(new Error("timeout"));
   await runHomework("family", "child", "id", "next", source, { names: [], documents: [], text: "" });
-  expect(work?.state).toBe("failed"); expect(work?.result?.artifact).toEqual(homeworkArtifact);
+  expect(work?.state).toBe("failed"); expect(work?.error).not.toContain("залишився у полі"); expect(work?.error).toContain("збережено в діалозі"); expect(work?.result?.artifact).toEqual(homeworkArtifact);
   await runHomework("family", "child", "id", "next", source, { names: [], documents: [], text: "" }); expect(f.call).toHaveBeenCalledTimes(1);
 });
 it("handles urgent moderation before content generation and clears the visible artifact", async () => {
