@@ -5,6 +5,7 @@ import { TutorAvatar, type VoiceState } from "@/components/TutorAvatar";
 import { stopCurrentlyPlaying } from "@/components/shared/singleAudioPlayback";
 import { uk } from "@/i18n/uk";
 import type { VoiceTarget, VoiceTurn } from "@/lib/voice";
+import { documentAllowsMicrophone } from "./microphonePolicy";
 import { playWaitingFeedback } from "./waitingFeedback";
 
 type Phase = "idle" | "connecting" | "listening" | "recording" | "thinking" | "speaking" | "muted";
@@ -44,6 +45,7 @@ function VoiceSession({ target, onTurn, onActiveChange }: Props) {
   const owner = useId();
   const [phase, setPhase] = useState<Phase>("idle");
   const [notice, setNotice] = useState("");
+  const [policyBlocked, setPolicyBlocked] = useState(false);
   const [ending, setEnding] = useState(false);
   const [waitSeconds, setWaitSeconds] = useState(0);
   // UI/UX decision 2026-10-22: sound feedback defaults OFF — a child could be
@@ -182,6 +184,8 @@ function VoiceSession({ target, onTurn, onActiveChange }: Props) {
       setNotice(t.unsupported);
       return;
     }
+    if (documentAllowsMicrophone() === false) { setPolicyBlocked(true); setNotice(t.documentPolicyBlocked); return; }
+    setPolicyBlocked(false);
     const token = ++generation.current;
     active.current = true;
     callbacks.current.onActiveChange?.(true);
@@ -406,11 +410,12 @@ function VoiceSession({ target, onTurn, onActiveChange }: Props) {
         {waitSeconds >= 12 && <p role="status">{t.waitSlow}</p>}
       </div>}
       <div className="flex flex-wrap gap-2">
+        {policyBlocked && <button type="button" onClick={() => window.location.reload()} className="min-h-12 rounded-2xl border-2 border-line px-4 font-bold">Оновити сторінку</button>}
         {phase === "idle" ? (
           <button type="button" onClick={() => void start()} className="min-h-12 rounded-2xl bg-secondary px-4 font-bold text-white transition-transform active:scale-[0.97]">{t.start}</button>
         ) : <>
           {phase === "speaking" && !ending && <button type="button" onClick={interrupt} className="min-h-12 rounded-2xl border-2 border-line px-4 font-bold transition-transform active:scale-[0.97]">{t.interrupt}</button>}
-          {!ending && <button type="button" onClick={toggleMute} className="min-h-12 rounded-2xl border-2 border-line px-4 font-bold transition-transform active:scale-[0.97]">{isMuted ? t.unmute : t.mute}</button>}
+          {!ending && phase !== "connecting" && <button type="button" onClick={toggleMute} className="min-h-12 rounded-2xl border-2 border-line px-4 font-bold transition-transform active:scale-[0.97]">{isMuted ? t.unmute : t.mute}</button>}
           <button type="button" onClick={() => stop()} className="min-h-12 rounded-2xl border-2 border-line px-4 font-bold transition-transform active:scale-[0.97]">{t.stop}</button>
         </>}
       </div>

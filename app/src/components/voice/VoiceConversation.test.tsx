@@ -472,3 +472,19 @@ describe("VoiceConversation microphone and session lifecycle", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 });
+
+it("explains a document-policy block before opening a lease or asking for microphone access", async () => {
+  const previous = Object.getOwnPropertyDescriptor(document, "featurePolicy");
+  Object.defineProperty(document, "featurePolicy", { configurable: true, value: { allowsFeature: () => false } });
+  try {
+    await start(); expect(fetchMock).not.toHaveBeenCalled(); expect(microphone).not.toHaveBeenCalled(); expect(contexts).toHaveLength(0);
+    expect(container.textContent).toContain("Ця сторінка блокує мікрофон"); expect(button("Оновити сторінку")).toBeDefined();
+    expect(onActiveChange).not.toHaveBeenCalled();
+  } finally { if (previous) Object.defineProperty(document, "featurePolicy", previous); else Reflect.deleteProperty(document, "featurePolicy"); }
+});
+
+it("does not offer mute while the connection has not opened a microphone yet", async () => {
+  const pending = deferred<Response>(); fetchMock.mockImplementationOnce(() => pending.promise);
+  await start(); expect(container.textContent).toContain("Підключаю голос"); expect(button("🔇 Мікрофон на паузу")).toBeUndefined(); expect(button("Завершити голос")).toBeDefined();
+  await act(async () => { pending.resolve(response(lease)); }); expect(button("🔇 Мікрофон на паузу")).toBeDefined();
+});

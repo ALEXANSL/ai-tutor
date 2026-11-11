@@ -15,8 +15,10 @@ const securityHeaders = [
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-  // Microphone/camera are enabled per-screen in later slices (S10, S13).
-  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+  // A single document survives Next client navigation. Per-route microphone
+  // denials persist after navigating from /today or /login to a voice lesson.
+  // Allow only this origin; recording still needs an explicit tap + browser consent.
+  { key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=()" },
 ];
 
 const nextConfig: NextConfig = {
@@ -38,9 +40,6 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
-      ...["/library/:path*", "/lesson/:path*", "/math-course-v2/:path*", "/literature-course-v2/:path*", "/literature-v3/:path*"].map(source => ({
-        source, headers: [{ key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=()" }],
-      })),
     ];
   },
 };
