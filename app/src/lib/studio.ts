@@ -36,3 +36,10 @@ export interface StudioProject {
 }
 export const studioStateLabels: Record<StudioState, string> = { planning: "Готуємо план", plan_ready: "План готовий", generating: "Готуємо уроки", ready: "Готово до перегляду", needs_changes: "Потрібні виправлення", failed: "Етап не завершено", paused: "Призупинено татом", publishing: "Публікуємо", published: "Доступно дитині", withdrawn: "Доступ вимкнено" };
 export function studioActive(state: StudioState) { return ["planning", "generating", "publishing"].includes(state); }
+
+/** Read-only queue observation returned to the authenticated parent, not a claim of provider progress. */
+export interface StudioActivity {
+  queue: "queued" | "running" | "finished" | "interrupted" | "unavailable" | "none";
+  checkedAt: string;
+  runAfter?: string | null;
+}

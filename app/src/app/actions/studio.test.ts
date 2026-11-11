@@ -1,6 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { studioProjectFixture } from "@/server/studio/__fixtures__/project";
-const f = vi.hoisted(() => ({ parent: vi.fn(), child: vi.fn(), start: vi.fn(), resume: vi.fn(), pause: vi.fn(), read: vi.fn(), save: vi.fn(), kick: vi.fn(), links: vi.fn(), text: vi.fn(), cleanup: vi.fn() }));
+const f = vi.hoisted(() => ({ parent: vi.fn(), child: vi.fn(), start: vi.fn(), resume: vi.fn(), pause: vi.fn(), read: vi.fn(), save: vi.fn(), kick: vi.fn(), links: vi.fn(), text: vi.fn(), cleanup: vi.fn(), step: vi.fn(), scope: vi.fn() }));
+vi.mock("@/server/db/family-scope", () => ({ forFamily: (family: string) => { f.scope(family); const q = { eq: () => q, order: () => q, limit: () => q, maybeSingle: f.step }; return { select: () => q }; } }));
 vi.mock("@/server/auth/guards", () => ({ requireParentAccess: f.parent, requireChild: f.child }));
 vi.mock("@/server/studio/workflow", () => ({ startStudio: f.start, resumeStudio: f.resume, pauseStudio: f.pause }));
 vi.mock("@/server/studio/store", () => ({ readStudioProject: f.read, saveStudioProject: f.save, STUDIO_STEP: "studio.step" }));
@@ -30,4 +31,16 @@ it("provides only whitelisted public lesson navigation to the authenticated chil
 it("does not turn empty PDF-page labels into source material for an image-only scan", async () => {
   f.text.mockResolvedValue({ text: Array(10).fill("   "), totalPages: 10 }); const form = new FormData(); form.set("file", new File(["pdf-fixture"], "scan.pdf", { type: "application/pdf" }));
   const result = await extractStudioFileAction(form); expect(result.status).toBe("error"); if (result.status === "error") expect(result.message).toContain("текстового шару"); expect(f.cleanup).toHaveBeenCalled();
+});
+
+it("reports queued versus running work from the parent family without starting a second paid task", async () => {
+  f.read.mockResolvedValue(studioProjectFixture({ state: "generating", phase: "author" }));
+  f.step.mockResolvedValue({ data: { status: "queued", run_after: "2026-11-11T14:00:00Z" }, error: null });
+  const queued = await pollStudioAction(id); expect(queued).toMatchObject({ status: "ok", activity: { queue: "queued", runAfter: "2026-11-11T14:00:00Z" } }); expect(f.kick).toHaveBeenCalledWith("own-family", id); expect(f.scope).toHaveBeenCalledWith("own-family");
+  f.kick.mockClear(); f.step.mockResolvedValue({ data: { status: "running", locked_until: "2099-01-01T00:00:00Z" }, error: null });
+  expect(await pollStudioAction(id)).toMatchObject({ status: "ok", activity: { queue: "running" } }); expect(f.kick).not.toHaveBeenCalled(); expect(f.resume).not.toHaveBeenCalled();
+});
+it("reports an unavailable status lookup without claiming a provider is working", async () => {
+  f.read.mockResolvedValue(studioProjectFixture({ state: "generating" })); f.step.mockResolvedValue({ data: null, error: { message: "private database error" } });
+  const result = await pollStudioAction(id); expect(result).toMatchObject({ activity: { queue: "unavailable" } }); expect(JSON.stringify(result)).not.toContain("private database error");
 });
