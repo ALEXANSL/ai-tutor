@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { uk } from "@/i18n/uk";
 
 const t = uk.child.subject;
@@ -16,12 +16,23 @@ export function LastLessonHighlight({
   subjectId,
   topicId,
   children,
+  focusRequest,
+  schoolContext = false,
 }: {
   subjectId: string;
   topicId: string;
   children: React.ReactNode;
+  focusRequest?: string;
+  schoolContext?: boolean;
 }) {
   const [isLast, setIsLast] = useState(false);
+  const card = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!focusRequest) return;
+    const frame = requestAnimationFrame(() => card.current?.scrollIntoView({ block: "center", behavior: "instant" }));
+    return () => cancelAnimationFrame(frame);
+  }, [focusRequest]);
+  const highlighted = !!focusRequest || (isLast && !schoolContext);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,11 +54,14 @@ export function LastLessonHighlight({
 
   return (
     <div
-      className={isLast ? "relative rounded-[22px] ring-2 ring-primary" : ""}
+      ref={card}
+      id={`topic-${topicId}`}
+      aria-current={focusRequest ? "location" : undefined}
+      className={highlighted ? "relative rounded-[22px] ring-2 ring-primary" : ""}
     >
-      {isLast && (
+      {highlighted && (
         <span className="absolute -top-2.5 left-3 rounded-full bg-primary px-2 py-0.5 text-xs font-bold text-white">
-          ▶ {t.continueBadge}
+          {focusRequest ? "Тема зі щоденника" : `▶ ${t.continueBadge}`}
         </span>
       )}
       {children}
