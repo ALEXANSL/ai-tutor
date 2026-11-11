@@ -6,7 +6,7 @@ import { AiNotConfiguredError, type ModelRoute } from "@/server/ai/types";
 import { createServiceClient } from "@/server/supabase/clients";
 import { forFamily } from "@/server/db/family-scope";
 export type StudioRole = "studio.plan" | "studio.author" | "studio.design" | "studio.review";
-const OUTPUT: Record<StudioRole, number> = { "studio.plan": 4500, "studio.author": 12000, "studio.design": 3500, "studio.review": 3500 };
+const OUTPUT: Record<StudioRole, number> = { "studio.plan": 4500, "studio.author": 12000, "studio.design": 5000, "studio.review": 6000 };
 export async function studioModelConfig(familyId: string, role: StudioRole) {
   const db = createServiceClient();
   const price = await db.from("model_prices").upsert({ provider: "openai", model: "gpt-5.4", input_usd_per_mtok: 2.5, output_usd_per_mtok: 15, cache_read_usd_per_mtok: 0.25, notes: "GPT-5.4 <=272K tokens; verified official model page 2026-11-09; preserve owner overrides." }, { onConflict: "provider,model", ignoreDuplicates: true });

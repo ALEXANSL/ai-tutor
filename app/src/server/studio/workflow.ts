@@ -1,7 +1,7 @@
 import "server-only";
 import { AiNotConfiguredError, BudgetBlockedError } from "@/server/ai/types";
 import { randomUUID } from "node:crypto";
-import { studioDesignSchema, studioLessonSchema, studioPlanSchema, studioReviewSchema, studioActive, type StudioPlan, type StudioProject, type StudioRequest } from "@/lib/studio";
+import { studioDesignSchema, studioLessonSchema, studioPlanSchema, studioReviewResponseSchema, studioActive, type StudioPlan, type StudioProject, type StudioRequest } from "@/lib/studio";
 import { enqueueJob, registerJobHandler, type JobRow } from "@/server/jobs/runner";
 import { forFamily } from "@/server/db/family-scope";
 import { loadStudioSources } from "./sources";
@@ -9,6 +9,11 @@ import { createStudioProject, readStudioProject, saveStudioProject, STUDIO_STEP 
 import { callStudioModel, studioModelConfig, studioReservation, type StudioRole } from "./model";
 import { studioSystem } from "./prompts";
 import { activateStudioPublication, prepareStudioPublication } from "./publish";
+
+function studioReviewFeedback(review: import("@/lib/studio").StudioReview | null | undefined): string {
+  if (!review) return "";
+  return JSON.stringify({ summary: review.summary, issues: review.issues, corrections: review.corrections ?? [], instruction: "Виправ перелічене у попередньому candidate. Збережи коректні частини. Старі зауваження перевір заново за чинним контрактом; не виконуй вимоги, що суперечать йому." });
+}
 
 export async function scheduleStudio(familyId: string, id: string, token: string) {
   await enqueueJob(familyId, STUDIO_STEP, { projectId: id, token }, { dedupeKey: `studio:${id}:${token}`, maxAttempts: 1 });
@@ -56,9 +61,9 @@ export async function runStudioStep(job: JobRow, deadline: number) {
     await saveStudioProject(job.family_id, id, project, { state: "published", error: null }); return;
   }
   const role: StudioRole = project.phase === "plan" ? "studio.plan" : project.phase === "author" ? "studio.author" : project.phase === "design" ? "studio.design" : "studio.review";
-  const schema = project.phase === "plan" ? studioPlanSchema : project.phase === "author" ? studioLessonSchema : project.phase === "design" ? studioDesignSchema : studioReviewSchema;
+  const schema = project.phase === "plan" ? studioPlanSchema : project.phase === "author" ? studioLessonSchema : project.phase === "design" ? studioDesignSchema : studioReviewResponseSchema;
   const system = studioSystem(role);
-  const prompt = JSON.stringify({ request: { ...project.request, sourceText: undefined, grade: undefined, subjectId: undefined, topicId: undefined, materialId: undefined }, subject: project.subjectName, baseTitle: project.baseTitle, plan: project.plan, currentLesson: project.plan?.lessons[project.cursor] ?? null, sources: project.sources, sourceNotes: project.sourceNotes, feedback: project.feedback, ...(project.phase === "design" || project.phase === "review" ? { candidate: project.phase === "design" ? { title: project.units[project.cursor]?.content.title, objectives: project.units[project.cursor]?.content.objectives, blocks: project.units[project.cursor]?.content.blocks } : project.units[project.cursor] } : {}) });
+  const prompt = JSON.stringify({ request: { ...project.request, sourceText: undefined, grade: undefined, subjectId: undefined, topicId: undefined, materialId: undefined }, subject: project.subjectName, baseTitle: project.baseTitle, plan: project.plan, currentLesson: project.plan?.lessons[project.cursor] ?? null, sources: project.sources, sourceNotes: project.sourceNotes, feedback: project.feedback, ...(project.units[project.cursor] ? { candidate: { content: project.phase === "design" ? { title: project.units[project.cursor]!.content.title, objectives: project.units[project.cursor]!.content.objectives, blocks: project.units[project.cursor]!.content.blocks } : project.units[project.cursor]!.content, visuals: project.units[project.cursor]!.visuals } } : {}) });
   if (Buffer.byteLength(system + prompt + JSON.stringify(schema.toJSONSchema())) > 250000) throw new Error("STUDIO-CONTEXT");
   const config = await studioModelConfig(job.family_id, role);
   const reserved = studioReservation(system, prompt, schema, config.route.params.max_tokens!, config.rates);
@@ -79,16 +84,18 @@ export async function runStudioStep(job: JobRow, deadline: number) {
   } else {
     const units = [...project.units];
     if (project.phase === "author") {
-      units[project.cursor] = { content: validateStudioLesson(project, result.result), visuals: [], review: null }; changes.phase = "design";
+      units[project.cursor] = { content: validateStudioLesson(project, result.result), visuals: units[project.cursor]?.visuals ?? [], review: null }; changes.phase = "design";
     } else if (project.phase === "design") {
       const { visuals } = studioDesignSchema.parse(result.result);
       if (visuals.some(visual => visual.blockIndex >= units[project.cursor]!.content.blocks.length || (visual.kind === "dimensions" && (!visual.width || !visual.height || !visual.unit)))) throw new Error("STUDIO-VISUAL-REF");
       units[project.cursor] = { ...units[project.cursor]!, visuals }; changes.phase = "review";
     } else {
-      const review = studioReviewSchema.parse(result.result);
-      if (review.verdict === "pass" && review.issues.length) throw new Error("STUDIO-REVIEW-CONFLICT");
+      const review = studioReviewResponseSchema.parse(result.result);
+      if (review.corrections.some(fix => (fix.blockIndex !== null && fix.blockIndex >= units[project.cursor]!.content.blocks.length) || (fix.visualIndex !== null && fix.visualIndex >= units[project.cursor]!.visuals.length))) throw new Error("STUDIO-CORRECTION-REF");
+      if (review.verdict !== "pass" && (!review.corrections.length || review.corrections.length !== review.issues.length)) throw new Error("STUDIO-CORRECTION-MISSING");
+      if (review.verdict === "pass" && (review.issues.length || review.corrections.length)) throw new Error("STUDIO-REVIEW-CONFLICT");
       units[project.cursor] = { ...units[project.cursor]!, review };
-      if (review.verdict !== "pass") Object.assign(changes, { state: "needs_changes", feedback: review.issues.join("\n") || review.summary });
+      if (review.verdict !== "pass") Object.assign(changes, { state: "needs_changes", feedback: studioReviewFeedback(review) });
       else {
         const next = project.plan!.lessons.findIndex((_lesson, index) => units[index]?.review?.verdict !== "pass");
         if (next < 0) changes.state = "ready";
@@ -118,7 +125,11 @@ export async function resumeStudio(familyId: string, id: string, revision: numbe
   } else if (command === "revise") {
     const cursor = lessonIndex ?? project.cursor;
     if (!["needs_changes", "ready"].includes(project.state) || !Number.isSafeInteger(cursor) || !project.units[cursor]) throw new Error("Немає уроку для виправлення.");
-    changes = { ...changes, state: "generating", phase: "author", cursor, feedback: `${project.units[cursor]!.review?.issues.join("\n") || project.units[cursor]!.review?.summary || ""}\nПобажання тата: ${feedback}` };
+    const review = project.units[cursor]!.review;
+    // Only structured, exclusively visual corrections can skip authoring. Legacy reviews
+    // and parent instructions still receive a full, contextual revision.
+    const designOnly = !feedback.trim() && review?.corrections?.length && review.corrections.every(fix => fix.role === "design");
+    changes = { ...changes, state: "generating", phase: designOnly ? "design" : "author", cursor, feedback: `${studioReviewFeedback(review)}\nПобажання тата: ${feedback}` };
   } else {
     if (!["failed", "paused"].includes(project.state)) throw new Error("Продовження доступне після паузи або збою етапу.");
     changes.state = project.phase === "plan" ? "planning" : project.phase === "publish" ? "publishing" : "generating";
