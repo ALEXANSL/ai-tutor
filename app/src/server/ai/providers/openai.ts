@@ -260,7 +260,7 @@ export async function openaiTts(req: OpenAiTtsRequest, fetchImpl: typeof fetch =
         model: req.model,
         input: req.text,
         voice: req.voiceId ?? "alloy",
-        instructions: req.instructions ?? "Читай тепло й спокійно, українською, як аудіокнигу — не як озвучений слайд.",
+        ...(req.model.startsWith("gpt-") ? { instructions: req.instructions ?? "Читай тепло й спокійно, українською, як аудіокнигу — не як озвучений слайд." } : {}),
         response_format: "mp3",
         // D-111 п.5: PO reported narration felt too slow and asked for
         // ~10-15% faster; the API supports 0.25-4.0 (default 1.0) but this

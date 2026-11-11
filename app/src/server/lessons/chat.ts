@@ -1,4 +1,5 @@
 import "server-only";
+import { isLibraryReadingRequest, libraryReadingHandoff, validLibraryLink } from "@/server/audiobooks/handoff";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -105,6 +106,7 @@ interface ChatChunkRow {
 }
 
 export interface ChatMessageView {
+  libraryLink?: { href: string; label: string };
   id: string;
   author: "child" | "ai" | "system" | "parent";
   content: string;
@@ -499,11 +501,11 @@ async function homeworkProblemFlow(
 export async function listChatMessages(familyId: string, childProfileId: string, subjectId: string, topicId: string): Promise<{ chatId: string; messages: ChatMessageView[] }> {
   const chatId = await getOrCreateTopicChat(familyId, childProfileId, subjectId, topicId);
   const { data } = await forFamily(familyId)
-    .select("messages", "id, author, content, created_at")
+    .select("messages", "id, author, content, created_at, meta")
     .eq("chat_id", chatId)
     .order("created_at")
-    .returns<{ id: string; author: ChatMessageView["author"]; content: string; created_at: string }[]>();
-  return { chatId, messages: (data ?? []).map((m) => ({ id: m.id, author: m.author, content: m.content, createdAt: m.created_at })) };
+    .returns<{ id: string; author: ChatMessageView["author"]; content: string; created_at: string; meta?: { libraryLink?: unknown } }[]>();
+  return { chatId, messages: (data ?? []).map((m) => ({ id: m.id, author: m.author, content: m.content, createdAt: m.created_at, ...(validLibraryLink(m.meta?.libraryLink) ? { libraryLink: m.meta!.libraryLink } : {}) })) };
 }
 
 /** Lesson-grounded questions and broader dialogue; cite only provided source pages. */
@@ -534,6 +536,16 @@ export async function askTopicChat(
   const lessonMeta = options.lessonRef ? { kind: "lesson_tutor_turn", lessonKind: options.lessonRef.kind, lessonId: options.lessonRef.lessonId, currentItemId: options.lessonRef.currentItemId, focusReset, ...(options.sourcePages?.length ? { sourcePages: options.sourcePages } : {}) } : undefined;
   const { error: transcriptError } = await scope.client.from("messages").insert({ family_id: familyId, chat_id: chatId, session_id: sessionId ?? null, author: "child", type: options.voice ? "voice_transcript" : "text", content: cleanQuestion, ...(lessonMeta ? { meta: lessonMeta } : {}) });
   if (options.voice && transcriptError) throw new Error("saving voice transcript failed");
+
+  // Exact library reading is a retrieval/playback action, never a model's invented continuation.
+  if (isLibraryReadingRequest(cleanQuestion) && !options.documents?.length) {
+    const moderated = await moderation;
+    await recordSafetyEvent(familyId, childProfileId, "tutor_chat", cleanQuestion, moderated, { sessionId, chatId }).catch(() => {});
+    const reply = moderated.severity === "urgent" ? { content: URGENT_REPLY_UK, libraryLink: undefined } : await libraryReadingHandoff(familyId, cleanQuestion);
+    const { data: saved, error } = await scope.client.from("messages").insert({ family_id: familyId, chat_id: chatId, session_id: sessionId ?? null, author: "ai", type: options.voice ? "voice_transcript" : "text", content: reply.content, meta: { ...lessonMeta, ...(reply.libraryLink ? { libraryLink: reply.libraryLink } : {}) } }).select("id,created_at").single<{ id: string; created_at: string }>();
+    if (error || !saved) throw new Error("saving library handoff failed");
+    return { id: saved.id, author: "ai", content: reply.content, createdAt: saved.created_at, ...(reply.libraryLink ? { libraryLink: reply.libraryLink } : {}) };
+  }
 
   // US-8.7 (ADR-029 §4): "поясни задачу №N" and its follow-ups take priority
   // over the plain Q&A path below — same chat, same message box (ADR-028

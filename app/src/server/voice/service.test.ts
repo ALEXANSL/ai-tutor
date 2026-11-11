@@ -149,3 +149,9 @@ describe("voice stage authorization", () => {
     expect(m.stt).not.toHaveBeenCalled();
   });
 });
+
+it("hands off to exact prepared library audio and stops listening before book playback", async () => {
+  m.chat.mockResolvedValue({ ...answer, content: "Знайшла готове аудіо.", libraryLink: { href: "/audiobooks/11111111-1111-4111-8111-111111111111", label: "Слухати книгу" } });
+  const result = await voiceTurn(actor, id, audio); expect(result).toMatchObject({ endConversation: true, endReason: "inactive", message: { libraryLink: { label: "Слухати книгу" } } });
+  expect(m.tts.mock.calls[0]![1].text).toBe("Знайшла готове аудіо.");
+});

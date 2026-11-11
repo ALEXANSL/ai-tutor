@@ -38,7 +38,7 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
-      ...["/lesson/:path*", "/math-course-v2/:path*", "/literature-course-v2/:path*", "/literature-v3/:path*"].map(source => ({
+      ...["/library/:path*", "/lesson/:path*", "/math-course-v2/:path*", "/literature-course-v2/:path*", "/literature-v3/:path*"].map(source => ({
         source, headers: [{ key: "Permissions-Policy", value: "camera=(), microphone=(self), geolocation=()" }],
       })),
     ];

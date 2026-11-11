@@ -41,9 +41,13 @@ vi.mock("@/server/safety/moderate", () => ({ moderateMessage: (...a: unknown[]) 
 const recordSafetyEvent = vi.fn().mockResolvedValue({ flagged: true, urgent: true, eventId: "e1" });
 vi.mock("@/server/safety/events", () => ({ recordSafetyEvent: (...a: unknown[]) => recordSafetyEvent(...a) }));
 
+const libraryHandoff = vi.fn();
+vi.mock("@/server/audiobooks/handoff", async importOriginal => ({ ...await importOriginal<typeof import("@/server/audiobooks/handoff")>(), libraryReadingHandoff: (...a: unknown[]) => libraryHandoff(...a) }));
+
 const { askTopicChat, explainStepAgain } = await import("./chat");
 
 beforeEach(() => {
+  libraryHandoff.mockReset();
   callStructured.mockReset();
   moderateMessage.mockReset();
   recordSafetyEvent.mockClear();
@@ -122,5 +126,21 @@ describe("complete text replies and explicit subject/style", () => {
     expect(insert).not.toHaveBeenCalledWith(expect.objectContaining({ author: "ai" }));
     moderateMessage.mockResolvedValue({ ...safe, severity: "urgent" });
     expect((await askTopicChat(...args, "Потрібна допомога")).content).toContain("зараз піди й скажи про це тату");
+  });
+});
+
+describe("exact book reading handoff", () => {
+  const args = ["fam1", "child1", "Зірочка", "Ліра", "f", "subj1", "Література", "top1", "Твір"] as const;
+  it("uses library retrieval after moderation and persists a clickable action without inventing the book", async () => {
+    moderateMessage.mockResolvedValue({ severity: "none" });
+    const link = { href: "/audiobooks/11111111-1111-4111-8111-111111111111", label: "Слухати книгу" };
+    libraryHandoff.mockResolvedValue({ content: "Знайшла готове аудіо.", libraryLink: link });
+    const reply = await askTopicChat(...args, "прочитай розділ 1", undefined, { voice: true });
+    expect(reply.libraryLink).toEqual(link); expect(libraryHandoff).toHaveBeenCalledWith("fam1", "прочитай розділ 1"); expect(callStructured).not.toHaveBeenCalled();
+    expect(insert).toHaveBeenCalledWith(expect.objectContaining({ author: "ai", type: "voice_transcript", meta: expect.objectContaining({ libraryLink: link }) }));
+  });
+  it("urgent moderation wins over a reading request and does not search the library", async () => {
+    moderateMessage.mockResolvedValue({ severity: "urgent" });
+    const reply = await askTopicChat(...args, "прочитай розділ 1"); expect(reply.content).toContain("скажи про це тату"); expect(reply.libraryLink).toBeUndefined(); expect(libraryHandoff).not.toHaveBeenCalled();
   });
 });

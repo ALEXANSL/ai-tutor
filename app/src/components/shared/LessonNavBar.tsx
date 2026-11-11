@@ -216,6 +216,7 @@ export function LessonNavBar({
             >
               {t.navSubjectList}
             </button>
+            <Link href={courseNav ? `/library?returnTo=${encodeURIComponent(`${courseNav.basePath}/${courseNav.currentLessonId}`)}` : "/library"} className="inline-flex min-h-11 items-center rounded-full border-2 border-line px-3.5 text-sm font-bold" onClick={() => window.dispatchEvent(new Event("lesson-navigation"))}>📚 Бібліотека</Link>
             {videoLessonTopicId && <VideoLessonButton topicId={videoLessonTopicId} />}
             <span className="flex-1" />
             <button
