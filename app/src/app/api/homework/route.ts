@@ -7,11 +7,12 @@ import { sameOrigin } from "@/server/voice/http";
 import { homeworkFormatSchema, homeworkView } from "@/lib/homework";
 import { homeworkSource } from "@/server/homework/source";
 import { homeworkUploads, MAX_HOMEWORK_UPLOAD } from "@/server/homework/uploads";
+import { schoolAssignment, schoolAssignmentPrompt, attachSchoolWork } from "@/server/eschool/homework";
 import { beginHomework, recoverHomework, runHomework } from "@/server/homework/service";
 import { readHomework } from "@/server/homework/store";
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
-const command = z.object({ id: z.string().uuid(), requestId: z.string().uuid(), revision: z.number().int().min(0), question: z.string().trim().min(1).max(20000), format: homeworkFormatSchema, pages: z.array(z.number().int().min(1).max(10000)).max(2), target: z.unknown() }).strict();
+const command = z.object({ id: z.string().uuid(), requestId: z.string().uuid(), revision: z.number().int().min(0), question: z.string().trim().min(1).max(20000), format: homeworkFormatSchema, pages: z.array(z.number().int().min(1).max(10000)).max(2), target: z.unknown(), assignmentId: z.string().uuid().optional() }).strict();
 export async function POST(request: Request) {
   if (!sameOrigin(request)) return NextResponse.json({ message: "Онови сторінку перед запитом." }, { status: 403 });
   const { familyId } = await requireLessonAccess();
@@ -22,11 +23,21 @@ export async function POST(request: Request) {
     const actor = await voiceActor(familyId);
     const source = await homeworkSource(familyId, actor.child.id, value.target);
     if (value.pages.some(page => !source.pages.includes(page))) throw new Error("Вибрана сторінка недоступна в підручнику цього уроку.");
+    const existing = value.assignmentId ? null : await readHomework(familyId, actor.child.id, value.id);
+    const assignmentId = value.assignmentId ?? existing?.assignmentId;
+    if (assignmentId) {
+      value.assignmentId = assignmentId;
+      const assignment = await schoolAssignment(familyId, actor.child.id, assignmentId, source.resolved.subjectId);
+      source.context += `\nАКТУАЛЬНЕ ЗАВДАННЯ ЗІ ЩОДЕННИКА:\n${schoolAssignmentPrompt(assignment)}`;
+    }
     const files = form.getAll("files");
     if (files.some(file => !(file instanceof File))) throw new Error("Неправильне вкладення.");
     const uploads = await homeworkUploads(files as File[]);
     const result = await beginHomework(familyId, actor.child.id, value.id, source, { ...value, files: uploads.names });
-    if (result.started) after(() => runHomework(familyId, actor.child.id, value.id, value.requestId, source, uploads));
+    if (result.started) after(async () => {
+      if (value.assignmentId) await attachSchoolWork(familyId, actor.child.id, value.assignmentId, value.id, source.target).catch(() => {});
+      await runHomework(familyId, actor.child.id, value.id, value.requestId, source, uploads);
+    });
     return NextResponse.json(homeworkView(value.id, result.work), { status: 202, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     unstable_rethrow(error);

@@ -40,3 +40,7 @@ app/blob-report/
 .DS_Store
 *.log
 .vercel
+
+app/public/eschool-helper.zip
+
+app/public/eschool-mobile-bookmark.txt

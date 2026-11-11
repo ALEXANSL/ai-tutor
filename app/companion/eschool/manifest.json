@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "ШІ-Репетитор — Єдина школа",
+  "version": "0.1.0",
+  "description": "Читання власного щоденника й передавання тем та ДЗ у ШІ-Репетитор без передачі пароля.",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["https://diary.eschool-ua.com/*", "https://ai-tutor-8zmb.vercel.app/*"],
+  "action": { "default_title": "Прочитати щоденник", "default_popup": "popup.html" },
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [{ "matches": ["https://ai-tutor-8zmb.vercel.app/parent/school*"], "js": ["bridge.js"], "run_at": "document_idle" }]
+}

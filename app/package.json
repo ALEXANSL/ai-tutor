@@ -7,9 +7,9 @@
     "node": ">=20.9"
   },
   "scripts": {
-    "predev": "node scripts/copy-pdf-worker.mjs",
+    "predev": "node scripts/copy-pdf-worker.mjs && node scripts/build-eschool-helper.mjs",
     "dev": "next dev",
-    "prebuild": "node scripts/copy-pdf-worker.mjs",
+    "prebuild": "node scripts/copy-pdf-worker.mjs && node scripts/build-eschool-helper.mjs",
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint .",
