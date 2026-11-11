@@ -17,12 +17,17 @@ export async function collectEsSchool(start, end) {
     if (!(/^\/api\/(profile|v1\/seplogin)$/.test(path) || /^\/api\/v1\/\d+\/(SchoolBoy\/\d+\/Appointment|Homework\/\d+)$/.test(path))) throw Error("ESCHOOL-PATH");
     const url = new URL(path, location.origin); Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, String(value)));
     const left = deadline - Date.now(); if (left <= 0) throw Error("ESCHOOL-TIME: спробуй коротший діапазон дат.");
-    const response = await fetch(url, { method: "GET", credentials: "same-origin", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(Math.min(12000, left)), headers: { accept: "application/json" } });
+    let response;
+    try { response = await fetch(url, { method: "GET", credentials: "same-origin", redirect: "error", cache: "no-store", signal: AbortSignal.timeout(Math.min(12000, left)), headers: { accept: "application/json" } }); }
+    catch (error) { throw Error(error?.name === "TimeoutError" || error?.name === "AbortError" ? "ESCHOOL-TIMEOUT" : "ESCHOOL-NETWORK"); }
     if (response.status === 401 || response.status === 403) throw Error("ESCHOOL-LOGIN: увійди у щоденник та відкрий профіль дитини, потім повтори.");
     if (!response.ok) throw Error(`ESCHOOL-HTTP-${response.status}: сервіс не відповів. Спробуй пізніше.`);
     if (!(response.headers.get("content-type") ?? "").includes("application/json")) throw Error("ESCHOOL-LOGIN: відкрий щоденник і перевір вхід.");
-    const text = await response.text(); if (text.length > 5000000) throw Error("ESCHOOL-SIZE: обери коротший діапазон.");
-    return JSON.parse(text);
+    let text;
+    try { text = await response.text(); }
+    catch (error) { throw Error(error?.name === "TimeoutError" || error?.name === "AbortError" ? "ESCHOOL-TIMEOUT" : "ESCHOOL-NETWORK"); }
+    if (text.length > 5000000) throw Error("ESCHOOL-SIZE: обери коротший діапазон.");
+    try { return JSON.parse(text); } catch { throw Error("ESCHOOL-JSON"); }
   }
   const profile = await get("/api/profile");
   if (!number(profile.Id) || !number(profile.SchoolId)) throw Error("ESCHOOL-PROFILE: формат профілю змінився.");
@@ -36,12 +41,25 @@ export async function collectEsSchool(start, end) {
   for (const lesson of lessons) if (!number(lesson?.Id) || !day(lesson.Date)) throw Error("ESCHOOL-LESSON: невідомий формат уроку. Дані не передано.");
   const homeworkIds = [...new Set(lessons.flatMap(lesson => (lesson.Embed?.TargetHomeworks ?? []).filter(item => number(item?.Id)).map(item => item.Id)))];
   if (homeworkIds.length > 120) throw Error("ESCHOOL-SIZE: забагато ДЗ. Обери коротший діапазон.");
-  const details = new Map(); let cursor = 0; let fatal = null;
+  const details = new Map(); let cursor = 0; let fatal = null; let stopDetails = null;
+  function detailWarning(id, code) {
+    const reason = code === "ESCHOOL-HTTP-429" ? "сервіс обмежив частоту запитів"
+      : code === "ESCHOOL-TIMEOUT" || code === "ESCHOOL-TIME" ? "закінчився час очікування"
+      : (code === "ESCHOOL-HOMEWORK-SHAPE" || code === "ESCHOOL-JSON") ? "формат відповіді змінився"
+      : code === "ESCHOOL-NETWORK" ? "помилка з’єднання" : "сервіс не повернув деталі";
+    warnings.push(`ДЗ ${id}: додаткові деталі не отримано — ${reason} (${code}). Збережено текст із розкладу; звір його й вкладення з оригіналом.`);
+  }
   async function worker() {
     while (cursor < homeworkIds.length && !fatal) {
       const id = homeworkIds[cursor++];
-      try { const item = await get(`/api/v1/${profile.SchoolId}/Homework/${id}`); if (item.Id !== id) throw Error("ESCHOOL-HOMEWORK-SHAPE"); details.set(id, item); }
-      catch (error) { if (/ESCHOOL-LOGIN/.test(error.message)) { fatal = error; return; } warnings.push(`ДЗ ${id}: опис прочитано не повністю. Відкрий оригінал у щоденнику.`); }
+      if (stopDetails) { detailWarning(id, stopDetails); continue; }
+      try { const item = await get(`/api/v1/${profile.SchoolId}/Homework/${id}`, { embed: "File" }); if (item?.Id !== id) throw Error("ESCHOOL-HOMEWORK-SHAPE"); details.set(id, item); }
+      catch (error) {
+        if (/ESCHOOL-LOGIN/.test(error.message)) { fatal = error; return; }
+        const code = /^ESCHOOL-(?:HTTP-\d{3}|TIMEOUT|TIME|HOMEWORK-SHAPE|NETWORK|SIZE|JSON)\b/.exec(error?.message ?? "")?.[0] ?? "ESCHOOL-DETAIL";
+        if (code === "ESCHOOL-HTTP-429" || code === "ESCHOOL-TIME") stopDetails = code;
+        detailWarning(id, code);
+      }
     }
   }
   await Promise.all(Array.from({ length: Math.min(3, homeworkIds.length) }, worker)); if (fatal) throw fatal;
@@ -53,7 +71,8 @@ export async function collectEsSchool(start, end) {
     entries.set(`lesson:${lesson.Id}`, { ...base, externalId: `lesson:${lesson.Id}`, kind: "lesson" });
     const homework = Array.isArray(lesson.Embed?.TargetHomeworks) ? lesson.Embed.TargetHomeworks.filter(item => number(item?.Id)) : [];
     for (const brief of homework) {
-      const item = details.get(brief.Id) ?? brief;
+      const detail = details.get(brief.Id);
+      const item = detail ? Object.fromEntries(Object.keys({ ...brief, ...detail }).map(key => [key, detail[key] ?? brief[key]])) : brief;
       const entry = { ...base, externalId: `homework:${item.Id}`, kind: "homework", lessonDate: day(item.AppointmentDate) ?? base.lessonDate, dueDate: day(item.TargetAppointmentDate), topic: plain(item.Topic) || base.topic, text: plain(item.Description), attachments: Number.isSafeInteger(item.FilesCount) && item.FilesCount >= 0 ? item.FilesCount : (Array.isArray(item.Embed?.Files) ? item.Embed.Files.length : 0) };
       entries.set(entry.externalId, entry);
     }
