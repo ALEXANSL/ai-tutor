@@ -1,3 +1,4 @@
+import { schoolSubjectFocus } from "@/server/eschool/subjectFocus";
 import { importedLessonHref } from "@/lib/imported-lesson-link";
 import { SubjectVideoLessons } from "@/components/child/SubjectVideoLessons";
 import Link from "next/link";
@@ -19,10 +20,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const maxDuration = 300;
 
 /** Ready imported lessons and optional videos; no legacy generation fallback. */
-export default async function ChildSubjectPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ChildSubjectPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams?: Promise<{ school?: string | string[] }> }) {
   const { id } = await params;
   if (!UUID.test(id)) notFound();
-  const { ctx } = await requireChild();
+  const { ctx, profile } = await requireChild();
   const subject = await getSubjectDetail(ctx.familyId, id);
   // VP-52/US-22.3 КП-3: a direct link to a course must 404 the same way an
   // inactive one does when its group has been turned off — `childVisible`
@@ -32,6 +33,8 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
   const publications = await studioPublicationsForSubject(ctx.familyId, subject.id).catch(() => []);
   const extensionTopics = new Set(publications.filter(item => item.baseTopicId).flatMap(item => item.lessons.map(lesson => lesson.topicId)));
   const topics = subject.topics.filter(topic => importedLessonHref(topic) && !extensionTopics.has(topic.id));
+  const school = (await searchParams)?.school;
+  const focus = typeof school === "string" ? await schoolSubjectFocus(ctx.familyId, profile.id, subject.id, school, topics).catch(() => null) : null;
   const ts = uk.child.subject;
   const hasMathCourseV2 = topics.some((t) => t.mathCourseV2LessonId);
   const hasLiteratureV2 = topics.some((t) => t.literatureV2LessonId);
@@ -47,6 +50,7 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
         {uk.child.lesson.backToToday}
       </Link>
       <h1 className="mb-4 text-2xl font-extrabold">{subject.name}</h1>
+      {focus && <div className="mb-5 rounded-2xl border border-primary bg-surface p-4 text-sm"><p className="font-bold">Зі шкільного щоденника{focus.title ? `: ${focus.title}` : ""}</p><p className="mt-1 text-muted">{focus.topicId ? "Потрібну тему виділено в списку нижче." : "Однозначного збігу з готовими уроками немає. Обери потрібний урок зі списку; тато може зберегти прив’язку у щоденнику."}</p><Link href="/school" className="mt-2 inline-flex min-h-11 items-center font-bold underline">← До щоденника</Link></div>}
       {hasMathCourseV2 && <MathCourseV2Search subjectId={subject.id} textbook={textbook} />}
       {hasLiteratureV2 && <LiteratureV2Search subjectId={subject.id} textbook={literatureTextbook} />}
       {hasLiteratureV3 && <LiteratureV3Search subjectId={subject.id} />}
@@ -54,7 +58,7 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
         <div className="space-y-3">
           <p className="text-sm text-muted">{ts.topicsSubtitle}</p>
           {topics.map((topic) => (
-            <LastLessonHighlight key={topic.id} subjectId={subject.id} topicId={topic.id}>
+            <LastLessonHighlight key={topic.id} subjectId={subject.id} topicId={topic.id} schoolContext={!!focus} focusRequest={focus?.topicId === topic.id ? focus.entryId : undefined}>
               <div className="rounded-[22px] border border-line bg-surface p-4.5">
               <div className="mb-1 flex items-center gap-2">
                 <p className="font-bold">{topic.title}</p>
