@@ -19,3 +19,13 @@ it("keeps legacy saved reviews readable but requires actionable instructions fro
   const json = studioReviewResponseSchema.toJSONSchema();
   expect(json.required).toContain("corrections");
 });
+
+it("teaches the subject beyond textbook wording while preserving curriculum alignment and factual review", () => {
+  for (const role of ["studio.plan", "studio.author", "studio.review"] as const) {
+    const system = studioSystem(role);
+    expect(system).toContain("не межа знань");
+    expect(system).toContain("зв’язок зі шкільною програмою");
+    expect(system).toContain("НЕ є помилкою");
+    expect(system).toContain("Уточнюй помилки або застарілі твердження");
+  }
+});
