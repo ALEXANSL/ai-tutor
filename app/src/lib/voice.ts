@@ -10,7 +10,7 @@ export interface VoiceTurn {
   /** Only populated by the text composer when actual textbook pages were attached. */
   sourcePages?: number[];
   text: string;
-  message: { id: string; author: "child" | "ai" | "system" | "parent"; content: string; createdAt: string };
+  message: { libraryLink?: { href: string; label: string }; id: string; author: "child" | "ai" | "system" | "parent"; content: string; createdAt: string };
   audio: { audioBase64: string; mimeType: string } | null;
   endConversation?: boolean;
   /** Routine authorization expiry must not be presented as an urgent safety event. */

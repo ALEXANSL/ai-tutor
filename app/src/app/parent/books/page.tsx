@@ -31,6 +31,7 @@ export default async function BooksPage() {
   return (
     <>
       <PageTitle>{t.title}</PageTitle>
+      <Link href="/parent/library" className="mb-4 inline-flex min-h-11 items-center rounded-xl border border-p-line px-4 font-bold text-p-primary">🎧 Бібліотека й аудіокниги →</Link>
       <FolderAccessBanner status={access} />
       {manualBatches.length > 0 && (
         <Link href="/parent/books/import" className="mb-4 block rounded-2xl border border-p-line bg-p-surface px-5 py-3.5 text-[13px] font-bold text-p-primary">

@@ -50,6 +50,7 @@ export default async function BookPage({ params }: { params: Promise<{ id: strin
         {book.title ?? book.name}
       </PageTitle>
 
+      <Link href={`/parent/library/books/${book.id}`} className="mb-5 inline-flex min-h-11 items-center rounded-xl border border-p-line px-4 font-bold text-p-primary">🎧 Зміст і підготовка аудіокниги →</Link>
       <div className="grid gap-4 min-[980px]:grid-cols-[1.4fr_1fr]">
         <Panel title={d.settings}>
           <BookSettingsForm

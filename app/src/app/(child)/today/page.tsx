@@ -60,6 +60,7 @@ export default async function TodayPage() {
       </header>
 
       <nav className="flex flex-wrap gap-2.5 px-6 pb-3.5">
+        <Link href="/library" className="flex min-h-12 items-center gap-1.5 rounded-2xl border border-line bg-surface px-4 text-sm font-bold">📚 Бібліотека й аудіокниги</Link>
         <Link href="/my-tutor" className="flex min-h-12 items-center gap-1.5 rounded-2xl border border-line bg-surface px-4 text-sm font-bold">
           {t.myTutor}
         </Link>

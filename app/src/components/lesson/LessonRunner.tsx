@@ -1,4 +1,5 @@
 "use client";
+import { LibraryReadingLink } from "@/components/library/LibraryReadingLink";
 import { LessonText } from "@/components/shared/LessonText";
 import { MAX_LESSON_QUESTION_CHARS } from "@/lib/lesson-chat";
 
@@ -825,7 +826,7 @@ const TopicChat = forwardRef<TopicChatHandle, { sessionId: string; subjectId: st
 ) {
   const [open, setOpen] = useState(true);
   const [question, setQuestion] = useState("");
-  const [messages, setMessages] = useState<{ author: string; content: string }[]>([]);
+  const [messages, setMessages] = useState<{ author: string; content: string; libraryLink?: { href: string; label: string } }[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
 
@@ -843,7 +844,7 @@ const TopicChat = forwardRef<TopicChatHandle, { sessionId: string; subjectId: st
     setError("");
     try {
       const res = await askTopicChatAction(sessionId, subjectId, topicId, q);
-      if (res.status === "ok") { setMessages((prev) => [...prev, { author: "child", content: q }, { author: "ai", content: res.message.content }]); setQuestion(""); }
+      if (res.status === "ok") { setMessages((prev) => [...prev, { author: "child", content: q }, { author: "ai", content: res.message.content, ...(res.message.libraryLink ? { libraryLink: res.message.libraryLink } : {}) }]); setQuestion(""); }
       else setError(res.message);
     } catch { setError("Не вдалося отримати відповідь. Текст залишився у полі — спробуй ще раз."); } finally {
       setPending(false);
@@ -860,7 +861,7 @@ const TopicChat = forwardRef<TopicChatHandle, { sessionId: string; subjectId: st
           <div className="mb-2 flex max-h-80 flex-col gap-1.5 overflow-y-auto text-sm">
             {messages.map((m, i) => (
               <div key={i} className={m.author === "child" ? "font-bold" : "text-muted"}>
-                <LessonText text={m.content} reflow />
+                <LessonText text={m.content} reflow />{m.libraryLink && <LibraryReadingLink link={m.libraryLink} />}
               </div>
             ))}
           </div>

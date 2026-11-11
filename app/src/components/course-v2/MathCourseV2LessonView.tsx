@@ -1,4 +1,5 @@
 "use client";
+import { LibraryReadingLink } from "@/components/library/LibraryReadingLink";
 import { LessonText } from "@/components/shared/LessonText";
 
 import { MAX_LESSON_QUESTION_CHARS } from "@/lib/lesson-chat";
@@ -226,7 +227,7 @@ export interface LessonTopicChatHandle {
 const LessonTopicChat = forwardRef<LessonTopicChatHandle, { subjectId: string; topicId: string; target?: VoiceTarget }>(function LessonTopicChat({ subjectId, topicId, target }, ref) {
   const [open, setOpen] = useState(true);
   const [question, setQuestion] = useState("");
-  const [messages, setMessages] = useState<{ author: "child" | "ai"; content: string }[]>([]);
+  const [messages, setMessages] = useState<{ author: "child" | "ai"; content: string; libraryLink?: { href: string; label: string } }[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -244,7 +245,7 @@ const LessonTopicChat = forwardRef<LessonTopicChatHandle, { subjectId: string; t
     setError(null);
     try {
       const res = await askTopicChatAction(null, subjectId, topicId, q, target);
-      if (res.status === "ok") { setMessages((prev) => [...prev, { author: "child", content: q }, { author: "ai", content: res.message.content }]); setQuestion(""); }
+      if (res.status === "ok") { setMessages((prev) => [...prev, { author: "child", content: q }, { author: "ai", content: res.message.content, ...(res.message.libraryLink ? { libraryLink: res.message.libraryLink } : {}) }]); setQuestion(""); }
       else setError(res.message || "Не вдалося надіслати запитання. Спробуй ще раз.");
     } catch {
       setError("Не вдалося надіслати запитання. Текст залишився у полі — спробуй ще раз.");
@@ -264,7 +265,7 @@ const LessonTopicChat = forwardRef<LessonTopicChatHandle, { subjectId: string; t
             <div className="mb-2 flex max-h-80 flex-col gap-1.5 overflow-y-auto text-sm">
               {messages.map((m, i) => (
                 <div key={i} className={m.author === "child" ? "font-bold" : "text-muted"}>
-                  <LessonText text={m.content} reflow />
+                  <LessonText text={m.content} reflow />{m.libraryLink && <LibraryReadingLink link={m.libraryLink} />}
                 </div>
               ))}
             </div>

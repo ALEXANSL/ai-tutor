@@ -1,4 +1,5 @@
 "use client";
+import { LibraryReadingLink } from "@/components/library/LibraryReadingLink";
 import { useEffect, useRef, useState } from "react";
 import { VoiceConversation } from "./VoiceConversation";
 import type { VoiceTarget, VoiceTurn } from "@/lib/voice";
@@ -78,7 +79,7 @@ function LessonVoiceSession({ target, onActiveChange, textChat, sourcePages = []
       {turns.map(turn => <div key={turn.message.id}>
         {turn.sourcePages?.length ? <p className="mb-1 text-xs text-muted">Додані сторінки: {turn.sourcePages.join(", ")}</p> : null}
         <p className="mb-1 text-sm"><strong>Ти:</strong> {turn.text}</p>
-        <div className="break-words text-sm"><strong>Репетитор:</strong><LessonText text={turn.message.content} reflow /></div>
+        <div className="break-words text-sm"><strong>Репетитор:</strong><LessonText text={turn.message.content} reflow />{turn.message.libraryLink && <LibraryReadingLink link={turn.message.libraryLink} />}</div>
       </div>)}
     </div>}
     <fieldset disabled={pending} className="min-w-0">

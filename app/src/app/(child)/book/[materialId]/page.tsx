@@ -14,7 +14,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * purpose (earlier this week); this is the actual reader the PO asked for.
  * No AI call anywhere in this route or its API routes.
  */
-export default async function ChildBookReaderPage({ params }: { params: Promise<{ materialId: string }> }) {
+export default async function ChildBookReaderPage({ params, searchParams }: { params: Promise<{ materialId: string }>; searchParams?: Promise<{ page?: string }> }) {
   const { materialId } = await params;
   if (!UUID.test(materialId)) notFound();
   const { ctx } = await requireChild();
@@ -32,5 +32,6 @@ export default async function ChildBookReaderPage({ params }: { params: Promise<
     );
   }
 
-  return <BookReader materialId={meta.id} title={title} initialPageCount={meta.pageCount} />;
+  const requestedPage = Number((await searchParams)?.page);
+  return <BookReader initialPage={Number.isSafeInteger(requestedPage) && requestedPage > 0 && (!meta.pageCount || requestedPage <= meta.pageCount) ? requestedPage : 1} materialId={meta.id} title={title} initialPageCount={meta.pageCount} />;
 }

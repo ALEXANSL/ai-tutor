@@ -132,7 +132,7 @@ export async function voiceTurn(actor: VoiceActor, id: string, audio: File): Pro
     // Never return audio from a turn that no longer has authorization.
     try { await active(); }
     catch { return { text, message, audio: null, endConversation: true, endReason: safetyEnd ? "safety" : "inactive" }; }
-    return { text, message, audio: speech, endConversation: safetyEnd, ...(safetyEnd ? { endReason: "safety" as const } : {}) };
+    return { text, message, audio: speech, endConversation: safetyEnd || !!message.libraryLink, ...(safetyEnd ? { endReason: "safety" as const } : message.libraryLink ? { endReason: "inactive" as const } : {}) };
   } finally {
     await releaseLease(scope, actor.child.id, id, lease.claim).catch(() => {});
   }
