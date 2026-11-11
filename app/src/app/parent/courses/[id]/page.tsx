@@ -1,16 +1,13 @@
 import Link from "next/link";
+import { ReadyLessonCatalog } from "@/components/parent/subjects/ReadyLessonCatalog";
+import { studioPublicationsForSubject } from "@/server/studio/links";
 import { notFound } from "next/navigation";
 import { toggleCourseActiveAction } from "@/app/actions/subjects";
 import { CourseDetailForm } from "@/components/parent/courses/CourseDetailForm";
 import { ActiveToggle } from "@/components/parent/subjects/ActiveToggle";
-import { CurrentTopicPicker } from "@/components/parent/subjects/CurrentTopicPicker";
-import { ForecastPlanPanel } from "@/components/parent/subjects/ForecastPlanPanel";
-import { LibraryCardsList } from "@/components/parent/subjects/LibraryCardsList";
-import { StartLessonButton } from "@/components/parent/subjects/StartLessonButton";
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
-import { listLibraryCardsForTopic } from "@/server/lessons/library";
-import { getSubjectDetail, getSubjectForecastPlan, listCourseGroupsOverview } from "@/server/subjects/queries";
+import { getSubjectDetail, listCourseGroupsOverview } from "@/server/subjects/queries";
 import { PageTitle, Panel } from "../../ui";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -29,12 +26,12 @@ export const maxDuration = 300;
 export default async function CourseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!UUID.test(id)) notFound();
-  const { familyId } = await requireParentAccess();
+  const access = await requireParentAccess();
+  const { familyId } = access;
   const [course, groups] = await Promise.all([getSubjectDetail(familyId, id), listCourseGroupsOverview(familyId)]);
   if (!course || course.kind !== "course") notFound();
+  const extensions = await studioPublicationsForSubject(familyId, id).catch(() => []);
   const t = uk.parent.courses;
-  const plan = course.currentTopicId ? await getSubjectForecastPlan(familyId, id) : null;
-  const libraryCards = course.currentTopicId ? await listLibraryCardsForTopic(familyId, course.currentTopicId) : [];
 
   return (
     <>
@@ -55,32 +52,8 @@ export default async function CourseDetailPage({ params }: { params: Promise<{ i
         <CourseDetailForm subjectId={course.id} name={course.name} groupId={course.groupId} groups={groups} />
       </Panel>
 
-      <Panel title={t.detail.attachHint}>
-        <Link href="/parent/books" className="inline-flex min-h-11 items-center rounded-xl bg-p-primary px-4 text-[14px] font-bold text-white">
-          {t.detail.attachCta}
-        </Link>
-      </Panel>
-
-      {course.topics.length > 0 && (
-        <Panel title={uk.parent.subjects.detail.pickerTitle}>
-          <CurrentTopicPicker subjectId={course.id} topics={course.topics} currentTopicId={course.currentTopicId} />
-        </Panel>
-      )}
-
-      {plan && <ForecastPlanPanel plan={plan} />}
-
-      {course.currentTopicId && (
-        <Panel title={uk.parent.subjects.detail.lessonTitle}>
-          <p className="mb-3 text-[13px] text-p-muted">{uk.parent.subjects.detail.lessonHint}</p>
-          <StartLessonButton subjectId={course.id} topicId={course.currentTopicId} />
-        </Panel>
-      )}
-
-      {course.currentTopicId && (
-        <Panel title={uk.parent.subjects.library.title}>
-          <LibraryCardsList cards={libraryCards} />
-        </Panel>
-      )}
+      <div className="mb-5 flex flex-wrap gap-3"><Link href={`/parent/studio/new?subject=${id}`} className="inline-flex min-h-11 items-center rounded-xl bg-p-primary px-4 text-sm font-bold text-white">Підготувати урок із ШІ</Link><Link href="/parent/materials" className="inline-flex min-h-11 items-center rounded-xl border border-p-line px-4 text-sm font-bold">Додати готовий ZIP</Link><Link href="/parent/books" className="inline-flex min-h-11 items-center px-3 text-sm font-bold text-p-primary">Книги та джерела</Link></div>
+      <Panel title="Готові уроки курсу"><ReadyLessonCatalog extensions={extensions} topics={course.topics} subjectId={id} canOpen={access.via === "tablet"} /></Panel>
     </>
   );
 }

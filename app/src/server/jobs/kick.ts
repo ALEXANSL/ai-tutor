@@ -7,6 +7,7 @@ import { registerLibraryWarmJobs } from "../lessons/warmup";
 import { registerUnifiedImportJobs } from "../lessons/unifiedImportLifecycle";
 import { registerNotifyJobs } from "../notify/jobs";
 import { runJobs } from "./runner";
+import { registerStudioJobs } from "../studio/workflow";
 
 /** Composition root for background work: registries + job handlers. */
 export function ensureJobHandlers(): void {
@@ -16,6 +17,7 @@ export function ensureJobHandlers(): void {
   registerNotifyJobs();
   registerLibraryWarmJobs(); // ADR-023: `library.warm_topic`.
   registerUnifiedImportJobs();
+  registerStudioJobs();
 }
 
 /**

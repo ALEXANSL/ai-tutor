@@ -1,4 +1,5 @@
 import "server-only";
+import { studioSubjectVisible } from "@/server/studio/visibility";
 import { z } from "zod";
 import { forFamily } from "@/server/db/family-scope";
 import { readableTextForStep } from "@/server/lessons/narration";
@@ -65,7 +66,7 @@ function clipped(text: string, max: number): string {
 
 /** Keep the inventory independent of the focused text's budget. A long current
  * reading must never hide the existence of the other tasks in the lesson. */
-function contextWithManifest(title: string, focusedText: string, items: ManifestItem[], incomplete = false): string {
+function contextWithManifest(title: string, focusedText: string, items: ManifestItem[], incomplete = false, focusedLimit = MAX_FOCUSED_TEXT): string {
   const inventory = items.slice(0, MAX_MANIFEST_ITEMS).map((item, index) =>
     `${index + 1}. ${item.kind}; id=${item.id}; ${clipped(item.label ?? "", 60)}; ${clipped(item.text.replace(/\s+/g, " ").trim(), 100)}`,
   );
@@ -77,7 +78,7 @@ function contextWithManifest(title: string, focusedText: string, items: Manifest
       ? "Перелік неповний або недоступний. Відсутність у ньому не доводить, що задачі немає; потрібен окремий пошук."
       : "Наведено всі доступні кроки й завдання цього уроку.",
     "ПОТОЧНИЙ ЕКРАН (місце повернення після запитання або відступу):",
-    clipped(focusedText, MAX_FOCUSED_TEXT),
+    clipped(focusedText, focusedLimit),
     "Зображення цьому діалогу не передано. Не вигадуй деталей ілюстрацій. Номери кроків та внутрішні id не є друкованими номерами задач.",
   ].join("\n");
 }
@@ -134,6 +135,7 @@ export async function resolveLessonVoiceTarget(familyId: string, childId: string
   if (target.kind === "chapter") {
     const lesson = await getLiteratureV3LessonView(familyId, target.lessonId, { includeIllustrations: false });
     if (!lesson || !lesson.topicId || !["active", "needs_review"].includes(lesson.status)) unavailable();
+    if (lesson.packageKey?.startsWith("studio.") && !await studioSubjectVisible(familyId, lesson.subjectId)) unavailable();
     const step = lesson.flow.find(step => step.id === target.stepId);
     if (!step) unavailable();
     subjectId = lesson.subjectId;
@@ -148,7 +150,7 @@ export async function resolveLessonVoiceTarget(familyId: string, childId: string
       text: publicStepText(item),
     }));
     context = contextWithManifest(lesson.title, [step.kind === "reading" && step.bookPage ? `Друкована сторінка: ${step.bookPage}` : "",
-      publicStepText(step)].filter(Boolean).join("\n"), items);
+      publicStepText(step)].filter(Boolean).join("\n"), items, false, lesson.packageKey?.startsWith("studio.") ? 9000 : MAX_FOCUSED_TEXT);
     lessonRef = { kind: "chapter", lessonId: target.lessonId, packageId: lesson.packageId, currentItemId: target.stepId };
   } else if (target.kind === "lesson") {
     const { data: session, error } = await scope.select("lesson_sessions", "child_profile_id,current_step_id,subject_id,topic_id,status")

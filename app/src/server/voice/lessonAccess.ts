@@ -1,4 +1,5 @@
 import "server-only";
+import { studioSubjectVisible } from "@/server/studio/visibility";
 import { z } from "zod";
 import { forFamily } from "@/server/db/family-scope";
 import { lessonVoiceTargetSchema, type LessonVoiceTarget } from "./lessonContext";
@@ -46,6 +47,9 @@ export async function assertLessonVoiceAccess(familyId: string, childId: string,
     if (row.error || !row.data || !["active", "needs_review"].includes(row.data.status) || !Array.isArray(row.data.flow)) unavailable();
     lesson = row.data;
     const flow = row.data.flow;
+    const pkg = await scope.select("literature_v3_packages", "package_key").eq("id", lesson.package_id!).maybeSingle<{ package_key: string }>();
+    if (pkg.error) unavailable();
+    if (pkg.data?.package_key?.startsWith("studio.") && (lesson.status !== "active" || !await studioSubjectVisible(familyId, lesson.subject_id))) unavailable();
     if (flow.some(step => step.kind === "quiz" && step.ref_id === target.stepId)) {
       const question = await scope.select("course_v2_questions", "id").eq("literature_v3_lesson_id", target.lessonId)
         .eq("question_key", target.stepId).maybeSingle<{ id: string }>();

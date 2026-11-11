@@ -75,6 +75,7 @@ export interface LiteratureV3LessonView {
   topicId: string | null;
   packageId: string;
   packageTitle: string;
+  packageKey?: string;
   lessonKey: string;
   title: string;
   objectives: string[];
@@ -157,7 +158,7 @@ export async function getLiteratureV3LessonView(familyId: string, lessonId: stri
   const quizKeys = lesson.flow.filter((f) => f.kind === "quiz").map((f) => f.ref_id);
 
   const [{ data: pkg }, { data: screens }, { data: readingItems }, { data: biographies }, { data: questions }] = await Promise.all([
-    scope.select("literature_v3_packages", "title").eq("id", lesson.package_id).maybeSingle<{ title: string }>(),
+    scope.select("literature_v3_packages", "title,package_key").eq("id", lesson.package_id).maybeSingle<{ title: string; package_key?: string }>(),
     screenKeys.length
       ? scope.select("literature_v3_screens", "id, screen_key, title, content_display, content_tts, asset_ids").eq("lesson_id", lessonId).in("screen_key", screenKeys).returns<ScreenRow[]>()
       : Promise.resolve({ data: [] as ScreenRow[] }),
@@ -173,6 +174,7 @@ export async function getLiteratureV3LessonView(familyId: string, lessonId: stri
       : Promise.resolve({ data: [] as QuestionRow[] }),
   ]);
 
+  if (!pkg || (pkg.package_key?.startsWith("studio.") && lesson.status !== "active")) return null;
   const workIds = [...new Set((readingItems ?? []).map((r) => r.work_id))];
   const { data: works } = workIds.length ? await scope.select("literature_v3_works", "id, title, author, form").in("id", workIds).returns<WorkRow[]>() : { data: [] as WorkRow[] };
   const workById = new Map((works ?? []).map((w) => [w.id, w]));
@@ -260,6 +262,7 @@ export async function getLiteratureV3LessonView(familyId: string, lessonId: stri
     topicId: lesson.topic_id,
     packageId: lesson.package_id,
     packageTitle: pkg?.title ?? "",
+    packageKey: pkg?.package_key,
     lessonKey: lesson.lesson_key,
     title: lesson.title,
     objectives: lesson.objectives ?? [],

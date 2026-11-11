@@ -1,5 +1,5 @@
 import type { ModelDiagnosticRoute, ModelDiagnosticCall } from "@/server/budget/modelDiagnostics";
-const roles: Record<string, string> = { lesson_tutor: "Репетитор уроків — новий маршрут", tutor_chat: "Попередній чат / чат книги", friend_chat: "ШІ-друг", step_reinforcement: "Додаткове пояснення / старий цикл задач", voice_reply: "Озвучення відповіді", voice_transcription: "Розпізнавання голосу", passive_narration: "Читання матеріалу", safety_moderator: "Модерація безпеки", lesson_video_script: "Сценарій Pictory" };
+const roles: Record<string, string> = { "studio.plan": "Майстерня — методист", "studio.author": "Майстерня — автор уроку", "studio.design": "Майстерня — навчальні схеми", "studio.review": "Майстерня — рецензія", lesson_tutor: "Репетитор уроків — новий маршрут", tutor_chat: "Попередній чат / чат книги", friend_chat: "ШІ-друг", step_reinforcement: "Додаткове пояснення / старий цикл задач", voice_reply: "Озвучення відповіді", voice_transcription: "Розпізнавання голосу", passive_narration: "Читання матеріалу", safety_moderator: "Модерація безпеки", lesson_video_script: "Сценарій Pictory" };
 const label = (role: string) => roles[role] ?? role;
 export function ModelDiagnostics({ routes, calls, timeZone }: { routes: ModelDiagnosticRoute[] | null; calls: ModelDiagnosticCall[] | null; timeZone: string }) {
   return <div className="space-y-4">

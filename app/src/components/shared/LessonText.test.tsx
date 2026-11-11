@@ -44,3 +44,9 @@ describe("safe lesson text formatting", () => {
     expect(html.match(/<strong>/g)).toHaveLength(1);
   });
 });
+
+it("preserves escaped executable-looking code without reflow or Markdown interpretation", () => {
+  const text = '```lua\nlocal value = "<script>"\n  print(value)\n```';
+  expect(lessonTextBlocks(text)).toEqual([{ kind: "code", text: 'local value = "<script>"\n  print(value)' }]);
+  const html = renderToStaticMarkup(<LessonText text={text} reflow />); expect(html).toContain("<pre"); expect(html).toContain("&lt;script&gt;"); expect(html).not.toContain("<script>");
+});

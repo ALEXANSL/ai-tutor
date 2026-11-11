@@ -12,6 +12,7 @@ import { requireChild } from "@/server/auth/guards";
 import { getLiteratureV2TextbookForSubject } from "@/server/lessons/literatureV2Search";
 import { getMathCourseV2TextbookForSubject } from "@/server/lessons/mathCourseV2Search";
 import { getSubjectDetail } from "@/server/subjects/queries";
+import { studioPublicationsForSubject } from "@/server/studio/links";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -28,7 +29,9 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
   // carries that effective-visibility rule (identical to `active` for a
   // school subject, which has no group).
   if (!subject || !subject.childVisible) notFound();
-  const topics = subject.topics.filter(topic => importedLessonHref(topic));
+  const publications = await studioPublicationsForSubject(ctx.familyId, subject.id).catch(() => []);
+  const extensionTopics = new Set(publications.filter(item => item.baseTopicId).flatMap(item => item.lessons.map(lesson => lesson.topicId)));
+  const topics = subject.topics.filter(topic => importedLessonHref(topic) && !extensionTopics.has(topic.id));
   const ts = uk.child.subject;
   const hasMathCourseV2 = topics.some((t) => t.mathCourseV2LessonId);
   const hasLiteratureV2 = topics.some((t) => t.literatureV2LessonId);
@@ -63,6 +66,7 @@ export default async function ChildSubjectPage({ params }: { params: Promise<{ i
               <div className="flex flex-wrap items-center gap-2.5">
                 <Link href={importedLessonHref(topic)!} className="inline-flex min-h-12 items-center rounded-2xl bg-primary px-5 text-base font-bold text-white">{ts.openLesson}</Link>
                 {topic.hasVideoLesson && <VideoLessonButton topicId={topic.id} title={topic.title} />}
+                {publications.filter(item => item.baseTopicId === topic.id).flatMap(item => item.lessons).map(lesson => <Link key={lesson.id} href={`/literature-v3/${lesson.id}`} className="inline-flex min-h-12 items-center rounded-2xl border-2 border-secondary bg-surface px-4 text-sm font-bold">Розширений урок: {lesson.title}</Link>)}
               </div>
               </div>
             </LastLessonHighlight>

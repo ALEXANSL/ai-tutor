@@ -23,6 +23,7 @@ export default async function CoursesPage() {
         {t.title}
       </PageTitle>
       <p className="-mt-2 mb-4 text-[13px] text-p-muted">{t.listDesc}</p>
+      <Link href="/parent/studio/new" className="mb-4 inline-flex min-h-11 items-center rounded-xl bg-p-primary px-4 text-sm font-bold text-white">Створити урок або курс із ШІ</Link>
       <AddCourseForm groups={groups} />
       {courses.length === 0 ? (
         <p className="text-[13px] text-p-muted">{t.empty}</p>

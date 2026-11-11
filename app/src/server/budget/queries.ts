@@ -80,6 +80,10 @@ interface SessionCostDbRow {
 
 /** Raw internal role → plain Ukrainian label the parent sees (no jargon, D-… jargon-removal fix). */
 const ROLE_LABELS_UK: Record<string, string> = {
+  "studio.plan": "Майстерня — план",
+  "studio.author": "Майстерня — автор",
+  "studio.design": "Майстерня — схеми",
+  "studio.review": "Майстерня — рецензія",
   lesson_tutor: "Репетитор уроків (OpenAI)",
   tutor_chat: "Попередній чат / чат книги",
   friend_chat: "ШІ-друг",

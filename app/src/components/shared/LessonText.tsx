@@ -4,6 +4,7 @@ import { Fragment } from "react";
 import { MathText } from "./MathText";
 
 type TextBlock =
+  | { kind: "code"; text: string }
   | { kind: "paragraph" | "quote"; text: string }
   | { kind: "heading"; text: string; level: number }
   | { kind: "list"; ordered: boolean; items: { text: string; number?: number }[] };
@@ -15,11 +16,18 @@ export function lessonTextBlocks(text: string): TextBlock[] {
   const blocks: TextBlock[] = [];
   let paragraph: string[] = [];
   let inDisplayMath = false;
+  let code: string[] | null = null;
   const flush = () => {
     if (paragraph.length) blocks.push({ kind: "paragraph", text: paragraph.join("\n") });
     paragraph = [];
   };
   for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
+    if (/^\s*```/.test(line) && !inDisplayMath) {
+      if (code) { blocks.push({ kind: "code", text: code.join("\n") }); code = null; }
+      else { flush(); code = []; }
+      continue;
+    }
+    if (code) { code.push(line); continue; }
     const fences = line.match(/\$\$/g)?.length ?? 0;
     if (inDisplayMath || fences) {
       paragraph.push(line);
@@ -54,6 +62,7 @@ export function lessonTextBlocks(text: string): TextBlock[] {
     paragraph.push(line);
   }
   flush();
+  if (code) blocks.push({ kind: "code", text: code.join("\n") });
   return blocks;
 }
 
@@ -69,6 +78,7 @@ function InlineText({ text }: { text: string }) {
 export function LessonText({ text, preserveLines = false, reflow = false }: { text: string; preserveLines?: boolean; reflow?: boolean }) {
   if (preserveLines) return <div className="lesson-prose lesson-prose--reading"><div className="lesson-prose__paragraph"><MathText text={text} /></div></div>;
   return <div className={`lesson-prose${reflow ? " lesson-prose--reflow" : ""}`}>{lessonTextBlocks(text).map((block, index) => {
+    if (block.kind === "code") return <pre key={index} className="max-w-full overflow-x-auto rounded-xl border border-line bg-surface-alt p-4 text-sm"><code>{block.text}</code></pre>;
     if (block.kind === "heading") {
       const Heading = `h${block.level}` as "h4" | "h5" | "h6";
       return <Heading key={index}><InlineText text={block.text} /></Heading>;
