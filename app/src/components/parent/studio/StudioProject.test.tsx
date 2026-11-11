@@ -51,3 +51,16 @@ it("keeps a newer result when a previous poll finishes late", async () => {
   await act(async () => { stale(observed(project({ state: "generating", phase: "design", revision: 3 }))); });
   expect(button("Опублікувати для дитини")).not.toBeNull(); expect(container.querySelector(".animate-spin")).toBeNull();
 });
+
+it("allows a parent to describe corrections after publication and clearly keeps the child version until republish", async () => {
+  const published = project({ state: "published", units: [{ ...unit, review: { verdict: "pass", issues: [], summary: "Пройдено" } }], publication: { subjectId: "subject", packageId: "package", lessons: [] } });
+  f.poll.mockResolvedValue(observed({ ...published, state: "generating", phase: "author", publicationRevision: true, revision: 1 }));
+  render(published);
+  expect(button("Допрацювати урок 1").disabled).toBe(true);
+  const field = container.querySelector("textarea")!;
+  await act(async () => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(field, "Зроби таблицю зрозумілою"); field.dispatchEvent(new Event("input", { bubbles: true })); });
+  expect(button("Допрацювати урок 1").disabled).toBe(false);
+  await click("Допрацювати урок 1");
+  expect(f.command.mock.calls[0]![0]).toMatchObject({ command: "revise", feedback: "Зроби таблицю зрозумілою" });
+  expect(container.textContent).toContain("дитина бачить чинну версію");
+});

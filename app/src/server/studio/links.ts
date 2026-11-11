@@ -12,7 +12,7 @@ function publicLink(row: PublicRow): StudioPublishedLink | null {
 export async function studioPublicationsForSubject(familyId: string, subjectId: string): Promise<StudioPublishedLink[]> {
   const links: StudioPublishedLink[] = [];
   for (let page = 0; page < 20; page++) {
-    const { data, error } = await forFamily(familyId).select("jobs", LINK_COLUMNS).eq("type", STUDIO_PROJECT).eq("payload->>state", "published").eq("payload->publication->>subjectId", subjectId).order("created_at", { ascending: false }).order("id").range(page * 500, page * 500 + 499).returns<PublicRow[]>();
+    const { data, error } = await forFamily(familyId).select("jobs", LINK_COLUMNS).eq("type", STUDIO_PROJECT).or("payload->>state.eq.published,payload->>publicationRevision.eq.true").eq("payload->publication->>subjectId", subjectId).order("created_at", { ascending: false }).order("id").range(page * 500, page * 500 + 499).returns<PublicRow[]>();
     if (error) throw new Error("Не вдалося завантажити розширені уроки.");
     for (const row of data ?? []) { const link = publicLink(row); if (link && row.publication?.subjectId === subjectId) links.push(link); }
     if ((data?.length ?? 0) < 500) return links;
@@ -33,7 +33,7 @@ export async function studioLinksForPath(familyId: string, pathname: string): Pr
     const result = await forFamily(familyId).select("literature_v3_packages", "package_key").eq("id", lesson.package_id).maybeSingle<{ package_key: string }>();
     const projectId = /^studio\.([a-f0-9-]{36})$/i.exec(result.data?.package_key ?? "")?.[1];
     if (projectId) {
-      const result = await forFamily(familyId).select("jobs", LINK_COLUMNS).eq("id", projectId).eq("type", STUDIO_PROJECT).eq("payload->>state", "published").maybeSingle<PublicRow>();
+      const result = await forFamily(familyId).select("jobs", LINK_COLUMNS).eq("id", projectId).eq("type", STUDIO_PROJECT).or("payload->>state.eq.published,payload->>publicationRevision.eq.true").maybeSingle<PublicRow>();
       const link = result.data ? publicLink(result.data) : null;
       if (!result.error && link?.baseHref && link.lessons.some(item => item.id === match[2])) return { back: link.baseHref, links: [] };
     }

@@ -116,3 +116,16 @@ it("rejects non-actionable reviews and out-of-range correction targets without a
     await step(); expect(project.state).toBe("failed"); expect(project.units[0]!.review).toBeNull();
   }
 });
+
+it("revises a published lesson as a draft and republishes through persistence instead of just reactivating old content", async () => {
+  const publication = { subjectId: "existing", packageId: "same-package", lessons: [{ id: "same-lesson", topicId: "same-topic", title: "Координати" }] };
+  project = studioProjectFixture({ state: "published", phase: "publish", plan: studioPlanFixture, publication, units: [{ content: studioLessonFixture, visuals: [studioVisualFixture], review: { verdict: "pass", issues: [], summary: "Пройдено" } }] });
+  await expect(resumeStudio("family", id, project.revision, "revise")).rejects.toThrow("Опиши");
+  await resumeStudio("family", id, project.revision, "revise", undefined, "Виправ таблицю у блоці 2");
+  expect(project.publicationRevision).toBe(true); expect(project.publication).toEqual(publication); expect(f.prepare).not.toHaveBeenCalled();
+  await step(); await step(); await step(); expect(project.state).toBe("ready");
+  f.prepare.mockResolvedValue(publication);
+  await resumeStudio("family", id, project.revision, "publish"); await step();
+  expect(f.prepare).toHaveBeenCalled(); expect(f.activate).toHaveBeenCalledWith("family", publication, false);
+  expect(project.state).toBe("published"); expect(project.publicationRevision).toBe(false); expect(project.publication).toEqual(publication);
+});

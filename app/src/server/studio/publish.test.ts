@@ -21,3 +21,13 @@ it("escapes model text in SVG, emits no executable or external markup, and draws
   const svg = studioVisualSvg({ ...studioVisualFixture, title: '<script>alert("x")</script>', kind: "dimensions", width: 20, height: 10, unit: "см", items: [{ label: '<img onload="x">', detail: 'javascript:alert(1)' }, { label: 'Друга', detail: 'Перевір розмір' }] });
   expect(svg).not.toContain("<script"); expect(svg).not.toContain("<img"); expect(svg).not.toContain("href="); expect(svg).toContain("&lt;script&gt;"); expect(svg).toContain("20 см"); expect(svg).toContain("10 см");
 });
+
+it("keeps package namespace and surviving lesson/screen keys stable when publishing corrections", () => {
+  const initial = project(); const before = studioPackage("same-project", initial).parsed;
+  initial.publicationRevision = true; initial.units[0]!.content.blocks[0]!.text += "\n\nУточнений приклад.";
+  const after = studioPackage("same-project", initial).parsed;
+  expect(after.manifest?.book_id).toBe(before.manifest?.book_id);
+  expect(after.lessons.map(lesson => lesson.id)).toEqual(before.lessons.map(lesson => lesson.id));
+  expect(after.lessons[0]!.screens.map(screen => screen.id)).toEqual(before.lessons[0]!.screens.map(screen => screen.id));
+  expect(after.lessons[0]!.screens[0]!.content.display).toContain("Уточнений приклад");
+});

@@ -50,3 +50,15 @@ it("preserves escaped executable-looking code without reflow or Markdown interpr
   expect(lessonTextBlocks(text)).toEqual([{ kind: "code", text: 'local value = "<script>"\n  print(value)' }]);
   const html = renderToStaticMarkup(<LessonText text={text} reflow />); expect(html).toContain("<pre"); expect(html).toContain("&lt;script&gt;"); expect(html).not.toContain("<script>");
 });
+
+it("renders real tables from multiline and collapsed generated Markdown without executing cell HTML", () => {
+  for (const text of ["| Можна | Не можна |\n|---|---|\n| Хобі | Паролі |\n| Малюнки | <script>x</script> |", "\\| Можна | Не можна | |---|---| | Хобі | Паролі | | Малюнки | <script>x</script> |"] ) {
+    const blocks = lessonTextBlocks(text); expect(blocks[0]).toMatchObject({ kind: "table", headers: ["Можна", "Не можна"], rows: [["Хобі", "Паролі"], ["Малюнки", "<script>x</script>"]] });
+    const html = renderToStaticMarkup(<LessonText text={text} reflow />);
+    expect(html).toContain("<table"); expect(html).toContain('scope="col"'); expect(html).toContain("Паролі"); expect(html).not.toContain("<script>");
+  }
+});
+it("does not parse tables inside code or replace ordinary pipe notation", () => {
+  expect(lessonTextBlocks("Модуль |x| означає відстань")[0]).toMatchObject({ kind: "paragraph" });
+  expect(lessonTextBlocks("```\n| a | b |\n|---|---|\n```")[0]).toMatchObject({ kind: "code" });
+});

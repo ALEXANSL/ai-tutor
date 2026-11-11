@@ -1,4 +1,6 @@
 "use client";
+import Link from "next/link";
+import { homeworkHref } from "@/lib/homework";
 import { LibraryReadingLink } from "@/components/library/LibraryReadingLink";
 import { useEffect, useRef, useState } from "react";
 import { VoiceConversation } from "./VoiceConversation";
@@ -60,6 +62,7 @@ function LessonVoiceSession({ target, onActiveChange, textChat, sourcePages = []
     setQuestion(next); setError("");
   }
   return <div>
+    {target.kind !== "friend" && <Link href={homeworkHref(target)} onClick={() => { stopCurrentlyPlaying(); onActiveChange?.(true); }} className="mb-3 inline-flex min-h-11 items-center gap-2 rounded-full border border-secondary bg-surface px-4 text-sm font-bold">📝 Домашнє завдання</Link>}
     {textChat && <form onSubmit={event => { event.preventDefault(); void send(); }} className="mb-3 min-w-0 rounded-2xl border border-line bg-surface p-3.5">
       <label className="block text-sm font-bold">Запитай репетитора текстом
         <textarea value={question} onFocus={() => { if (!voiceActive) { stopCurrentlyPlaying(); onActiveChange?.(true); } }} onChange={event => setQuestion(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void send(); } }} maxLength={MAX_LESSON_QUESTION_CHARS} rows={5} disabled={pending} placeholder="Напиши запитання або встав цілу сторінку чи уривок для розбору…" className="mt-2 w-full rounded-xl border-2 border-line bg-surface-alt p-3 text-sm font-normal" />

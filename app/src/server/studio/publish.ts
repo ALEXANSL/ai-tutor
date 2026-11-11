@@ -59,7 +59,7 @@ export async function prepareStudioPublication(familyId: string, projectId: stri
     const found = await scope.select("subjects", "id").eq("id", subjectId).maybeSingle<{ id: string }>();
     if (found.error || !found.data) throw new Error("Предмет більше недоступний.");
   }
-  const saved = await persistLiteratureV3Package(scope, { subjectId, lessonStatus: "needs_review" }, parsed, files);
+  const saved = await persistLiteratureV3Package(scope, { subjectId, lessonStatus: project.publicationRevision ? "active" : "needs_review" }, parsed, files);
   if (saved.assetsMissing.length || saved.assetUploadFailures.length) throw new Error("Не всі ілюстрації завантажилися. Курс ще не опубліковано; повтори публікацію.");
   const result = await scope.select("literature_v3_lessons", "id,topic_id,title").eq("package_id", saved.packageId).order("order_no").returns<{ id: string; topic_id: string; title: string }[]>();
   if (result.error || result.data?.length !== project.units.length || result.data.some(row => !row.topic_id)) throw new Error("Не всі уроки збережені. Публікацію не завершено.");
