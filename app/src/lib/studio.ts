@@ -20,8 +20,17 @@ export const studioLessonSchema = z.object({ title: text(200), objectives: z.arr
 export type StudioLesson = z.infer<typeof studioLessonSchema>;
 export const studioVisualSchema = z.object({ blockIndex: z.number().int().min(0).max(7), kind: z.enum(["sequence", "comparison", "timeline", "dimensions"]), title: text(120), items: z.array(z.object({ label: text(50), detail: text(110) }).strict()).min(2).max(5), width: z.number().positive().max(10000).nullable(), height: z.number().positive().max(10000).nullable(), unit: z.enum(["мм", "см", "м", ""]), caption: text(500) }).strict();
 export type StudioVisual = z.infer<typeof studioVisualSchema>;
-export const studioDesignSchema = z.object({ visuals: z.array(studioVisualSchema).min(1).max(2) }).strict();
-export const studioReviewSchema = z.object({ verdict: z.enum(["pass", "revise", "reject"]), issues: z.array(text(1000)).max(12), summary: text(2000) }).strict();
+export const STUDIO_MAX_VISUALS = 16;
+export const studioDesignSchema = z.object({ visuals: z.array(studioVisualSchema).max(STUDIO_MAX_VISUALS) }).strict();
+export const studioCorrectionSchema = z.object({
+  role: z.enum(["author", "design"]),
+  blockIndex: z.number().int().min(0).max(7).nullable(),
+  visualIndex: z.number().int().min(0).max(STUDIO_MAX_VISUALS - 1).nullable(),
+  problem: text(500), action: text(1000), acceptance: text(700),
+}).strict();
+export const studioReviewSchema = z.object({ verdict: z.enum(["pass", "revise", "reject"]), issues: z.array(text(1000)).max(12), summary: text(2000), corrections: z.array(studioCorrectionSchema).max(12).optional() }).strict();
+/** Required for new model calls; older saved reviews remain readable. */
+export const studioReviewResponseSchema = studioReviewSchema.extend({ corrections: z.array(studioCorrectionSchema).max(12) });
 export type StudioReview = z.infer<typeof studioReviewSchema>;
 export interface StudioSource { id: string; title: string; text: string; page: number | null; kind: "lesson" | "book" | "provided"; }
 export interface StudioUnit { content: StudioLesson; visuals: StudioVisual[]; review: StudioReview | null; }

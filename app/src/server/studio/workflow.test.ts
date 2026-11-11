@@ -16,7 +16,7 @@ beforeEach(() => {
   vi.clearAllMocks(); project = studioProjectFixture(); f.read.mockImplementation(async () => structuredClone(project));
   f.save.mockImplementation(async (_family, _id, previous, changes) => { if (previous.revision !== project.revision) throw new Error("stale"); project = { ...project, ...changes, revision: project.revision + 1 }; return structuredClone(project); });
   f.enqueue.mockResolvedValue(undefined); f.config.mockResolvedValue({ route: { params: { max_tokens: 1000 } }, rates: {} });
-  f.call.mockImplementation(async (_family, _id, role) => ({ result: role === "studio.plan" ? studioPlanFixture : role === "studio.author" ? studioLessonFixture : role === "studio.design" ? { visuals: [studioVisualFixture] } : { verdict: "pass", issues: [], summary: "Зміст і схема узгоджені." }, model: { provider: "openai", model: "test-model" }, costUsd: 0.02 }));
+  f.call.mockImplementation(async (_family, _id, role) => ({ result: role === "studio.plan" ? studioPlanFixture : role === "studio.author" ? studioLessonFixture : role === "studio.design" ? { visuals: [studioVisualFixture] } : { verdict: "pass", issues: [], corrections: [], summary: "Зміст і схема узгоджені." }, model: { provider: "openai", model: "test-model" }, costUsd: 0.02 }));
   f.prepare.mockResolvedValue({ subjectId: "new-subject", packageId: "new-package", lessons: [{ id: "new-lesson", topicId: "new-topic", title: "Координати" }] }); f.activate.mockResolvedValue(undefined);
 });
 const step = () => runStudioStep(job(), Date.now() + 220000);
@@ -33,7 +33,7 @@ it("stops after the plan, requires parent approval, runs independent author/desi
 });
 it("blocks publication after a failed review and preserves the full candidate for correction", async () => {
   project = studioProjectFixture({ state: "generating", phase: "review", plan: studioPlanFixture, units: [{ content: studioLessonFixture, visuals: [studioVisualFixture], review: null }] });
-  f.call.mockResolvedValue({ result: { verdict: "revise", issues: ["Уточнити приклад"], summary: "Потрібні виправлення" }, model: { provider: "openai", model: "test" }, costUsd: 0.01 });
+  f.call.mockResolvedValue({ result: { verdict: "revise", issues: ["Уточнити приклад"], corrections: [{ role: "author", blockIndex: 1, visualIndex: null, problem: "Нечіткий приклад", action: "Уточни значення Y перед переміщенням", acceptance: "Вказане початкове значення Y" }], summary: "Потрібні виправлення" }, model: { provider: "openai", model: "test" }, costUsd: 0.01 });
   await step(); expect(project.state).toBe("needs_changes"); expect(project.units[0]!.content.title).toBe(studioLessonFixture.title);
   await expect(resumeStudio("family", id, project.revision, "publish")).rejects.toThrow(); expect(f.prepare).not.toHaveBeenCalled();
 });
@@ -80,4 +80,39 @@ it("pauses future stages, retains uncertain reserves and invalidates the old wor
   await pauseStudio("family", id, project.revision); expect(project.state).toBe("paused"); expect(project.heldUsd).toBe(0.1); expect(project.token).not.toBe(oldJob.payload.token);
   await runStudioStep(oldJob, Date.now() + 220000); expect(f.call).not.toHaveBeenCalled();
   await resumeStudio("family", id, project.revision, "retry"); expect(project.state).toBe("planning"); expect(project.heldUsd).toBe(0.1);
+});
+
+const visualFix = { role: "design" as const, blockIndex: 1, visualIndex: null, problem: "Відсутня обіцяна схема публікацій", action: "Додай comparison «Що можна / не можна публікувати» з двома items: загальні інтереси; паролі не публікувати", acceptance: "Три обіцяні схеми представлені, comparison має null width/height і порожній unit" };
+it("repairs a third diagram without rewriting approved content and accepts null physical dimensions", async () => {
+  const content = structuredClone(studioLessonFixture);
+  const visuals = [studioVisualFixture, { ...studioVisualFixture, blockIndex: 1, title: "Кібербулінг" }];
+  project = studioProjectFixture({ state: "needs_changes", phase: "review", plan: studioPlanFixture, units: [{ content, visuals, review: { verdict: "revise", issues: [visualFix.problem], corrections: [visualFix], summary: "Зміст правильний, бракує схеми" } }] });
+  await resumeStudio("family", id, project.revision, "revise");
+  expect(project.phase).toBe("design");
+  f.call.mockResolvedValueOnce({ result: { visuals: [...visuals, { ...studioVisualFixture, blockIndex: 1, title: "Що можна / не можна публікувати" }] }, model: { provider: "openai", model: "test" }, costUsd: 0.01 });
+  await step();
+  const prompt = JSON.parse(f.call.mock.calls[0]![4]);
+  expect(prompt.candidate.visuals).toEqual(visuals);
+  expect(prompt.candidate.content.blocks).toEqual(content.blocks);
+  expect(prompt.candidate.content.questions).toBeUndefined();
+  expect(prompt.feedback).toContain(visualFix.acceptance);
+  expect(project.units[0]!.content).toEqual(content);
+  expect(project.units[0]!.visuals).toHaveLength(3);
+  await step(); expect(project.state).toBe("ready");
+  expect(f.call.mock.calls.map(call => call[2])).toEqual(["studio.design", "studio.review"]);
+});
+it("gives authors the existing lesson and preserves previous visuals for the designer", async () => {
+  project = studioProjectFixture({ state: "needs_changes", phase: "review", plan: studioPlanFixture, units: [{ content: studioLessonFixture, visuals: [studioVisualFixture], review: { verdict: "revise", issues: ["Позначити інтерпретацію емоджі"], summary: "Уточнити приклад" } }] });
+  await resumeStudio("family", id, project.revision, "revise", undefined, "Не змінюй решту");
+  await step();
+  expect(JSON.parse(f.call.mock.calls[0]![4]).candidate.content).toEqual(studioLessonFixture);
+  expect(project.units[0]!.visuals).toEqual([studioVisualFixture]);
+  await step(); expect(JSON.parse(f.call.mock.calls[1]![4]).candidate.visuals).toEqual([studioVisualFixture]);
+});
+it("rejects non-actionable reviews and out-of-range correction targets without approving publication", async () => {
+  for (const corrections of [[], [{ ...visualFix, visualIndex: 5 }]]) {
+    project = studioProjectFixture({ state: "generating", phase: "review", plan: studioPlanFixture, units: [{ content: studioLessonFixture, visuals: [studioVisualFixture], review: null }] });
+    f.call.mockResolvedValueOnce({ result: { verdict: "revise", issues: ["Потрібні зміни"], corrections, summary: "Зміни" }, model: { provider: "openai", model: "test" }, costUsd: 0.01 });
+    await step(); expect(project.state).toBe("failed"); expect(project.units[0]!.review).toBeNull();
+  }
 });
