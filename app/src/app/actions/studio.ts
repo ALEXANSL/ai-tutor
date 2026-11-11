@@ -3,7 +3,7 @@ import { z } from "zod";
 import { unstable_rethrow } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireParentAccess, requireChild } from "@/server/auth/guards";
-import { studioPlanSchema, studioRequestSchema, studioActive } from "@/lib/studio";
+import { studioPlanSchema, studioRequestSchema, studioActive, type StudioActivity } from "@/lib/studio";
 import { readStudioProject, saveStudioProject, STUDIO_STEP } from "@/server/studio/store";
 import { pauseStudio, resumeStudio, startStudio } from "@/server/studio/workflow";
 import { kickStudio } from "@/server/studio/wake";
@@ -20,13 +20,15 @@ export async function pollStudioAction(rawId: string) {
   const { familyId } = await requireParentAccess(); const id = idSchema.parse(rawId);
   let project = await readStudioProject(familyId, id);
   if (!project) return { status: "error" as const, message: "Чернетку не знайдено." };
+  let activity: StudioActivity = { queue: "none", checkedAt: new Date().toISOString() };
   if (studioActive(project.state)) {
-    const job = await forFamily(familyId).select("jobs", "status,locked_until,created_at").eq("type", STUDIO_STEP).eq("payload->>projectId", id).eq("payload->>token", project.token).order("created_at", { ascending: false }).limit(1).maybeSingle<{ status: string; locked_until: string | null; created_at: string }>();
+    const job = await forFamily(familyId).select("jobs", "status,locked_until,created_at,run_after").eq("type", STUDIO_STEP).eq("payload->>projectId", id).eq("payload->>token", project.token).order("created_at", { ascending: false }).limit(1).maybeSingle<{ status: string; locked_until: string | null; created_at: string; run_after?: string | null }>();
+    activity = { queue: job.error ? "unavailable" : job.data?.status === "queued" ? "queued" : job.data?.status === "running" ? "running" : job.data?.status === "done" ? "finished" : job.data?.status === "failed" ? "interrupted" : "none", checkedAt: new Date().toISOString(), runAfter: job.data?.run_after };
     if (!job.error && (job.data?.status === "failed" || (job.data?.status === "running" && job.data.locked_until && Date.parse(job.data.locked_until) + 30000 < Date.now()) || (!job.data && Date.now() - Date.parse(project.createdAt) > 120000))) {
       project = await saveStudioProject(familyId, id, project, { state: "failed", error: "STUDIO-INTERRUPTED: фоновий етап перервано. Готові частини збережено; можна повторити. Резерв невизначеного виклику не списано повторно." });
     } else if (job.data?.status === "queued") kickStudio(familyId, id);
   }
-  return { status: "ok" as const, project };
+  return { status: "ok" as const, project, activity };
 }
 const commandSchema = z.object({ id: idSchema, revision: z.number().int().nonnegative(), command: z.enum(["approve", "retry", "revise", "publish"]), plan: studioPlanSchema.optional(), feedback: z.string().max(3000).optional(), budgetUsd: z.number().min(0.5).max(25).optional(), lessonIndex: z.number().int().min(0).max(5).optional() }).strict();
 export async function commandStudioAction(raw: unknown) {

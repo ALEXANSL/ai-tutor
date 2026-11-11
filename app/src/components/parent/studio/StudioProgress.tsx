@@ -1,0 +1,27 @@
+"use client";
+import type { StudioActivity, StudioProject } from "@/lib/studio";
+import { studioActive, studioStateLabels } from "@/lib/studio";
+export function StudioSpinner() {
+  return <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5 shrink-0 animate-spin motion-reduce:animate-none"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="3" opacity=".25" /><path d="M12 3a9 9 0 0 1 9 9" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" /></svg>;
+}
+export function StudioProgress({ project, activity, pendingLabel, checking, notice, error, onRefresh, onPause, onRevise, onPublish, onRetry }: {
+  project: StudioProject; activity: StudioActivity | null; pendingLabel: string; checking: boolean; notice: string; error: string;
+  onRefresh: () => void; onPause: () => void; onRevise: () => void; onPublish: () => void; onRetry: () => void;
+}) {
+  const active = studioActive(project.state); const busy = !!pendingLabel;
+  const stages = project.state === "planning" || project.state === "plan_ready" ? ["План"] : project.state === "publishing" ? ["Збереження", "Публікація"] : ["Автор", "Схеми", "Рецензія"];
+  const stageIndex = project.state === "publishing" ? project.publication ? 1 : 0 : project.phase === "author" ? 0 : project.phase === "design" ? 1 : project.phase === "review" ? 2 : 0;
+  const title = pendingLabel || (project.state === "generating" ? `Урок ${project.cursor + 1} із ${project.request.lessonCount}: ${["Автор готує зміст", "Готуємо навчальні схеми", "Рецензент перевіряє урок"][stageIndex]}` : project.state === "ready" ? "Готово до публікації" : studioStateLabels[project.state]);
+  const queue = activity?.queue === "unavailable" ? "Не вдалося перевірити чергу. Онови стан; завдання збережене." : project.activeCall ? "ШІ обробляє запит. Чекаємо відповідь сервісу." : activity?.queue === "queued" ? "Завдання в черзі. Запуск відбудеться автоматично." : activity?.queue === "running" ? "Сервер виконує поточний етап." : activity?.queue === "finished" ? "Етап завершився; звіряємо збережений результат." : "Запит збережено. Перевіряємо стан виконання.";
+  const button = "inline-flex min-h-10 items-center justify-center rounded-xl border border-p-line px-3 py-2 text-sm font-bold disabled:opacity-50";
+  return <section aria-label="Стан підготовки уроку" className="rounded-2xl border border-p-primary/40 bg-p-surface p-3 shadow-md md:p-4">
+    <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-2 text-p-primary" role="status" aria-live="polite">{(active || busy) && <StudioSpinner />}<h2 className="break-words text-sm font-bold">{title}</h2></div><div className="flex flex-wrap gap-2"><button type="button" onClick={onRefresh} disabled={checking || busy} className={button}>{checking ? "Перевіряємо…" : "Оновити стан"}</button>{["planning", "generating"].includes(project.state) && <button type="button" disabled={busy} onClick={onPause} className={button}>Пауза</button>}{["failed", "paused"].includes(project.state) && <button type="button" disabled={busy} onClick={onRetry} className={button}>{project.state === "paused" ? "Продовжити підготовку" : "Повторити етап"}</button>}{project.state === "needs_changes" && <button type="button" disabled={busy} onClick={onRevise} className={`${button} bg-p-primary text-white`}>Виправити зауваження рецензента</button>}{project.state === "ready" && <button type="button" disabled={busy} onClick={onPublish} className={`${button} bg-p-primary text-white`}>Опублікувати для дитини</button>}</div></div>
+    {active && !busy && <><p className="mt-2 text-xs leading-relaxed text-p-muted">{error ? "Зв’язок зі сторінкою перервано: останній відомий стан показано вище. Натисни «Оновити стан»." : queue}</p><ol aria-label="Етапи підготовки" className="mt-3 flex gap-2">{stages.map((label, index) => <li key={label} aria-current={index === stageIndex ? "step" : undefined} className={`min-w-0 flex-1 rounded-lg px-2 py-1.5 text-center text-xs font-semibold ${index === stageIndex ? "bg-p-primary text-white" : index < stageIndex ? "bg-p-bg text-p-primary" : "bg-p-bg text-p-muted"}`}>{index < stageIndex ? "✓ " : `${index + 1}. `}{label}</li>)}</ol></>}
+    {busy && <p className="mt-2 text-xs text-p-muted">Не натискай повторно: підтверджуємо збереження запиту.</p>}
+    {!active && project.state === "needs_changes" && <p className="mt-2 text-xs leading-relaxed text-p-muted">Є зауваження до уроку. Вони автоматично передаються автору — копіювати рецензію не потрібно. Публікація з’явиться після успішної повторної перевірки.</p>}
+    {project.state === "ready" && <p className="mt-2 text-xs leading-relaxed text-p-muted">Уроки пройшли рецензію. {project.request.subjectId ? "Після публікації вони з’являться в обраному предметі або курсі." : "Після публікації: у твоїх «Курсах» і в блоці «Курси» на головній дитини."}</p>}
+    {error && <p role={project.state === "paused" ? "status" : "alert"} className="mt-2 text-xs leading-relaxed text-p-text">{error}</p>}
+    {notice && !busy && !["ready", "published", "needs_changes"].includes(project.state) && <p role="status" className="mt-2 text-xs font-semibold text-p-primary">{notice}</p>}
+    {activity && <p className="mt-2 text-[11px] text-p-muted">Стан перевірено: {new Date(activity.checkedAt).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}{active ? " · Оновлюється автоматично" : ""}</p>}
+  </section>;
+}
