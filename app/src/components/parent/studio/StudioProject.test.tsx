@@ -56,6 +56,8 @@ it("allows a parent to describe corrections after publication and clearly keeps 
   const published = project({ state: "published", units: [{ ...unit, review: { verdict: "pass", issues: [], summary: "Пройдено" } }], publication: { subjectId: "subject", packageId: "package", lessons: [] } });
   f.poll.mockResolvedValue(observed({ ...published, state: "generating", phase: "author", publicationRevision: true, revision: 1 }));
   render(published);
+  expect(container.querySelector('a[href="#studio-revision"]')?.textContent).toBe("Виправити опублікований урок");
+  expect(container.querySelector("#studio-revision")).not.toBeNull();
   expect(button("Допрацювати урок 1").disabled).toBe(true);
   const field = container.querySelector("textarea")!;
   await act(async () => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(field, "Зроби таблицю зрозумілою"); field.dispatchEvent(new Event("input", { bubbles: true })); });

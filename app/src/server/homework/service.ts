@@ -52,7 +52,7 @@ export async function runHomework(familyId: string, childId: string, id: string,
     await saveHomework(familyId, id, work, { state: "ready", activeRequestId: null, turns, result: result.artifact ? result : { ...result, artifact: moderation.severity === "urgent" ? null : work.result?.artifact ?? null }, error: null });
   } catch (error) {
     const latest = await readHomework(familyId, childId, id);
-    if (latest?.activeRequestId === requestId && latest.revision === previous.revision) await saveHomework(familyId, id, latest, { state: "failed", activeRequestId: null, error: `${tutorFailureMessage(error)} Попередню готову роботу збережено. Автоматичного повтору немає.` });
+    if (latest?.activeRequestId === requestId && latest.revision === previous.revision) await saveHomework(familyId, id, latest, { state: "failed", activeRequestId: null, error: `${tutorFailureMessage(error).replace(/Запит залишився у полі — спробуй (?:пізніше|ще раз)\./g, "Твій запит збережено в діалозі.")} Попередню готову роботу збережено. Автоматичного повтору немає.` });
   }
 }
 export async function recoverHomework(familyId: string, id: string, work: HomeworkWork) {

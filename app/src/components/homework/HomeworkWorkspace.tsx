@@ -63,6 +63,7 @@ export function HomeworkWorkspace({ target, lessonTitle, backHref, pages, initia
       const response = await fetch("/api/homework", { method: "POST", body: data }); const body = await response.json();
       if (!response.ok) throw new Error(body.message || "Не вдалося надіслати запит.");
       if (!mounted.current) return;
+      request.current = { signature: "", id: "" }; // A confirmed operation is complete; the same words may be a new intentional turn.
       remember(body as HomeworkView); setQuestion(""); setFiles([]); if (fileInput.current) fileInput.current.value = "";
       const url = new URL(window.location.href); url.searchParams.set("work", id); window.history.replaceState(null, "", url);
     } catch (reason) { if (mounted.current) setError(`${reason instanceof Error ? reason.message : "Не вдалося підтвердити надсилання."} Запит залишився у полі. Повтор того самого запиту не створить дубль.`); }
