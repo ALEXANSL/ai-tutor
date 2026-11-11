@@ -29,3 +29,52 @@ it("stops on an expired session or a non-pupil profile instead of guessing anoth
   denied = false; role = "teacher"; calls.length = 0;
   expect(await collectEsSchool("2026-11-09", "2026-11-15")).toMatchObject({ error: expect.stringContaining("ESCHOOL-PUPIL") }); expect(calls.some(call => call.url.pathname.endsWith("Appointment"))).toBe(false);
 });
+it("requests the same detail embed as the diary and preserves schedule fields omitted by a detail response", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, options) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith("/Appointment")) return Response.json({ Items: [{ Id: 300, Subject: "Математика", Date: "2026-11-11", Embed: { TargetHomeworks: [{ Id: 400, Description: "Повний текст із розкладу", TargetAppointmentDate: "2026-11-13", FilesCount: 2 }] } }] });
+    if (url.pathname.endsWith("/Homework/400")) {
+      expect(url.searchParams.get("embed")).toBe("File");
+      return Response.json({ Id: 400, Description: null, Topic: "Повторення" });
+    }
+    return original(input, options);
+  });
+  const packet = schoolPacketSchema.parse(await collectEsSchool("2026-11-09", "2026-11-15"));
+  expect(packet.complete).toBe(true);
+  expect(packet.entries[1]).toMatchObject({ text: "Повний текст із розкладу", dueDate: "2026-11-13", attachments: 2 });
+});
+it.each([
+  [429, "ESCHOOL-HTTP-429"], [503, "ESCHOOL-HTTP-503"], ["timeout", "ESCHOOL-TIMEOUT"], ["network", "ESCHOOL-NETWORK"], ["shape", "ESCHOOL-HOMEWORK-SHAPE"], ["bodyTimeout", "ESCHOOL-TIMEOUT"], ["json", "ESCHOOL-JSON"],
+])("retains imported conditions and exposes a safe diagnostic code for %s", async (failure, code) => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (input, options) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith("/Appointment")) return Response.json({ Items: [{ Id: 300, Subject: "Математика", Date: "2026-11-11", Embed: { TargetHomeworks: [{ Id: 400, Description: "Розв’яжи вправу", FilesCount: 1 }] } }] });
+    if (url.pathname.endsWith("/Homework/400")) {
+      if (failure === "timeout") throw new DOMException("PRIVATE_TOKEN", "TimeoutError");
+      if (failure === "network") throw Error("PRIVATE_TOKEN");
+      if (failure === "bodyTimeout") { const response = Response.json({}); response.text = async () => { throw new DOMException("PRIVATE_TOKEN", "AbortError"); }; return response; }
+      if (failure === "json") return new Response("PRIVATE_NOT_JSON", { headers: { "content-type": "application/json" } });
+      if (failure === "shape") return Response.json({ Id: 999, Description: "PRIVATE_OTHER_PUPIL" });
+      return new Response("PRIVATE_SERVER_BODY", { status: failure as number });
+    }
+    return original(input, options);
+  });
+  const packet = schoolPacketSchema.parse(await collectEsSchool("2026-11-09", "2026-11-15"));
+  expect(packet.complete).toBe(false); expect(packet.warnings[0]).toContain(code);
+  expect(packet.entries[1]).toMatchObject({ text: "Розв’яжи вправу", attachments: 1 });
+  expect(JSON.stringify(packet)).not.toContain("PRIVATE_");
+});
+it("stops scheduling detail reads after a rate limit instead of hammering the service", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!; let detailCalls = 0;
+  vi.mocked(fetch).mockImplementation(async (input, options) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith("/Appointment")) return Response.json({ Items: [{ Id: 300, Subject: "Математика", Date: "2026-11-11", Embed: { TargetHomeworks: Array.from({ length: 20 }, (_, i) => ({ Id: 400 + i, Description: "Текст завдання" })) } }] });
+    if (url.pathname.includes("/Homework/")) { detailCalls++; return new Response("{}", { status: 429 }); }
+    return original(input, options);
+  });
+  const packet = schoolPacketSchema.parse(await collectEsSchool("2026-11-09", "2026-11-15"));
+  expect(detailCalls).toBeLessThanOrEqual(3); expect(packet.warnings).toHaveLength(20);
+  expect(packet.entries.filter(item => item.kind === "homework")).toHaveLength(20);
+});
