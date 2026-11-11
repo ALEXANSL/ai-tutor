@@ -31,3 +31,9 @@ it("never mixes reading/biography keys reused by another package in the same fam
   expect(view?.flow.map(step => step.id)).toEqual(["own-reading", "own-biography"]);
   expect(JSON.stringify(view)).not.toContain("WRONG");
 });
+
+it("hides staged or withdrawn Studio lessons, including direct reader calls", async () => {
+  fixture.rows.set("literature_v3_lessons", [{ id: "staged", package_id: "studio", flow: [], status: "needs_review" }]);
+  fixture.rows.set("literature_v3_packages", [{ id: "studio", title: "Draft", package_key: "studio.project" }]);
+  expect(await getLiteratureV3LessonView("family", "staged")).toBeNull();
+});

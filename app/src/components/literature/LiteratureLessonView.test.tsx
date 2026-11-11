@@ -1,3 +1,4 @@
+// Studio navigation has separate integration tests.
 // @vitest-environment jsdom
 import { act } from "react-dom/test-utils";
 import { createRoot, type Root } from "react-dom/client";
@@ -14,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * and asserts the explanation reveals without a correct/incorrect verdict
  * (same no-verdict path as `open`/`match`/`order`).
  */
+vi.mock("@/components/shared/StudioLessonLinks", () => ({ StudioLessonLinks: () => null }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: () => {} }),
 }));

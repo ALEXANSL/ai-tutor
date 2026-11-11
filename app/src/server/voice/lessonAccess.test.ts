@@ -104,3 +104,10 @@ describe("lightweight voice authorization", () => {
     await expect(assertLessonVoiceAccess("family", "child", target)).rejects.toThrow("voice_lesson_unavailable");
   });
 });
+
+it("denies unpublished/withdrawn Studio content before any transcription or content read", async () => {
+  put("literature_v3_lessons", { ...base, id, status: "needs_review", package_id: "studio-package", flow: [{ kind: "screen", ref_id: "key" }] });
+  put("literature_v3_packages", { id: "studio-package", package_key: "studio.project" });
+  await expect(assertLessonVoiceAccess("family", "child", chapter)).rejects.toThrow("voice_lesson_unavailable");
+  expect(f.calls.some(call => call.table === "literature_v3_screens")).toBe(false);
+});

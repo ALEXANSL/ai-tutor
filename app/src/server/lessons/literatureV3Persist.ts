@@ -52,6 +52,8 @@ async function uploadAssetWithRetry(scope: FamilyScope, storagePath: string, byt
 
 export interface LiteratureV3PersistContext {
   subjectId: string;
+  /** Studio prepares all rows before a separate, approved activation. */
+  lessonStatus?: "active" | "needs_review";
 }
 
 export interface LiteratureV3PersistSummary {
@@ -391,7 +393,7 @@ export async function persistLiteratureV3Package(
           printed_page_from: printedPageFrom,
           printed_page_to: printedPageTo,
           content_status: lesson.content_status,
-          status: "active",
+          status: ctx.lessonStatus ?? "active",
         },
         { onConflict: "package_id,lesson_key" },
       )

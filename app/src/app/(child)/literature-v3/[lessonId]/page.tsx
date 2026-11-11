@@ -3,6 +3,7 @@ import { LiteratureV3LessonScreen } from "@/components/course-v2/LiteratureV3Les
 import { requireChild } from "@/server/auth/guards";
 import { getLiteratureV3BookIndex, getLiteratureV3LessonView, getLiteratureV3ReadingPosition, listLiteratureV3Lessons } from "@/server/lessons/literatureV3View";
 import { resolveLessonVideoTopicId } from "@/server/lessons/lessonVideo";
+import { studioSubjectVisible } from "@/server/studio/visibility";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -18,6 +19,9 @@ export default async function LiteratureV3LessonPage({ params }: { params: Promi
   const { ctx, profile } = await requireChild();
   const lesson = await getLiteratureV3LessonView(ctx.familyId, lessonId);
   if (!lesson) notFound();
+  if (lesson.packageKey?.startsWith("studio.")) {
+    if (!await studioSubjectVisible(ctx.familyId, lesson.subjectId)) notFound();
+  }
   const [packageLessons, bookIndex, savedPosition, videoLessonTopicId] = await Promise.all([
     listLiteratureV3Lessons(ctx.familyId, lesson.packageId),
     getLiteratureV3BookIndex(ctx.familyId, lesson.packageId),

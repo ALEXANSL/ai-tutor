@@ -17,6 +17,7 @@ export function registerCoreNavigation(): void {
     { key: "budget", label: n.budget, icon: "💳", href: "/parent/budget", order: 60 },
     { key: "subjects", label: n.subjects, icon: "🎓", href: "/parent/subjects", order: 65 },
     { key: "courses", label: n.courses, icon: "🗂️", href: "/parent/courses", order: 67 },
+    { key: "studio", label: "Майстерня ШІ", icon: "✨", href: "/parent/studio", order: 68 },
     { key: "books", label: n.books, icon: "📚", href: "/parent/books", order: 70 },
     { key: "materials", label: n.materials, icon: "⬆️", href: "/parent/materials", order: 71 },
     { key: "videos", label: n.videos, icon: "🎬", href: "/parent/videos", order: 72 },

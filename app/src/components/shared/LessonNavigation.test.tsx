@@ -1,8 +1,10 @@
+// Studio navigation has separate integration tests.
 // @vitest-environment jsdom
 import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const push = vi.hoisted(() => vi.fn());
+vi.mock("@/components/shared/StudioLessonLinks", () => ({ StudioLessonLinks: () => null }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("next/link", () => ({ default: ({ href, children, ...props }: { href: string; children: React.ReactNode }) => <a href={href} {...props}>{children}</a> }));
 vi.mock("@/components/ThemeToggle", () => ({ ThemeToggle: () => <span>Тема оформлення</span> }));

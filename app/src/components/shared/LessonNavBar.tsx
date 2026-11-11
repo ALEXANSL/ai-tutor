@@ -7,6 +7,7 @@ import { HomeLink } from "./HomeLink";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { VideoLessonButton } from "@/components/child/VideoLessonButton";
 import { uk } from "@/i18n/uk";
+import { StudioLessonLinks } from "./StudioLessonLinks";
 
 const t = uk.child.lesson;
 
@@ -199,6 +200,7 @@ export function LessonNavBar({
           <p className="min-w-0 flex-1 truncate text-sm font-bold">{courseNav?.lessons.find(lesson => lesson.id === courseNav.currentLessonId)?.title ?? "Урок"}</p>
           <button ref={menuButton} type="button" aria-label="Меню уроку" aria-expanded={menuOpen} aria-controls={menuId} onClick={() => setMenuOpen(value => !value)} className="rounded-xl border border-line px-3 font-bold">{menuOpen ? "✕" : "☰"}</button>
         </div>
+        <StudioLessonLinks />
         <div id={menuId} data-open={menuOpen} className="lesson-nav-panel mx-auto max-w-4xl px-4 py-2.5" onClick={event => { if ((event.target as Element).closest("a")) setMenuOpen(false); }}>
           {/* `pl-14`/`pr-14` reserve room for the alarm button (top-left) and
               the always-on-top `ThemeToggle` pill (top-right, `fixed
