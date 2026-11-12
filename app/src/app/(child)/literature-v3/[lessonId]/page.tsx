@@ -20,6 +20,7 @@ export default async function LiteratureV3LessonPage({ params }: { params: Promi
   const lesson = await getLiteratureV3LessonView(ctx.familyId, lessonId);
   if (!lesson) notFound();
   if (lesson.packageKey?.startsWith("studio.")) {
+    if (lesson.status !== "active") notFound();
     if (!await studioSubjectVisible(ctx.familyId, lesson.subjectId)) notFound();
   }
   const [packageLessons, bookIndex, savedPosition, videoLessonTopicId] = await Promise.all([

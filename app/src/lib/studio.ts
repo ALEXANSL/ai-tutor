@@ -39,6 +39,8 @@ export interface StudioProject {
   version: 1; revision: number;
   /** Draft corrections over an existing publication; child content changes only on republish. */
   publicationRevision?: boolean;
+  childAccess?: "enabled" | "disabled";
+  editorNotes?: { at: string; lessonIndex: number; text: string }[];
   request: StudioRequest; state: StudioState; createdAt: string;
   sources: StudioSource[]; sourceNotes: string[]; subjectName: string | null; baseHref: string | null; baseTitle: string | null;
   plan: StudioPlan | null; units: StudioUnit[]; cursor: number; phase: "plan" | "author" | "design" | "review" | "publish";
@@ -54,4 +56,9 @@ export interface StudioActivity {
   queue: "queued" | "running" | "finished" | "interrupted" | "unavailable" | "none";
   checkedAt: string;
   runAfter?: string | null;
+}
+
+/** Legacy publications predate an explicit visibility flag. */
+export function studioPublicationVisible(project: Pick<StudioProject, "publication" | "state" | "publicationRevision" | "childAccess">): boolean {
+  return !!project.publication && (project.childAccess ? project.childAccess === "enabled" : project.state === "published" || (project.publicationRevision === true && project.state !== "withdrawn"));
 }

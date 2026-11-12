@@ -1,16 +1,17 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { studioProjectFixture } from "@/server/studio/__fixtures__/project";
-const f = vi.hoisted(() => ({ parent: vi.fn(), child: vi.fn(), start: vi.fn(), resume: vi.fn(), pause: vi.fn(), read: vi.fn(), save: vi.fn(), kick: vi.fn(), links: vi.fn(), text: vi.fn(), cleanup: vi.fn(), step: vi.fn(), scope: vi.fn() }));
-vi.mock("@/server/db/family-scope", () => ({ forFamily: (family: string) => { f.scope(family); const q = { eq: () => q, order: () => q, limit: () => q, maybeSingle: f.step }; return { select: () => q }; } }));
+import { studioProjectFixture, studioLessonFixture, studioVisualFixture } from "@/server/studio/__fixtures__/project";
+const f = vi.hoisted(() => ({ parent: vi.fn(), child: vi.fn(), start: vi.fn(), resume: vi.fn(), pause: vi.fn(), read: vi.fn(), save: vi.fn(), kick: vi.fn(), links: vi.fn(), text: vi.fn(), cleanup: vi.fn(), step: vi.fn(), scope: vi.fn(), update: vi.fn(), activate: vi.fn(), schedule: vi.fn(), validate: vi.fn() }));
+vi.mock("@/server/db/family-scope", () => ({ forFamily: (family: string) => { f.scope(family); const q = { eq: () => q, order: () => q, limit: () => q, maybeSingle: f.step }; return { select: () => q, update: (table: string, values: unknown) => { f.update(table, values); return q; } }; } }));
 vi.mock("@/server/auth/guards", () => ({ requireParentAccess: f.parent, requireChild: f.child }));
-vi.mock("@/server/studio/workflow", () => ({ startStudio: f.start, resumeStudio: f.resume, pauseStudio: f.pause }));
+vi.mock("@/server/studio/workflow", () => ({ startStudio: f.start, resumeStudio: f.resume, pauseStudio: f.pause, scheduleStudio: f.schedule, validateStudioLesson: f.validate }));
 vi.mock("@/server/studio/store", () => ({ readStudioProject: f.read, saveStudioProject: f.save, STUDIO_STEP: "studio.step" }));
+vi.mock("@/server/studio/publish", () => ({ activateStudioPublication: f.activate }));
 vi.mock("@/server/studio/wake", () => ({ kickStudio: f.kick }));
 vi.mock("@/server/studio/links", () => ({ studioLinksForPath: f.links }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ unstable_rethrow: vi.fn() }));
 vi.mock("unpdf", () => ({ getDocumentProxy: async () => ({ numPages: 10, cleanup: f.cleanup }), extractText: f.text }));
-import { createStudioAction, commandStudioAction, pollStudioAction, withdrawStudioAction, pauseStudioAction, extractStudioFileAction, studioLessonLinksAction } from "./studio";
+import { createStudioAction, commandStudioAction, pollStudioAction, withdrawStudioAction, pauseStudioAction, extractStudioFileAction, studioLessonLinksAction, setStudioAccessAction, saveStudioLessonAction } from "./studio";
 const id = "11111111-1111-4111-8111-111111111111";
 beforeEach(() => { vi.clearAllMocks(); f.parent.mockResolvedValue({ familyId: "own-family" }); f.child.mockResolvedValue({ ctx: { familyId: "child-family" } }); f.start.mockResolvedValue(id); f.read.mockResolvedValue(studioProjectFixture({ state: "plan_ready" })); });
 it("rejects a child/unauthorized caller before reading drafts, running models, extracting files or publishing", async () => {
@@ -43,4 +44,52 @@ it("reports queued versus running work from the parent family without starting a
 it("reports an unavailable status lookup without claiming a provider is working", async () => {
   f.read.mockResolvedValue(studioProjectFixture({ state: "generating" })); f.step.mockResolvedValue({ data: null, error: { message: "private database error" } });
   const result = await pollStudioAction(id); expect(result).toMatchObject({ activity: { queue: "unavailable" } }); expect(JSON.stringify(result)).not.toContain("private database error");
+});
+
+it("restores a withdrawn publication without authoring or another paid model call", async () => {
+  const project = studioProjectFixture({ state: "withdrawn", publication: { subjectId: "subject", packageId: "package", lessons: [] } }); f.read.mockResolvedValue(project);
+  expect((await setStudioAccessAction({ id, revision: 0, enabled: true })).status).toBe("ok");
+  expect(f.activate).toHaveBeenCalledWith("own-family", project.publication, true);
+  expect(f.save).toHaveBeenCalledWith("own-family", id, project, expect.objectContaining({ state: "published", childAccess: "enabled" }));
+  expect(f.resume).not.toHaveBeenCalled(); expect(f.schedule).not.toHaveBeenCalled();
+});
+it("saves a manual correction on a hidden lesson and schedules only the reviewer", async () => {
+  const project = studioProjectFixture({ state: "withdrawn", publication: { subjectId: "subject", packageId: "package", lessons: [] }, units: [{ content: studioLessonFixture, visuals: [studioVisualFixture], review: { verdict: "pass", issues: [], summary: "Пройдено" } }] });
+  f.read.mockResolvedValue(project); f.validate.mockImplementation((_project, lesson) => lesson); f.save.mockResolvedValue({ ...project, revision: 1 });
+  const edited = { ...studioLessonFixture, title: "Уточнений урок" };
+  expect((await saveStudioLessonAction({ id, revision: 0, lessonIndex: 0, lesson: edited, budgetUsd: 3 })).status).toBe("ok");
+  const changes = f.save.mock.calls[0]![3]; expect(changes).toMatchObject({ state: "generating", phase: "review", childAccess: "disabled", publicationRevision: true });
+  expect(changes.units[0].content.title).toBe("Уточнений урок"); expect(changes.units[0].review).toBeNull(); expect(f.schedule).toHaveBeenCalledOnce(); expect(f.resume).not.toHaveBeenCalled();
+});
+it("does not change publication access while a worker is active or from a stale page", async () => {
+  f.read.mockResolvedValue(studioProjectFixture({ state: "generating", publication: { subjectId: "subject", packageId: "package", lessons: [] } }));
+  expect((await setStudioAccessAction({ id, revision: 0, enabled: true })).status).toBe("error"); expect(f.activate).not.toHaveBeenCalled();
+});
+it("can disable and restore the same old publication repeatedly without recreating its lessons", async () => {
+  let project = studioProjectFixture({ state: "published", publication: { subjectId: "own-course", packageId: "same-package", lessons: [{ id: "same-lesson", topicId: "same-topic", title: "Урок" }] } });
+  f.read.mockImplementation(async () => project);
+  f.save.mockImplementation(async (_family, _id, previous, changes) => { project = { ...previous, ...changes, revision: previous.revision + 1 }; return project; });
+  expect((await setStudioAccessAction({ id, revision: 0, enabled: false })).status).toBe("ok");
+  expect(project).toMatchObject({ state: "withdrawn", childAccess: "disabled", revision: 1 });
+  expect(f.update).toHaveBeenCalledWith("subjects", { active: false });
+  expect((await setStudioAccessAction({ id, revision: 1, enabled: true })).status).toBe("ok");
+  expect(project).toMatchObject({ state: "published", childAccess: "enabled", revision: 2 });
+  expect(project.publication!.lessons[0]!.id).toBe("same-lesson");
+  expect((await setStudioAccessAction({ id, revision: 2, enabled: false })).status).toBe("ok");
+  expect(project.childAccess).toBe("disabled"); expect(f.resume).not.toHaveBeenCalled(); expect(f.schedule).not.toHaveBeenCalled();
+});
+it("restores the existing publication during a ready revision without publishing the edited candidate", async () => {
+  const project = studioProjectFixture({ state: "ready", publicationRevision: true, childAccess: "disabled", publication: { subjectId: "subject", packageId: "old-package", lessons: [] } });
+  f.read.mockResolvedValue(project);
+  expect((await setStudioAccessAction({ id, revision: 0, enabled: true })).status).toBe("ok");
+  expect(f.activate).toHaveBeenCalledWith("own-family", project.publication, true);
+  expect(f.save.mock.calls[0]![3]).toEqual({ childAccess: "enabled" });
+  expect(f.schedule).not.toHaveBeenCalled();
+});
+it("rejects stale controls and child callers before touching lesson visibility or saving edits", async () => {
+  f.read.mockResolvedValue(studioProjectFixture({ revision: 3, state: "withdrawn", publication: { subjectId: "subject", packageId: "package", lessons: [] } }));
+  expect((await setStudioAccessAction({ id, revision: 0, enabled: true })).status).toBe("error"); expect(f.activate).not.toHaveBeenCalled(); expect(f.update).not.toHaveBeenCalled();
+  f.parent.mockRejectedValue(Error("parent only")); f.read.mockClear();
+  await expect(setStudioAccessAction({ id, revision: 3, enabled: true })).rejects.toThrow();
+  await expect(saveStudioLessonAction({})).rejects.toThrow(); expect(f.read).not.toHaveBeenCalled();
 });
