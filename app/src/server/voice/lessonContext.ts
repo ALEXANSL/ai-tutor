@@ -135,6 +135,7 @@ export async function resolveLessonVoiceTarget(familyId: string, childId: string
   if (target.kind === "chapter") {
     const lesson = await getLiteratureV3LessonView(familyId, target.lessonId, { includeIllustrations: false });
     if (!lesson || !lesson.topicId || !["active", "needs_review"].includes(lesson.status)) unavailable();
+    if (lesson.packageKey?.startsWith("studio.") && lesson.status !== "active") unavailable();
     if (lesson.packageKey?.startsWith("studio.") && !await studioSubjectVisible(familyId, lesson.subjectId)) unavailable();
     const step = lesson.flow.find(step => step.id === target.stepId);
     if (!step) unavailable();

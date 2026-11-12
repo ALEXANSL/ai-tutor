@@ -126,6 +126,12 @@ it("revises a published lesson as a draft and republishes through persistence in
   await step(); await step(); await step(); expect(project.state).toBe("ready");
   f.prepare.mockResolvedValue(publication);
   await resumeStudio("family", id, project.revision, "publish"); await step();
-  expect(f.prepare).toHaveBeenCalled(); expect(f.activate).toHaveBeenCalledWith("family", publication, false);
+  expect(f.prepare).toHaveBeenCalled(); expect(f.activate).toHaveBeenCalledWith("family", publication, true);
   expect(project.state).toBe("published"); expect(project.publicationRevision).toBe(false); expect(project.publication).toEqual(publication);
+});
+
+it("lets a hidden publication be revised without making its old version visible", async () => {
+  project = studioProjectFixture({ state: "withdrawn", phase: "publish", plan: studioPlanFixture, publication: { subjectId: "subject", packageId: "package", lessons: [] }, units: [{ content: studioLessonFixture, visuals: [studioVisualFixture], review: { verdict: "pass", issues: [], summary: "Пройдено" } }] });
+  await resumeStudio("family", id, project.revision, "revise", undefined, "Уточни приклад");
+  expect(project.state).toBe("generating"); expect(project.childAccess).toBe("disabled"); expect(project.publicationRevision).toBe(true); expect(project.editorNotes?.at(-1)?.text).toBe("Уточни приклад");
 });

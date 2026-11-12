@@ -9,7 +9,7 @@ vi.mock("@/server/db/family-scope", () => ({ forFamily: (family: string) => ({ s
   const map = () => get().map(row => {
     if (!columns.includes("requestTitle")) return row;
     const value = row.payload as ReturnType<typeof studioProjectFixture>;
-    return { id: row.id, title: value.plan?.title, requestTitle: value.request.title, mode: value.request.mode, baseTopicId: value.request.topicId, baseHref: value.baseHref, publication: value.publication };
+    return { id: row.id, title: value.plan?.title, requestTitle: value.request.title, mode: value.request.mode, baseTopicId: value.request.topicId, baseHref: value.baseHref, publication: value.publication, state: value.state, publicationRevision: value.publicationRevision, childAccess: value.childAccess };
   });
   const chain = { or: (value: string) => { f.filters.push([family, "or", value]); return chain; }, eq: (field: string, value: unknown) => { filters.push([field, value]); f.filters.push([family, field, value]); return chain; }, order: () => chain, limit: () => chain, range: () => chain, maybeSingle: async () => ({ data: map()[0] ?? null, error: null }), returns: async () => ({ data: map(), error: null }) }; return chain;
 } }) }));
@@ -35,5 +35,11 @@ it("keeps links to the published version visible while a correction draft is bei
   value.state = "generating"; value.publicationRevision = true;
   const result = await studioLinksForPath("family", `/literature-v3/${baseId}`);
   expect(result.links[0]!.href).toBe(`/literature-v3/${generatedId}`);
-  expect(f.filters).toContainEqual(["family", "or", "payload->>state.eq.published,payload->>publicationRevision.eq.true"]);
+  expect(result.links).toHaveLength(1);
+});
+
+it("does not expose a disabled publication while its revision is ready or being generated", async () => {
+  const value = f.rows.get("jobs")![0]!.payload as ReturnType<typeof studioProjectFixture>;
+  value.state = "ready"; value.publicationRevision = true; value.childAccess = "disabled";
+  expect((await studioLinksForPath("family", `/literature-v3/${baseId}`)).links).toEqual([]);
 });

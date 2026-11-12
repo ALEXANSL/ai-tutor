@@ -1,11 +1,13 @@
 "use server";
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
 import { unstable_rethrow } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireParentAccess, requireChild } from "@/server/auth/guards";
-import { studioPlanSchema, studioRequestSchema, studioActive, type StudioActivity } from "@/lib/studio";
+import { studioPlanSchema, studioRequestSchema, studioLessonSchema, studioActive, studioPublicationVisible, type StudioActivity } from "@/lib/studio";
 import { readStudioProject, saveStudioProject, STUDIO_STEP } from "@/server/studio/store";
-import { pauseStudio, resumeStudio, startStudio } from "@/server/studio/workflow";
+import { validateStudioLesson, scheduleStudio, pauseStudio, resumeStudio, startStudio } from "@/server/studio/workflow";
+import { activateStudioPublication } from "@/server/studio/publish";
 import { kickStudio } from "@/server/studio/wake";
 import { forFamily } from "@/server/db/family-scope";
 import { studioLinksForPath } from "@/server/studio/links";
@@ -41,19 +43,40 @@ export async function pauseStudioAction(rawId: string, revision: number) {
   try { await pauseStudio(familyId, idSchema.parse(rawId), z.number().int().nonnegative().parse(revision)); return { status: "ok" as const }; }
   catch (error) { return { status: "error" as const, message: message(error) }; }
 }
-export async function withdrawStudioAction(rawId: string, revision: number) {
+export async function setStudioAccessAction(raw: unknown) {
   const { familyId } = await requireParentAccess();
   try {
-    const id = idSchema.parse(rawId); const project = await readStudioProject(familyId, id);
-    if (!project?.publication || project.state !== "published" || project.revision !== revision) throw new Error("Онови опублікований проєкт перед дією.");
-    const result = await forFamily(familyId).update("literature_v3_lessons", { status: "needs_review" }).eq("package_id", project.publication.packageId);
-    if (result.error) throw new Error("Не вдалося вимкнути доступ до уроків.");
-    if (!project.request.subjectId) {
-      const hidden = await forFamily(familyId).update("subjects", { active: false }).eq("id", project.publication.subjectId);
-      if (hidden.error) throw new Error("Уроки вимкнено, але курс ще потрібно приховати в каталозі.");
+    const value = z.object({ id: idSchema, revision: z.number().int().min(0), enabled: z.boolean() }).strict().parse(raw);
+    const project = await readStudioProject(familyId, value.id);
+    if (!project?.publication || project.revision !== value.revision || studioActive(project.state)) throw new Error("Онови проєкт. Доступ можна змінити після завершення поточного етапу.");
+    if (project.state === "failed" && project.phase === "publish") throw new Error("Спочатку заверши незавершене збереження публікації.");
+    if (value.enabled) await activateStudioPublication(familyId, project.publication, !project.request.subjectId);
+    else {
+      const hidden = await forFamily(familyId).update("literature_v3_lessons", { status: "needs_review" }).eq("package_id", project.publication.packageId);
+      if (hidden.error) throw new Error("Не вдалося вимкнути доступ. Повтори після оновлення.");
+      if (!project.request.subjectId) {
+        const subject = await forFamily(familyId).update("subjects", { active: false }).eq("id", project.publication.subjectId);
+        if (subject.error) throw new Error("Уроки вимкнено, але статус курсу потрібно оновити повторно.");
+      }
     }
-    await saveStudioProject(familyId, id, project, { state: "withdrawn" });
-    revalidatePath("/subject", "layout"); revalidatePath("/parent/studio"); return { status: "ok" as const };
+    const finished = ["published", "withdrawn"].includes(project.state) && !project.publicationRevision;
+    await saveStudioProject(familyId, value.id, project, { childAccess: value.enabled ? "enabled" : "disabled", ...(finished ? { state: value.enabled ? "published" : "withdrawn" } : {}) });
+    revalidatePath("/parent/studio"); revalidatePath("/subject", "layout"); revalidatePath("/today"); return { status: "ok" as const };
+  } catch (error) { return { status: "error" as const, message: message(error) }; }
+}
+export async function withdrawStudioAction(rawId: string, revision: number) { return setStudioAccessAction({ id: rawId, revision, enabled: false }); }
+export async function saveStudioLessonAction(raw: unknown) {
+  const { familyId } = await requireParentAccess();
+  try {
+    const value = z.object({ id: idSchema, revision: z.number().int().min(0), lessonIndex: z.number().int().min(0).max(5), lesson: studioLessonSchema, budgetUsd: z.number().min(0.5).max(25) }).strict().parse(raw);
+    const project = await readStudioProject(familyId, value.id);
+    if (!project || project.revision !== value.revision || !["ready", "needs_changes", "published", "withdrawn"].includes(project.state) || !project.units[value.lessonIndex]) throw new Error("Онови матеріал перед редагуванням.");
+    const lesson = validateStudioLesson(project, value.lesson); const units = [...project.units]; units[value.lessonIndex] = { ...units[value.lessonIndex]!, content: lesson, review: null };
+    const token = randomUUID();
+    const next = await saveStudioProject(familyId, value.id, project, { units, state: "generating", phase: "review", cursor: value.lessonIndex, token, activeCall: false, error: null, request: { ...project.request, budgetUsd: value.budgetUsd }, publicationRevision: !!project.publication, childAccess: studioPublicationVisible(project) ? "enabled" : "disabled", feedback: "Збережено ручні виправлення. Рецензуй поточний candidate, перевір факти й відповідність схем. Старі зауваження не є доказом помилки.", editorNotes: [...(project.editorNotes ?? []), { at: new Date().toISOString(), lessonIndex: value.lessonIndex, text: "Збережено ручні виправлення тексту й озвучення; запущено перевірку рецензента." }].slice(-30) });
+    try { await scheduleStudio(familyId, value.id, token); kickStudio(familyId, value.id); }
+    catch { await saveStudioProject(familyId, value.id, next, { state: "failed", error: "Правки збережено, але черга недоступна. Повтори етап рецензії." }); }
+    revalidatePath("/parent/studio"); return { status: "ok" as const };
   } catch (error) { return { status: "error" as const, message: message(error) }; }
 }
 export async function studioLessonLinksAction(pathname: string) {

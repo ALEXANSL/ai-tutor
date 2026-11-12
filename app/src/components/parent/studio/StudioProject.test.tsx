@@ -4,8 +4,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { studioProjectFixture, studioPlanFixture, studioLessonFixture, studioVisualFixture } from "@/server/studio/__fixtures__/project";
 import type { StudioProject as Project, StudioActivity } from "@/lib/studio";
-const f = vi.hoisted(() => ({ command: vi.fn(), poll: vi.fn(), pause: vi.fn() }));
-vi.mock("@/app/actions/studio", () => ({ commandStudioAction: f.command, pollStudioAction: f.poll, pauseStudioAction: f.pause, withdrawStudioAction: vi.fn() }));
+const f = vi.hoisted(() => ({ command: vi.fn(), poll: vi.fn(), pause: vi.fn(), access: vi.fn(), save: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+vi.mock("@/app/actions/studio", () => ({ commandStudioAction: f.command, pollStudioAction: f.poll, pauseStudioAction: f.pause, withdrawStudioAction: vi.fn(), setStudioAccessAction: f.access, saveStudioLessonAction: f.save }));
 vi.mock("./StudioPreview", () => ({ StudioPreview: () => <p>Попередній матеріал уроку</p> }));
 import { StudioProject } from "./StudioProject";
 const id = "11111111-1111-4111-8111-111111111111";
@@ -56,7 +57,7 @@ it("allows a parent to describe corrections after publication and clearly keeps 
   const published = project({ state: "published", units: [{ ...unit, review: { verdict: "pass", issues: [], summary: "Пройдено" } }], publication: { subjectId: "subject", packageId: "package", lessons: [] } });
   f.poll.mockResolvedValue(observed({ ...published, state: "generating", phase: "author", publicationRevision: true, revision: 1 }));
   render(published);
-  expect(container.querySelector('a[href="#studio-revision"]')?.textContent).toBe("Виправити опублікований урок");
+  expect(button("Редагувати матеріал")).toBeTruthy();
   expect(container.querySelector("#studio-revision")).not.toBeNull();
   expect(button("Допрацювати урок 1").disabled).toBe(true);
   const field = container.querySelector("textarea")!;
@@ -65,4 +66,15 @@ it("allows a parent to describe corrections after publication and clearly keeps 
   await click("Допрацювати урок 1");
   expect(f.command.mock.calls[0]![0]).toMatchObject({ command: "revise", feedback: "Зроби таблицю зрозумілою" });
   expect(container.textContent).toContain("дитина бачить чинну версію");
+});
+
+it("puts editing and restore tools before the read-only preview on a withdrawn project", async () => {
+  render(project({ state: "withdrawn", publication: { subjectId: "subject", packageId: "package", lessons: [] } }));
+  expect(button("Увімкнути для дитини")).toBeTruthy(); expect(button("Покращити з ШІ")).toBeTruthy();
+  const tools = container.querySelector('[aria-label="Керування матеріалом"]')!;
+  expect(tools.compareDocumentPosition([...container.querySelectorAll("p")].find(node => node.textContent === "Попередній матеріал уроку")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  await click("Редагувати матеріал"); expect(container.textContent).toContain("Редактор уроку 1"); expect(container.querySelector('textarea[required]')).not.toBeNull();
+  const editor = [...container.querySelectorAll("h2")].find(node => node.textContent === "Редактор уроку 1")!;
+  const dialogue = container.querySelector("#studio-revision")!;
+  expect(editor.compareDocumentPosition(dialogue) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
