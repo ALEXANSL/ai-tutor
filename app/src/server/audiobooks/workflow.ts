@@ -36,6 +36,11 @@ export async function runAudioPart(familyId: string, id: string, token: string) 
         if (source.range.from !== project.sourceFrom || source.range.to !== project.sourceTo) throw new Error("Нумерація книги змінилась. Створи нову підготовку.");
         project = await saveAudioPart(familyId, id, project, { notes: source.notes ?? "", paragraphs: source.paragraphs, sourceHash: audioHash(JSON.stringify(source.paragraphs)) });
       }
+      if (project.phase === "prepare" && project.request.lesson?.kind === "reading") {
+        const manuscript = project.paragraphs.map(paragraph => paragraph.text).join("\n\n");
+        if (!manuscript.trim() || manuscript.length > 60000) throw new Error("Перевір обсяг тексту читання.");
+        project = await saveAudioPart(familyId, id, project, { manuscript, omitted: [], state: "draft", leaseUntil: 0 }); break;
+      }
       const index = project.segments.findIndex(s => !s.ready);
       if (project.phase === "audio" && index < 0) { project = await saveAudioPart(familyId, id, project, { state: "ready", leaseUntil: 0 }); break; }
       const role = project.phase === "prepare" ? project.request.lesson ? "audiobook.lesson_script" : "audiobook.prepare" : "audiobook.narrate";
@@ -91,7 +96,7 @@ export async function commandAudioPart(familyId: string, id: string, revision: n
   if (command === "keep_all" && ["draft", "failed"].includes(p.state) && p.phase === "prepare" && p.paragraphs.length) return saveAudioPart(familyId, id, p, { state: "draft", manuscript: p.paragraphs.map(s => s.text).join("\n\n"), omitted: [], error: null });
   if (command === "approve" && p.state === "draft") {
     const manuscript = text?.trim() ?? p.manuscript;
-    if (manuscript.length < 80 || manuscript.length > 60000) throw new Error("Сценарій має містити від 80 до 60 000 символів.");
+    if (manuscript.length < (p.request.lesson?.kind === "reading" ? 10 : 80) || manuscript.length > 60000) throw new Error(`Сценарій має містити від ${p.request.lesson?.kind === "reading" ? 10 : 80} до 60 000 символів.`);
     const config = await audioModelConfig(familyId, "audiobook.narrate");
     const estimate = audioReservation(config, manuscript, true);
     if (p.spentUsd + p.heldUsd + estimate > request.budgetUsd) throw new Error("Ліміт не покриває озвучення цього тексту. Збільш його або скороти уривок.");

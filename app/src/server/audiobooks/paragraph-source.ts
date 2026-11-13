@@ -9,6 +9,16 @@ function headingOffset(text: string, title: string, after = 0): number | null {
       if (key(phrase) === wanted) return lines[i]!.index!;
     }
   }
+  const number = /(?:§|параграф)\s*(\d+)/iu.exec(title)?.[1];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!; if (line.index! < after) continue;
+    if (number && new RegExp(`^\\s*§\\s*${number}(?=\\D|$)`, "u").test(line[0]) && key(lines.slice(i, i + 3).map(item => item[0]).join(" ")).split(" ").some(word => word.length >= 4 && wanted.split(" ").includes(word))) return line.index!;
+    for (let count = 1; count <= 3; count++) {
+      const phrase = key(lines.slice(i, i + count).map(item => item[0]).join(" "));
+      const displayed = lines.slice(i, i + count).map(item => item[0]).join(" ").trim();
+      if ((displayed === displayed.toLocaleUpperCase("uk") || /[«“”"]/.test(displayed)) && phrase.length >= 8 && phrase.split(" ").length >= 2 && ` ${wanted} `.includes(` ${phrase} `)) return line.index!;
+    }
+  }
   return null;
 }
 export function trimAudioParagraph(units: ExtractedUnit[], title: string, nextTitle?: string): ExtractedUnit[] {

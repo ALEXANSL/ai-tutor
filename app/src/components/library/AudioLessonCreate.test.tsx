@@ -16,8 +16,14 @@ it("creates a lesson source without pages only after consent and reuses request 
   expect(submit.disabled).toBe(true); act(() => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
   const form = container.querySelector('form')!;
   await act(async () => { form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
-  const first = f.create.mock.calls[0]![0]; expect(first.request.lesson).toEqual({ subjectId, topicId }); expect(first.request.materialId).toBe(subjectId); expect(first.request.from).toBe(1); expect(first.request.to).toBe(1);
+  const first = f.create.mock.calls[0]![0]; expect(first.request.lesson).toEqual({ subjectId, topicId, kind: "explanation" }); expect(first.request.materialId).toBe(subjectId); expect(first.request.from).toBe(1); expect(first.request.to).toBe(1);
   f.create.mockResolvedValue({ status: "ok", id: first.id });
   await act(async () => { form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
   expect(f.create.mock.calls[1]![0].id).toBe(first.id); expect(f.push).toHaveBeenCalledWith(`/parent/audiobooks/${first.id}`);
+});
+it("requests literal reading with retained poetry lines instead of a rewritten teaching script", async () => {
+  render(); const select = container.querySelector<HTMLSelectElement>('select[aria-label="Формат аудіо"]')!;
+  act(() => { select.value = "reading"; select.dispatchEvent(new Event("change", { bubbles: true })); container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(); });
+  await act(async () => { container.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })); });
+  expect(f.create.mock.calls[0]![0].request.lesson.kind).toBe("reading"); expect(f.create.mock.calls[0]![0].request.preserveLines).toBe(true);
 });
