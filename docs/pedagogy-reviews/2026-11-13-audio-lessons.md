@@ -1,0 +1,7 @@
+# Audio lesson manuscript — pedagogical self-review
+
+A ready lesson already supplies subject concepts, examples and explanations. Audio adaptation should remove screen/narration duplication, verbalize supplied formulas/tables, retain quotations and explain known illustrations without relying on an unseen screen. It must not become only quiz questions, invent missing solutions/facts, or claim to be a literal audiobook. Ukrainian explanation with foreign-language examples retained is explicit in the new prompt.
+
+Keep literary book editing a separate existing omission-only role; it must not inherit the lesson adaptation prompt. Parent sees retained source and exact output before paid TTS and separate child publication. Empty scanned pages must not be skipped or replaced by generated prose without switching to the explicit lesson-source mode. Indexed-source fallback is labelled for recognition review. Paragraph boundaries use headings and stop if uncertain.
+
+Automated checks cover source ownership, revision selection, manuscript draft/publication gate and book-vs-lesson role separation. Actual pronunciation, pacing and model fidelity require listening to the first real audio part; private materials and paid APIs were not used in workspace validation. Future improvements: native-language narration segment tags for language audio, per-module selection for very long lessons, and independent semantic review before audio publication.

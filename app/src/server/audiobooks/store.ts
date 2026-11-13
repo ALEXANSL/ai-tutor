@@ -22,7 +22,7 @@ export async function saveAudioPart(familyId: string, id: string, previous: Audi
   if (error || !data) throw new Error("Стан уже змінився. Онови сторінку перед повтором."); return next;
 }
 export async function listAudioCards(familyId: string, materialId?: string, publishedOnly = false): Promise<AudioCard[]> {
-  let query = forFamily(familyId).select("jobs", "id,materialId:payload->request->>materialId,title:payload->request->>title,bookTitle:payload->>bookTitle,state:payload->>state,published:payload->>published,ready:payload->>readyCount,total:payload->>segmentCount,from:payload->>sourceFrom,to:payload->>sourceTo,createdAt:payload->>createdAt").eq("type", PART_TYPE).neq("payload->>state", "deleted");
+  let query = forFamily(familyId).select("jobs", "id,lessonTopicId:payload->request->lesson->>topicId,materialId:payload->request->>materialId,title:payload->request->>title,bookTitle:payload->>bookTitle,state:payload->>state,published:payload->>published,ready:payload->>readyCount,total:payload->>segmentCount,from:payload->>sourceFrom,to:payload->>sourceTo,createdAt:payload->>createdAt").eq("type", PART_TYPE).neq("payload->>state", "deleted");
   if (materialId) query = query.eq("payload->request->>materialId", materialId);
   if (publishedOnly) query = query.eq("payload->>published", "true").eq("payload->>state", "ready");
   const rows: unknown[] = [];
@@ -33,7 +33,7 @@ export async function listAudioCards(familyId: string, materialId?: string, publ
     if (offset === 9500) throw new Error("Аудіотека завелика для цього перегляду.");
   }
   // Explicit projection below never returns source/manuscript/audio storage keys to a catalog client.
-  return rows.map(row => { const r = row as unknown as { id: string; materialId: string; title: string; bookTitle: string; state: AudioPart["state"]; published: string; ready: string; total: string; from: string; to: string; createdAt: string }; return { ...r, published: r.published === "true", ready: Number(r.ready || 0), total: Number(r.total || 0), from: Number(r.from), to: Number(r.to) }; });
+  return rows.map(row => { const r = row as unknown as { lessonTopicId?: string | null; id: string; materialId: string; title: string; bookTitle: string; state: AudioPart["state"]; published: string; ready: string; total: string; from: string; to: string; createdAt: string }; return { ...r, published: r.published === "true", ready: Number(r.ready || 0), total: Number(r.total || 0), from: Number(r.from), to: Number(r.to) }; });
 }
 export const defaultLibrarySettings: LibrarySettings = { author: "", printedOffset: 0, printedConfirmed: false, chapters: [] };
 export async function readLibrarySettings(familyId: string, materialId: string): Promise<LibrarySettings> {

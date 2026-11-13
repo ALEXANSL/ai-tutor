@@ -21,3 +21,10 @@ it("saves progress for the authenticated user only with valid segment bounds", a
   const position = { segment: 0, seconds: 20, speed: 1.25, bookmark: null }; await audioPositionAction(audioId, position); expect(f.position).toHaveBeenCalledWith(familyId, "own-user", audioId, position);
   await expect(audioPositionAction(audioId, { ...position, segment: 2 })).rejects.toThrow();
 });
+it("accepts an explicit ready-lesson source and rejects mixing it with book paragraph/pages", async () => {
+  f.start.mockResolvedValue(audioId);
+  const request = { ...requestFixture, materialId: familyId, from: 1, to: 1, lesson: { subjectId: familyId, topicId: audioId } };
+  expect((await createAudioPartAction({ id: audioId, request })).status).toBe("ok");
+  expect(f.start).toHaveBeenCalledWith(familyId, audioId, expect.objectContaining({ lesson: request.lesson }));
+  for (const changes of [{ materialId: audioId }, { paragraphId: audioId }, { from: 2, to: 3 }]) expect((await createAudioPartAction({ id: audioId, request: { ...request, ...changes } })).status).toBe("error");
+});
