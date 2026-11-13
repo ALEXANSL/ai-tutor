@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { studioParentView } from "@/lib/studio-parent-view";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -77,4 +78,15 @@ it("puts editing and restore tools before the read-only preview on a withdrawn p
   const editor = [...container.querySelectorAll("h2")].find(node => node.textContent === "Редактор уроку 1")!;
   const dialogue = container.querySelector("#studio-revision")!;
   expect(editor.compareDocumentPosition(dialogue) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it("loads the complete eighteenth lesson before opening its editor in a long course", async () => {
+  const full = project({ state: "ready", request: { ...project().request, lessonCount: 24 }, units: Array.from({ length: 24 }, (_, i) => ({ ...unit, content: { ...studioLessonFixture, title: `Урок ${i+1}` } })) });
+  f.poll.mockImplementation(async (_id, index) => observed(studioParentView(full, index)));
+  render(studioParentView(full, 0));
+  const select = container.querySelector<HTMLSelectElement>('select[aria-label="Урок для виправлення"]')!;
+  await act(async () => { select.value = "17"; select.dispatchEvent(new Event("change", { bubbles: true })); });
+  expect(f.poll).toHaveBeenCalledWith(id, 17);
+  await click("Редагувати матеріал");
+  expect(container.textContent).toContain("Редактор уроку 18"); expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Текст для читання блоку 1"]')!.value).toBe(studioLessonFixture.blocks[0]!.text);
 });

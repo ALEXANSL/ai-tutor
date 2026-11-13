@@ -110,3 +110,14 @@ it("rejects a foreign selected lesson before model work", async () => {
   f.detail.mockResolvedValue(null);
   expect((await reviseImportedLessonAction({ subjectId: id, topicId: id, requestId: id, instructions: "Перероби матеріал уроку", budgetUsd: 3, age: 12, grade: 6 })).status).toBe("error"); expect(f.start).not.toHaveBeenCalled();
 });
+it("accepts a long course, returns one full selected preview, and permits editing beyond lesson six", async () => {
+  const request = { ...studioProjectFixture().request, lessonCount: 24 };
+  expect((await createStudioAction({ requestId: id, request })).status).toBe("ok");
+  const units = Array.from({ length: 24 }, (_, i) => ({ content: { ...studioLessonFixture, title: `Урок ${i+1}` }, visuals: [], review: { verdict: "pass" as const, issues: [], summary: "Добре" } }));
+  const current = studioProjectFixture({ request, state: "ready", units }); f.read.mockResolvedValue(current);
+  const result = await pollStudioAction(id, 17); expect(result.status).toBe("ok");
+  if (result.status === "ok") { expect(result.project.previewIndex).toBe(17); expect(result.project.units[17]!.content.blocks.length).toBeGreaterThan(0); expect(result.project.units[0]!.content.blocks).toEqual([]); }
+  f.validate.mockReturnValue(studioLessonFixture); f.save.mockResolvedValue({ ...current, revision: 1 });
+  const edited = await saveStudioLessonAction({ id, revision: 0, lessonIndex: 17, lesson: studioLessonFixture, budgetUsd: 30 });
+  expect(edited.status).toBe("ok"); expect(f.save.mock.calls.at(-1)![3].units[17].review).toBeNull();
+});

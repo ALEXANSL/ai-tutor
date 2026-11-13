@@ -35,3 +35,11 @@ it("preserves native-language narration metadata in the published reader contrac
   const value = project(); value.units[0]!.content = structuredClone(value.units[0]!.content); value.units[0]!.content.blocks[1]!.narrationLanguage = "de-DE";
   expect(studioPackage("project", value).parsed.lessons[0]!.screens[1]!.content.tts.lang).toBe("de-DE");
 });
+it("publishes a 24-lesson course as tap-only single-choice quizzes without dropping lessons", () => {
+  const value = project(); value.request.lessonCount = 24; value.plan = { ...studioPlanFixture, lessons: Array.from({ length: 24 }, (_, i) => ({ title: `Урок ${i+1}`, goal: "Навчальний результат" })) };
+  value.units = Array.from({ length: 24 }, (_, i) => ({ ...value.units[0]!, content: { ...studioLessonFixture, title: `Урок ${i+1}` } }));
+  const result = studioPackage("long-course", value).parsed;
+  expect(result.errors).toEqual([]); expect(result.lessons).toHaveLength(24); expect(result.tasks).toHaveLength(48);
+  expect(result.tasks.every(task => task.response_type === "single_choice" && task.options.length === 3)).toBe(true);
+  expect(result.taskKeys.every(key => key.grading?.method === "single_choice")).toBe(true);
+});

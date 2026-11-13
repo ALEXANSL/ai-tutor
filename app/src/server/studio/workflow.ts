@@ -1,7 +1,7 @@
 import "server-only";
 import { AiNotConfiguredError, BudgetBlockedError } from "@/server/ai/types";
 import { randomUUID } from "node:crypto";
-import { studioDesignSchema, studioLessonSchema, studioPlanSchema, studioReviewResponseSchema, studioActive, studioPublicationVisible, type StudioPlan, type StudioProject, type StudioRequest } from "@/lib/studio";
+import { STUDIO_PLAN_BATCH_SIZE, studioPlanBatchSchema, studioDesignSchema, studioLessonSchema, studioReviewResponseSchema, studioActive, studioPublicationVisible, type StudioPlan, type StudioProject, type StudioRequest } from "@/lib/studio";
 import { enqueueJob, registerJobHandler, type JobRow } from "@/server/jobs/runner";
 import { forFamily } from "@/server/db/family-scope";
 import { loadStudioSources } from "./sources";
@@ -37,6 +37,9 @@ export function validateStudioLesson(project: StudioProject, raw: unknown) {
   if (lesson.sourceIds.some(id => !ids.has(id))) throw new Error("STUDIO-SOURCE-REF");
   if (lesson.blocks.reduce((sum, block) => sum + block.text.length, 0) < 1800 || !lesson.blocks.some(block => block.kind === "explanation") || !lesson.blocks.some(block => block.kind === "example") || !lesson.blocks.some(block => ["practice", "steps"].includes(block.kind))) throw new Error("STUDIO-INCOMPLETE-LESSON");
   if (lesson.questions.some(question => new Set(question.options.map(option => option.toLocaleLowerCase("uk").trim())).size !== 3)) throw new Error("STUDIO-DUPLICATE-OPTIONS");
+  const needsWrittenAnswer = (value: string) => /(?:^|[\s.!?,:;])(?:\d+[.)]\s*)?(?:напиши|напишіть|запиши|запишіть|впиши|впишіть|введи|введіть|надрукуй|надрукуйте|дай письмову відповідь|дайте письмову відповідь)(?=\s|[«"“])/iu.test(value);
+  if (lesson.questions.some(question => needsWrittenAnswer(question.prompt))) throw new Error("STUDIO-TOUCH-QUIZ");
+  if (lesson.blocks.some(block => ["practice", "steps"].includes(block.kind) && needsWrittenAnswer(block.text) && !/за бажанням|необов.?язков/iu.test(block.text))) throw new Error("STUDIO-TYPING-ASSESSMENT");
   if (project.request.targetLanguage) {
     const language = project.request.targetLanguage === "en" ? "en-GB" : "de-DE";
     if (!lesson.blocks.some(block => block.narrationLanguage === language) || !lesson.blocks.some(block => block.kind === "explanation" && /[А-Яа-яІіЇїЄєҐґ]/u.test(block.narration))) throw new Error("STUDIO-LANGUAGE-CONTENT");
@@ -67,9 +70,12 @@ export async function runStudioStep(job: JobRow, deadline: number) {
     await saveStudioProject(job.family_id, id, project, { state: "published", publicationRevision: false, childAccess: "enabled", error: null }); return;
   }
   const role: StudioRole = project.phase === "plan" ? "studio.plan" : project.phase === "author" ? "studio.author" : project.phase === "design" ? "studio.design" : "studio.review";
-  const schema = project.phase === "plan" ? studioPlanSchema : project.phase === "author" ? studioLessonSchema : project.phase === "design" ? studioDesignSchema : studioReviewResponseSchema;
+  const schema = project.phase === "plan" ? studioPlanBatchSchema : project.phase === "author" ? studioLessonSchema : project.phase === "design" ? studioDesignSchema : studioReviewResponseSchema;
   const system = studioSystem(role);
-  const prompt = JSON.stringify({ request: { ...project.request, sourceText: undefined, subjectId: undefined, topicId: undefined, materialId: undefined }, subject: project.subjectName, baseTitle: project.baseTitle, plan: project.plan, currentLesson: project.plan?.lessons[project.cursor] ?? null, sources: project.sources, sourceNotes: project.sourceNotes, feedback: project.feedback, ...(project.units[project.cursor] ? { candidate: { content: project.phase === "design" ? { title: project.units[project.cursor]!.content.title, objectives: project.units[project.cursor]!.content.objectives, blocks: project.units[project.cursor]!.content.blocks } : project.units[project.cursor]!.content, visuals: project.units[project.cursor]!.visuals } } : {}) });
+  const planned = project.plan?.lessons.length ?? 0;
+  const planningBatch = { startLesson: planned + 1, count: Math.min(STUDIO_PLAN_BATCH_SIZE, project.request.lessonCount - planned), totalLessons: project.request.lessonCount };
+  const planContext = project.plan ? { ...project.plan, lessons: project.phase === "plan" ? project.plan.lessons.slice(-STUDIO_PLAN_BATCH_SIZE) : project.plan.lessons.slice(Math.max(0, project.cursor - 2), project.cursor + 3) } : null;
+  const prompt = JSON.stringify({ request: { ...project.request, sourceText: undefined, subjectId: undefined, topicId: undefined, materialId: undefined }, subject: project.subjectName, baseTitle: project.baseTitle, plan: planContext, ...(project.phase === "plan" ? { planningBatch } : {}), currentLesson: project.phase === "plan" ? null : project.plan?.lessons[project.cursor] ?? null, sources: project.sources, sourceNotes: project.sourceNotes, feedback: project.feedback, ...(project.units[project.cursor] ? { candidate: { content: project.phase === "design" ? { title: project.units[project.cursor]!.content.title, objectives: project.units[project.cursor]!.content.objectives, blocks: project.units[project.cursor]!.content.blocks } : project.units[project.cursor]!.content, visuals: project.units[project.cursor]!.visuals } } : {}) });
   if (Buffer.byteLength(system + prompt + JSON.stringify(schema.toJSONSchema())) > 250000) throw new Error("STUDIO-CONTEXT");
   const config = await studioModelConfig(job.family_id, role);
   const reserved = studioReservation(system, prompt, schema, config.route.params.max_tokens!, config.rates);
@@ -84,9 +90,12 @@ export async function runStudioStep(job: JobRow, deadline: number) {
   const changes: Partial<StudioProject> = { activeCall: false, heldUsd: Math.max(0, project.heldUsd - reserved), spentUsd: project.spentUsd + result.costUsd, models: [...project.models, { role, model: `${result.model.provider}/${result.model.model}`, costUsd: result.costUsd }] };
   try {
   if (project.phase === "plan") {
-    const plan = studioPlanSchema.parse(result.result);
-    if (plan.lessons.length !== project.request.lessonCount) throw new Error("STUDIO-PLAN-COUNT");
-    Object.assign(changes, { plan, state: "plan_ready" });
+    const batch = studioPlanBatchSchema.parse(result.result);
+    if (batch.lessons.length !== planningBatch.count) throw new Error("STUDIO-PLAN-COUNT");
+    const lessons = [...(project.plan?.lessons ?? []), ...batch.lessons];
+    if (new Set(lessons.map(lesson => lesson.title.toLocaleLowerCase("uk").trim())).size !== lessons.length) throw new Error("STUDIO-PLAN-DUPLICATE");
+    const plan = project.plan ? { ...project.plan, lessons } : batch;
+    Object.assign(changes, { plan, state: lessons.length === project.request.lessonCount ? "plan_ready" : "planning" });
   } else {
     const units = [...project.units];
     if (project.phase === "author") {

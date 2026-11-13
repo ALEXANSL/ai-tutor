@@ -1,4 +1,6 @@
 "use server";
+import { studioParentView } from "@/lib/studio-parent-view";
+import { STUDIO_MAX_BUDGET } from "@/lib/studio";
 import { z } from "zod";
 import { createHash, randomUUID } from "node:crypto";
 import { unstable_rethrow } from "next/navigation";
@@ -22,7 +24,7 @@ export async function createStudioAction(raw: unknown) {
 export async function reviseImportedLessonAction(raw: unknown) {
   const { familyId } = await requireParentAccess();
   try {
-    const value = z.object({ requestId: idSchema, subjectId: idSchema, topicId: idSchema, instructions: z.string().trim().min(10).max(3000), budgetUsd: z.number().min(0.5).max(25), age: z.number().int().min(7).max(18), grade: z.number().int().min(1).max(12) }).strict().parse(raw);
+    const value = z.object({ requestId: idSchema, subjectId: idSchema, topicId: idSchema, instructions: z.string().trim().min(10).max(3000), budgetUsd: z.number().min(0.5).max(STUDIO_MAX_BUDGET), age: z.number().int().min(7).max(18), grade: z.number().int().min(1).max(12) }).strict().parse(raw);
     const bytes = createHash("sha256").update(`studio-revision:${familyId}:${value.subjectId}:${value.topicId}`).digest().subarray(0, 16); bytes[6] = (bytes[6]! & 15) | 80; bytes[8] = (bytes[8]! & 63) | 128;
     const hex = bytes.toString("hex"); const id = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
     const { getSubjectDetail } = await import("@/server/subjects/queries");
@@ -42,7 +44,7 @@ export async function reviseImportedLessonAction(raw: unknown) {
     revalidatePath("/parent/studio"); return { status: "ok" as const, id, message: existing && (existing.revisionRequestId === value.requestId || !["published", "withdrawn", "ready", "needs_changes"].includes(existing.state)) ? "Уже є чернетка цього уроку. Відкрий її, щоб продовжити; нове завдання не запускалося." : "Запит збережено. Підготовку й публікацію контролюй у Майстерні." };
   } catch (error) { return { status: "error" as const, message: message(error) }; }
 }
-export async function pollStudioAction(rawId: string) {
+export async function pollStudioAction(rawId: string, rawLessonIndex?: number) {
   const { familyId } = await requireParentAccess(); const id = idSchema.parse(rawId);
   let project = await readStudioProject(familyId, id);
   if (!project) return { status: "error" as const, message: "Чернетку не знайдено." };
@@ -54,9 +56,9 @@ export async function pollStudioAction(rawId: string) {
       project = await saveStudioProject(familyId, id, project, { state: "failed", error: "STUDIO-INTERRUPTED: фоновий етап перервано. Готові частини збережено; можна повторити. Резерв невизначеного виклику не списано повторно." });
     } else if (job.data?.status === "queued") kickStudio(familyId, id);
   }
-  return { status: "ok" as const, project, activity };
+  return { status: "ok" as const, project: studioParentView(project, rawLessonIndex === undefined ? undefined : z.number().int().safe().min(0).parse(rawLessonIndex)), activity };
 }
-const commandSchema = z.object({ id: idSchema, revision: z.number().int().nonnegative(), command: z.enum(["approve", "retry", "revise", "publish"]), plan: studioPlanSchema.optional(), feedback: z.string().max(3000).optional(), budgetUsd: z.number().min(0.5).max(25).optional(), lessonIndex: z.number().int().min(0).max(5).optional() }).strict();
+const commandSchema = z.object({ id: idSchema, revision: z.number().int().nonnegative(), command: z.enum(["approve", "retry", "revise", "publish"]), plan: studioPlanSchema.optional(), feedback: z.string().max(3000).optional(), budgetUsd: z.number().min(0.5).max(STUDIO_MAX_BUDGET).optional(), lessonIndex: z.number().int().safe().min(0).optional() }).strict();
 export async function commandStudioAction(raw: unknown) {
   const { familyId } = await requireParentAccess();
   try { const input = commandSchema.parse(raw); await resumeStudio(familyId, input.id, input.revision, input.command, input.plan, input.feedback, input.budgetUsd, input.lessonIndex); kickStudio(familyId, input.id); revalidatePath("/parent/studio"); return { status: "ok" as const }; }
@@ -92,7 +94,7 @@ export async function withdrawStudioAction(rawId: string, revision: number) { re
 export async function saveStudioLessonAction(raw: unknown) {
   const { familyId } = await requireParentAccess();
   try {
-    const value = z.object({ id: idSchema, revision: z.number().int().min(0), lessonIndex: z.number().int().min(0).max(5), lesson: studioLessonSchema, budgetUsd: z.number().min(0.5).max(25) }).strict().parse(raw);
+    const value = z.object({ id: idSchema, revision: z.number().int().min(0), lessonIndex: z.number().int().safe().min(0), lesson: studioLessonSchema, budgetUsd: z.number().min(0.5).max(STUDIO_MAX_BUDGET) }).strict().parse(raw);
     const project = await readStudioProject(familyId, value.id);
     if (!project || project.revision !== value.revision || !["ready", "needs_changes", "published", "withdrawn"].includes(project.state) || !project.units[value.lessonIndex]) throw new Error("Онови матеріал перед редагуванням.");
     const lesson = validateStudioLesson(project, value.lesson); const units = [...project.units]; units[value.lessonIndex] = { ...units[value.lessonIndex]!, content: lesson, review: null };

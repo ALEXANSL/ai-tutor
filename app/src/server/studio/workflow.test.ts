@@ -143,3 +143,29 @@ it("requires native listening examples while retaining Ukrainian explanation in 
   lesson.blocks.find(block => block.kind === "example")!.narrationLanguage = "de-DE";
   expect(() => validateStudioLesson(languageProject, lesson)).toThrow();
 });
+it("checkpoints a 24-lesson outline in four bounded batches, with no six-lesson course ceiling", async () => {
+  project.request.lessonCount = 24; project.request.budgetUsd = 20;
+  f.call.mockImplementation(async (_family, _id, _role, _system, prompt) => {
+    const input = JSON.parse(prompt); const batch = input.planningBatch;
+    return { result: { ...studioPlanFixture, lessons: Array.from({ length: batch.count }, (_, index) => ({ title: `Урок ${batch.startLesson + index}`, goal: `Результат ${batch.startLesson + index}` })) }, model: { provider: "openai", model: "test" }, costUsd: 0.02 };
+  });
+  await step(); expect(project.state).toBe("planning"); expect(project.plan!.lessons).toHaveLength(6);
+  await step(); expect(project.plan!.lessons).toHaveLength(12);
+  await step(); await step(); expect(project.state).toBe("plan_ready"); expect(project.plan!.lessons).toHaveLength(24);
+  expect(f.call.mock.calls.map(call => JSON.parse(call[4]).planningBatch.startLesson)).toEqual([1,7,13,19]);
+  await resumeStudio("family", id, project.revision, "approve", project.plan!); expect(project.state).toBe("generating");
+});
+it("resumes a partial outline without discarding completed batches or increasing the budget", async () => {
+  project.request.lessonCount = 8; project.plan = { ...studioPlanFixture, lessons: Array.from({ length: 6 }, (_, i) => ({ title: `Крок ${i + 1}`, goal: "Ціль" })) };
+  project.state = "paused"; const budget = project.request.budgetUsd;
+  f.call.mockResolvedValue({ result: { ...studioPlanFixture, lessons: [{ title: "Крок 7", goal: "Ціль" }, { title: "Крок 8", goal: "Ціль" }] }, model: { provider: "openai", model: "test" }, costUsd: 0.02 });
+  await resumeStudio("family", id, project.revision, "retry"); await step(); expect(project.plan!.lessons.map(lesson=>lesson.title)).toContain("Крок 1"); expect(project.state).toBe("plan_ready"); expect(project.request.budgetUsd).toBe(budget);
+});
+it("rejects written-response knowledge checks but keeps code examples and optional off-app practice", () => {
+  const lesson = structuredClone(studioLessonFixture); lesson.questions[0]!.prompt = "Напиши розгорнуту відповідь про координати.";
+  expect(() => validateStudioLesson(project, lesson)).toThrow("STUDIO-TOUCH-QUIZ");
+  const practice = structuredClone(studioLessonFixture); practice.blocks[3]!.text = "Введи свою відповідь у текстове поле. " + practice.blocks[3]!.text;
+  practice.blocks[3]!.text = practice.blocks[3]!.text.replace("За бажанням", "Завдання");
+  expect(() => validateStudioLesson(project, practice)).toThrow("STUDIO-TYPING-ASSESSMENT");
+  expect(() => validateStudioLesson(project, studioLessonFixture)).not.toThrow();
+});
