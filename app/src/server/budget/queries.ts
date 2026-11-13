@@ -89,6 +89,7 @@ const ROLE_LABELS_UK: Record<string, string> = {
   lesson_tutor: "Репетитор уроків (OpenAI)",
   tutor_chat: "Попередній чат / чат книги",
   friend_chat: "ШІ-друг",
+  "school.context_match": "Пошук уроку зі щоденника за змістом",
   lesson_video_script: "Сценарій Pictory",
   embeddings: "Пошук у книгах",
   indexing_structure: "Обробка книг",

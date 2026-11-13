@@ -1,13 +1,16 @@
 import "server-only";
+import { schoolSubjectCandidates } from "@/lib/eschool-subject-match";
 import { randomUUID } from "node:crypto";
-import { schoolPacketSchema, normalizedSchoolSubject, type SchoolConnection, type SchoolEntry, type SchoolPacket, type SchoolStatus } from "@/lib/eschool";
+import { schoolPacketSchema, type SchoolConnection, type SchoolEntry, type SchoolPacket, type SchoolStatus } from "@/lib/eschool";
 import { forFamily } from "@/server/db/family-scope";
 import { createSchoolDoc, readSchoolConnection, readSchoolDoc, saveSchoolDoc, SCHOOL_CONNECTION, SCHOOL_ENTRY, schoolId } from "./store";
 import { getSubjectDetail } from "@/server/subjects/queries";
 import { importedLessonHref } from "@/lib/imported-lesson-link";
 function sameIdentity(a: SchoolPacket["identity"], b: SchoolPacket["identity"]) { return a.schoolId === b.schoolId && a.pupilId === b.pupilId; }
-export async function schoolSubjects(familyId: string) {
-  const { data, error } = await forFamily(familyId).select("subjects", "id,name:name_uk").eq("kind", "school_subject").order("sort_order").returns<{ id: string; name: string }[]>();
+export async function schoolSubjects(familyId: string, activeOnly = false) {
+  let query = forFamily(familyId).select("subjects", "id,name:name_uk").eq("kind", "school_subject");
+  if (activeOnly) query = query.eq("active", true);
+  const { data, error } = await query.order("sort_order").returns<{ id: string; name: string }[]>();
   if (error) throw new Error("Не вдалося завантажити предмети."); return data ?? [];
 }
 export async function importSchoolPacket(familyId: string, childId: string, raw: unknown) {
@@ -36,7 +39,7 @@ export async function importSchoolPacket(familyId: string, childId: string, raw:
       const id = schoolId(SCHOOL_ENTRY, familyId, childId, String(packet.identity.schoolId), String(packet.identity.pupilId), source.externalId);
       for (let attempt = 0; attempt < 3; attempt++) {
         const existing = await readSchoolDoc<SchoolEntry>(familyId, childId, id, SCHOOL_ENTRY);
-        const matching = subjects.filter(subject => normalizedSchoolSubject(subject.name) === normalizedSchoolSubject(source.subject));
+        const matching = schoolSubjectCandidates(source.subject, subjects);
         const subjectId = matching.length === 1 ? matching[0]!.id : null;
         if (existing) {
           if (Date.parse(existing.capturedAt) > Date.parse(packet.capturedAt)) return;
