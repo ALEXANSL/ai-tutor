@@ -1,0 +1,9 @@
+# Long courses and tablet-first quizzes
+
+Remove the six-lesson product ceiling from request/plan/edit controls. Keep each model call bounded: build a complete course outline in consecutive small batches, checkpoint each successful batch, and generate/review lessons sequentially. The requested course length is independent of planning batch size. Preserve parent-approved spending limits; never auto-increase a budget or retry an uncertain paid call.
+
+Store large course lessons as immutable family/project-scoped unit documents referenced by the CAS project header, rather than growing one monolithic JSON row. Retain compatibility with embedded legacy units. Load one complete lesson preview/editor at a time for long courses, with lightweight summaries for the rest. Parent can review/edit any lesson index, not only the first six. Retain complete publication into existing stable V3 reader format. Resource byte limits remain technical guards, not a six-lesson curriculum rule.
+
+All assessed knowledge checks must be tap-to-select single-choice quizzes (three options, one unambiguous correct option, answer explanation). No required text/code entry, dictation, written answer or free-response gate in the tutor UI. Actual Roblox/handcraft/notebook practice can be separate optional off-app practice, never masquerading as the app's test. Author and reviewer share this rule; deterministic validation rejects obvious written-response test commands. Preserve code examples/explanations. Scoring/rewards/Robux motivation is explicitly deferred; existing quiz feedback remains.
+
+Test long planning across batch boundaries, resume/budget/duplicate-call safeguards, unit storage CAS/ownership/legacy reads, bounded parent previews, editing beyond lesson six, publication as single-choice questions and mobile flows. Paid models/private data mocked.

@@ -1,8 +1,10 @@
 import { z } from "zod";
+export const STUDIO_PLAN_BATCH_SIZE = 6;
+export const STUDIO_MAX_BUDGET = 250;
 const text = (max = 4000) => z.string().trim().min(1).max(max);
 export const studioRequestSchema = z.object({
   mode: z.enum(["course", "extension", "revision"]), targetLanguage: z.enum(["en", "de"]).nullable().optional(), idea: text(20000), title: text(200), age: z.number().int().min(7).max(18), grade: z.number().int().min(1).max(12),
-  lessonCount: z.number().int().min(1).max(6), minutes: z.number().int().min(10).max(45), budgetUsd: z.number().min(0.5).max(25),
+  lessonCount: z.number().int().safe().min(1), minutes: z.number().int().min(10).max(45), budgetUsd: z.number().min(0.5).max(STUDIO_MAX_BUDGET),
   subjectId: z.string().uuid().nullable(), topicId: z.string().uuid().nullable(), materialId: z.string().uuid().nullable(),
   pageFrom: z.number().int().min(1).max(10000).nullable(), pageTo: z.number().int().min(1).max(10000).nullable(), sourceText: z.string().max(40000),
 }).strict().superRefine((value, ctx) => {
@@ -10,7 +12,8 @@ export const studioRequestSchema = z.object({
   if ((value.pageFrom === null) !== (value.pageTo === null) || (value.pageFrom !== null && value.pageTo !== null && (value.pageTo < value.pageFrom || value.pageTo - value.pageFrom > 30))) ctx.addIssue({ code: "custom", message: "Вибери послідовний діапазон до 31 сторінки." });
 });
 export type StudioRequest = z.infer<typeof studioRequestSchema>;
-export const studioPlanSchema = z.object({ title: text(200), overview: text(3000), objectives: z.array(text(250)).min(1).max(8), lessons: z.array(z.object({ title: text(200), goal: text(700) }).strict()).min(1).max(6), prerequisites: z.array(text(250)).max(8), limitations: z.array(text(500)).max(8) }).strict();
+export const studioPlanSchema = z.object({ title: text(200), overview: text(3000), objectives: z.array(text(250)).min(1).max(8), lessons: z.array(z.object({ title: text(200), goal: text(700) }).strict()).min(1), prerequisites: z.array(text(250)).max(8), limitations: z.array(text(500)).max(8) }).strict();
+export const studioPlanBatchSchema = studioPlanSchema.extend({ lessons: studioPlanSchema.shape.lessons.max(STUDIO_PLAN_BATCH_SIZE) });
 export type StudioPlan = z.infer<typeof studioPlanSchema>;
 export const studioLessonSchema = z.object({ title: text(200), objectives: z.array(text(250)).min(1).max(6),
   blocks: z.array(z.object({ title: text(150), kind: z.enum(["explanation", "example", "practice", "steps", "summary", "code"]), text: text(4500), narration: text(3500), narrationLanguage: z.enum(["uk-UA", "en-GB", "de-DE"]).nullable().optional() }).strict()).min(4).max(8),
@@ -37,6 +40,10 @@ export interface StudioUnit { content: StudioLesson; visuals: StudioVisual[]; re
 export type StudioState = "planning" | "plan_ready" | "generating" | "ready" | "needs_changes" | "failed" | "paused" | "publishing" | "published" | "withdrawn";
 export interface StudioProject {
   version: 1; revision: number;
+  /** Immutable backing documents; omitted from parent responses. */
+  unitRefs?: string[];
+  /** Parent response contains full content only for this preview index. */
+  previewIndex?: number;
   /** Draft corrections over an existing publication; child content changes only on republish. */
   publicationRevision?: boolean;
   revisionRequestId?: string;

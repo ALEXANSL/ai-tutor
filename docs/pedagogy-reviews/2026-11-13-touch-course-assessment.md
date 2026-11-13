@@ -1,0 +1,7 @@
+# Tablet-first course assessment — self-review
+
+Knowledge checks in newly authored/revised Studio material must be single-choice quizzes: one question, three meaningful distinct alternatives, one correct answer, explanation after selection. Vary correct-answer positions; distractors reflect plausible misconceptions rather than jokes or traps. Independently solve quizzes in the reviewer role. Mandatory typing/essay/dictation/code-entry checks are inappropriate for the current tablet interaction and are rejected for obvious imperative prompts. Do not mistake a code example or quoted wording for a typing requirement.
+
+Real Roblox creation, handcraft steps and notebook work remain optional off-app practice, distinct from assessed in-app checks. Reading/explanation and the normal tutor chat are preserved. Long course plans should progress in difficulty across batches, without repeating prior topics; parent sees the full paginated plan before authoring. Course length must follow learning goals, not the planner response size. Motivation/Robux promises are explicitly deferred; existing correctness feedback is retained.
+
+Tests cover rejected written-response prompts, allowed code examples/optional practice, single-choice V3 publication of24lessons, mobile tap responses and later-lesson editing. Paid author/reviewer output quality is not verified in this environment. Before the first real long course is published, the parent should review the course outline and a sample lesson as in the existing workflow.
