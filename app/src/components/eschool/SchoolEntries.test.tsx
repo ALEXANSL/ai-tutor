@@ -43,3 +43,11 @@ it("rebuilds groups after search, all-lessons and completed filters without leav
   act(() => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
   expect(container.querySelector('time[datetime="2026-11-11"]')!.closest("section")!.textContent).toContain("ДЗ: 1 · Уроків: 1");
 });
+it("offers the history subject link for an old unmapped diary entry and keeps it beside a direct lesson", () => {
+  const history = item("history", { subject: "Історія України. Всесвітня історія" });
+  act(() => root.render(<SchoolEntries entries={[history]} subjects={[{ id: "history-subject", name: "Історія" }]} initialMode="list" />));
+  expect(container.querySelector('a[href="/subject/history-subject?school=history"]')?.textContent).toBe("Відкрити предмет");
+  act(() => root.render(<SchoolEntries entries={[{ ...history, entry: { ...history.entry, subjectId: "history-subject", lessonHref: "/literature-v3/lesson" } }]} subjects={[{ id: "history-subject", name: "Історія" }]} initialMode="list" />));
+  expect(container.querySelector('a[href="/literature-v3/lesson"]')).toBeTruthy();
+  expect(container.querySelector('a[href="/subject/history-subject?school=history"]')).toBeTruthy();
+});

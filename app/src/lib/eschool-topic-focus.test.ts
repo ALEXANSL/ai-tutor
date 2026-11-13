@@ -22,3 +22,40 @@ it("uses only explicit unique paragraph references, not exercise numbers or gene
   expect(schoolTopicFocus(task("§17"), [...topics, { id: "c", title: "§17. Інший підручник" }])).toBeNull();
   expect(schoolTopicFocus(entry, [...topics, { id: "c", title: topics[0]!.title }])).toBeNull();
 });
+
+const literatureSource = "Михайло Ткач. «Моя Україна». Коротко про письменника, його пісенну лірику. Символічне втілення образу Батьківщини у пісні «Моя Україна». Мотив патріотизму";
+const literatureTopics = [
+  { id: "tkach", title: "Михайло Ткач. «Моя Україна»: країна в близьких образах" },
+  { id: "other-work", title: "Михайло Ткач. «Ясени»: пісенна лірика" },
+  { id: "other-author", title: "Дмитро Павличко. «Моя Україна»: образ Батьківщини" },
+];
+function withTopic(topic: string, text = "") { return { ...entry, source: { ...entry.source, topic, text } }; }
+it("recognizes the reported teacher topic by named work and author despite different explanatory subtitles", () => {
+  expect(schoolTopicFocus(withTopic(literatureSource), literatureTopics)).toBe("tkach");
+  expect(schoolTopicFocus(withTopic(literatureSource.replaceAll("«", '"').replaceAll("»", '"')), literatureTopics)).toBe("tkach");
+  expect(schoolTopicFocus(withTopic(literatureSource.replaceAll("«", "„").replaceAll("»", "“")), literatureTopics)).toBe("tkach");
+  expect(schoolTopicFocus(withTopic(literatureSource), [{ id: "no-quotes", title: "Михайло Ткач. Моя Україна: лірика" }])).toBe("no-quotes");
+});
+it("never substitutes another author's work, chooses arbitrarily among parts, or ignores multiple named works", () => {
+  expect(schoolTopicFocus(withTopic(literatureSource), literatureTopics.slice(1))).toBeNull();
+  expect(schoolTopicFocus(withTopic(literatureSource), [literatureTopics[0]!, { id: "part2", title: literatureTopics[0]!.title + ". Частина 2" }])).toBeNull();
+  expect(schoolTopicFocus(withTopic('«Моя Україна». Образи Батьківщини'), literatureTopics)).toBeNull();
+  expect(schoolTopicFocus(withTopic('Михайло Ткач. «Моя Україна» та «Ясени»'), literatureTopics)).toBeNull();
+  expect(schoolTopicFocus(withTopic(literatureSource, 'Опрацювати §17'), literatureTopics)).toBeNull();
+});
+it("uses meaningful topic words without requiring literal full-title equality", () => {
+  const ready = [{ id: "online", title: "Безпека в соціальних мережах" }, { id: "password", title: "Надійні паролі та облікові записи" }];
+  expect(schoolTopicFocus(withTopic("Правила безпеки в соціальних мережах. Практична робота"), ready)).toBe("online");
+  expect(schoolTopicFocus(withTopic("Повторення. Практична робота. Відповіді на запитання"), ready)).toBeNull();
+  expect(schoolTopicFocus(withTopic("Правила безпеки в соціальних мережах"), [...ready, { id: "online2", title: "Соціальні мережі: правила безпеки" }])).toBeNull();
+});
+it("does not let homework's other reading replace the teacher's named topic and retains explicit mapping", () => {
+  expect(schoolTopicFocus(withTopic(literatureSource, 'Також прочитати «Ясени»'), literatureTopics)).toBe("tkach");
+  expect(schoolTopicFocus({ ...withTopic(literatureSource), topicId: "other-work" }, literatureTopics)).toBe("other-work");
+});
+
+it("recognizes the Dickens example with an initial, author inside quotes and у/в variation", () => {
+  const teacher = 'Ч. Діккенс "Різдвяна пісня у прозі": сюжет і композиція';
+  expect(schoolTopicFocus(withTopic(teacher), [{ id: "dickens", title: "«Чарльз Діккенс. Різдвяна пісня в прозі»" }, { id: "gogol", title: "Вакула, Оксана і різдвяна ніч" }])).toBe("dickens");
+  expect(schoolTopicFocus(withTopic(teacher), [{ id: "a", title: "«Різдвяна пісня в прозі». Частина 1" }, { id: "b", title: "«Різдвяна пісня в прозі». Частина 2" }])).toBeNull();
+});

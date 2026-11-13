@@ -15,6 +15,7 @@ vi.mock("@/components/parent/subjects/RenameSubjectForm", () => ({ RenameSubject
 vi.mock("@/components/parent/subjects/TextbookLinkPanel", () => ({ TextbookLinkPanel: () => null }));
 vi.mock("@/components/parent/subjects/VideoLessonsPanel", () => ({ VideoLessonsPanel: () => <span>Відеоматеріали</span> }));
 vi.mock("@/components/child/SubjectVideoLessons", () => ({ SubjectVideoLessons: () => <span>Додатковий відеокаталог</span> }));
+vi.mock("@/components/eschool/SchoolContextSearch", () => ({ SchoolContextSearch: () => <span>ШІ-пошук за змістом</span> }));
 vi.mock("@/components/child/LastLessonHighlight", () => ({ LastLessonHighlight: ({ children, focusRequest }: { children: React.ReactNode; focusRequest?: string }) => <div data-focus={focusRequest}>{children}</div> }));
 vi.mock("@/components/child/VideoLessonButton", () => ({ VideoLessonButton: () => <button>Відео</button> }));
 vi.mock("@/components/course-v2/LiteratureV2Search", () => ({ LiteratureV2Search: () => null }));
@@ -46,8 +47,15 @@ it("carries an owned diary focus into the visible topic list and reports uncerta
   const page = () => ChildPage({ params: Promise.resolve({ id }), searchParams: Promise.resolve({ school: entryId }) });
   const html = renderToStaticMarkup(await page());
   expect(mock.focus).toHaveBeenCalledWith("family", "child", id, entryId, [topic]);
-  expect(html).toContain(`data-focus="${entryId}"`); expect(html).toContain("Потрібну тему виділено");
+  expect(html).toContain(`data-focus="${entryId}"`); expect(html).toContain("Потрібну тему виділено"); expect(html).toContain("Відкрити знайдений урок:");
   mock.focus.mockResolvedValue({ entryId, title: "Невідома тема", topicId: null });
   const unmatched = renderToStaticMarkup(await page());
-  expect(unmatched).toContain("Однозначного збігу"); expect(unmatched).not.toContain("data-focus=");
+  expect(unmatched).toContain("за змістом"); expect(unmatched).not.toContain("data-focus=");
+});
+
+it("offers direct links to all contextual lessons covering one diary topic", async () => {
+  mock.detail.mockResolvedValue({ id, name: "Історія", childVisible: true, topics: [topic, { ...topic, id: "topic2", title: "Друга частина", literatureV3LessonId: "chapter2" }] });
+  mock.focus.mockResolvedValue({ entryId: id, title: "Широка тема", topicId: null, topicIds: ["topic", "topic2"], context: { state: "done", reason: "Два уроки" } });
+  const html = renderToStaticMarkup(await ChildPage({ params: Promise.resolve({ id }), searchParams: Promise.resolve({ school: id }) }));
+  expect(html).toContain("Тему покривають кілька уроків"); expect(html).toContain('href="/literature-v3/chapter2"'); expect(html).toContain("Відкрити знайдений урок: Друга частина"); expect(html).not.toContain("ШІ-пошук за змістом");
 });
