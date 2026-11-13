@@ -80,6 +80,7 @@ interface SessionCostDbRow {
 
 /** Raw internal role → plain Ukrainian label the parent sees (no jargon, D-… jargon-removal fix). */
 const ROLE_LABELS_UK: Record<string, string> = {
+  "audiobook.lesson_script": "Аудіоурок — сценарій із готового уроку",
   "audiobook.prepare": "Аудіокнига — редактор тексту",
   "audiobook.narrate": "Аудіокнига — озвучення",
   "studio.plan": "Майстерня — план",

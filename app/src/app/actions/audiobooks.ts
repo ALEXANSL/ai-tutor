@@ -62,3 +62,12 @@ export async function libraryTextSearchAction(raw: string) {
   if (error) throw new Error("Пошук тимчасово недоступний.");
   return (data ?? []).map(r => ({ materialId: r.material_id, title: r.materials.title || r.materials.name, page: r.page, locator: r.locator, snippet: r.text.slice(0, 500) }));
 }
+
+export async function audioLessonOptionsAction(rawId: string) {
+  const { familyId } = await requireParentAccess();
+  try {
+    const id = uuid.parse(rawId); const { audioLessonOptions } = await import("@/server/audiobooks/lesson-source");
+    const source = await audioLessonOptions(familyId, id);
+    return { status: "ok" as const, lessons: source.lessons.map(topic => ({ id: topic.id, title: topic.title })) };
+  } catch (error) { return { status: "error" as const, message: safeError(error) }; }
+}

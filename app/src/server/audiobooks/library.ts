@@ -7,13 +7,27 @@ import { getDriveToken } from "@/server/drive/service";
 import type { Extraction } from "@/server/ingest/text";
 import type { AudioRequest, LibraryBook, LibrarySettings } from "@/lib/audiobooks";
 import { readLibrarySettings, documentId, defaultLibrarySettings, SETTINGS_TYPE } from "./store";
+import { joinIndexedAudioPage, trimAudioParagraph } from "./paragraph-source";
 import { sourceParagraphs } from "./text";
 export async function libraryBook(familyId: string, id: string): Promise<LibraryBook | null> {
   const meta = await getBookMaterialMeta(familyId, id); if (!meta) return null;
   const settings = await readLibrarySettings(familyId, id);
-  const { data, error } = await forFamily(familyId).select("material_sections", "title,page_from,page_to").eq("material_id", id).order("sort_order").limit(500).returns<{ title: string; page_from: number | null; page_to: number | null }[]>();
-  if (error) throw new Error("Не вдалося прочитати зміст.");
-  return { id, title: meta.title || meta.name, author: settings.author, format: meta.format, pages: meta.pageCount, settings, chapters: settings.chaptersOverride || settings.chapters.length ? settings.chapters : (data ?? []).filter(s => s.page_from && s.page_to).map(s => ({ title: s.title as string, from: s.page_from as number, to: s.page_to as number })) };
+  const [sections, topics] = await Promise.all([
+    forFamily(familyId).select("material_sections", "id,title,page_from,page_to").eq("material_id", id).order("sort_order").limit(500).returns<{ id: string; title: string; page_from: number | null; page_to: number | null }[]>(),
+    forFamily(familyId).select("topics", "id,title,page_from,page_to").eq("material_id", id).order("sort_order").order("page_from").limit(1000).returns<{ id: string; title: string; page_from: number | null; page_to: number | null }[]>(),
+  ]);
+  if (sections.error || topics.error) throw new Error("Не вдалося прочитати зміст.");
+  const indexedTopics = (topics.data ?? []).filter(topic => topic.page_from && topic.page_to);
+  const paragraphRows = indexedTopics.length ? indexedTopics : (sections.data ?? []).filter(section => section.page_from && section.page_to && /^\s*(?:§|параграф)/iu.test(section.title));
+  // Include the next heading's page when adjacent: the selected paragraph may
+  // continue above it. The source loader cuts at the actual heading, not a page edge.
+  const paragraphs = paragraphRows.map((topic, index) => {
+    const next = paragraphRows[index + 1];
+    const to = meta.format === "pdf" && next?.page_from && next.page_from >= topic.page_from! && next.page_from <= topic.page_to! + 1 ? next.page_from : topic.page_to!;
+    return { id: topic.id, title: topic.title, from: topic.page_from!, to };
+  });
+  return { id, title: meta.title || meta.name, author: settings.author, format: meta.format, pages: meta.pageCount, settings, paragraphs, chapters: settings.chaptersOverride || settings.chapters.length ? settings.chapters : (sections.data ?? []).filter(s => s.page_from && s.page_to).map(s => ({ title: s.title, from: s.page_from!, to: s.page_to! })) };
+
 }
 async function catalogRows<T>(familyId: string, table: string, columns: string) {
   const rows: T[] = [];
@@ -55,10 +69,37 @@ export function physicalRange(request: Pick<AudioRequest, "from" | "to" | "numbe
   const from = request.from + offset, to = request.to + offset;
   if (from < 1 || to < from || (book.pages && to > book.pages)) throw new Error("Сторінки виходять за межі книги."); return { from, to };
 }
+export function selectedAudioParagraph(request: AudioRequest, book: LibraryBook) {
+  if (!request.paragraphId) return null;
+  const paragraph = book.paragraphs?.find(item => item.id === request.paragraphId);
+  if (!paragraph || request.numbering !== "source" || request.from !== paragraph.from || request.to !== paragraph.to) throw new Error("Параграф або його межі змінилися. Обери його ще раз зі змісту книги.");
+  return paragraph;
+}
 export async function loadAudioSource(familyId: string, request: AudioRequest) {
+  if (request.lesson) return (await import("./lesson-source")).readyAudioLessonSource(familyId, request);
   const book = await libraryBook(familyId, request.materialId); if (!book) throw new Error("Книгу не знайдено.");
-  const range = physicalRange(request, book); const extraction = await originalBookText(familyId, request.materialId, range);
-  const units = extraction.units.filter(u => u.page >= range.from && u.page <= range.to);
-  if (units.length !== range.to - range.from + 1 || units.some(u => (u.text.match(/\p{L}/gu) ?? []).length < 20)) throw new Error("У вибраному діапазоні є порожні або нерозпізнані сторінки. Звузь діапазон або перевір текстовий шар книги.");
-  return { book, range, paragraphs: sourceParagraphs(units) };
+  const selected = selectedAudioParagraph(request, book);
+  const range = physicalRange(request, book);
+  const extraction = await originalBookText(familyId, request.materialId, range).catch(error => { if (book.format !== "pdf") throw error; return null; });
+  let units = extraction?.units.filter(u => u.page >= range.from && u.page <= range.to) ?? [];
+  const readable = (text: string) => (text.match(/\p{L}/gu) ?? []).length >= 20;
+  const missing = Array.from({ length: range.to - range.from + 1 }, (_, i) => range.from + i).filter(page => !units.some(unit => unit.page === page && readable(unit.text)));
+  let notes = "";
+  if (missing.length && book.format === "pdf") {
+    const { data, error } = await forFamily(familyId).select("chunks", "page,text,ordinal").eq("material_id", request.materialId).gte("page", range.from).lte("page", range.to).order("ordinal").limit(2001).returns<{ page: number; text: string; ordinal: number }[]>();
+    if (error || (data?.length ?? 0) > 2000) throw new Error("Не вдалося прочитати індексований текст. Спробуй коротший параграф або готовий урок.");
+    for (const page of missing) {
+      const text = joinIndexedAudioPage((data ?? []).filter(chunk => chunk.page === page).map(chunk => chunk.text));
+      if (readable(text)) { units = [...units.filter(unit => unit.page !== page), { page, text, locator: null }]; notes = "Частину сторінок відновлено з власного індексованого тексту. Перевір якість розпізнавання перед озвученням."; }
+    }
+  }
+  units.sort((a,b) => a.page - b.page);
+  const unreadable = Array.from({ length: range.to - range.from + 1 }, (_, i) => range.from + i).filter(page => !units.some(unit => unit.page === page && readable(unit.text)));
+  if (unreadable.length) throw new Error(`Не вдалося прочитати сторінки ${unreadable.join(", ")}. Для аудіоуроку вибери готовий урок; для дослівного читання потрібен розпізнаний текст книги.`);
+  if (selected) {
+    const index = book.paragraphs!.findIndex(item => item.id === selected.id);
+    const next = book.paragraphs![index + 1];
+    units = trimAudioParagraph(units, selected.title, next && next.from <= range.to ? next.title : undefined);
+  }
+  return { book, range, paragraphs: sourceParagraphs(units), notes };
 }

@@ -2,16 +2,18 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { audioRequestSchema, audioRunning, type AudioPart, type AudioRequest } from "@/lib/audiobooks";
 import { AiNotConfiguredError, BudgetBlockedError } from "@/server/ai/types";
-import { libraryBook, physicalRange, loadAudioSource } from "./library";
+import { libraryBook, physicalRange, loadAudioSource, selectedAudioParagraph } from "./library";
 import { insertAudioPart, readAudioPart, saveAudioPart } from "./store";
 import { audioHash, audioSegmentKey, preparedManuscript, splitAudioText } from "./text";
+import { audioLessonScriptSchema } from "./models";
 import { audioModelConfig, audioReservation, prepareAudioText, narrateAudio } from "./models";
 import { audioExists, saveAudioBytes, deleteAudioBytes } from "./storage";
 export async function startAudioPart(familyId: string, id: string, raw: AudioRequest) {
   const request = audioRequestSchema.parse(raw); const old = await readAudioPart(familyId, id);
   if (old) { if (JSON.stringify(old.request) !== JSON.stringify(request)) throw new Error("Цей запит уже має інші параметри. Створи нову частину."); return id; }
-  const book = await libraryBook(familyId, request.materialId); if (!book) throw new Error("Книгу не знайдено.");
-  const range = physicalRange(request, book);
+  const book = request.lesson ? await (await import("./lesson-source")).audioLessonBook(familyId, request) : await libraryBook(familyId, request.materialId); if (!book) throw new Error("Книгу не знайдено.");
+  if (!request.lesson) selectedAudioParagraph(request, book);
+  const range = request.lesson ? { from: 1, to: 1 } : physicalRange(request, book);
   await insertAudioPart(familyId, id, { version: 1, revision: 0, request, bookTitle: book.title, author: book.author, format: book.format, sourceFrom: range.from, sourceTo: range.to, createdAt: new Date().toISOString(), state: "preparing", phase: "prepare", published: false, token: randomUUID(), leaseUntil: 0, activeCall: false, paragraphs: [], omitted: [], notes: "", manuscript: "", sourceHash: "", segmentCount: 0, readyCount: 0, segments: [], spentUsd: 0, heldUsd: 0, error: null, receipts: [] }); return id;
 }
 function audioFailure(error: unknown) {
@@ -32,11 +34,11 @@ export async function runAudioPart(familyId: string, id: string, token: string) 
       if (project.phase === "prepare" && !project.paragraphs.length) {
         const source = await loadAudioSource(familyId, project.request);
         if (source.range.from !== project.sourceFrom || source.range.to !== project.sourceTo) throw new Error("Нумерація книги змінилась. Створи нову підготовку.");
-        project = await saveAudioPart(familyId, id, project, { paragraphs: source.paragraphs, sourceHash: audioHash(JSON.stringify(source.paragraphs)) });
+        project = await saveAudioPart(familyId, id, project, { notes: source.notes ?? "", paragraphs: source.paragraphs, sourceHash: audioHash(JSON.stringify(source.paragraphs)) });
       }
       const index = project.segments.findIndex(s => !s.ready);
       if (project.phase === "audio" && index < 0) { project = await saveAudioPart(familyId, id, project, { state: "ready", leaseUntil: 0 }); break; }
-      const role = project.phase === "prepare" ? "audiobook.prepare" : "audiobook.narrate";
+      const role = project.phase === "prepare" ? project.request.lesson ? "audiobook.lesson_script" : "audiobook.prepare" : "audiobook.narrate";
       const config = await audioModelConfig(familyId, role);
       const text = project.phase === "prepare" ? JSON.stringify(project.paragraphs) : project.segments[index]!.text;
       if (project.phase === "audio") {
@@ -46,11 +48,11 @@ export async function runAudioPart(familyId: string, id: string, token: string) 
           project = await saveAudioPart(familyId, id, project, { segments: project.segments.map((s, i) => i === index ? { ...s, ready: true } : s) }); continue;
         }
       }
-      const reserve = audioReservation(config, text, project.phase === "audio");
+      const reserve = audioReservation(config, text, project.phase === "audio", !!project.request.lesson);
       if (project.spentUsd + project.heldUsd + reserve > project.request.budgetUsd) throw new Error("Ліміт цієї частини книги недостатній. Збільш його або збережи підготовлений текст без озвучення.");
       project = await saveAudioPart(familyId, id, project, { heldUsd: project.heldUsd + reserve, activeCall: true });
       let response;
-      try { response = project.phase === "prepare" ? await prepareAudioText(familyId, id, text, config) : await narrateAudio(familyId, id, text, project.request.voice, config); }
+      try { response = project.phase === "prepare" ? await prepareAudioText(familyId, id, text, config, !!project.request.lesson) : await narrateAudio(familyId, id, text, project.request.voice, config); }
       catch (error) {
         if (error instanceof AiNotConfiguredError || error instanceof BudgetBlockedError) project = await saveAudioPart(familyId, id, project, { heldUsd: Math.max(0, project.heldUsd - reserve), activeCall: false });
         throw error;
@@ -64,8 +66,8 @@ export async function runAudioPart(familyId: string, id: string, token: string) 
       }
       project = await saveAudioPart(familyId, id, project, { spentUsd: project.spentUsd + response.costUsd, heldUsd: Math.max(0, project.heldUsd - reserve), activeCall: false, receipts: [...project.receipts, { role, model: `${response.model.provider}/${response.model.model}`, costUsd: response.costUsd }] });
       if (project.phase === "prepare") {
-        const prepared = preparedManuscript(project.paragraphs, response.result, project.request.preserveLines);
-        project = await saveAudioPart(familyId, id, project, { state: "draft", manuscript: prepared.text, omitted: prepared.omitted, notes: prepared.notes, leaseUntil: 0 });
+        const prepared = project.request.lesson ? (() => { const script = audioLessonScriptSchema.parse(response.result); return { text: script.manuscript, omitted: [], notes: script.notes }; })() : preparedManuscript(project.paragraphs, response.result, project.request.preserveLines);
+        project = await saveAudioPart(familyId, id, project, { state: "draft", manuscript: prepared.text, omitted: prepared.omitted, notes: [project.notes, prepared.notes].filter(Boolean).join("\n"), leaseUntil: 0 });
       } else {
         const audio = response.result as { audioBase64: string; mimeType: string };
         if (audio.mimeType !== "audio/mpeg") throw new Error("Сервіс повернув непідтримуваний формат аудіо.");

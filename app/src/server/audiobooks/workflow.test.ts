@@ -4,7 +4,7 @@ import type { AudioPart } from "@/lib/audiobooks";
 const f = vi.hoisted(() => ({ part: null as AudioPart | null, prepare: vi.fn(), narrate: vi.fn(), exists: vi.fn(), upload: vi.fn(), remove: vi.fn() }));
 vi.mock("./store", () => ({ readAudioPart: async (family: string) => family === "33333333-3333-4333-8333-333333333333" ? structuredClone(f.part) : null, saveAudioPart: async (_f: string, _id: string, old: AudioPart, changes: Partial<AudioPart>) => { if (f.part?.revision !== old.revision) throw new Error("conflict"); f.part = { ...old, ...changes, revision: old.revision + 1 }; f.part.readyCount = f.part.segments.filter(s => s.ready).length; f.part.segmentCount = f.part.segments.length; return structuredClone(f.part); }, insertAudioPart: vi.fn() }));
 vi.mock("./library", () => ({ libraryBook: vi.fn(), physicalRange: vi.fn(), loadAudioSource: vi.fn() }));
-vi.mock("./models", () => ({ audioModelConfig: async () => ({ route: { primary_model: "tts-1-hd" } }), audioReservation: () => 0.1, prepareAudioText: f.prepare, narrateAudio: f.narrate }));
+vi.mock("./models", async original => ({ ...await original<typeof import("./models")>(), audioModelConfig: async () => ({ route: { primary_model: "tts-1-hd" } }), audioReservation: () => 0.1, prepareAudioText: f.prepare, narrateAudio: f.narrate }));
 vi.mock("./storage", () => ({ audioExists: f.exists, saveAudioBytes: f.upload, deleteAudioBytes: f.remove }));
 import { runAudioPart, commandAudioPart } from "./workflow";
 beforeEach(() => { vi.clearAllMocks(); f.part = partFixture(); f.prepare.mockResolvedValue({ result: { omitted: [], notes: "Дослівний текст" }, costUsd: 0.01, model: { provider: "openai", model: "gpt-5.4" } }); f.narrate.mockResolvedValue({ result: { audioBase64: "test", mimeType: "audio/mpeg" }, costUsd: 0.02, model: { provider: "openai", model: "tts-1-hd" } }); f.exists.mockResolvedValue(false); });
@@ -36,4 +36,11 @@ it("pause invalidates the worker and settles its in-flight bill without continui
 });
 it("delete hides first, removes audio and clears retained source/manuscript without touching original", async () => {
   f.part = partFixture({ state: "ready", published: true, manuscript: narrative, segments: [{ key: "key", text: narrative, ready: true }] }); await commandAudioPart(familyId, audioId, f.part.revision, "delete"); expect(f.remove).toHaveBeenCalled(); expect(f.part.state).toBe("deleted"); expect(f.part.paragraphs).toEqual([]); expect(f.part.manuscript).toBe(""); expect(f.part.published).toBe(false);
+});
+
+it("adapts a ready lesson into an audio teaching manuscript before parent approval, without starting TTS", async () => {
+  f.part = partFixture({ request: { ...partFixture().request, from: 1, to: 1, materialId: familyId, lesson: { subjectId: familyId, topicId: audioId } }, format: "lesson", sourceFrom: 1, sourceTo: 1 });
+  f.prepare.mockResolvedValue({ result: { manuscript: narrative, notes: "Адаптовано для слухання" }, costUsd: 0.02, model: { provider: "openai", model: "gpt-5.4" } });
+  await runAudioPart(familyId, audioId, f.part.token);
+  expect(f.part.state).toBe("draft"); expect(f.part.manuscript).toBe(narrative); expect(f.prepare.mock.calls[0]![4]).toBe(true); expect(f.narrate).not.toHaveBeenCalled(); expect(f.part.published).toBe(false);
 });
