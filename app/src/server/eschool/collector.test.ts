@@ -12,7 +12,7 @@ beforeEach(() => {
     if (denied) return new Response("{}", { status: 401, headers: { "content-type": "application/json" } });
     const data = url.pathname === "/api/profile" ? { Id: 200, SchoolId: 100, ClassId: 99, FirstName: "PRIVATE_NAME" }
       : url.pathname === "/api/v1/seplogin" ? { Items: [{ user_id: 200, school_id: 100, role }, { user_id: 999, school_id: 100, role: "schoolboy" }] }
-      : url.pathname.endsWith("/Appointment") ? { Quantity: 1, Items: [{ Id: 300, SubjectId: 10, Subject: "Інформатика", Date: "2026-11-11T00:00:00", Embed: { Topics: [{ Id: 500, Title: "Безпека в мережі" }], TargetHomeworks: [{ Id: 400 }], Teacher: { Email: "PRIVATE_EMAIL" }, Rates: [{ Rate: "PRIVATE_GRADE" }] } }] }
+      : url.pathname.endsWith("/Appointment") ? { Quantity: 1, Items: [{ Id: 300, SubjectId: 10, Subject: "Інформатика", LessonNumber: 4, StartTime: "10:55:00", RoomNumber: "227", Date: "2026-11-11T00:00:00", Embed: { Topics: [{ Id: 500, Title: "Безпека в мережі" }], TargetHomeworks: [{ Id: 400 }], Teacher: { Email: "PRIVATE_EMAIL" }, Rates: [{ Rate: "PRIVATE_GRADE" }] } }] }
       : { Id: 400, Topic: "Безпека", Description: "<p>Підготуй презентацію<br>7 слайдів &amp; приклади</p>", AppointmentDate: "2026-11-11", TargetAppointmentDate: "2026-11-13", HaveAnswer: true, Embed: { Files: [{ Url: "PRIVATE_URL", Name: "PRIVATE_FILE" }] } };
     return new Response(JSON.stringify(data), { headers: { "content-type": "application/json" } });
   }));
@@ -20,7 +20,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 it("reads only the active pupil through GET requests and exports homework without credentials, names, grades or file URLs", async () => {
   const packet = schoolPacketSchema.parse(await collectEsSchool("2026-11-09", "2026-11-15"));
-  expect(packet.entries).toHaveLength(2); expect(packet.entries[1]!.text).toContain("7 слайдів & приклади"); expect(packet.entries[1]!.dueDate).toBe("2026-11-13");
+  expect(packet.entries).toHaveLength(2); expect(packet.entries[0]!.schedule).toEqual({ number: 4, start: "10:55", room: "227" }); expect(packet.entries[1]!.schedule).toEqual(packet.entries[0]!.schedule); expect(packet.entries[1]!.text).toContain("7 слайдів & приклади"); expect(packet.entries[1]!.dueDate).toBe("2026-11-13");
   expect(JSON.stringify(packet)).not.toContain("PRIVATE_"); expect(calls.every(call => call.method === "GET")).toBe(true);
   expect(calls.find(call => call.url.pathname.endsWith("Appointment"))!.url.pathname).toContain("/SchoolBoy/200/"); expect(calls.some(call => call.url.pathname.includes("999"))).toBe(false);
 });

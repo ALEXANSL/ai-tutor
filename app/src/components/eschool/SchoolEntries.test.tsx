@@ -20,7 +20,7 @@ const entries = [
   item("done", { subject: "Мистецтво", topic: "Колір", lessonDate: "2026-11-11", dueDate: null }, "done"),
   item("changed", { subject: "Українська мова", topic: "Лексика", lessonDate: "2026-11-10", dueDate: null }, "done", true),
 ];
-function render(parent = false) { act(() => root.render(<SchoolEntries entries={entries} parent={parent} />)); }
+function render(parent = false) { act(() => root.render(<SchoolEntries entries={entries} parent={parent} initialMode="list" />)); }
 function dates() { return [...container.querySelectorAll("time")].map(node => node.getAttribute("datetime")); }
 it.each([false, true])("groups child/parent entries by due day, falls back to lesson day and retains changed completed homework (parent=%s)", parent => {
   render(parent);
