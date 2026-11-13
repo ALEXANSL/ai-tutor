@@ -281,11 +281,13 @@ export function LiteratureV3LessonScreen({
   savedPosition,
   hasVideoLesson,
   videoLessonTopicId,
+  navigationTopicId,
 }: {
   lesson: LiteratureV3LessonViewModel;
   packageLessons: LiteratureV3LessonListItem[];
   bookIndex: LiteratureV3BookPage[];
   savedPosition: LiteratureV3ReadingPosition | null;
+  navigationTopicId?: string;
   hasVideoLesson?: boolean;
   videoLessonTopicId?: string | null;
 }) {
@@ -295,7 +297,7 @@ export function LiteratureV3LessonScreen({
     <article className={`course-lesson literature-reader ${STEP_NAV_BAR_SPACER_CLASS}`}>
       <LessonNavBar
         subjectId={lesson.subjectId}
-        courseNav={{ basePath: "/literature-v3", currentLessonId: lesson.id, lessons: packageLessons, topicId: lesson.topicId }}
+        courseNav={{ basePath: "/literature-v3", currentLessonId: lesson.id, lessons: packageLessons, topicId: navigationTopicId ?? lesson.topicId }}
         videoLessonTopicId={videoLessonTopicId ?? (hasVideoLesson ? lesson.topicId : null)}
         extraControls={
           <>

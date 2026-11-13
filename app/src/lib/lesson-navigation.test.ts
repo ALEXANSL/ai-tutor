@@ -6,3 +6,6 @@ it("uses the existing lesson order and skips unavailable lessons", () => {
   expect(nextActiveLessonHref("/literature-v3", "next", lessons)).toBeNull();
   expect(nextActiveLessonHref("/literature-v3", "missing", lessons)).toBeNull();
 });
+it("keeps mixed-format subject navigation when a revised lesson uses the new reader", () => {
+  expect(nextActiveLessonHref("/literature-v3", "revision", [{ id: "revision", status: "active" }, { id: "math", status: "active", href: "/math-course-v2/math" }])).toBe("/math-course-v2/math");
+});

@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { AddBookPanel } from "@/components/parent/books/AddBookPanel";
 import { BooksList } from "@/components/parent/books/BooksList";
 import { FolderAccessBanner } from "@/components/parent/books/FolderAccessBanner";
 import { SearchPanel } from "@/components/parent/books/SearchPanel";
@@ -8,7 +7,7 @@ import { requireParentAccess } from "@/server/auth/guards";
 import { kindOptions } from "@/server/books/kinds";
 import { listBooks, listManualImportBatches, listSubjects } from "@/server/books/queries";
 import { forFamily, getFamilyTimezone } from "@/server/db/family-scope";
-import { getFolderAccessStatus, isDriveConfigured, isUploadsFolderConfigured } from "@/server/drive/service";
+import { getFolderAccessStatus } from "@/server/drive/service";
 import { PageTitle, Panel } from "../ui";
 
 // Actions on this page may run background indexing via `after()` (ADR-015).
@@ -17,12 +16,10 @@ export const maxDuration = 300;
 /** "Мої книги" (mockup 17; US-2.1 KP-1, 2; US-2.7 KP-1, 3, 4; US-2.3). */
 export default async function BooksPage() {
   const { familyId } = await requireParentAccess();
-  const [books, subjects, access, driveConfigured, uploadEnabled, timeZone, manualBatches] = await Promise.all([
+  const [books, subjects, access, timeZone, manualBatches] = await Promise.all([
     listBooks(familyId),
     listSubjects(familyId),
     getFolderAccessStatus(familyId),
-    isDriveConfigured(familyId),
-    isUploadsFolderConfigured(familyId),
     getFamilyTimezone(forFamily(familyId)),
     listManualImportBatches(familyId),
   ]);
@@ -42,7 +39,7 @@ export default async function BooksPage() {
         <p className="-mt-2 mb-3.5 text-xs text-p-muted">{t.listDesc}</p>
         <BooksList initial={books} subjects={subjects} kinds={kinds} timeZone={timeZone} />
       </Panel>
-      <AddBookPanel driveConfigured={driveConfigured} uploadEnabled={uploadEnabled} />
+      <Link href="/parent/studio?tab=book" className="mb-4 inline-flex min-h-11 items-center rounded-xl bg-p-primary px-4 font-bold text-white">Додати книгу або матеріал у Майстерні →</Link>
       <SearchPanel subjects={subjects} kinds={kinds} />
     </>
   );

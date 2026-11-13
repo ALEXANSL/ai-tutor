@@ -68,9 +68,9 @@ export default async function ChildSubjectPage({ params, searchParams }: { param
                 <p className="mb-3 text-sm text-muted">{ts.pages(topic.pageFrom, topic.pageTo)}</p>
               )}
               <div className="flex flex-wrap items-center gap-2.5">
-                <Link href={importedLessonHref(topic)!} className="inline-flex min-h-12 items-center rounded-2xl bg-primary px-5 text-base font-bold text-white">{ts.openLesson}</Link>
+                <Link href={publications.find(item => item.mode === "revision" && item.baseTopicId === topic.id)?.lessons[0] ? `/literature-v3/${publications.find(item => item.mode === "revision" && item.baseTopicId === topic.id)!.lessons[0]!.id}` : importedLessonHref(topic)!} className="inline-flex min-h-12 items-center rounded-2xl bg-primary px-5 text-base font-bold text-white">{ts.openLesson}</Link>
                 {topic.hasVideoLesson && <VideoLessonButton topicId={topic.id} title={topic.title} />}
-                {publications.filter(item => item.baseTopicId === topic.id).flatMap(item => item.lessons).map(lesson => <Link key={lesson.id} href={`/literature-v3/${lesson.id}`} className="inline-flex min-h-12 items-center rounded-2xl border-2 border-secondary bg-surface px-4 text-sm font-bold">Розширений урок: {lesson.title}</Link>)}
+                {publications.filter(item => item.mode !== "revision" && item.baseTopicId === topic.id).flatMap(item => item.lessons).map(lesson => <Link key={lesson.id} href={`/literature-v3/${lesson.id}`} className="inline-flex min-h-12 items-center rounded-2xl border-2 border-secondary bg-surface px-4 text-sm font-bold">Розширений урок: {lesson.title}</Link>)}
               </div>
               </div>
             </LastLessonHighlight>

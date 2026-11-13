@@ -31,3 +31,7 @@ it("keeps package namespace and surviving lesson/screen keys stable when publish
   expect(after.lessons[0]!.screens.map(screen => screen.id)).toEqual(before.lessons[0]!.screens.map(screen => screen.id));
   expect(after.lessons[0]!.screens[0]!.content.display).toContain("Уточнений приклад");
 });
+it("preserves native-language narration metadata in the published reader contract", () => {
+  const value = project(); value.units[0]!.content = structuredClone(value.units[0]!.content); value.units[0]!.content.blocks[1]!.narrationLanguage = "de-DE";
+  expect(studioPackage("project", value).parsed.lessons[0]!.screens[1]!.content.tts.lang).toBe("de-DE");
+});

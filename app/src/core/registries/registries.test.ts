@@ -24,7 +24,7 @@ describe("parent navigation (US-11.8, US-2.7 KP-3)", () => {
 
   it("has 'Мої книги' as a separate active menu item", () => {
     const books = items.find((i) => i.key === "books");
-    expect(books).toMatchObject({ label: "Мої книги", href: "/parent/books", status: "active" });
+    expect(books).toMatchObject({ label: "Книги та джерела", href: "/parent/books", status: "active" });
   });
 
   it("ends with an inactive 'Модулі (скоро)' item without link", () => {

@@ -29,3 +29,8 @@ it("teaches the subject beyond textbook wording while preserving curriculum alig
     expect(system).toContain("Уточнюй помилки або застарілі твердження");
   }
 });
+it("asks for Ukrainian explanations and native English/German listening rather than transliteration", () => {
+  for (const role of ["studio.author", "studio.review"] as const) {
+    const system = studioSystem(role); expect(system).toContain("en-GB"); expect(system).toContain("de-DE"); expect(system).toContain("кириличну транслітерацію"); expect(system).toContain("Самі питання без навчального матеріалу недостатні");
+  }
+});

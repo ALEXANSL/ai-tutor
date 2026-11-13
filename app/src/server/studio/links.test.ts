@@ -43,3 +43,26 @@ it("does not expose a disabled publication while its revision is ready or being 
   value.state = "ready"; value.publicationRevision = true; value.childAccess = "disabled";
   expect((await studioLinksForPath("family", `/literature-v3/${baseId}`)).links).toEqual([]);
 });
+it("routes the original to a reviewed replacement, then restores the original when access is disabled", async () => {
+  const { studioReplacementForPath } = await import("./links");
+  const value = f.rows.get("jobs")![0]!.payload as ReturnType<typeof studioProjectFixture>;
+  value.request.mode = "revision";
+  expect(await studioReplacementForPath("family", `/literature-v3/${baseId}`)).toBe(`/literature-v3/${generatedId}`);
+  expect((await studioLinksForPath("family", `/literature-v3/${baseId}`)).links).toEqual([]);
+  value.childAccess = "disabled"; expect(await studioReplacementForPath("family", `/literature-v3/${baseId}`)).toBeNull();
+  value.childAccess = "enabled"; value.state = "generating"; value.publicationRevision = true;
+  expect(await studioReplacementForPath("family", `/literature-v3/${baseId}`)).toBe(`/literature-v3/${generatedId}`);
+  f.subject.mockResolvedValue({ childVisible: false }); expect(await studioReplacementForPath("other-family", `/literature-v3/${baseId}`)).toBeNull();
+});
+it("offers an explicit original-view link from a replacement without creating a redirect loop", async () => {
+  const value = f.rows.get("jobs")![0]!.payload as ReturnType<typeof studioProjectFixture>; value.request.mode = "revision";
+  f.rows.set("literature_v3_lessons", [{ id: generatedId, subject_id: "subject", topic_id: "extension-topic", package_id: "new", status: "active" }]); f.rows.set("literature_v3_packages", [{ id: "new", package_key: `studio.${projectId}` }]);
+  expect((await studioLinksForPath("family", `/literature-v3/${generatedId}`)).back).toBe(`/literature-v3/${baseId}?original=1`);
+});
+it("keeps the original subject order and mixed reader links around a replacement", async () => {
+  const { studioRevisionNavigation } = await import("./links");
+  const value = f.rows.get("jobs")![0]!.payload as ReturnType<typeof studioProjectFixture>; value.request.mode = "revision";
+  f.subject.mockResolvedValue({ childVisible: true, topics: [{ id: "base-topic", title: "Міфи", literatureV3LessonId: baseId }, { id: "next-topic", title: "Далі", mathCourseV2LessonId: "next" }] });
+  const nav = await studioRevisionNavigation("family", "subject", generatedId);
+  expect(nav?.topicId).toBe("base-topic"); expect(nav?.lessons.map(item => item.href)).toEqual([`/literature-v3/${generatedId}`, "/math-course-v2/next"]);
+});

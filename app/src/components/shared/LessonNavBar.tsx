@@ -13,6 +13,7 @@ const t = uk.child.lesson;
 
 export interface LessonNavListItem {
   id: string;
+  href?: string;
   orderNo: number;
   title: string;
   status: "active" | "needs_review";
@@ -233,7 +234,7 @@ export function LessonNavBar({
               <div className="flex flex-wrap items-center gap-2">
                 {prevLesson ? (
                   <Link
-                    href={`${courseNav.basePath}/${prevLesson.id}`}
+                    href={prevLesson.href ?? `${courseNav.basePath}/${prevLesson.id}`}
                     className="min-h-11 rounded-full border-2 border-line bg-surface px-3.5 text-sm font-bold leading-[2.5rem] transition-transform active:scale-[0.97]"
                   >
                     {t.navPrevLesson}
@@ -252,7 +253,7 @@ export function LessonNavBar({
                 </button>
                 {nextLesson ? (
                   <Link
-                    href={`${courseNav.basePath}/${nextLesson.id}`}
+                    href={nextLesson.href ?? `${courseNav.basePath}/${nextLesson.id}`}
                     className="min-h-11 rounded-full bg-primary px-3.5 text-sm font-bold leading-[2.5rem] text-white transition-transform active:scale-[0.97]"
                   >
                     {t.navNextLesson}
@@ -266,7 +267,7 @@ export function LessonNavBar({
                   {courseNav.lessons.map((l) => (
                     <Link
                       key={l.id}
-                      href={`${courseNav.basePath}/${l.id}`}
+                      href={l.href ?? `${courseNav.basePath}/${l.id}`}
                       onClick={() => setTocOpen(false)}
                       className={`block rounded-xl px-3 py-2 text-sm ${
                         l.id === courseNav.currentLessonId ? "bg-primary/10 font-bold text-primary" : l.status === "needs_review" ? "text-muted" : "hover:bg-surface-alt"
