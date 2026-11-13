@@ -45,3 +45,11 @@ it("includes the next heading's page so a paragraph is not cut at the previous p
   f.scope.mockReturnValue({ select: (table: string) => { const chain = { eq: () => chain, order: () => chain, limit: () => chain, returns: async () => ({ data: table === "topics" ? [{ id: "one", title: "§16. Перша тема", page_from: 2, page_to: 4 }, { id: "two", title: "§17. Наступна тема", page_from: 5, page_to: 7 }] : [], error: null }) }; return chain; } });
   expect((await libraryBook(familyId, materialId))?.paragraphs?.[0]).toEqual({ id: "one", title: "§16. Перша тема", from: 2, to: 5 });
 });
+it("prepares all selected source text with a visible review note when the paragraph heading differs from the PDF", async () => {
+  const { PDFDocument, StandardFonts } = await import("pdf-lib"); const pdf = await PDFDocument.create(); const font = await pdf.embedFont(StandardFonts.Helvetica);
+  pdf.addPage().drawText("Every supplied line must remain in the reading manuscript.", { x: 20, y: 500, font });
+  f.download.mockResolvedValue(new Uint8Array(await pdf.save())); f.meta.mockResolvedValue({ id: materialId, driveFileId: "file", title: "Book", name: "book.pdf", format: "pdf", pageCount: 1 });
+  f.scope.mockReturnValue({ select: (table: string) => { const chain = { eq: () => chain, order: () => chain, limit: () => chain, returns: async () => ({ data: table === "topics" ? [{ id: "paragraph", title: "§16. Інше формулювання теми", page_from: 1, page_to: 1 }] : [], error: null }) }; return chain; } });
+  const result = await loadAudioSource(familyId, { ...requestFixture, from: 1, to: 1, paragraphId: "paragraph" });
+  expect(result.paragraphs.map(p=>p.text).join(" ")).toContain("Every supplied line must remain"); expect(result.notes).toContain("ВЕСЬ текст");
+});

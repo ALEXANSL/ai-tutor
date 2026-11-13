@@ -77,7 +77,7 @@ export default async function ChildSubjectPage({ params, searchParams }: { param
               )}
               <div className="flex flex-wrap items-center gap-2.5">
                 <Link href={topicHref(topic)} className="inline-flex min-h-12 items-center rounded-2xl bg-primary px-5 text-base font-bold text-white">{ts.openLesson}</Link>
-                {audioLessons.find(audio => audio.lessonTopicId === topic.id) && <Link href={`/audiobooks/${audioLessons.find(audio => audio.lessonTopicId === topic.id)!.id}`} className="inline-flex min-h-12 items-center rounded-2xl border-2 border-secondary bg-surface px-4 font-bold">🎧 Аудіоурок</Link>}
+                {(["explanation", "reading"] as const).map(kind => { const audio = audioLessons.find(item => item.lessonTopicId === topic.id && (item.lessonKind ?? "explanation") === kind); return audio ? <Link key={kind} href={`/audiobooks/${audio.id}`} className="inline-flex min-h-12 items-center rounded-2xl border-2 border-secondary bg-surface px-4 font-bold">{kind === "reading" ? "🎧 Слухати твір" : "🎧 Аудіоурок"}</Link> : null; })}
                 {topic.hasVideoLesson && <VideoLessonButton topicId={topic.id} title={topic.title} />}
                 {publications.filter(item => item.mode !== "revision" && item.baseTopicId === topic.id).flatMap(item => item.lessons).map(lesson => <Link key={lesson.id} href={`/literature-v3/${lesson.id}`} className="inline-flex min-h-12 items-center rounded-2xl border-2 border-secondary bg-surface px-4 text-sm font-bold">Розширений урок: {lesson.title}</Link>)}
               </div>

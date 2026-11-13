@@ -44,3 +44,9 @@ it("adapts a ready lesson into an audio teaching manuscript before parent approv
   await runAudioPart(familyId, audioId, f.part.token);
   expect(f.part.state).toBe("draft"); expect(f.part.manuscript).toBe(narrative); expect(f.prepare.mock.calls[0]![4]).toBe(true); expect(f.narrate).not.toHaveBeenCalled(); expect(f.part.published).toBe(false);
 });
+it("prepares literal reading without a paid editor or lesson-script model and preserves every line", async () => {
+  const text = "Короткий вірш\n\nРядок один\nРядок один";
+  f.part = partFixture({ request: { ...partFixture().request, lesson: { subjectId: familyId, topicId: audioId, kind: "reading" } }, paragraphs: [{ id: 0, page: 1, text }] });
+  await runAudioPart(familyId, audioId, f.part.token);
+  expect(f.part.state).toBe("draft"); expect(f.part.manuscript).toBe(text); expect(f.prepare).not.toHaveBeenCalled(); expect(f.narrate).not.toHaveBeenCalled();
+});

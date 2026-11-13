@@ -21,6 +21,7 @@ export async function readyAudioLessonSource(familyId: string, request: AudioReq
   const book = await audioLessonBook(familyId, request); const lesson = request.lesson!;
   const { publications } = await audioLessonOptions(familyId, lesson.subjectId);
   const replacement = publications.find(project => project.mode === "revision" && project.baseTopicId === lesson.topicId)?.lessons[0];
+  if (lesson.kind === "reading") return { book, range: { from: 1, to: 1 }, paragraphs: await (await import("./reading-source")).lessonReadingSource(familyId, lesson.subjectId, replacement?.topicId ?? lesson.topicId), notes: "Дослівне читання ВСЬОГО наданого тексту читання вибраного уроку. Рядки, строфи, діалоги та повтори збережено; ШІ не переказує й не скорочує твір. Якщо в підручнику надано уривок, читаємо весь цей уривок, а не вигадуємо відсутню частину книги." };
   const source = await loadVideoLessonSource(familyId, lesson.subjectId, replacement?.topicId ?? lesson.topicId);
   const paragraphs = [{ id: 0, page: 1, text: `Предмет: ${source.subject}\nТема: ${source.title}` }, ...source.blocks.map((block, index) => ({ id: index + 1, page: 1, text: `${block.title}\n${block.text}` }))];
   if (!source.blocks.length || paragraphs.reduce((size, p) => size + p.text.length, 0) > 60000) throw new Error("Матеріал уроку завеликий для одного аудіоуроку або не містить тексту.");

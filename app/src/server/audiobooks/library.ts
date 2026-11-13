@@ -99,7 +99,10 @@ export async function loadAudioSource(familyId: string, request: AudioRequest) {
   if (selected) {
     const index = book.paragraphs!.findIndex(item => item.id === selected.id);
     const next = book.paragraphs![index + 1];
-    units = trimAudioParagraph(units, selected.title, next && next.from <= range.to ? next.title : undefined);
+    try { units = trimAudioParagraph(units, selected.title, next && next.from <= range.to ? next.title : undefined); }
+    catch {
+      notes = [notes, "Межі параграфа не вдалося визначити достатньо точно. Збережено ВЕСЬ текст вибраних сторінок без скорочень, щоб не втратити твір. Перед озвученням перевір початок і кінець та за потреби прибери сусідню тему в редакторі."].filter(Boolean).join("\n");
+    }
   }
   return { book, range, paragraphs: sourceParagraphs(units), notes };
 }
