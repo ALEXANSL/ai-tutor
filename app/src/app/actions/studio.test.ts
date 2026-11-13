@@ -1,7 +1,8 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { studioProjectFixture, studioLessonFixture, studioVisualFixture } from "@/server/studio/__fixtures__/project";
-const f = vi.hoisted(() => ({ parent: vi.fn(), child: vi.fn(), start: vi.fn(), resume: vi.fn(), pause: vi.fn(), read: vi.fn(), save: vi.fn(), kick: vi.fn(), links: vi.fn(), text: vi.fn(), cleanup: vi.fn(), step: vi.fn(), scope: vi.fn(), update: vi.fn(), activate: vi.fn(), schedule: vi.fn(), validate: vi.fn() }));
+const f = vi.hoisted(() => ({ detail: vi.fn(), parent: vi.fn(), child: vi.fn(), start: vi.fn(), resume: vi.fn(), pause: vi.fn(), read: vi.fn(), save: vi.fn(), kick: vi.fn(), links: vi.fn(), text: vi.fn(), cleanup: vi.fn(), step: vi.fn(), scope: vi.fn(), update: vi.fn(), activate: vi.fn(), schedule: vi.fn(), validate: vi.fn() }));
 vi.mock("@/server/db/family-scope", () => ({ forFamily: (family: string) => { f.scope(family); const q = { eq: () => q, order: () => q, limit: () => q, maybeSingle: f.step }; return { select: () => q, update: (table: string, values: unknown) => { f.update(table, values); return q; } }; } }));
+vi.mock("@/server/subjects/queries", () => ({ getSubjectDetail: f.detail }));
 vi.mock("@/server/auth/guards", () => ({ requireParentAccess: f.parent, requireChild: f.child }));
 vi.mock("@/server/studio/workflow", () => ({ startStudio: f.start, resumeStudio: f.resume, pauseStudio: f.pause, scheduleStudio: f.schedule, validateStudioLesson: f.validate }));
 vi.mock("@/server/studio/store", () => ({ readStudioProject: f.read, saveStudioProject: f.save, STUDIO_STEP: "studio.step" }));
@@ -11,7 +12,7 @@ vi.mock("@/server/studio/links", () => ({ studioLinksForPath: f.links }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ unstable_rethrow: vi.fn() }));
 vi.mock("unpdf", () => ({ getDocumentProxy: async () => ({ numPages: 10, cleanup: f.cleanup }), extractText: f.text }));
-import { createStudioAction, commandStudioAction, pollStudioAction, withdrawStudioAction, pauseStudioAction, extractStudioFileAction, studioLessonLinksAction, setStudioAccessAction, saveStudioLessonAction } from "./studio";
+import { createStudioAction, commandStudioAction, pollStudioAction, withdrawStudioAction, pauseStudioAction, extractStudioFileAction, studioLessonLinksAction, setStudioAccessAction, saveStudioLessonAction, reviseImportedLessonAction } from "./studio";
 const id = "11111111-1111-4111-8111-111111111111";
 beforeEach(() => { vi.clearAllMocks(); f.parent.mockResolvedValue({ familyId: "own-family" }); f.child.mockResolvedValue({ ctx: { familyId: "child-family" } }); f.start.mockResolvedValue(id); f.read.mockResolvedValue(studioProjectFixture({ state: "plan_ready" })); });
 it("rejects a child/unauthorized caller before reading drafts, running models, extracting files or publishing", async () => {
@@ -92,4 +93,20 @@ it("rejects stale controls and child callers before touching lesson visibility o
   f.parent.mockRejectedValue(Error("parent only")); f.read.mockClear();
   await expect(setStudioAccessAction({ id, revision: 3, enabled: true })).rejects.toThrow();
   await expect(saveStudioLessonAction({})).rejects.toThrow(); expect(f.read).not.toHaveBeenCalled();
+});
+
+it("creates one owned revision draft and does not let a repeated operation start paid work twice", async () => {
+  const subjectId = "22222222-2222-4222-8222-222222222222", topicId = "33333333-3333-4333-8333-333333333333";
+  const input = { subjectId, topicId, requestId: id, instructions: "Додай навчальний матеріал замість самих запитань", budgetUsd: 3, age: 12, grade: 6 };
+  f.detail.mockResolvedValue({ id: subjectId, name: "Зарубіжна література", topics: [{ id: topicId, title: "Міфи", literatureV3LessonId: "base" }] }); f.read.mockResolvedValue(null);
+  const first = await reviseImportedLessonAction(input); expect(first.status).toBe("ok"); expect(f.start).toHaveBeenCalledWith("own-family", expect.objectContaining({ mode: "revision", subjectId, topicId, lessonCount: 1 }), expect.any(String), id);
+  const canonicalId = f.start.mock.calls[0]![2]; f.start.mockClear();
+  const existing = studioProjectFixture({ state: "published", revisionRequestId: id, request: { ...studioProjectFixture().request, mode: "revision", subjectId, topicId } }); f.read.mockResolvedValue(existing);
+  expect(await reviseImportedLessonAction(input)).toMatchObject({ status: "ok", id: canonicalId }); expect(f.start).not.toHaveBeenCalled(); expect(f.resume).not.toHaveBeenCalled();
+  const nextId = "44444444-4444-4444-8444-444444444444"; await reviseImportedLessonAction({ ...input, requestId: nextId });
+  expect(f.resume).toHaveBeenCalledWith("own-family", canonicalId, existing.revision, "revise", undefined, input.instructions, 3, 0, nextId, { age: 12, grade: 6 });
+});
+it("rejects a foreign selected lesson before model work", async () => {
+  f.detail.mockResolvedValue(null);
+  expect((await reviseImportedLessonAction({ subjectId: id, topicId: id, requestId: id, instructions: "Перероби матеріал уроку", budgetUsd: 3, age: 12, grade: 6 })).status).toBe("error"); expect(f.start).not.toHaveBeenCalled();
 });

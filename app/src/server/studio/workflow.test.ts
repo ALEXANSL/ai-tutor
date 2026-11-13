@@ -135,3 +135,11 @@ it("lets a hidden publication be revised without making its old version visible"
   await resumeStudio("family", id, project.revision, "revise", undefined, "Уточни приклад");
   expect(project.state).toBe("generating"); expect(project.childAccess).toBe("disabled"); expect(project.publicationRevision).toBe(true); expect(project.editorNotes?.at(-1)?.text).toBe("Уточни приклад");
 });
+it("requires native listening examples while retaining Ukrainian explanation in language lessons", () => {
+  const languageProject = { ...project, request: { ...project.request, targetLanguage: "en" as const } };
+  expect(() => validateStudioLesson(languageProject, studioLessonFixture)).toThrow("STUDIO-LANGUAGE-CONTENT");
+  const lesson = structuredClone(studioLessonFixture); lesson.blocks.find(block => block.kind === "example")!.narrationLanguage = "en-GB"; lesson.blocks.find(block => block.kind === "example")!.narration = "Hello! My name is Alex. How are you?";
+  expect(validateStudioLesson(languageProject, lesson).blocks.some(block => block.narrationLanguage === "en-GB")).toBe(true);
+  lesson.blocks.find(block => block.kind === "example")!.narrationLanguage = "de-DE";
+  expect(() => validateStudioLesson(languageProject, lesson)).toThrow();
+});

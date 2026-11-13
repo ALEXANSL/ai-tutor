@@ -1,4 +1,5 @@
 import "server-only";
+import { studioReplacementForPath } from "@/server/studio/links";
 import { forFamily } from "@/server/db/family-scope";
 import type { SchoolEntry } from "@/lib/eschool";
 import type { VoiceTarget } from "@/lib/voice";
@@ -18,7 +19,7 @@ export function schoolAssignmentPrompt(entry: SchoolEntry) {
 export async function schoolHomeworkLaunch(familyId: string, childId: string, id: string): Promise<string | null> {
   const entry = await schoolAssignment(familyId, childId, id);
   if (!entry.source.text || !entry.lessonHref) return null;
-  const match = /^\/(literature-v3|math-course-v2|literature-course-v2)\/([a-f0-9-]{36})$/i.exec(entry.lessonHref);
+  const match = /^\/(literature-v3|math-course-v2|literature-course-v2)\/([a-f0-9-]{36})$/i.exec(await studioReplacementForPath(familyId, entry.lessonHref).catch(() => null) ?? entry.lessonHref);
   if (!match) return null;
   let target: VoiceTarget;
   if (match[1] === "literature-v3") {

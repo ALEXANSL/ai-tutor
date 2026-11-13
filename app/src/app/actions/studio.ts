@@ -1,6 +1,6 @@
 "use server";
 import { z } from "zod";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { unstable_rethrow } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireParentAccess, requireChild } from "@/server/auth/guards";
@@ -15,8 +15,32 @@ const idSchema = z.string().uuid();
 function message(error: unknown) { unstable_rethrow(error); return error instanceof z.ZodError ? "Перевір заповнення полів і діапазон сторінок." : error instanceof Error && !/secret|token|api_key|fetch|supabase|postgres|JSON|STUDIO-/i.test(error.message) && error.message.length < 400 ? error.message : "Не вдалося виконати дію. Чернетку збережено; онови сторінку перед повтором."; }
 export async function createStudioAction(raw: unknown) {
   const { familyId } = await requireParentAccess();
-  try { const parsed = z.object({ requestId: idSchema, request: studioRequestSchema }).strict().parse(raw); const id = await startStudio(familyId, parsed.request, parsed.requestId); kickStudio(familyId, id); revalidatePath("/parent/studio"); return { status: "ok" as const, id }; }
+  try { const parsed = z.object({ requestId: idSchema, request: studioRequestSchema }).strict().parse(raw); if (parsed.request.mode === "revision") throw new Error("Для переробки скористайся кнопкою в каталозі предмета."); const id = await startStudio(familyId, parsed.request, parsed.requestId); kickStudio(familyId, id); revalidatePath("/parent/studio"); return { status: "ok" as const, id }; }
   catch (error) { return { status: "error" as const, message: message(error) }; }
+}
+/** One durable replacement project per original topic. Repeated submissions are idempotent. */
+export async function reviseImportedLessonAction(raw: unknown) {
+  const { familyId } = await requireParentAccess();
+  try {
+    const value = z.object({ requestId: idSchema, subjectId: idSchema, topicId: idSchema, instructions: z.string().trim().min(10).max(3000), budgetUsd: z.number().min(0.5).max(25), age: z.number().int().min(7).max(18), grade: z.number().int().min(1).max(12) }).strict().parse(raw);
+    const bytes = createHash("sha256").update(`studio-revision:${familyId}:${value.subjectId}:${value.topicId}`).digest().subarray(0, 16); bytes[6] = (bytes[6]! & 15) | 80; bytes[8] = (bytes[8]! & 63) | 128;
+    const hex = bytes.toString("hex"); const id = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    const { getSubjectDetail } = await import("@/server/subjects/queries");
+    const { importedLessonHref } = await import("@/lib/imported-lesson-link");
+    const subject = await getSubjectDetail(familyId, value.subjectId); const topic = subject?.topics.find(item => item.id === value.topicId);
+    if (!subject || !topic || !importedLessonHref(topic)) throw new Error("Урок не належить цьому предмету або недоступний.");
+    const existing = await readStudioProject(familyId, id);
+    if (existing) {
+      if (existing.request.mode !== "revision" || existing.request.subjectId !== value.subjectId || existing.request.topicId !== value.topicId) throw new Error("Для цього уроку знайдено несумісну чернетку. Відкрий Майстерню.");
+      if (existing.revisionRequestId !== value.requestId && ["published", "withdrawn", "ready", "needs_changes"].includes(existing.state)) {
+        await resumeStudio(familyId, id, existing.revision, "revise", undefined, value.instructions, value.budgetUsd, 0, value.requestId, { age: value.age, grade: value.grade }); kickStudio(familyId, id);
+      }
+    } else {
+      const targetLanguage = /англій/iu.test(subject.name) ? "en" : /німець/iu.test(subject.name) ? "de" : null;
+      await startStudio(familyId, { mode: "revision", targetLanguage, title: topic.title, idea: value.instructions, age: value.age, grade: value.grade, lessonCount: 1, minutes: 20, budgetUsd: value.budgetUsd, subjectId: value.subjectId, topicId: value.topicId, materialId: null, pageFrom: null, pageTo: null, sourceText: "" }, id, value.requestId); kickStudio(familyId, id);
+    }
+    revalidatePath("/parent/studio"); return { status: "ok" as const, id, message: existing && (existing.revisionRequestId === value.requestId || !["published", "withdrawn", "ready", "needs_changes"].includes(existing.state)) ? "Уже є чернетка цього уроку. Відкрий її, щоб продовжити; нове завдання не запускалося." : "Запит збережено. Підготовку й публікацію контролюй у Майстерні." };
+  } catch (error) { return { status: "error" as const, message: message(error) }; }
 }
 export async function pollStudioAction(rawId: string) {
   const { familyId } = await requireParentAccess(); const id = idSchema.parse(rawId);
@@ -95,7 +119,7 @@ export async function extractStudioFileAction(form: FormData) {
     else if (extension === "pdf") {
       const { getDocumentProxy, extractText } = await import("unpdf");
       const pdf = await getDocumentProxy(new Uint8Array(await file.arrayBuffer()));
-      try { if (pdf.numPages > 80) throw new Error("Для PDF понад 80 сторінок скористайся бібліотекою й вибором сторінок."); const result = await extractText(pdf, { mergePages: false }); if (result.text.reduce((sum, part) => sum + part.trim().length, 0) < 100) throw new Error("У PDF немає достатнього текстового шару. Спочатку потрібне розпізнавання книги."); text = result.text.map((part, i) => `Сторінка PDF ${i + 1}:\n${part}`).join("\n\n"); }
+      try { if (pdf.numPages > 80) throw new Error("Для PDF понад 80 сторінок скористайся бібліотекою й вибором сторінок."); const result = await extractText(pdf, { mergePages: false }); if (result.text.reduce((sum, part) => sum + part.trim().length, 0) < 100) throw new Error("У PDF немає достатнього текстового шару. Скан до трьох сторінок додай у блоці «Фото або скан», велику книгу — через бібліотеку."); text = result.text.map((part, i) => `Сторінка PDF ${i + 1}:\n${part}`).join("\n\n"); }
       finally { await pdf.cleanup(); }
     } else throw new Error("Підтримуються TXT, MD і PDF. EPUB можна вибрати з бібліотеки." );
     text = text.replace(/\u0000/g, "").trim();

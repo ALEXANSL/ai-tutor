@@ -1,4 +1,5 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { studioReplacementForPath, studioRevisionNavigation } from "@/server/studio/links";
 import { LiteratureV3LessonScreen } from "@/components/course-v2/LiteratureV3LessonView";
 import { requireChild } from "@/server/auth/guards";
 import { getLiteratureV3BookIndex, getLiteratureV3LessonView, getLiteratureV3ReadingPosition, listLiteratureV3Lessons } from "@/server/lessons/literatureV3View";
@@ -13,12 +14,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * `/math-course-v2/[lessonId]` (S35) and `/literature-course-v2/[lessonId]`
  * (S36).
  */
-export default async function LiteratureV3LessonPage({ params }: { params: Promise<{ lessonId: string }> }) {
+export default async function LiteratureV3LessonPage({ params, searchParams }: { params: Promise<{ lessonId: string }>; searchParams?: Promise<{ original?: string }> }) {
   const { lessonId } = await params;
   if (!UUID.test(lessonId)) notFound();
   const { ctx, profile } = await requireChild();
   const lesson = await getLiteratureV3LessonView(ctx.familyId, lessonId);
   if (!lesson) notFound();
+  if ((await searchParams)?.original !== "1") { const replacement = await studioReplacementForPath(ctx.familyId, `/literature-v3/${lessonId}`).catch(() => null); if (replacement) redirect(replacement); }
   if (lesson.packageKey?.startsWith("studio.")) {
     if (lesson.status !== "active") notFound();
     if (!await studioSubjectVisible(ctx.familyId, lesson.subjectId)) notFound();
@@ -30,7 +32,9 @@ export default async function LiteratureV3LessonPage({ params }: { params: Promi
     resolveLessonVideoTopicId(ctx.familyId, lesson.subjectId, lesson.topicId, lesson.title),
   ]);
 
-  return <LiteratureV3LessonScreen lesson={lesson} packageLessons={packageLessons} bookIndex={bookIndex} savedPosition={savedPosition} videoLessonTopicId={videoLessonTopicId} />;
+  const revisionNav = lesson.packageKey?.startsWith("studio.") ? await studioRevisionNavigation(ctx.familyId, lesson.subjectId, lesson.id).catch(() => null) : null;
+  const inheritedVideo = !videoLessonTopicId && revisionNav ? await resolveLessonVideoTopicId(ctx.familyId, lesson.subjectId, revisionNav.topicId, lesson.title) : null;
+  return <LiteratureV3LessonScreen lesson={lesson} packageLessons={revisionNav?.lessons ?? packageLessons} navigationTopicId={revisionNav?.topicId} bookIndex={bookIndex} savedPosition={savedPosition} videoLessonTopicId={videoLessonTopicId ?? inheritedVideo} />;
 }
 
 export const maxDuration = 180;

@@ -18,11 +18,11 @@ function studioReviewFeedback(review: import("@/lib/studio").StudioReview | null
 export async function scheduleStudio(familyId: string, id: string, token: string) {
   await enqueueJob(familyId, STUDIO_STEP, { projectId: id, token }, { dedupeKey: `studio:${id}:${token}`, maxAttempts: 1 });
 }
-export async function startStudio(familyId: string, request: StudioRequest, requestId: string): Promise<string> {
+export async function startStudio(familyId: string, request: StudioRequest, requestId: string, revisionRequestId?: string): Promise<string> {
   const existing = await readStudioProject(familyId, requestId);
   if (existing) { if (JSON.stringify(existing.request) !== JSON.stringify(request)) throw new Error("Ця чернетка вже має інший запит. Створи нову з оновленими полями."); return requestId; }
   const source = await loadStudioSources(familyId, request);
-  const project: StudioProject = { version: 1, revision: 0, request, ...source, createdAt: new Date().toISOString(), state: "planning", phase: "plan", plan: null, units: [], cursor: 0, token: randomUUID(), activeCall: false, spentUsd: 0, heldUsd: 0, feedback: "", error: null, models: [], publication: null };
+  const project: StudioProject = { ...(revisionRequestId ? { revisionRequestId } : {}), version: 1, revision: 0, request, ...source, createdAt: new Date().toISOString(), state: "planning", phase: "plan", plan: null, units: [], cursor: 0, token: randomUUID(), activeCall: false, spentUsd: 0, heldUsd: 0, feedback: "", error: null, models: [], publication: null };
   const id = await createStudioProject(familyId, project, requestId);
   const saved = await readStudioProject(familyId, id);
   if (saved?.token !== project.token) return id;
@@ -37,6 +37,12 @@ export function validateStudioLesson(project: StudioProject, raw: unknown) {
   if (lesson.sourceIds.some(id => !ids.has(id))) throw new Error("STUDIO-SOURCE-REF");
   if (lesson.blocks.reduce((sum, block) => sum + block.text.length, 0) < 1800 || !lesson.blocks.some(block => block.kind === "explanation") || !lesson.blocks.some(block => block.kind === "example") || !lesson.blocks.some(block => ["practice", "steps"].includes(block.kind))) throw new Error("STUDIO-INCOMPLETE-LESSON");
   if (lesson.questions.some(question => new Set(question.options.map(option => option.toLocaleLowerCase("uk").trim())).size !== 3)) throw new Error("STUDIO-DUPLICATE-OPTIONS");
+  if (project.request.targetLanguage) {
+    const language = project.request.targetLanguage === "en" ? "en-GB" : "de-DE";
+    if (!lesson.blocks.some(block => block.narrationLanguage === language) || !lesson.blocks.some(block => block.kind === "explanation" && /[А-Яа-яІіЇїЄєҐґ]/u.test(block.narration))) throw new Error("STUDIO-LANGUAGE-CONTENT");
+    if (lesson.blocks.some(block => block.narrationLanguage === language && (/[\p{Script=Cyrillic}]/u.test(block.narration) || !/[\p{Script=Latin}]/u.test(block.narration)))) throw new Error("STUDIO-NATIVE-NARRATION");
+    if (lesson.blocks.some(block => block.narrationLanguage && !["uk-UA", language].includes(block.narrationLanguage))) throw new Error("STUDIO-LANGUAGE-MISMATCH");
+  }
   return lesson;
 }
 function safeStageError(error: unknown): string {
@@ -63,7 +69,7 @@ export async function runStudioStep(job: JobRow, deadline: number) {
   const role: StudioRole = project.phase === "plan" ? "studio.plan" : project.phase === "author" ? "studio.author" : project.phase === "design" ? "studio.design" : "studio.review";
   const schema = project.phase === "plan" ? studioPlanSchema : project.phase === "author" ? studioLessonSchema : project.phase === "design" ? studioDesignSchema : studioReviewResponseSchema;
   const system = studioSystem(role);
-  const prompt = JSON.stringify({ request: { ...project.request, sourceText: undefined, grade: undefined, subjectId: undefined, topicId: undefined, materialId: undefined }, subject: project.subjectName, baseTitle: project.baseTitle, plan: project.plan, currentLesson: project.plan?.lessons[project.cursor] ?? null, sources: project.sources, sourceNotes: project.sourceNotes, feedback: project.feedback, ...(project.units[project.cursor] ? { candidate: { content: project.phase === "design" ? { title: project.units[project.cursor]!.content.title, objectives: project.units[project.cursor]!.content.objectives, blocks: project.units[project.cursor]!.content.blocks } : project.units[project.cursor]!.content, visuals: project.units[project.cursor]!.visuals } } : {}) });
+  const prompt = JSON.stringify({ request: { ...project.request, sourceText: undefined, subjectId: undefined, topicId: undefined, materialId: undefined }, subject: project.subjectName, baseTitle: project.baseTitle, plan: project.plan, currentLesson: project.plan?.lessons[project.cursor] ?? null, sources: project.sources, sourceNotes: project.sourceNotes, feedback: project.feedback, ...(project.units[project.cursor] ? { candidate: { content: project.phase === "design" ? { title: project.units[project.cursor]!.content.title, objectives: project.units[project.cursor]!.content.objectives, blocks: project.units[project.cursor]!.content.blocks } : project.units[project.cursor]!.content, visuals: project.units[project.cursor]!.visuals } } : {}) });
   if (Buffer.byteLength(system + prompt + JSON.stringify(schema.toJSONSchema())) > 250000) throw new Error("STUDIO-CONTEXT");
   const config = await studioModelConfig(job.family_id, role);
   const reserved = studioReservation(system, prompt, schema, config.route.params.max_tokens!, config.rates);
@@ -110,12 +116,13 @@ export async function runStudioStep(job: JobRow, deadline: number) {
   const next = await saveStudioProject(job.family_id, id, project, changes);
   if (studioActive(next.state)) return { requeue: true as const };
 }
-export async function resumeStudio(familyId: string, id: string, revision: number, command: "approve" | "retry" | "revise" | "publish", plan?: StudioPlan, feedback = "", budgetUsd?: number, lessonIndex?: number) {
+export async function resumeStudio(familyId: string, id: string, revision: number, command: "approve" | "retry" | "revise" | "publish", plan?: StudioPlan, feedback = "", budgetUsd?: number, lessonIndex?: number, revisionRequestId?: string, learner?: { age: number; grade: number }) {
   const project = await readStudioProject(familyId, id);
   if (!project || project.revision !== revision || studioActive(project.state) || (["published", "withdrawn"].includes(project.state) && command !== "revise")) throw new Error("Онови чернетку перед дією.");
   const token = randomUUID();
-  let changes: Partial<StudioProject> = { token, activeCall: false, error: null };
+  let changes: Partial<StudioProject> = { ...(revisionRequestId ? { revisionRequestId } : {}), token, activeCall: false, error: null };
   if (budgetUsd !== undefined) changes.request = { ...project.request, budgetUsd };
+  if (learner) changes.request = { ...(changes.request ?? project.request), age: learner.age, grade: learner.grade };
   if (command === "approve") {
     if (project.state !== "plan_ready" || !plan || plan.lessons.length !== project.request.lessonCount) throw new Error("Перевір план та кількість уроків.");
     changes = { ...changes, plan, state: "generating", phase: "author", cursor: 0, units: [] };

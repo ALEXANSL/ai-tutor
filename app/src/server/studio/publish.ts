@@ -23,7 +23,7 @@ export function studioPackage(projectId: string, project: StudioProject) {
         assetRows.push({ id, kind: "textbook_illustration", path, mime_type: "image/svg+xml", byte_size: bytes.byteLength, title: visual.title, caption: visual.caption, alt: `${visual.title}. ${visual.items.map(item => `${item.label}: ${item.detail}`).join(". ")}` });
       }
       const descriptions = unit.visuals.filter(visual => visual.blockIndex === blockIndex).map(studioVisualDescription).join("\n\n");
-      return { id: `${lessonId}S${blockIndex + 1}`, title: block.title, step_type: block.kind, content: { display: (block.kind === "code" ? `\`\`\`\n${block.text}\n\`\`\`` : block.text) + (descriptions ? `\n\n**На схемі:** ${descriptions}` : ""), tts: { text: block.narration, lang: "uk-UA" } }, asset_ids: assetIds };
+      return { id: `${lessonId}S${blockIndex + 1}`, title: block.title, step_type: block.kind, content: { display: (block.kind === "code" ? `\`\`\`\n${block.text}\n\`\`\`` : block.text) + (descriptions ? `\n\n**На схемі:** ${descriptions}` : ""), tts: { text: block.narration, lang: block.narrationLanguage ?? "uk-UA" } }, asset_ids: assetIds };
     });
     const references = project.sources.filter(source => unit.content.sourceIds.includes(source.id)).map(source => `${source.title}${source.page ? `, сторінка індексу ${source.page}` : ""}`).join("\n");
     screens.push({ id: `${lessonId}Sources`, title: "Джерела й розширення", step_type: "summary", content: { display: `${unit.content.enrichmentNote}\n\n${references || "Урок підготовлено із загальних знань ШІ без наданого підручника."}${unit.content.adultAssistance ? `\n\nДопомога дорослого: ${unit.content.adultAssistance}` : ""}`, tts: { text: `${unit.content.enrichmentNote} ${unit.content.adultAssistance} Джерела наведено на екрані.`, lang: "uk-UA" } }, asset_ids: [] });
@@ -44,7 +44,7 @@ export function studioPackage(projectId: string, project: StudioProject) {
 export async function prepareStudioPublication(familyId: string, projectId: string, project: StudioProject): Promise<NonNullable<StudioProject["publication"]>> {
   const scope = forFamily(familyId); const { parsed, files } = studioPackage(projectId, project);
   let subjectId = project.request.subjectId;
-  if (project.request.mode === "extension" && subjectId) {
+  if (["extension", "revision"].includes(project.request.mode) && subjectId) {
     const subject = await getSubjectDetail(familyId, subjectId);
     const base = subject?.topics.find(topic => topic.id === project.request.topicId);
     if (!base || importedLessonHref(base) !== project.baseHref) throw new Error("Базовий урок змінено або більше недоступний. Створи нову чернетку розширення для актуального уроку.");

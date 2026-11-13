@@ -11,7 +11,7 @@ export async function loadStudioSources(familyId: string, request: StudioRequest
   let baseHref: string | null = null, baseTitle: string | null = null;
   const subject = request.subjectId ? await getSubjectDetail(familyId, request.subjectId) : null;
   if (request.subjectId && !subject) throw new Error("Предмет або курс недоступний.");
-  if (request.mode === "extension") {
+  if (["extension", "revision"].includes(request.mode)) {
     const topic = subject?.topics.find(item => item.id === request.topicId);
     baseHref = topic ? importedLessonHref(topic) : null; baseTitle = topic?.title ?? null;
     if (!baseHref || !request.subjectId || !request.topicId) throw new Error("Вибери готовий базовий урок цього предмета.");
@@ -20,7 +20,7 @@ export async function loadStudioSources(familyId: string, request: StudioRequest
       sources.push(...lesson.blocks.map((block, index) => ({ id: `lesson-${index + 1}`, title: `${lesson.title}: ${block.title}`, text: block.text, page: null, kind: "lesson" as const })));
     } catch (error) {
       if (!(error instanceof VideoSourceError)) throw error;
-      notes.push("У базовому уроці недостатньо основного тексту. Шукаємо матеріал у книгах; якщо фрагментів немає, розширення ґрунтуватиметься на загальних знаннях, а не на повному тексті підручника.");
+      notes.push("У базовому уроці недостатньо основного тексту. Шукаємо матеріал у книгах; якщо фрагментів немає, підготовка уроку ґрунтуватиметься на загальних знаннях, а не на повному тексті підручника.");
     }
   }
   if (request.sourceText.trim()) sources.push({ id: "provided-1", title: "Текст, наданий татом", text: request.sourceText.trim(), page: null, kind: "provided" });

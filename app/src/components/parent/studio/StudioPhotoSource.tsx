@@ -1,0 +1,23 @@
+"use client";
+import { prepareStudioPhoto } from "@/lib/studio-photo";
+import { useRef, useState } from "react";
+import { parentButton } from "@/app/parent/ui";
+import { withBusySignal } from "@/lib/busy-signal";
+export function StudioPhotoSource({ disabled, onText, onTasks, onBusy }: { disabled: boolean; onBusy: (value: boolean) => void; onText: (text: string) => void; onTasks: (text: string) => void }) {
+  const [file, setFile] = useState<File | null>(null); const [pending, setPending] = useState(false); const [error, setError] = useState("");
+  const [preparing, setPreparing] = useState(false);
+  const [recognized, setRecognized] = useState("");
+  const [tasks, setTasks] = useState<{ label: string; text: string }[]>([]); const [selected, setSelected] = useState<number[]>([]); const [warnings, setWarnings] = useState<string[]>([]); const lock = useRef(false);
+  async function read() {
+    if (!file || lock.current) return; lock.current = true; setPending(true); onBusy(true); setError(""); setTasks([]); setWarnings([]);
+    try {
+      const form = new FormData(); form.set("file", file); form.set("recognize", "true");
+      const result = await withBusySignal(async () => { const response = await fetch("/api/parent/studio/source", { method: "POST", body: form }); return response.json(); });
+      if (result.status !== "ok") { setError(result.message || "Не вдалося розпізнати сторінку."); return; }
+      const source = result.text + (result.warnings?.length ? `\n\n[Зауваження до розпізнавання — це не текст підручника]\n${result.warnings.join("\n")}` : "");
+      setRecognized(source); onText(source); setTasks(result.tasks ?? []); setSelected([]); setWarnings(result.warnings ?? []);
+    } catch { setError("Не вдалося підтвердити розпізнавання. Не повторюємо платний виклик автоматично."); }
+    finally { lock.current = false; setPending(false); onBusy(false); }
+  }
+  return <section className="space-y-3 rounded-xl border border-p-line p-4"><h3 className="text-sm font-bold">Фото або скан сторінки</h3><p className="text-xs text-p-muted">JPEG / PNG / WebP до 15 МБ (великі фото зменшуємо перед надсиланням) або скан PDF до трьох сторінок і 3 МБ. Розпізнавання — окремий платний виклик у загальному бюджеті ШІ. Оригінал не зберігається. Результат можна виправити у полі матеріалів перед створенням уроку.</p><input aria-label="Фото або скан для уроку" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" disabled={disabled || pending || preparing} onChange={async event => { const value = event.target.files?.[0] ?? null; event.target.value = ""; setError(""); setTasks([]); setRecognized(""); if (!value) { setFile(null); return; } setPreparing(true); onBusy(true); try { setFile(await prepareStudioPhoto(value)); } catch (error) { setFile(null); setError(error instanceof Error ? error.message : "Не вдалося підготувати файл."); } finally { setPreparing(false); onBusy(false); } }} className="block min-h-11 w-full min-w-0 text-sm" />{file && <p className="break-words text-xs text-p-muted">{file.name}</p>}<button type="button" onClick={() => void read()} disabled={!file || pending || disabled || preparing} className={parentButton}>{preparing ? "Готуємо фото…" : pending ? "Розпізнаємо сторінку…" : "Розпізнати сторінку з ШІ"}</button>{error && <p role="alert" className="text-sm text-p-danger">{error}</p>}{recognized && <details><summary className="cursor-pointer text-sm">Розпізнаний текст для копіювання</summary><textarea readOnly aria-label="Розпізнаний текст сторінки" value={recognized} rows={7} className="mt-2 w-full rounded-xl border border-p-line bg-p-bg p-3 text-sm" /></details>}{warnings.map((warning, index) => <p key={index} className="text-sm text-p-muted">{warning}</p>)}{tasks.length > 0 && <div className="space-y-2"><h4 className="text-sm font-bold">Розпізнані вправи — обери для розбору</h4>{tasks.map((task, index) => <label key={index} className="flex items-start gap-2 text-sm"><input type="checkbox" checked={selected.includes(index)} onChange={event => setSelected(previous => event.target.checked ? [...previous, index] : previous.filter(item => item !== index))} /><span className="min-w-0 break-words"><strong>{task.label}</strong> {task.text}</span></label>)}<button type="button" disabled={!selected.length || disabled || pending || preparing} onClick={() => onTasks([...selected].sort((a, b) => a - b).map(index => `${tasks[index]!.label}: ${tasks[index]!.text}`).join("\n"))} className="min-h-11 rounded-xl border border-p-line px-3 text-sm font-bold">Додати вибрані вправи до побажань уроку</button></div>}</section>;
+}

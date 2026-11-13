@@ -1,5 +1,6 @@
 import { TopicVideoSupplement } from "@/components/child/SubjectVideoLessons";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { studioReplacementForPath } from "@/server/studio/links";
 import { CourseLessonScreen } from "@/components/course/CourseLessonView";
 import { requireChild } from "@/server/auth/guards";
 import { getCourseLessonView } from "@/server/lessons/courseView";
@@ -14,12 +15,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * listing surfaced to the child by default
  * (`course_lessons_select_child` only allows `status = 'active'`).
  */
-export default async function CourseLessonPage({ params }: { params: Promise<{ lessonId: string }> }) {
+export default async function CourseLessonPage({ params, searchParams }: { params: Promise<{ lessonId: string }>; searchParams?: Promise<{ original?: string }> }) {
   const { lessonId } = await params;
   if (!UUID.test(lessonId)) notFound();
   const { ctx } = await requireChild();
   const lesson = await getCourseLessonView(ctx.familyId, lessonId);
   if (!lesson) notFound();
+  if ((await searchParams)?.original !== "1") { const replacement = await studioReplacementForPath(ctx.familyId, `/course-lesson/${lessonId}`).catch(() => null); if (replacement) redirect(replacement); }
 
   return <><TopicVideoSupplement familyId={ctx.familyId} subjectId={lesson.subjectId} topicId={lesson.topicId ?? null} title={lesson.title} /><CourseLessonScreen lesson={lesson} /></>;
 }

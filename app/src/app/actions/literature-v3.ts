@@ -39,10 +39,11 @@ export async function narrateLiteratureV3Action(input: { refTable: string; refId
 
   const scope = forFamily(ctx.familyId);
   // Confirm the row belongs to this family before synthesizing/caching anything for it.
-  const { data: owns } = await scope.select(input.refTable, "id").eq("id", input.refId).maybeSingle<{ id: string }>();
+  const { data: owns } = await scope.select(input.refTable, "id,content_tts").eq("id", input.refId).maybeSingle<{ id: string; content_tts?: { lang?: string } }>();
   if (!owns) return { status: "error", message: "Не знайдено." };
 
-  const hash = narrationTextHash(input.text);
+  const language = typeof owns.content_tts?.lang === "string" ? owns.content_tts.lang : undefined;
+  const hash = narrationTextHash(input.text) + (/^(en|de)(-|$)/.test(language ?? "") ? `:${language}` : "");
   const service = createServiceClient();
   const { data: cached } = await service
     .from("course_v2_narration_cache")
@@ -53,7 +54,7 @@ export async function narrateLiteratureV3Action(input: { refTable: string; refId
     .maybeSingle<{ audio_base64: string; audio_mime: string; text_hash: string }>();
   if (cached && cached.text_hash === hash) return { status: "ok", audioBase64: cached.audio_base64, audioMime: cached.audio_mime };
 
-  const audio = await synthesizeNarration(ctx.familyId, { table: input.refTable, id: input.refId }, input.text);
+  const audio = await synthesizeNarration(ctx.familyId, { table: input.refTable, id: input.refId }, input.text, language);
   if (!audio) return { status: "unavailable" };
 
   await service

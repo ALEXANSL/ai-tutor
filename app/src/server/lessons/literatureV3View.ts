@@ -274,6 +274,7 @@ export async function getLiteratureV3LessonView(familyId: string, lessonId: stri
 }
 
 export interface LiteratureV3LessonListItem {
+  href?: string;
   id: string;
   orderNo: number;
   title: string;

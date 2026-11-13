@@ -19,9 +19,8 @@ export function registerCoreNavigation(): void {
     { key: "courses", label: n.courses, icon: "🗂️", href: "/parent/courses", order: 67 },
     { key: "school", label: "Єдина школа", icon: "📅", href: "/parent/school", order: 66 },
     { key: "studio", label: "Майстерня ШІ", icon: "✨", href: "/parent/studio", order: 68 },
-    { key: "library", label: "Особиста бібліотека", icon: "🎧", href: "/parent/library", order: 69 },
-    { key: "books", label: n.books, icon: "📚", href: "/parent/books", order: 70 },
-    { key: "materials", label: n.materials, icon: "⬆️", href: "/parent/materials", order: 71 },
+    { key: "library", label: "Аудіокниги", icon: "🎧", href: "/parent/library", order: 69 },
+    { key: "books", label: "Книги та джерела", icon: "📚", href: "/parent/books", order: 70 },
     { key: "videos", label: n.videos, icon: "🎬", href: "/parent/videos", order: 72 },
     { key: "settings", label: n.settings, icon: "⚙️", href: "/parent/settings", order: 80 },
   ];
