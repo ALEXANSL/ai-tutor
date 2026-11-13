@@ -3,6 +3,7 @@ const calendarDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => { c
 export const schoolIdentitySchema = z.object({ schoolId: z.number().int().positive().safe(), pupilId: z.number().int().positive().safe(), classLabel: z.string().max(40) }).strict();
 export const schoolSourceSchema = z.object({
   externalId: z.string().regex(/^(lesson:\d+|homework:\d+|topic:\d+:\d+)$/).max(100), kind: z.enum(["lesson", "homework"]), appointmentId: z.number().int().positive().safe(), subjectExternalId: z.number().int().positive().safe().nullable(),
+  schedule: z.object({ number: z.number().int().min(1).max(30).nullable(), start: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/).nullable(), room: z.string().max(40).nullable() }).strict().optional(),
   subject: z.string().trim().min(1).max(180), lessonDate: calendarDate, dueDate: calendarDate.nullable(), topic: z.string().max(2500), text: z.string().max(16000), attachments: z.number().int().min(0).max(1000), cancelled: z.boolean(),
 }).strict();
 export type SchoolSource = z.infer<typeof schoolSourceSchema>;

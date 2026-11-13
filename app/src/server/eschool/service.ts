@@ -40,7 +40,8 @@ export async function importSchoolPacket(familyId: string, childId: string, raw:
         const subjectId = matching.length === 1 ? matching[0]!.id : null;
         if (existing) {
           if (Date.parse(existing.capturedAt) > Date.parse(packet.capturedAt)) return;
-          const changed = JSON.stringify(existing.source) !== JSON.stringify(source);
+          const meaningful = (value: SchoolPacket["entries"][number]) => JSON.stringify([value.kind, value.subject, value.lessonDate, value.dueDate, value.topic, value.text, value.attachments, value.cancelled]);
+          const changed = meaningful(existing.source) !== meaningful(source);
           try { await saveSchoolDoc(familyId, id, SCHOOL_ENTRY, existing, { source, capturedAt: packet.capturedAt, syncedAt: now, changed: existing.changed || changed }); return; }
           catch (error) { if (attempt === 2) throw error; }
         } else {

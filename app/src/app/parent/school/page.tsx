@@ -10,5 +10,5 @@ export const dynamic = "force-dynamic";
 export default async function Page() {
   const { familyId } = await requireParentAccess(); const { child } = await voiceActor(familyId);
   const [{ connection }, records, subjects] = await Promise.all([readSchoolConnection(familyId, child.id), listSchoolEntries(familyId, child.id), schoolSubjects(familyId)]);
-  return <main className="mx-auto max-w-6xl"><PageTitle>Єдина школа</PageTitle><p className="mb-5 max-w-3xl text-sm text-p-muted">Теми та домашні завдання з власного щоденника. Перевір перший імпорт, прив’яжи завдання до підготовлених уроків і відстежуй виконання.</p><SchoolImport connection={connection} /><SchoolEntries entries={records.entries} limited={records.limited} subjects={subjects} parent /></main>;
+  return <main className="mx-auto max-w-[1600px]"><PageTitle>Єдина школа</PageTitle><p className="mb-5 max-w-3xl text-sm text-p-muted">Теми та домашні завдання з власного щоденника. Перевір перший імпорт, прив’яжи завдання до підготовлених уроків і відстежуй виконання.</p><SchoolImport connection={connection} /><SchoolEntries entries={records.entries} limited={records.limited} subjects={subjects} parent /></main>;
 }

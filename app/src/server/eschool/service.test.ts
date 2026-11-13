@@ -44,3 +44,14 @@ it("rejects stale snapshots and invalid topic mappings without changing existing
   const id = schoolId(SCHOOL_ENTRY, "family", "child", "100", "200", "homework:400");
   await expect(updateSchoolEntry("family", "child", id, 0, { subjectId: "subject", topicId: "other-topic" })).rejects.toThrow("не належить");
 });
+
+it("enriches old imports with real schedule metadata without changing completed homework", async () => {
+  const packet = schoolPacketFixture(); await importSchoolPacket("family", "child", packet);
+  const id = schoolId(SCHOOL_ENTRY, "family", "child", "100", "200", "homework:400");
+  await updateSchoolEntry("family", "child", id, 0, { status: "done" });
+  packet.packetId = "44444444-4444-4444-8444-444444444444"; packet.capturedAt = new Date(Date.now() + 10).toISOString();
+  for (const source of packet.entries) source.schedule = { number: 4, start: "10:55", room: "227" };
+  await importSchoolPacket("family", "child", packet);
+  const homework = entries().find(entry => entry.source.kind === "homework")!;
+  expect(homework.status).toBe("done"); expect(homework.changed).toBe(false); expect(homework.source.schedule?.start).toBe("10:55");
+});

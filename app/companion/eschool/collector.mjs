@@ -67,7 +67,9 @@ export async function collectEsSchool(start, end) {
   for (const lesson of lessons) {
     const topics = Array.isArray(lesson.Embed?.Topics) ? lesson.Embed.Topics.filter(Boolean) : [];
     const subject = plain(lesson.Subject || lesson.Part) || "Предмет без назви";
-    const base = { appointmentId: lesson.Id, subjectExternalId: number(lesson.SubjectId) ? lesson.SubjectId : null, subject, lessonDate: day(lesson.Date), dueDate: null, topic: topics.map(topic => plain(topic.Title)).filter(Boolean).join("; "), text: "", attachments: 0, cancelled: lesson.Canceled === true };
+    const time = typeof lesson.StartTime === "string" ? /(?:^|T)([0-2]\d:[0-5]\d)/.exec(lesson.StartTime)?.[1] : null;
+    const schedule = { number: Number.isInteger(lesson.LessonNumber) && lesson.LessonNumber > 0 && lesson.LessonNumber <= 30 ? lesson.LessonNumber : null, start: time && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time) ? time : null, room: plain(lesson.RoomNumber).slice(0, 40) || null };
+    const base = { schedule, appointmentId: lesson.Id, subjectExternalId: number(lesson.SubjectId) ? lesson.SubjectId : null, subject, lessonDate: day(lesson.Date), dueDate: null, topic: topics.map(topic => plain(topic.Title)).filter(Boolean).join("; "), text: "", attachments: 0, cancelled: lesson.Canceled === true };
     entries.set(`lesson:${lesson.Id}`, { ...base, externalId: `lesson:${lesson.Id}`, kind: "lesson" });
     const homework = Array.isArray(lesson.Embed?.TargetHomeworks) ? lesson.Embed.TargetHomeworks.filter(item => number(item?.Id)) : [];
     for (const brief of homework) {
