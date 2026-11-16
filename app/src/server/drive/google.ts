@@ -1,3 +1,4 @@
+import { sourceFileFormat, type SourceFileFormat } from "@/lib/source-files";
 import "server-only";
 import { createSign } from "node:crypto";
 import type { GoogleServiceAccount } from "../env";
@@ -75,7 +76,7 @@ export interface DriveFile {
 
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 /** ADR-031 §3.8: 'zip' is a manual-import batch (`manual_import_batches`), never a `materials` row directly — see `syncDriveFolder`. */
-export const SUPPORTED_MIME: Record<string, "pdf" | "epub" | "zip"> = {
+export const SUPPORTED_MIME: Record<string, SourceFileFormat | "zip"> = {
   "application/pdf": "pdf",
   "application/epub+zip": "epub",
   "application/zip": "zip",
@@ -83,11 +84,10 @@ export const SUPPORTED_MIME: Record<string, "pdf" | "epub" | "zip"> = {
 };
 
 /** Format by MIME type or by extension (Drive sometimes reports octet-stream for EPUB/ZIP). */
-export function formatOf(file: Pick<DriveFile, "name" | "mimeType">): "pdf" | "epub" | "zip" | null {
-  const byMime = SUPPORTED_MIME[file.mimeType];
-  if (byMime) return byMime;
-  const ext = file.name.toLowerCase().split(".").pop();
-  return ext === "pdf" ? "pdf" : ext === "epub" ? "epub" : ext === "zip" ? "zip" : null;
+export function formatOf(file: Pick<DriveFile, "name" | "mimeType">): SourceFileFormat | "zip" | null {
+  const source = sourceFileFormat(file);
+  if (source) return source;
+  return /\.zip$/i.test(file.name) && ["application/zip", "application/x-zip-compressed", "application/octet-stream"].includes(file.mimeType) ? "zip" : null;
 }
 
 async function driveGet(url: string, token: string, fetchImpl: typeof fetch, timeoutMs = 30_000): Promise<Response> {
@@ -112,9 +112,9 @@ export async function listFolderFiles(
   token: string,
   fetchImpl: typeof fetch = fetch,
   maxDepth = 3,
-): Promise<{ files: (DriveFile & { format: "pdf" | "epub" | "zip" })[]; skipped: number }> {
+): Promise<{ files: (DriveFile & { format: SourceFileFormat | "zip" })[]; skipped: number }> {
   if (!isValidDriveId(folderId)) throw new DriveError("invalid folder id", null, "not_configured");
-  const files: (DriveFile & { format: "pdf" | "epub" | "zip" })[] = [];
+  const files: (DriveFile & { format: SourceFileFormat | "zip" })[] = [];
   let skipped = 0;
   const queue: { id: string; depth: number }[] = [{ id: folderId, depth: 0 }];
   const seen = new Set<string>();

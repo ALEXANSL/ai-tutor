@@ -26,15 +26,22 @@ export async function loadStudioSources(familyId: string, request: StudioRequest
   if (request.sourceText.trim()) sources.push({ id: "provided-1", title: "Текст, наданий татом", text: request.sourceText.trim(), page: null, kind: "provided" });
   let materialTitle: string | null = null;
   if (request.materialId) {
-    const { data: material, error } = await scope.select("materials", "id,title,name").eq("id", request.materialId).maybeSingle<{ id: string; title: string | null; name: string }>();
+    const { data: material, error } = await scope.select("materials", "id,title,name,structure_outline_result").eq("id", request.materialId).neq("status", "removed").maybeSingle<{ id: string; title: string | null; name: string; structure_outline_result?: { kind?: string; warnings?: string[] } }>();
     if (error || !material) throw new Error("Вибрана книга недоступна."); materialTitle = material.title || material.name;
+    if (/^source_(?:image|document)$/.test(material.structure_outline_result?.kind ?? "")) notes.push(...(material.structure_outline_result?.warnings ?? []));
   }
   let chunks: { id: string; material_id: string; page: number | null; text: string }[] = [];
+  let completeSmallSource = false;
+  if (request.materialId && request.pageFrom === null && request.pageTo === null) {
+    const all = await scope.select("chunks", "id,material_id,page,text").eq("material_id", request.materialId).order("ordinal").limit(31).returns<typeof chunks>();
+    if (all.error) throw new Error("Не вдалося прочитати вибраний матеріал.");
+    if (all.data?.length && all.data.length <= 30 && JSON.stringify(all.data).length <= 55000) { chunks = all.data; completeSmallSource = true; }
+  }
   if (request.materialId && request.pageFrom !== null && request.pageTo !== null) {
     const { data, error } = await scope.select("chunks", "id,material_id,page,text").eq("material_id", request.materialId).gte("page", request.pageFrom).lte("page", request.pageTo).order("ordinal").limit(151).returns<typeof chunks>();
     if (error) throw new Error("Не вдалося прочитати вибрані сторінки."); chunks = data ?? [];
     if (chunks.length > 150) throw new Error("У вибраному діапазоні забагато фрагментів. Звузь діапазон; сторінки не обрізалися.");
-  } else if (request.materialId || request.subjectId) {
+  } else if (!completeSmallSource && (request.materialId || request.subjectId)) {
     const { data, error } = await scope.client.rpc("search_chunks", { p_family_id: familyId, p_query_text: request.title.slice(0, 200), p_tsquery: buildTsQuery(`${baseTitle ?? request.title} ${request.idea.slice(0, 150)}`), p_query_embedding: null, p_subject_id: request.materialId ? null : request.subjectId, p_kind: null, p_material_id: request.materialId, p_limit: 8 });
     if (error) notes.push("Пошук у книгах зараз недоступний; використано лише явно надані джерела.");
     const ids = (data ?? []).map((row: { chunk_id: string }) => row.chunk_id);
@@ -52,7 +59,8 @@ export async function loadStudioSources(familyId: string, request: StudioRequest
     if (!result.error) for (const book of result.data ?? []) names.set(book.id, book.title || book.name);
   }
   for (const chunk of chunks) sources.push({ id: `chunk-${chunk.id}`, title: materialTitle ?? names.get(chunk.material_id) ?? "Матеріал вибраного предмета", text: chunk.text, page: chunk.page, kind: "book" });
-  if (chunks.length) notes.push("Використано знайдені фрагменти, а не прочитано всю книгу. Номери сторінок індексу можуть відрізнятися від друкованих.");
+  if (completeSmallSource) notes.push("Використано весь розпізнаний текст невеликого матеріалу, а не лише результати пошуку.");
+  else if (chunks.length) notes.push("Використано знайдені фрагменти, а не прочитано всю книгу. Номери сторінок індексу можуть відрізнятися від друкованих.");
   if (!sources.length) notes.push("Наданих джерел немає: урок готується із загальних знань ШІ. Це буде зазначено у матеріалі.");
   if (JSON.stringify(sources).length > 65000) throw new Error("Вибраних матеріалів більше ніж 65 000 символів. Звузь діапазон сторінок або розділи курс; джерела не обрізалися.");
   return { sources, sourceNotes: notes, baseHref, baseTitle, subjectName: subject?.name ?? null };

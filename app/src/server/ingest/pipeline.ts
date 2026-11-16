@@ -1,4 +1,6 @@
 import "server-only";
+import { storedSourceFormat, sourceFileFormat, type SourceFileFormat } from "@/lib/source-files";
+import { extractDocument, DocumentExtractionError } from "./extract-document";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -106,7 +108,7 @@ export function errorCodeOf(e: unknown): MaterialErrorCode {
 export function isRetryableIngestError(e: unknown): boolean {
   if (e instanceof ProviderError) return e.retryable;
   if (e instanceof DriveError) return e.code === "network" || e.code === "http";
-  if (e instanceof IngestError || e instanceof AiNotConfiguredError || e instanceof EpubError) return false;
+  if (e instanceof IngestError || e instanceof DocumentExtractionError || e instanceof AiNotConfiguredError || e instanceof EpubError) return false;
   return true;
 }
 
@@ -146,7 +148,7 @@ export async function syncDriveFolder(familyId: string): Promise<SyncSummary> {
   // ADR-024 (docs/02 10.3): the same conveyor scans BOTH the manually-shared
   // materials folder and, once configured, the app-owned "Мої книги" uploads
   // folder — merged (de-duplicated by id) into one file list.
-  const byId = new Map<string, DriveFile & { format: "pdf" | "epub" | "zip" }>();
+  const byId = new Map<string, DriveFile & { format: SourceFileFormat | "zip" }>();
   let skipped = 0;
   for (const folder of folders) {
     const res = await listFolderFiles(folder.folderId, accessToken);
@@ -156,7 +158,7 @@ export async function syncDriveFolder(familyId: string): Promise<SyncSummary> {
   const allFiles = [...byId.values()];
   // ADR-031 §3.8: a ZIP never becomes a `materials` row directly — it goes
   // through `manual_import_batches` instead (0..N rows only at commit).
-  const files = allFiles.filter((f): f is DriveFile & { format: "pdf" | "epub" } => f.format !== "zip");
+  const files = allFiles.filter((f): f is DriveFile & { format: SourceFileFormat } => f.format !== "zip");
   const zipFiles = allFiles.filter((f) => f.format === "zip");
   const { data: known, error } = await scope
     .select("materials", "id, drive_file_id, name, drive_md5, drive_modified_time, status, status_detail")
@@ -188,7 +190,7 @@ export async function syncDriveFolder(familyId: string): Promise<SyncSummary> {
   const driveMeta = (f: (typeof files)[number]) => ({
     name: f.name,
     mime: f.mimeType,
-    format: f.format,
+    format: storedSourceFormat(f.format),
     drive_md5: f.md5Checksum ?? null,
     drive_modified_time: f.modifiedTime ?? null,
     size_bytes: f.size ? Number(f.size) : null,
@@ -264,7 +266,7 @@ export interface UploadedBookFile {
   id: string;
   name: string;
   mimeType: string;
-  format: "pdf" | "epub";
+  format: SourceFileFormat;
   size: number | null;
   modifiedTime: string | null;
   md5Checksum: string | null;
@@ -280,8 +282,14 @@ export interface UploadedBookFile {
 export async function ingestUploadedMaterial(
   familyId: string,
   file: UploadedBookFile,
-): Promise<{ materialId: string; status: "queued" | "deferred" }> {
+): Promise<{ materialId: string; status: string }> {
   const scope = forFamily(familyId);
+  const existing = await scope.select("materials", "id,status").eq("drive_file_id", file.id).maybeSingle<{ id: string; status: string }>();
+  if (existing.error) throw new Error("could not check uploaded material");
+  if (existing.data) {
+    if (existing.data.status === "queued") await enqueueStep(familyId, JOB.extract, existing.data.id);
+    return { materialId: existing.data.id, status: existing.data.status };
+  }
   const budget = await getBudget(familyId);
   const status = budgetBlocks(budget.state) ? "deferred" : "queued";
   const { data, error } = await scope.client
@@ -291,7 +299,7 @@ export async function ingestUploadedMaterial(
       drive_file_id: file.id,
       name: file.name,
       mime: file.mimeType,
-      format: file.format,
+      format: storedSourceFormat(file.format),
       drive_md5: file.md5Checksum,
       drive_modified_time: file.modifiedTime,
       size_bytes: file.size,
@@ -301,7 +309,15 @@ export async function ingestUploadedMaterial(
     })
     .select("id")
     .single<{ id: string }>();
-  if (error) throw new Error(`materials insert failed: ${error.message}`);
+  if (error) {
+    if (error.code === "23505") {
+      const raced = await scope.select("materials", "id,status").eq("drive_file_id", file.id).maybeSingle<{ id: string; status: string }>();
+      if (raced.error || !raced.data) throw new Error("could not confirm concurrent upload registration");
+      if (raced.data.status === "queued") await enqueueStep(familyId, JOB.extract, raced.data.id);
+      return { materialId: raced.data.id, status: raced.data.status };
+    }
+    throw new Error(`materials insert failed: ${error.message}`);
+  }
   if (status === "queued") await enqueueStep(familyId, JOB.extract, data.id);
   return { materialId: data.id, status };
 }
@@ -314,6 +330,7 @@ export interface MaterialRow {
   name: string;
   title: string | null;
   format: SourceFormat;
+  mime: string;
   drive_file_id: string;
   status: string;
   content_hash: string | null;
@@ -336,7 +353,7 @@ async function loadMaterial(scope: FamilyScope, id: string): Promise<MaterialRow
   const { data } = await scope
     .select(
       "materials",
-      "id, name, title, format, drive_file_id, status, content_hash, kind, kind_manual, subject_id, subject_manual, topics_manual, page_count, grade, curriculum_version, ocr_confirmed_at, structure_outline_result",
+      "id, name, title, format, mime, drive_file_id, status, content_hash, kind, kind_manual, subject_id, subject_manual, topics_manual, page_count, grade, curriculum_version, ocr_confirmed_at, structure_outline_result",
     )
     .eq("id", id)
     .maybeSingle<MaterialRow>();
@@ -415,7 +432,7 @@ export function skipReextraction(hash: string, previousContentHash: string | nul
   return hash === previousContentHash && existingChunkCount > 0;
 }
 
-async function runExtract(job: JobRow): Promise<void> {
+export async function runExtract(job: JobRow): Promise<void> {
   const familyId = job.family_id;
   const materialId = String(job.payload.materialId);
   const scope = forFamily(familyId);
@@ -437,19 +454,37 @@ async function runExtract(job: JobRow): Promise<void> {
     }
   }
 
-  // ADR-031 §3: a `format = 'manual'` row (batch ZIP import) has no
-  // `sourceExtractors` entry on purpose — it is only ever produced, and only
-  // ever re-produced, by `ingest.manual_batch_commit`, never by this job.
-  if (m.format === "manual") {
+  // `manual` is a prestructured index: native documents dispatch by MIME;
+  // existing ZIP-imported material must still only be rebuilt by its importer.
+  const nativeFormat = sourceFileFormat({ name: m.name, mimeType: m.mime ?? "" });
+  if (m.format === "manual" && (!nativeFormat || nativeFormat === "pdf" || nativeFormat === "epub")) {
     throw new IngestError("extract_failed", "manual batch-imported materials are not re-extracted here — re-run the batch import to update this subject's content");
   }
 
   await patchMaterial(scope, materialId, { progress: { step: "extract" } });
   let extraction;
   try {
-    extraction = await sourceExtractors[m.format](bytes);
+    if (m.format !== "manual") extraction = await sourceExtractors[m.format](bytes);
+    else if (nativeFormat === "png" || nativeFormat === "jpeg") {
+      const cache = m.structure_outline_result as { kind?: string; hash?: string; text?: string; warnings?: string[] } | null;
+      let answer: { text: string; warnings: string[] };
+      if (cache?.kind === "source_image" && cache.hash === hash && typeof cache.text === "string") answer = { text: cache.text, warnings: cache.warnings ?? [] };
+      else {
+        const { recognizeStudioPage } = await import("../studio/photoSource");
+        try { answer = await recognizeStudioPage(familyId, new File([Uint8Array.from(bytes)], m.name, { type: m.mime }), materialId); }
+        catch (error) {
+          if (error instanceof BudgetBlockedError) { await patchMaterial(scope, materialId, { status: "deferred", status_detail: "budget_deferred" }); return; }
+          // A paid OCR result may be unknown: require an explicit retry, never repeat automatically.
+          throw new IngestError("ai_failed", `image recognition not confirmed: ${(error as Error).message}`);
+        }
+        const saved = await scope.update("materials", { structure_outline_result: { kind: "source_image", hash, ...answer } }).eq("id", materialId);
+        if (saved.error) throw new IngestError("ai_failed", "image OCR checkpoint not saved; automatic retry is disabled");
+      }
+      extraction = { format: "manual" as const, units: [{ page: 1, locator: "Фото сторінки", text: answer.text }], pageCount: 1, charCount: answer.text.length, title: null, toc: [], warnings: answer.warnings };
+    } else extraction = await extractDocument(bytes, nativeFormat!);
   } catch (e) {
-    if (e instanceof EpubError) throw e;
+    if (e instanceof EpubError || e instanceof IngestError) throw e;
+    if (e instanceof DocumentExtractionError && /немає читабельного тексту/u.test(e.message)) throw new IngestError("empty", e.message);
     throw new IngestError("extract_failed", `extraction failed: ${(e as Error).message}`);
   }
   const base = {
@@ -469,6 +504,35 @@ async function runExtract(job: JobRow): Promise<void> {
   // problem — skip OCR entirely and index the real-text pages now instead of
   // blocking the whole book on a confirmation those pages don't need. See
   // `bookNeedsOcr` for the share/absolute-count reasoning.
+  if (m.format === "manual") {
+    const warnings = "warnings" in extraction ? extraction.warnings : [];
+    if (nativeFormat !== "png" && nativeFormat !== "jpeg") {
+      // Preserve parser diagnostics for the unified status view, without invoking legacy textbook authoring.
+      await patchMaterial(scope, materialId, { structure_outline_result: { kind: "source_document", hash, warnings } });
+    }
+    const rows = extraction.units.filter(unit => unit.text.trim()).map((unit, index) => ({ material_id: materialId, title: unit.locator || `Частина ${unit.page}`, page_from: unit.page, page_to: unit.page, sort_order: index, status: "ready" }));
+    const previous = await scope.select("material_sections", "id,title,manual_override").eq("material_id", materialId).returns<{ id: string; title: string; manual_override: boolean }[]>();
+    if (previous.error) throw new Error("could not read previous source sections");
+    const merge = mergeByTitle(previous.data ?? [], rows);
+    const writes = rows.flatMap((row, index) => {
+      const step = merge.plan[index]!;
+      if (step.action === "keep") return [];
+      const hex = createHash("sha256").update(`${familyId}:native-source:${materialId}:${row.page_from}:${row.title}`).digest("hex");
+      const id = step.id ?? `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+      if (previous.data?.some(old => old.id === id && old.manual_override)) return [];
+      return [{ ...row, id }];
+    });
+    for (let offset = 0; offset < writes.length; offset += 100) {
+      const saved = await scope.upsert("material_sections", writes.slice(offset, offset + 100), "id");
+      if (saved.error) throw new Error("could not save source sections");
+    }
+    const replacedIds = new Set(writes.map(row => row.id));
+    const removeIds = merge.remove.filter(id => !replacedIds.has(id));
+    if (removeIds.length) {
+      const removed = await scope.delete("material_sections").in("id", removeIds);
+      if (removed.error) throw new Error("could not replace source sections");
+    }
+  }
   if (scanPages.length === 0 || !bookNeedsOcr(scanPages.length, extraction.units.length)) {
     await finishExtraction(scope, familyId, materialId, base, extraction.units);
     return;
@@ -635,6 +699,11 @@ async function runEmbed(job: JobRow, ctx: { deadline: number }): Promise<void | 
       // commit time (no AI call) — once embedding is done there is nothing
       // left to structure, unlike the AI path below.
       if (m.format === "manual") {
+        const native = sourceFileFormat({ name: m.name, mimeType: m.mime ?? "" });
+        if (native && native !== "pdf" && native !== "epub") {
+          const assigned = await scope.client.rpc("assign_chunk_structure", { p_family_id: familyId, p_material_id: materialId });
+          if (assigned.error) throw new Error("could not assign native source sections");
+        }
         await patchMaterial(scope, materialId, { status: "ready", status_detail: null, indexed_at: new Date().toISOString(), progress: {} });
         return;
       }

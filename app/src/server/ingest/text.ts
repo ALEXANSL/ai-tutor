@@ -12,7 +12,7 @@ export interface ExtractedUnit {
 }
 
 export interface Extraction {
-  format: "pdf" | "epub";
+  format: "pdf" | "epub" | "manual";
   units: ExtractedUnit[];
   /** PDF pages or EPUB chapters. */
   pageCount: number;

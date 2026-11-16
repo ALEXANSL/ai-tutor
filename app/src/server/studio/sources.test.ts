@@ -4,7 +4,7 @@ const f = vi.hoisted(() => ({ subject: vi.fn(), lesson: vi.fn(), rpc: vi.fn(), b
 vi.mock("@/server/subjects/queries", () => ({ getSubjectDetail: f.subject }));
 vi.mock("@/server/video-script/source", () => ({ loadVideoLessonSource: f.lesson, VideoSourceError: class VideoSourceError extends Error {} }));
 vi.mock("@/server/db/family-scope", () => ({ forFamily: (family: string) => {
-  function query(table: string) { const chain = { eq: (field: string, value: unknown) => { f.filters.push([family, table, field, value]); return chain; }, in: (field: string, value: unknown) => { f.filters.push([family, table, field, value]); return chain; }, gte: () => chain, lte: () => chain, order: () => chain, limit: () => chain, maybeSingle: () => f.book(), returns: () => table === "materials" ? Promise.resolve({ data: [{ id: "book", title: "Підручник інформатики", name: "book" }], error: null }) : f.chunks() }; return chain; }
+  function query(table: string) { const chain = { eq: (field: string, value: unknown) => { f.filters.push([family, table, field, value]); return chain; }, neq: () => chain, in: (field: string, value: unknown) => { f.filters.push([family, table, field, value]); return chain; }, gte: () => chain, lte: () => chain, order: () => chain, limit: () => chain, maybeSingle: () => f.book(), returns: () => table === "materials" ? Promise.resolve({ data: [{ id: "book", title: "Підручник інформатики", name: "book" }], error: null }) : f.chunks() }; return chain; }
   return { select: query, client: { rpc: f.rpc } };
 } }));
 import { loadStudioSources } from "./sources";
@@ -23,6 +23,20 @@ it("refuses a missing/foreign book before searching or reading its chunks", asyn
   expect(f.rpc).not.toHaveBeenCalled(); expect(f.chunks).not.toHaveBeenCalled();
 });
 it("does not pretend a whole book was read or silently proceed when the chosen book has no readable text", async () => {
-  f.rpc.mockResolvedValue({ data: [], error: null });
+  f.rpc.mockResolvedValue({ data: [], error: null }); f.chunks.mockResolvedValue({ data: [], error: null });
   await expect(loadStudioSources("family", { ...studioProjectFixture().request, materialId: "book" })).rejects.toThrow("не знайдено читабельних");
+});
+
+it("uses every chunk of a small uploaded source without relying on a keyword match", async () => {
+  f.rpc.mockResolvedValue({ data: [], error: null });
+  const result = await loadStudioSources("family", { ...studioProjectFixture().request, materialId: "book" });
+  expect(result.sources.some(source => source.text === "Повний знайдений фрагмент сторінки")).toBe(true);
+  expect(result.sourceNotes.join(" ")).toContain("весь розпізнаний текст");
+  expect(f.rpc).not.toHaveBeenCalled();
+});
+it("does not mistake a truncated 31-chunk scan for the full source", async () => {
+  f.chunks.mockResolvedValue({ data: Array.from({ length: 31 }, (_, index) => ({ id: `chunk-${index}`, material_id: "book", page: index + 1, text: "Матеріал" })), error: null });
+  const result = await loadStudioSources("family", { ...studioProjectFixture().request, materialId: "book" });
+  expect(f.rpc).toHaveBeenCalled();
+  expect(result.sourceNotes.join(" ")).not.toContain("весь розпізнаний текст");
 });

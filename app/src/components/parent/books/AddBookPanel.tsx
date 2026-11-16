@@ -19,7 +19,7 @@ export function AddBookPanel({ driveConfigured, uploadEnabled }: { driveConfigur
         <li>
           <UploadBookButton enabled={uploadEnabled} />
         </li>
-        <li>
+        <li><details className="rounded-xl border border-p-line p-3"><summary className="min-h-8 cursor-pointer text-sm font-bold">Матеріал уже є у Google Drive</summary><div className="mt-3 space-y-3">
           {driveConfigured ? (
             <a
               href="/parent/books/drive"
@@ -32,11 +32,9 @@ export function AddBookPanel({ driveConfigured, uploadEnabled }: { driveConfigur
           ) : (
             <p className="text-[13px] text-p-muted">{t.driveMissing}</p>
           )}
-        </li>
-        <li className="text-[13px] text-p-muted">💡 {t.hint}</li>
-        <li>
+          <p className="text-[13px] text-p-muted">{t.hint}</p>
           <CheckFolderButton />
-        </li>
+        </div></details></li>
       </ol>
     </section>
   );
