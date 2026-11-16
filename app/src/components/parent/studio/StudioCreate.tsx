@@ -1,7 +1,6 @@
 "use client";
 import { STUDIO_MAX_BUDGET } from "@/lib/studio";
-import { StudioPhotoSource } from "./StudioPhotoSource";
-import Link from "next/link";
+import { StudioSourceUpload } from "./StudioSourceUpload";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createStudioAction } from "@/app/actions/studio";
@@ -9,14 +8,16 @@ import { listSubjectTopicsForVideoAction } from "@/app/actions/video-lessons";
 import { withBusySignal } from "@/lib/busy-signal";
 import { parentButton, parentInput } from "@/app/parent/ui";
 import type { SubjectOption } from "@/server/books/queries";
-export function StudioCreate({ subjects, books, initialSubject = "", initialTopic = "", initialTitle = "", initialGrade = 6 }: { subjects: SubjectOption[]; books: { id: string; title: string }[]; initialSubject?: string; initialTopic?: string; initialTitle?: string; initialGrade?: number }) {
+export function StudioCreate({ subjects, books, initialSubject = "", initialTopic = "", initialTitle = "", initialGrade = 6, uploadEnabled = false, initialMaterial = "" }: { subjects: SubjectOption[]; books: { id: string; title: string }[]; initialSubject?: string; initialTopic?: string; initialTitle?: string; initialGrade?: number; uploadEnabled?: boolean; initialMaterial?: string }) {
   const router = useRouter();
   const [targetLanguage, setTargetLanguage] = useState<"" | "en" | "de">(() => { const name = subjects.find(item => item.id === initialSubject)?.name ?? ""; return /англій/iu.test(name) ? "en" : /німець/iu.test(name) ? "de" : ""; });
   const [mode, setMode] = useState<"course" | "extension">(initialTopic ? "extension" : "course");
   const [title, setTitle] = useState(initialTitle); const [idea, setIdea] = useState(initialTopic ? "Поглиб тему базового уроку: поясни складні місця, додай розібрані приклади, цікаві зв’язки та практику. Відділяй матеріал підручника від доповнень із загальних знань ШІ." : ""); const [sourceText, setSourceText] = useState("");
   const [subjectId, setSubjectId] = useState(initialSubject); const [topicId, setTopicId] = useState(initialTopic);
   const [topics, setTopics] = useState<{ id: string; title: string }[]>(initialTopic ? [{ id: initialTopic, title: initialTitle || "Вибраний базовий урок" }] : []);
-  const [materialId, setMaterialId] = useState(""); const [pageFrom, setPageFrom] = useState(""); const [pageTo, setPageTo] = useState("");
+  const [materialId, setMaterialId] = useState(initialMaterial); const [pageFrom, setPageFrom] = useState(""); const [pageTo, setPageTo] = useState("");
+  const [availableBooks, setAvailableBooks] = useState(books);
+  const [sourceReady, setSourceReady] = useState(!initialMaterial);
   const [age, setAge] = useState(12); const grade = initialGrade; const [count, setCount] = useState(1); const [minutes, setMinutes] = useState(20); const [budget, setBudget] = useState(3);
   const [pending, setPending] = useState(false); const [error, setError] = useState(""); const sequence = useRef(0); const lock = useRef(false);
   const submission = useRef<{ key: string; id: string } | null>(null);
@@ -32,15 +33,8 @@ export function StudioCreate({ subjects, books, initialSubject = "", initialTopi
     void listSubjectTopicsForVideoAction(initialSubject).then(value => { if (active) setTopics(value); }).catch(() => { if (active) setError("Не вдалося завантажити теми."); });
     return () => { active = false; };
   }, [initialSubject, initialTopic]);
-  async function upload(file: File) {
-    if (!file.size || file.size > 3 * 1024 * 1024) { setError("Обери файл до 3 МБ. Для великої книги скористайся бібліотекою."); return; }
-    if (lock.current) return; lock.current = true; setPending(true); setError("");
-    try { const form = new FormData(); form.set("file", file); const result = await withBusySignal(async () => { const response = await fetch("/api/parent/studio/source", { method: "POST", body: form }); return await response.json() as { status: "ok"; text: string } | { status: "error"; message: string }; }); if (result.status === "ok") setSourceText(result.text); else setError(result.message); }
-    catch { setError("Не вдалося прочитати файл. Встав потрібний текст або вибери книгу з бібліотеки."); }
-    finally { lock.current = false; setPending(false); }
-  }
   async function submit() {
-    if (lock.current) return; lock.current = true; setPending(true); setError("");
+    if (lock.current || !sourceReady) return; lock.current = true; setPending(true); setError("");
     try {
       const request = { mode, targetLanguage: targetLanguage || null, title, idea, age, grade, lessonCount: mode === "extension" ? 1 : count, minutes, budgetUsd: budget, subjectId: subjectId || null, topicId: mode === "extension" ? topicId || null : null, materialId: materialId || null, pageFrom: pageFrom ? Number(pageFrom) : null, pageTo: pageTo ? Number(pageTo) : null, sourceText };
       const key = JSON.stringify(request);
@@ -61,16 +55,16 @@ export function StudioCreate({ subjects, books, initialSubject = "", initialTopi
       <label className="block text-sm font-bold">Що дитина має зрозуміти або навчитися робити?<textarea aria-label="Що дитина має зрозуміти або навчитися робити?" value={idea} onChange={event => setIdea(event.target.value)} maxLength={20000} required rows={5} placeholder="Опиши тему, результат, підготовку дитини та побажання. Для практичної роботи — доступні матеріали й інструменти." className={`${parentInput} mt-2 py-3 font-normal`} /></label>
       <p className="text-sm text-p-muted">Кількість уроків визначає твоя навчальна мета. Довгий план готується частинами, уроки — послідовно. Витрати обмежує вказаний тобою бюджет; ліміт не збільшується автоматично. Перевірки знань — квізи з натисканням на варіант відповіді.</p>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><label className="text-sm font-bold">Вік<input aria-label="Вік дитини" type="number" min={7} max={18} value={age} onChange={event => setAge(Number(event.target.value))} className={`${parentInput} mt-2`} /></label><label className="text-sm font-bold">Уроків<input type="number" min={1} step={1} aria-label="Кількість уроків" value={mode === "extension" ? 1 : count} disabled={mode === "extension"} onChange={event => setCount(Number(event.target.value))} className={`${parentInput} mt-2`} /></label><label className="text-sm font-bold">Хвилин на урок<input type="number" min={10} max={45} value={minutes} onChange={event => setMinutes(Number(event.target.value))} className={`${parentInput} mt-2`} /></label><label className="text-sm font-bold">Ліміт підготовки, $<input type="number" min={0.5} max={STUDIO_MAX_BUDGET} step={0.5} value={budget} onChange={event => setBudget(Number(event.target.value))} className={`${parentInput} mt-2`} /></label></div>
-      <StudioPhotoSource disabled={pending} onBusy={value => { setPending(value); lock.current = value; }} onText={text => { const next = sourceText.trim() ? `${sourceText}\n\n${text}` : text; if (next.length > 40000) setError("Матеріалів більше ніж 40 000 символів. Збережи частину окремо або очисть поле перед додаванням; текст не обрізано."); else setSourceText(next); }} onTasks={text => { const next = `${idea}\n\nРозбери ці вправи з поясненнями українською, збережи їхні номери та оригінальну мову:\n${text}`; if (next.length > 20000) setError("Побажання перевищують 20 000 символів. Обери менше вправ; текст не обрізано."); else setIdea(next); }} />
-      <details open={!!sourceText} className="rounded-2xl border border-p-line p-4"><summary className="min-h-8 cursor-pointer text-sm font-bold">Джерела: книга, сторінки, файл або текст (необов’язково)</summary><div className="mt-4 space-y-4">
-        <label className="block text-sm font-bold">Книга з бібліотеки<select aria-label="Книга з бібліотеки" value={materialId} onChange={event => { setMaterialId(event.target.value); setPageFrom(""); setPageTo(""); }} className={`${parentInput} mt-2`}><option value="">Без окремої книги</option>{books.map(book => <option key={book.id} value={book.id}>{book.title}</option>)}</select></label>
-        <div className="grid gap-3 sm:grid-cols-2"><label className="text-sm">Сторінка індексу від<input type="number" min={1} max={10000} value={pageFrom} disabled={!materialId} onChange={event => setPageFrom(event.target.value)} className={`${parentInput} mt-2`} /></label><label className="text-sm">До сторінки<input type="number" min={1} max={10000} value={pageTo} disabled={!materialId} onChange={event => setPageTo(event.target.value)} className={`${parentInput} mt-2`} /></label></div>
-        <p className="text-xs leading-relaxed text-p-muted">Без діапазону шукаємо відповідні фрагменти за темою. Це не означає читання всієї книги. Для великої книги спочатку додай її до <Link href="/parent/books" className="underline">бібліотеки</Link>.</p>
-        <label className="block text-sm font-bold">Додати невеликий файл<input aria-label="Файл для майстерні" type="file" accept=".txt,.md,.pdf" onChange={event => { const selected = event.target.files?.[0]; event.target.value = ""; if (selected) void upload(selected); }} className="mt-2 block min-h-11 w-full max-w-full rounded-xl border border-p-line p-2 text-sm font-normal" /></label><p className="text-xs text-p-muted">TXT / MD / текстовий PDF до 3 МБ; до 40 000 символів. Текст із файлу замінить поле нижче. Для скану скористайся блоком «Фото або скан сторінки» вище; велику книгу додай до бібліотеки.</p>
+      <details open className="rounded-2xl border border-p-line p-4"><summary className="min-h-8 cursor-pointer text-sm font-bold">Матеріали для уроку: файл, бібліотека або текст (необов’язково)</summary><div className="mt-4 space-y-4">
+        <StudioSourceUpload enabled={uploadEnabled} selectedId={materialId} onBusy={value => { setPending(value); lock.current = value; }} onReady={setSourceReady} onTasks={text => { const next = `${idea}\n\nРозбери ці вправи з поясненнями українською, збережи їхні номери та оригінальну мову:\n${text}`; if (next.length > 20000) setError("Побажання перевищують 20 000 символів. Обери менше вправ; текст не обрізано."); else setIdea(next); }} onSelect={book => { setAvailableBooks(current => current.some(item => item.id === book.id) ? current : [book, ...current]); setMaterialId(book.id); setPageFrom(""); setPageTo(""); setSourceReady(false); }} />
+        <label className="block text-sm font-bold">Книга або матеріал із бібліотеки<select aria-label="Книга з бібліотеки" value={materialId} onChange={event => { setMaterialId(event.target.value); setSourceReady(!event.target.value); setPageFrom(""); setPageTo(""); }} className={`${parentInput} mt-2`}><option value="">Без окремого матеріалу</option>{availableBooks.map(book => <option key={book.id} value={book.id}>{book.title}</option>)}</select></label>
+        <div className="grid gap-3 sm:grid-cols-2"><label className="text-sm">Сторінка / частина від<input type="number" min={1} max={10000} value={pageFrom} disabled={!materialId} onChange={event => setPageFrom(event.target.value)} className={`${parentInput} mt-2`} /></label><label className="text-sm">До сторінки / частини<input type="number" min={1} max={10000} value={pageTo} disabled={!materialId} onChange={event => setPageTo(event.target.value)} className={`${parentInput} mt-2`} /></label></div>
+        <p className="text-xs leading-relaxed text-p-muted">Невеликий матеріал використаємо повністю; у великій книзі без діапазону шукатимемо фрагменти за темою. Для PDF це сторінки файла, для PPTX — слайди, для EPUB — розділи, для DOCX — частини за заголовками.</p>
         <label className="block text-sm font-bold">Власні матеріали<textarea aria-label="Власні матеріали" value={sourceText} maxLength={40000} onChange={event => setSourceText(event.target.value)} rows={7} className={`${parentInput} mt-2 py-3 font-normal`} /></label>
       </div></details>
+      {!sourceReady && <p role="status" className="text-sm text-p-muted">Спочатку дочекайся розпізнавання вибраного матеріалу або вибери інше джерело.</p>}
       <p className="text-sm leading-relaxed text-p-muted">Підготовка плану — платні виклики OpenAI в межах цього ліміту. Спочатку переглянеш план і знайдені джерела; повні уроки почнуть готуватися після твого погодження. Публікація для дитини — окрема дія. Цей ліміт стосується підготовки й доопрацювань; голос і розмови під час навчання враховуються окремо в загальному бюджеті застосунку.</p>
-      <button type="submit" className={parentButton}>{pending ? "Зберігаємо та готуємо…" : "Створити чернетку й підготувати план"}</button>
+      <button type="submit" disabled={!sourceReady} className={`${parentButton} disabled:opacity-50`}>{pending ? "Зберігаємо та готуємо…" : "Створити чернетку й підготувати план"}</button>
     </fieldset>
     {error && <p role="alert" className="rounded-xl border border-p-line p-4 text-sm">{error}</p>}
   </form>;

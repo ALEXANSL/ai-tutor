@@ -123,3 +123,9 @@ describe("search query (ADR-008)", () => {
     expect(cleanQuery("x".repeat(500))).toHaveLength(200);
   });
 });
+
+it("keeps native document/photo indexes during a normal Drive sync", () => {
+  const formats = ["docx", "pptx", "txt", "png", "jpeg"] as const;
+  const plan = planSync(formats.map(format => known(format, { name: `source.${format}` })), formats.map(format => file(format, { format, name: `source.${format}` })), { budgetBlocked: false });
+  expect(plan.remove).toEqual([]); expect(plan.requeue).toEqual([]); expect(plan.insert).toEqual([]);
+});

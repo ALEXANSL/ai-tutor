@@ -14,6 +14,7 @@ import { kickJobs } from "@/server/jobs/kick";
  * single-request upload used to — `ingestUploadedMaterial` + `kickJobs()`.
  */
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 export type UploadErrorCode = "too_large" | "unsupported_type" | "not_configured" | "failed";
 
@@ -58,6 +59,11 @@ export async function POST(request: NextRequest) {
   const kind = category ? CATEGORY_TO_KIND[category] : undefined;
 
   try {
+    if (subjectId) {
+      if (!/^[0-9a-f-]{36}$/i.test(subjectId)) return NextResponse.json({ error: "failed" }, { status: 400 });
+      const subject = await forFamily(familyId).select("subjects", "id").eq("id", subjectId).maybeSingle();
+      if (subject.error || !subject.data) return NextResponse.json({ error: "failed" }, { status: 400 });
+    }
     const file = await confirmUpload({ familyId, driveFileId });
     const { materialId, status } = await ingestUploadedMaterial(familyId, file);
     if (subjectId || kind) {
@@ -74,7 +80,7 @@ export async function POST(request: NextRequest) {
       await scope.update("materials", update).eq("id", materialId);
     }
     if (status === "queued") kickJobs();
-    return NextResponse.json({ ok: true, status });
+    return NextResponse.json({ ok: true, materialId, status });
   } catch (e) {
     const code = errorCodeOf(e);
     if (code === "failed") console.error(`book upload confirm failed: ${(e as Error).name}: ${(e as Error).message}`);

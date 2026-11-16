@@ -5,7 +5,7 @@ import { isAppBusy } from "@/lib/busy-signal";
 export const contentSections = [
   { key: "course", title: "Курс ZIP", detail: "Готові уроки одним архівом", number: "01" },
   { key: "video", title: "Відео", detail: "Доповнення до теми уроку", number: "02" },
-  { key: "book", title: "Підручник або книга", detail: "PDF / EPUB як джерело", number: "03" },
+  { key: "book", title: "Книга, документ або фото", detail: "Файл із пристрою як джерело", number: "03" },
   { key: "materials", title: "Додаткові матеріали", detail: "Посібники та довідники", number: "04" },
 ] as const;
 export type ContentSection = typeof contentSections[number]["key"];

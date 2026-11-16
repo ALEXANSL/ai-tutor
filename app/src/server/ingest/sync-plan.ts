@@ -1,3 +1,4 @@
+import type { SourceFileFormat } from "@/lib/source-files";
 /**
  * "Перевірити папку": compares the Drive folder with known materials
  * (US-2.1, US-2.7 KP-4, US-2.6 KP-5, KP-6). Pure — unit-tested.
@@ -19,7 +20,7 @@ export interface FolderFile {
   md5Checksum?: string;
   modifiedTime?: string;
   size?: string;
-  format: "pdf" | "epub";
+  format: SourceFileFormat;
 }
 
 /** Errors that a new check of the folder may fix (configuration was added later). */

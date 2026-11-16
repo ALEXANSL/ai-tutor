@@ -12,5 +12,5 @@ import { StudioImports } from "./StudioImports";
 it("provides one ZIP/prompt home with separate source/video panels and no old multi-file importers", async () => {
   f.subjects.mockResolvedValue([]); f.upload.mockResolvedValue(true); f.drive.mockResolvedValue(true);
   const html = renderToStaticMarkup(await StudioImports({ familyId: "own-family", tab: "course" }));
-  expect(f.subjects).toHaveBeenCalledWith("own-family"); expect(html).toContain("Універсальний промпт ZIP"); expect(html).toContain("Додати книгу"); expect(html).toContain("Лише джерела"); expect(html).not.toContain("Старий імпорт"); expect(html).not.toContain("Старі способи завантаження");
+  expect(f.subjects).toHaveBeenCalledWith("own-family"); expect(html).toContain("Універсальний промпт ZIP"); expect(html).toContain("Файл-джерело для уроку"); expect(html).toContain("Лише джерела"); expect(html).not.toContain("Старий імпорт"); expect(html).not.toContain("Старі способи завантаження");
 });

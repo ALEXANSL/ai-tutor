@@ -1,4 +1,5 @@
 import "server-only";
+import { SOURCE_MIME, type SourceFileFormat } from "@/lib/source-files";
 import { MAX_UPLOAD_BYTES } from "../../lib/upload-limits";
 import { getFamilyIntegration } from "../integrations";
 import { DriveError, formatOf, isValidDriveId } from "./google";
@@ -41,16 +42,12 @@ export { MAX_UPLOAD_BYTES };
 const DRIVE_UPLOAD_API = "https://www.googleapis.com/upload/drive/v3";
 const DRIVE_API = "https://www.googleapis.com/drive/v3";
 
-const CANONICAL_MIME: Record<"pdf" | "epub", string> = {
-  pdf: "application/pdf",
-  epub: "application/epub+zip",
-};
 
 export interface UploadedDriveFile {
   id: string;
   name: string;
   mimeType: string;
-  format: "pdf" | "epub";
+  format: SourceFileFormat;
   size: number | null;
   modifiedTime: string | null;
   md5Checksum: string | null;
@@ -88,11 +85,10 @@ export interface ResumableUploadSession {
 export async function initResumableUpload(opts: InitResumableUploadOptions): Promise<ResumableUploadSession> {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const format = formatOf({ name: opts.fileName, mimeType: opts.mimeType });
-  // ADR-031 §3.8: a manual-import batch ZIP is placed straight in the Drive
-  // folder and picked up by `syncDriveFolder` — this direct-upload widget
-  // (PDF/EPUB only, browser size limit) never handles it.
+  // ZIP course packages use the separate course importer. Native source
+  // documents/photos reuse this metadata-only Drive upload contract.
   if (!format || format === "zip") throw new DriveError("unsupported file type", null, "unsupported_type");
-  if (opts.declaredSize != null && opts.declaredSize > MAX_UPLOAD_BYTES) {
+  if (opts.declaredSize != null && (!Number.isSafeInteger(opts.declaredSize) || opts.declaredSize <= 0 || opts.declaredSize > MAX_UPLOAD_BYTES)) {
     throw new DriveError("file too large", 413, "too_large");
   }
 
@@ -101,7 +97,7 @@ export async function initResumableUpload(opts: InitResumableUploadOptions): Pro
   const token = await getUserAccessToken(opts.familyId, fetchImpl);
 
   const name = sanitizeFileName(opts.fileName);
-  const mimeType = CANONICAL_MIME[format];
+  const mimeType = SOURCE_MIME[format];
   const initParams = new URLSearchParams({
     uploadType: "resumable",
     supportsAllDrives: "true",
@@ -185,7 +181,7 @@ export async function confirmUpload(opts: ConfirmUploadOptions): Promise<Uploade
   const format = formatOf({ name: file.name, mimeType: file.mimeType });
   if (!format || format === "zip") throw new DriveError("unsupported file type", null, "unsupported_type");
   const size = file.size ? Number(file.size) : null;
-  if (size != null && size > MAX_UPLOAD_BYTES) throw new DriveError("file too large", 413, "too_large");
+  if (size == null || !Number.isSafeInteger(size) || size <= 0 || size > MAX_UPLOAD_BYTES) throw new DriveError("file too large", 413, "too_large");
 
   return {
     id: file.id,
