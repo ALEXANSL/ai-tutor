@@ -23,13 +23,18 @@ export function studioVisualSvg(visual: StudioVisual): string {
     body += text(`${visual.height} ${visual.unit}`, 85 + width, figureTop + 10 + height / 2);
   }
   const start = titleHeight + (visual.kind === "dimensions" ? 285 : 45);
+  let y = start;
   for (const [index, item] of visual.items.entries()) {
-    const y = start + index * 95;
-    body += `<rect x="25" y="${y}" rx="10" width="650" height="80" fill="#edf4ff" stroke="#b9cff7"/>`;
-    body += text(`${index + 1}. ${item.label}`, 40, y + 24, 18, 60) + text(item.detail, 40, y + 47, 14, 75);
-    if (index < visual.items.length - 1) body += `<path d="M350 ${y + 80} v15" stroke="#2f6fed" stroke-width="2"/>`;
+    const label = /^\d+[.)]\s/.test(item.label) ? item.label : `${index + 1}. ${item.label}`;
+    const labelHeight = lines(label, 60).length * 22;
+    const detailHeight = lines(item.detail, 75).length * 18;
+    const height = Math.max(80, 18 + labelHeight + 8 + detailHeight + 16);
+    body += `<rect x="25" y="${y}" rx="10" width="650" height="${height}" fill="#edf4ff" stroke="#b9cff7"/>`;
+    body += text(label, 40, y + 26, 18, 60) + text(item.detail, 40, y + 26 + labelHeight + 8, 14, 75);
+    if (index < visual.items.length - 1) body += `<path d="M350 ${y + height} v15" stroke="#2f6fed" stroke-width="2"/>`;
+    y += height + 15;
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${xml(visual.title)}" viewBox="0 0 700 ${start + visual.items.length * 95 + 20}"><rect width="100%" height="100%" fill="#fff"/>${title}${body}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${xml(visual.title)}" viewBox="0 0 700 ${y + 20}"><rect width="100%" height="100%" fill="#fff"/>${title}${body}</svg>`;
 }
 
 /** Public equivalent of a diagram, readable on small screens and available to the lesson tutor. */

@@ -61,7 +61,7 @@ it("allows a parent to describe corrections after publication and clearly keeps 
   expect(button("Редагувати матеріал")).toBeTruthy();
   expect(container.querySelector("#studio-revision")).not.toBeNull();
   expect(button("Допрацювати урок 1").disabled).toBe(true);
-  const field = container.querySelector("textarea")!;
+  const field = container.querySelector("#studio-revision textarea")!;
   await act(async () => { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(field, "Зроби таблицю зрозумілою"); field.dispatchEvent(new Event("input", { bubbles: true })); });
   expect(button("Допрацювати урок 1").disabled).toBe(false);
   await click("Допрацювати урок 1");

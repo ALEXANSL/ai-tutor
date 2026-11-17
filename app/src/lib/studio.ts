@@ -21,7 +21,7 @@ export const studioLessonSchema = z.object({ title: text(200), objectives: z.arr
   sourceIds: z.array(text(100)).max(30), enrichmentNote: text(1000), adultAssistance: z.string().max(1500),
 }).strict();
 export type StudioLesson = z.infer<typeof studioLessonSchema>;
-export const studioVisualSchema = z.object({ blockIndex: z.number().int().min(0).max(7), kind: z.enum(["sequence", "comparison", "timeline", "dimensions"]), title: text(120), items: z.array(z.object({ label: text(50), detail: text(110) }).strict()).min(2).max(5), width: z.number().positive().max(10000).nullable(), height: z.number().positive().max(10000).nullable(), unit: z.enum(["мм", "см", "м", ""]), caption: text(500) }).strict();
+export const studioVisualSchema = z.object({ blockIndex: z.number().int().min(0).max(7), kind: z.enum(["sequence", "comparison", "timeline", "dimensions"]), title: text(120), items: z.array(z.object({ label: text(240), detail: text(600) }).strict()).min(2).max(5), width: z.number().positive().max(10000).nullable(), height: z.number().positive().max(10000).nullable(), unit: z.enum(["мм", "см", "м", ""]), caption: text(500) }).strict();
 export type StudioVisual = z.infer<typeof studioVisualSchema>;
 export const STUDIO_MAX_VISUALS = 16;
 export const studioDesignSchema = z.object({ visuals: z.array(studioVisualSchema).max(STUDIO_MAX_VISUALS) }).strict();
@@ -36,7 +36,8 @@ export const studioReviewSchema = z.object({ verdict: z.enum(["pass", "revise", 
 export const studioReviewResponseSchema = studioReviewSchema.extend({ corrections: z.array(studioCorrectionSchema).max(12) });
 export type StudioReview = z.infer<typeof studioReviewSchema>;
 export interface StudioSource { id: string; title: string; text: string; page: number | null; kind: "lesson" | "book" | "provided"; }
-export interface StudioUnit { content: StudioLesson; visuals: StudioVisual[]; review: StudioReview | null; reviewRound?: number; lastReviewFingerprint?: string | null; }
+export interface StudioIllustration { id: string; blockIndex: number; title: string; caption: string; sourceUrl: string; credit: string; license: string; storagePath: string; byteSize: number; }
+export interface StudioUnit { illustrations?: StudioIllustration[]; content: StudioLesson; visuals: StudioVisual[]; review: StudioReview | null; reviewRound?: number; lastReviewFingerprint?: string | null; }
 export type StudioState = "planning" | "plan_ready" | "generating" | "ready" | "needs_changes" | "failed" | "paused" | "publishing" | "published" | "withdrawn";
 export interface StudioProject {
   version: 1; revision: number;
@@ -49,11 +50,13 @@ export interface StudioProject {
   revisionRequestId?: string;
   childAccess?: "enabled" | "disabled";
   reviewAutomationStopped?: boolean;
+  reviewRepairAttempted?: boolean;
+  repairAdvice?: string;
   revisionInstructions?: string;
   editorNotes?: { at: string; lessonIndex: number; text: string }[];
   request: StudioRequest; state: StudioState; createdAt: string;
   sources: StudioSource[]; sourceNotes: string[]; subjectName: string | null; baseHref: string | null; baseTitle: string | null;
-  plan: StudioPlan | null; units: StudioUnit[]; cursor: number; phase: "plan" | "author" | "design" | "review" | "publish";
+  plan: StudioPlan | null; units: StudioUnit[]; cursor: number; phase: "plan" | "author" | "design" | "review" | "repair" | "publish";
   token: string; activeCall: boolean; spentUsd: number; heldUsd: number; feedback: string; error: string | null;
   models: { role: string; model: string; costUsd: number }[];
   publication: { subjectId: string; packageId: string; lessons: { id: string; topicId: string; title: string }[] } | null;
@@ -73,4 +76,9 @@ export function studioPublicationVisible(project: Pick<StudioProject, "publicati
   return !!project.publication && (project.childAccess ? project.childAccess === "enabled" : project.state === "published" || (project.publicationRevision === true && project.state !== "withdrawn"));
 }
 
-export interface StudioReviewEvent { at: string; lessonIndex: number; round: number; review: StudioReview; next: "author" | "design" | "ready" | "stopped"; }
+export interface StudioReviewEvent { at: string; lessonIndex: number; round: number; review: StudioReview; next: "author" | "design" | "repair" | "ready" | "stopped"; }
+
+/** Old no-progress stops get one automatic diagnostic repair, without restarting failed/paused/uncertain jobs. */
+export function studioCanAutoResumeReview(project: Pick<StudioProject, "state" | "activeCall" | "reviewAutomationStopped" | "reviewRepairAttempted" | "error">) {
+  return project.state === "needs_changes" && !project.activeCall && (!project.reviewAutomationStopped || (!project.reviewRepairAttempted && !!project.error?.startsWith("STUDIO-NO-PROGRESS")));
+}

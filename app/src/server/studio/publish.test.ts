@@ -43,3 +43,12 @@ it("publishes a 24-lesson course as tap-only single-choice quizzes without dropp
   expect(result.tasks.every(task => task.response_type === "single_choice" && task.options.length === 3)).toBe(true);
   expect(result.taskKeys.every(key => key.grading?.method === "single_choice")).toBe(true);
 });
+it("publishes parent-selected photos inside their assigned lesson block with durable source credits", () => {
+  const value = project(); value.units[0]!.illustrations = [{ id: "photo", blockIndex: 1, title: "Кварц", caption: "Кристал кварцу", sourceUrl: "https://commons.wikimedia.org/wiki/File:Quartz.jpg", credit: "Автор фото", license: "CC BY 4.0", storagePath: "private/path", byteSize: 3 }];
+  const result = studioPackage("project", value, new Map([["assets/L1P1.jpg", new Uint8Array([1, 2, 3])]]));
+  expect(result.parsed.errors).toEqual([]);
+  expect(result.parsed.lessons[0]!.screens[1]!.asset_ids).toContain("L1P1");
+  expect(result.parsed.assets.find(asset => asset.id === "L1P1")?.caption).toContain("CC BY 4.0");
+  expect(result.parsed.assets.find(asset => asset.id === "L1P1")?.caption).toContain("https://commons.wikimedia.org/");
+  expect(() => studioPackage("project", value)).toThrow("Ілюстрація відсутня");
+});

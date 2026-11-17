@@ -187,9 +187,9 @@ it("routes visual-only review fixes automatically without rewriting lesson text"
 it("stops an identical candidate and identical failed review instead of silently burning the cap", async () => {
   project = studioProjectFixture({ state: "generating", phase: "review", plan: studioPlanFixture, units: [{ content: studioLessonFixture, visuals: [], review: null }] });
   const review = { verdict: "revise", issues: [visualFix.problem], corrections: [visualFix], summary: "Додати схему" };
-  f.call.mockImplementation(async (_family, _id, role) => ({ result: role === "studio.design" ? { visuals: [] } : review, model: { provider: "openai", model: "test" }, costUsd: 0.01 }));
-  await step(); await step(); await step(); expect(project.state).toBe("needs_changes"); expect(project.reviewAutomationStopped).toBe(true); expect(project.error).toContain("NO-PROGRESS");
-  await step(); expect(f.call).toHaveBeenCalledTimes(3);
+  f.call.mockImplementation(async (_family, _id, role) => ({ result: role === "studio.repair" ? { diagnosis: "Зміст залишився без змін після діагностики", reviewAdvice: "Перевір повторно", blocks: [], questions: [], visuals: null, title: null, objectives: null, sourceIds: null, enrichmentNote: null, adultAssistance: null } : role === "studio.design" ? { visuals: [] } : review, model: { provider: "openai", model: "test" }, costUsd: 0.01 }));
+  await step(); await step(); await step(); expect(project.phase).toBe("repair"); expect(project.state).toBe("generating"); await step(); await step(); expect(project.state).toBe("needs_changes"); expect(project.reviewAutomationStopped).toBe(true); expect(project.error).toContain("NO-PROGRESS");
+  await step(); expect(f.call).toHaveBeenCalledTimes(5);
 });
 
 it("automatically resumes an old waiting review once, without touching explicit stops or inventing a parent comment", async () => {
@@ -197,4 +197,18 @@ it("automatically resumes an old waiting review once, without touching explicit 
   const before = project.token; await resumeLegacyStudioReview("family", id); expect(project.state).toBe("generating"); expect(project.token).not.toBe(before); expect(project.editorNotes).toBeUndefined(); expect(f.enqueue).toHaveBeenCalledOnce();
   await resumeLegacyStudioReview("family", id); expect(f.enqueue).toHaveBeenCalledOnce();
   for (const state of ["paused", "failed", "published", "needs_changes"] as const) { project.state = state; project.reviewAutomationStopped = true; await resumeLegacyStudioReview("family", id); expect(project.state).toBe(state); }
+});
+
+it("recovers a legacy no-progress stop into one diagnostic repair, without resetting its spend", async () => {
+  project = studioProjectFixture({ state: "needs_changes", phase: "review", reviewAutomationStopped: true, error: "STUDIO-NO-PROGRESS: unchanged", spentUsd: 1.938, plan: studioPlanFixture, units: [{ content: studioLessonFixture, visuals: [], review: { verdict: "revise", issues: ["Виправити схему"], summary: "Потрібна правка" } }] });
+  await resumeLegacyStudioReview("family", id);
+  expect(project.phase).toBe("repair"); expect(project.reviewRepairAttempted).toBe(true); expect(project.spentUsd).toBe(1.938); expect(project.request.budgetUsd).toBe(3);
+});
+it("applies a diagnostic diagram replacement and reaches ready only after a new independent pass", async () => {
+  const original = structuredClone(studioLessonFixture);
+  project = studioProjectFixture({ state: "generating", phase: "repair", reviewRepairAttempted: true, plan: studioPlanFixture, units: [{ content: original, visuals: [studioVisualFixture], review: { verdict: "revise", issues: ["Обірвано крок"], summary: "Потрібна правка" } }] });
+  const fixed = { ...studioVisualFixture, items: [{ label: "3. Якщо ні: чи використовують її як будівельну, хімічну або харчову сировину?", detail: "Так — це нерудна копалина" }, { label: "4. Поясни використання", detail: "Назви властивість і застосування" }] };
+  f.call.mockResolvedValueOnce({ result: { diagnosis: "Крок схеми було обірвано попередньою межею підпису", reviewAdvice: "Перевір повне речення", blocks: [], questions: [], visuals: [fixed], title: null, objectives: null, sourceIds: null, enrichmentNote: null, adultAssistance: null }, model: { provider: "openai", model: "test" }, costUsd: 0.01 });
+  await step(); expect(project.phase).toBe("review"); expect(project.state).toBe("generating"); expect(project.units[0]!.content).toEqual(original); expect(project.units[0]!.visuals).toEqual([fixed]);
+  await step(); expect(project.state).toBe("ready"); expect(f.call.mock.calls.map(call => call[2])).toEqual(["studio.repair", "studio.review"]);
 });

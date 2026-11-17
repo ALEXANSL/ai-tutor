@@ -7,10 +7,10 @@ import { parseLiteratureV3Assets, parseLiteratureV3Course, parseLiteratureV3Pack
 import { persistLiteratureV3Package } from "@/server/lessons/literatureV3Persist";
 import { studioVisualSvg, studioVisualDescription } from "./visual";
 const content = (text: string) => ({ display: text, tts: { text, lang: "uk-UA" } });
-export function studioPackage(projectId: string, project: StudioProject) {
+export function studioPackage(projectId: string, project: StudioProject, illustrationFiles = new Map<string, Uint8Array>()) {
   if (!project.plan || project.units.length !== project.plan.lessons.length || project.units.some(unit => unit.review?.verdict !== "pass")) throw new Error("Не всі уроки пройшли рецензію.");
   const bookId = `studio.${projectId}`;
-  const files = new Map<string, Uint8Array>();
+  const files = new Map<string, Uint8Array>(illustrationFiles);
   const assetRows: Record<string, unknown>[] = [];
   const tasks: Record<string, unknown>[] = [], keys: ParsedLiteratureV3Package["taskKeys"] = [];
   const lessons = project.units.map((unit, index) => {
@@ -21,6 +21,12 @@ export function studioPackage(projectId: string, project: StudioProject) {
         const id = `${lessonId}A${visualIndex + 1}`, path = `assets/${id}.svg`;
         const bytes = new TextEncoder().encode(studioVisualSvg(visual)); files.set(path, bytes); assetIds.push(id);
         assetRows.push({ id, kind: "textbook_illustration", path, mime_type: "image/svg+xml", byte_size: bytes.byteLength, title: visual.title, caption: visual.caption, alt: `${visual.title}. ${visual.items.map(item => `${item.label}: ${item.detail}`).join(". ")}` });
+      }
+      for (const [pictureIndex, picture] of (unit.illustrations ?? []).entries()) if (picture.blockIndex === blockIndex) {
+        const id = `${lessonId}P${pictureIndex + 1}`, path = `assets/${id}.jpg`;
+        if (!files.has(path)) throw new Error("Ілюстрація відсутня. Повтори публікацію.");
+        assetIds.push(id);
+        assetRows.push({ id, kind: "textbook_illustration", path, mime_type: "image/jpeg", byte_size: files.get(path)!.byteLength, title: picture.title, caption: [picture.caption, picture.credit, picture.license, picture.sourceUrl].filter(Boolean).join(" · "), alt: picture.caption || picture.title });
       }
       const descriptions = unit.visuals.filter(visual => visual.blockIndex === blockIndex).map(studioVisualDescription).join("\n\n");
       return { id: `${lessonId}S${blockIndex + 1}`, title: block.title, step_type: block.kind, content: { display: (block.kind === "code" ? `\`\`\`\n${block.text}\n\`\`\`` : block.text) + (descriptions ? `\n\n**На схемі:** ${descriptions}` : ""), tts: { text: block.narration, lang: block.narrationLanguage ?? "uk-UA" } }, asset_ids: assetIds };
@@ -42,7 +48,15 @@ export function studioPackage(projectId: string, project: StudioProject) {
   return { parsed, files };
 }
 export async function prepareStudioPublication(familyId: string, projectId: string, project: StudioProject): Promise<NonNullable<StudioProject["publication"]>> {
-  const scope = forFamily(familyId); const { parsed, files } = studioPackage(projectId, project);
+  const scope = forFamily(familyId);
+  const illustrationFiles = new Map<string, Uint8Array>();
+  for (const [lessonIndex, unit] of project.units.entries()) for (const [pictureIndex, picture] of (unit.illustrations ?? []).entries()) {
+    if (!picture.storagePath.startsWith(`studio-images/${familyId}/${projectId}/`)) throw new Error("Некоректне джерело ілюстрації.");
+    const downloaded = await scope.client.storage.from("course_assets").download(picture.storagePath);
+    if (downloaded.error || !downloaded.data || downloaded.data.size > 8 * 1024 * 1024) throw new Error("Не вдалося отримати ілюстрацію. Повтори публікацію.");
+    illustrationFiles.set(`assets/L${lessonIndex + 1}P${pictureIndex + 1}.jpg`, new Uint8Array(await downloaded.data.arrayBuffer()));
+  }
+  const { parsed, files } = studioPackage(projectId, project, illustrationFiles);
   let subjectId = project.request.subjectId;
   if (["extension", "revision"].includes(project.request.mode) && subjectId) {
     const subject = await getSubjectDetail(familyId, subjectId);

@@ -86,6 +86,7 @@ const ROLE_LABELS_UK: Record<string, string> = {
   "studio.plan": "Майстерня — план",
   "studio.author": "Майстерня — автор",
   "studio.design": "Майстерня — схеми",
+  "studio.repair": "Майстерня — діагностика повторних помилок",
   "studio.review": "Майстерня — рецензія",
   lesson_tutor: "Репетитор уроків (OpenAI)",
   homework_author: "Домашні роботи: документи й презентації (OpenAI)",
