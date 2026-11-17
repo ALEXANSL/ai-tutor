@@ -70,6 +70,8 @@ export function getServerSecret(
     | "ANTHROPIC_API_KEY"
     | "OPENAI_API_KEY"
     | "GOOGLE_API_KEY"
+    | "GOOGLE_GENERATIVE_AI_API_KEY"
+    | "GEMINI_API_KEY"
     | "GOOGLE_SERVICE_ACCOUNT_JSON"
     | "CRON_SECRET"
     // ADR-024: shared OAuth `drive.file` connector (book upload + future D-67 archive).
