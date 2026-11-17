@@ -36,7 +36,7 @@ export const studioReviewSchema = z.object({ verdict: z.enum(["pass", "revise", 
 export const studioReviewResponseSchema = studioReviewSchema.extend({ corrections: z.array(studioCorrectionSchema).max(12) });
 export type StudioReview = z.infer<typeof studioReviewSchema>;
 export interface StudioSource { id: string; title: string; text: string; page: number | null; kind: "lesson" | "book" | "provided"; }
-export interface StudioUnit { content: StudioLesson; visuals: StudioVisual[]; review: StudioReview | null; }
+export interface StudioUnit { content: StudioLesson; visuals: StudioVisual[]; review: StudioReview | null; reviewRound?: number; lastReviewFingerprint?: string | null; }
 export type StudioState = "planning" | "plan_ready" | "generating" | "ready" | "needs_changes" | "failed" | "paused" | "publishing" | "published" | "withdrawn";
 export interface StudioProject {
   version: 1; revision: number;
@@ -48,6 +48,8 @@ export interface StudioProject {
   publicationRevision?: boolean;
   revisionRequestId?: string;
   childAccess?: "enabled" | "disabled";
+  reviewAutomationStopped?: boolean;
+  revisionInstructions?: string;
   editorNotes?: { at: string; lessonIndex: number; text: string }[];
   request: StudioRequest; state: StudioState; createdAt: string;
   sources: StudioSource[]; sourceNotes: string[]; subjectName: string | null; baseHref: string | null; baseTitle: string | null;
@@ -70,3 +72,5 @@ export interface StudioActivity {
 export function studioPublicationVisible(project: Pick<StudioProject, "publication" | "state" | "publicationRevision" | "childAccess">): boolean {
   return !!project.publication && (project.childAccess ? project.childAccess === "enabled" : project.state === "published" || (project.publicationRevision === true && project.state !== "withdrawn"));
 }
+
+export interface StudioReviewEvent { at: string; lessonIndex: number; round: number; review: StudioReview; next: "author" | "design" | "ready" | "stopped"; }

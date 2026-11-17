@@ -1,10 +1,12 @@
 import "server-only";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { homeworkResultSchema, type HomeworkWork, type HomeworkFormat } from "@/lib/homework";
+import { homeworkGenerationSchema, homeworkResultSchema, type HomeworkWork, type HomeworkFormat } from "@/lib/homework";
+import { callHomeworkModel } from "./model";
+import { homeworkQuality } from "./quality";
 import { readHomework, createHomework, saveHomework } from "./store";
 import type { homeworkSource } from "./source";
-import { callLessonTutor, tutorFailureMessage } from "@/server/lessons/tutorModel";
+import { tutorFailureMessage } from "@/server/lessons/tutorModel";
 import { resolveChatPages } from "@/server/lessons/chatPages";
 import { moderateMessage } from "@/server/safety/moderate";
 import { recordSafetyEvent } from "@/server/safety/events";
@@ -41,8 +43,9 @@ export async function runHomework(familyId: string, childId: string, id: string,
       const system = `${safetyPreambleUk("Репетитор", "репетитор")}\n\n${readFileSync(join(process.cwd(), "prompts/homework_workspace.md"), "utf8")}`;
       const prompt = JSON.stringify({ subject: work.subject, topic: work.topic, sourceContext: work.context, selectedPages: pages.context, temporaryFiles: uploads.text, history: work.turns.slice(0, -1).map(turn => ({ request: turn.question, answer: turn.answer, files: turn.files })), previousArtifact: work.result?.artifact ?? null, previousAnswer: work.result?.message ?? null, request: current.question, format: current.format });
       if (Buffer.byteLength(prompt) > 240000) throw new Error("Діалог і матеріали завеликі. Почни нову роботу з потрібним уривком.");
-      const response = await callLessonTutor({ system, prompt, schema: homeworkResultSchema, documents: [...pages.documents, ...uploads.documents] }, { familyId, ref: { table: "jobs", id } });
+      const response = await callHomeworkModel({ system, prompt, schema: homeworkGenerationSchema, documents: [...pages.documents, ...uploads.documents] }, { familyId, ref: { table: "jobs", id } });
       result = homeworkResultSchema.parse(response.result);
+      if (result.artifact) result.quality = homeworkQuality(result, current.format, current.question);
       if (result.artifact && ((current.format === "docx" && !result.artifact.sections.length) || (current.format === "pptx" && !result.artifact.slides.length))) throw new Error("Матеріал не відповідає вибраному формату. Спробуй уточнити запит.");
       if (Buffer.byteLength(JSON.stringify(result)) > 180000) throw new Error("Результат завеликий. Попроси коротшу роботу.");
     }
@@ -50,7 +53,7 @@ export async function runHomework(familyId: string, childId: string, id: string,
     work = await readHomework(familyId, childId, id);
     if (!work || work.activeRequestId !== requestId || work.revision !== previous.revision) return;
     const turns = work.turns.map(turn => turn.requestId === requestId ? { ...turn, answer: result.message } : turn);
-    await saveHomework(familyId, id, work, { state: "ready", activeRequestId: null, turns, result: result.artifact ? result : { ...result, artifact: moderation.severity === "urgent" ? null : work.result?.artifact ?? null }, error: null });
+    await saveHomework(familyId, id, work, { state: "ready", activeRequestId: null, turns, result: result.artifact ? result : { ...result, artifact: moderation.severity === "urgent" ? null : work.result?.artifact ?? null, ...(moderation.severity !== "urgent" && work.result?.quality ? { quality: work.result.quality } : {}) }, error: null });
   } catch (error) {
     const latest = await readHomework(familyId, childId, id);
     if (latest?.activeRequestId === requestId && latest.revision === previous.revision) await saveHomework(familyId, id, latest, { state: "failed", activeRequestId: null, error: `${tutorFailureMessage(error).replace(/Запит залишився у полі — спробуй (?:пізніше|ще раз)\./g, "Твій запит збережено в діалозі.")} Попередню готову роботу збережено. Автоматичного повтору немає.` });

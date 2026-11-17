@@ -1,6 +1,6 @@
 import "server-only";
 import { AiNotConfiguredError, BudgetBlockedError } from "@/server/ai/types";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { STUDIO_PLAN_BATCH_SIZE, studioPlanBatchSchema, studioDesignSchema, studioLessonSchema, studioReviewResponseSchema, studioActive, studioPublicationVisible, type StudioPlan, type StudioProject, type StudioRequest } from "@/lib/studio";
 import { enqueueJob, registerJobHandler, type JobRow } from "@/server/jobs/runner";
 import { forFamily } from "@/server/db/family-scope";
@@ -8,6 +8,7 @@ import { loadStudioSources } from "./sources";
 import { createStudioProject, readStudioProject, saveStudioProject, STUDIO_STEP } from "./store";
 import { callStudioModel, studioModelConfig, studioReservation, type StudioRole } from "./model";
 import { studioSystem } from "./prompts";
+import { saveStudioReviewEvent } from "./review-history";
 import { activateStudioPublication, prepareStudioPublication } from "./publish";
 
 function studioReviewFeedback(review: import("@/lib/studio").StudioReview | null | undefined): string {
@@ -99,7 +100,7 @@ export async function runStudioStep(job: JobRow, deadline: number) {
   } else {
     const units = [...project.units];
     if (project.phase === "author") {
-      units[project.cursor] = { content: validateStudioLesson(project, result.result), visuals: units[project.cursor]?.visuals ?? [], review: null }; changes.phase = "design";
+      units[project.cursor] = { ...units[project.cursor], content: validateStudioLesson(project, result.result), visuals: units[project.cursor]?.visuals ?? [], review: null }; changes.phase = "design";
     } else if (project.phase === "design") {
       const { visuals } = studioDesignSchema.parse(result.result);
       if (visuals.some(visual => visual.blockIndex >= units[project.cursor]!.content.blocks.length || (visual.kind === "dimensions" && (!visual.width || !visual.height || !visual.unit)))) throw new Error("STUDIO-VISUAL-REF");
@@ -109,12 +110,17 @@ export async function runStudioStep(job: JobRow, deadline: number) {
       if (review.corrections.some(fix => (fix.blockIndex !== null && fix.blockIndex >= units[project.cursor]!.content.blocks.length) || (fix.visualIndex !== null && fix.visualIndex >= units[project.cursor]!.visuals.length))) throw new Error("STUDIO-CORRECTION-REF");
       if (review.verdict !== "pass" && (!review.corrections.length || review.corrections.length !== review.issues.length)) throw new Error("STUDIO-CORRECTION-MISSING");
       if (review.verdict === "pass" && (review.issues.length || review.corrections.length)) throw new Error("STUDIO-REVIEW-CONFLICT");
-      units[project.cursor] = { ...units[project.cursor]!, review };
-      if (review.verdict !== "pass") Object.assign(changes, { state: "needs_changes", feedback: studioReviewFeedback(review) });
+      const round = (units[project.cursor]!.reviewRound ?? 0) + 1;
+      const fingerprint = createHash("sha256").update(JSON.stringify({ content: units[project.cursor]!.content, visuals: units[project.cursor]!.visuals, corrections: review.corrections.map(fix => JSON.stringify(fix)).sort(), issues: [...review.issues].sort() })).digest("hex");
+      const stuck = review.verdict !== "pass" && units[project.cursor]!.lastReviewFingerprint === fingerprint;
+      const nextPhase = review.corrections.length && review.corrections.every(fix => fix.role === "design") ? "design" : "author";
+      units[project.cursor] = { ...units[project.cursor]!, review, reviewRound: round, lastReviewFingerprint: review.verdict === "pass" ? null : fingerprint };
+      await saveStudioReviewEvent(job.family_id, id, token, project.revision, { at: new Date().toISOString(), lessonIndex: project.cursor, round, review, next: review.verdict === "pass" ? "ready" : stuck ? "stopped" : nextPhase });
+      if (review.verdict !== "pass") Object.assign(changes, { state: stuck ? "needs_changes" : "generating", phase: nextPhase, reviewAutomationStopped: stuck, error: stuck ? "STUDIO-NO-PROGRESS: після виправлення урок і зауваження залишилися незмінними. Автоматичні витрати зупинено; додай уточнення й запусти новий цикл." : null, feedback: `${studioReviewFeedback(review)}\nПобажання тата: ${project.revisionInstructions ?? project.editorNotes?.at(-1)?.text ?? ""}` });
       else {
         const next = project.plan!.lessons.findIndex((_lesson, index) => units[index]?.review?.verdict !== "pass");
-        if (next < 0) changes.state = "ready";
-        else Object.assign(changes, { cursor: next, phase: "author", feedback: "" });
+        if (next < 0) { changes.state = "ready"; changes.reviewAutomationStopped = false; changes.error = null; }
+        else Object.assign(changes, { cursor: next, phase: "author", feedback: "", revisionInstructions: "", reviewAutomationStopped: false });
       }
     }
     changes.units = units;
@@ -146,7 +152,8 @@ export async function resumeStudio(familyId: string, id: string, revision: numbe
     // Only structured, exclusively visual corrections can skip authoring. Legacy reviews
     // and parent instructions still receive a full, contextual revision.
     const designOnly = !feedback.trim() && review?.corrections?.length && review.corrections.every(fix => fix.role === "design");
-    changes = { ...changes, state: "generating", publicationRevision: project.publicationRevision || !!project.publication, childAccess: studioPublicationVisible(project) ? "enabled" : "disabled", editorNotes: [...(project.editorNotes ?? []), { at: new Date().toISOString(), lessonIndex: cursor, text: feedback.trim() || "Виправити зауваження рецензента" }].slice(-30), phase: designOnly ? "design" : "author", cursor, feedback: `${studioReviewFeedback(review)}\nПобажання тата: ${feedback}` };
+    const units = project.units.map((unit, index) => index === cursor ? { ...unit, lastReviewFingerprint: null } : unit);
+    changes = { ...changes, units, reviewAutomationStopped: false, revisionInstructions: feedback.trim(), state: "generating", publicationRevision: project.publicationRevision || !!project.publication, childAccess: studioPublicationVisible(project) ? "enabled" : "disabled", editorNotes: [...(project.editorNotes ?? []), { at: new Date().toISOString(), lessonIndex: cursor, text: feedback.trim() || "Виправити зауваження рецензента" }].slice(-30), phase: designOnly ? "design" : "author", cursor, feedback: `${studioReviewFeedback(review)}\nПобажання тата: ${feedback}` };
   } else {
     if (!["failed", "paused"].includes(project.state)) throw new Error("Продовження доступне після паузи або збою етапу.");
     changes.state = project.phase === "plan" ? "planning" : project.phase === "publish" ? "publishing" : "generating";
@@ -154,6 +161,17 @@ export async function resumeStudio(familyId: string, id: string, revision: numbe
   const next = await saveStudioProject(familyId, id, project, changes);
   try { await scheduleStudio(familyId, id, token); }
   catch { await saveStudioProject(familyId, id, next, { state: "failed", error: "Чернетку збережено, але черга недоступна. Повтори етап пізніше." }); }
+}
+export async function resumeLegacyStudioReview(familyId: string, id: string) {
+  const project = await readStudioProject(familyId, id);
+  if (!project || project.state !== "needs_changes" || project.reviewAutomationStopped || project.activeCall) return project;
+  const review = project.units[project.cursor]?.review;
+  if (!review || review.verdict === "pass") return project;
+  const token = randomUUID();
+  const next = await saveStudioProject(familyId, id, project, { token, state: "generating", phase: review.corrections?.length && review.corrections.every(fix => fix.role === "design") ? "design" : "author", revisionInstructions: project.revisionInstructions ?? project.editorNotes?.at(-1)?.text ?? "", error: null, feedback: `${studioReviewFeedback(review)}\nПобажання тата: ${project.revisionInstructions ?? project.editorNotes?.at(-1)?.text ?? ""}` });
+  try { await scheduleStudio(familyId, id, token); }
+  catch { return saveStudioProject(familyId, id, next, { state: "failed", error: "Не вдалося продовжити цикл рецензії. Чернетку збережено." }); }
+  return next;
 }
 export async function pauseStudio(familyId: string, id: string, revision: number) {
   const project = await readStudioProject(familyId, id);
@@ -184,5 +202,9 @@ export async function runStudioQueue(familyId: string, projectId: string, token:
   }
 }
 export function registerStudioJobs() {
-  registerJobHandler(STUDIO_STEP, { run: (job, ctx) => runStudioStep(job, ctx.deadline), isRetryable: () => false, onGiveUp: failStudioStep });
+  registerJobHandler(STUDIO_STEP, { run: async (job, ctx) => {
+    const outcome = await runStudioStep(job, ctx.deadline);
+    if (outcome?.requeue) { const { kickStudio } = await import("./wake"); kickStudio(job.family_id, String(job.payload.projectId)); }
+    return outcome;
+  }, isRetryable: () => false, onGiveUp: failStudioStep });
 }

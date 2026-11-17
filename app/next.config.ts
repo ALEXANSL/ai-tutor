@@ -35,7 +35,7 @@ const nextConfig: NextConfig = {
   // cmaps/standard_fonts are data files read at runtime by pdf.js (not `require`d/`import`ed),
   // so Next's file tracer would otherwise drop them from the deployed build.
   outputFileTracingIncludes: {
-    "/**": ["./prompts/**/*", "./node_modules/pdfjs-dist/cmaps/**/*", "./node_modules/pdfjs-dist/standard_fonts/**/*"],
+    "/**": ["./prompts/**/*", "./assets/fonts/**/*", "./node_modules/pdfjs-dist/cmaps/**/*", "./node_modules/pdfjs-dist/standard_fonts/**/*"],
   },
   async headers() {
     return [

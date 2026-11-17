@@ -12,7 +12,7 @@ vi.mock("./StudioPreview", () => ({ StudioPreview: () => <p>Попередній
 import { StudioProject } from "./StudioProject";
 const id = "11111111-1111-4111-8111-111111111111";
 const unit = { content: studioLessonFixture, visuals: [studioVisualFixture], review: { verdict: "revise" as const, issues: ["Уточни приклад"], summary: "Потрібні виправлення" } };
-function project(changes: Partial<Project> = {}) { return studioProjectFixture({ state: "needs_changes", phase: "review", plan: studioPlanFixture, units: [unit], ...changes }); }
+function project(changes: Partial<Project> = {}) { return studioProjectFixture({ state: "needs_changes", reviewAutomationStopped: true, phase: "review", plan: studioPlanFixture, units: [unit], ...changes }); }
 function observed(p: Project, queue: StudioActivity["queue"] = "running") { return { status: "ok", project: p, activity: { queue, checkedAt: "2026-11-11T14:00:00Z" } }; }
 let root: Root, container: HTMLDivElement;
 beforeEach(() => { vi.clearAllMocks(); vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true); vi.spyOn(HTMLElement.prototype, "focus").mockImplementation(() => {}); HTMLElement.prototype.scrollIntoView = vi.fn(); container = document.createElement("div"); document.body.append(container); root = createRoot(container); f.command.mockResolvedValue({ status: "ok" }); });
