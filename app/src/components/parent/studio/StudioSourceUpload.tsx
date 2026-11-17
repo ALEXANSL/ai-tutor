@@ -4,7 +4,7 @@ import { withBusySignal } from "@/lib/busy-signal";
 import { useEffect, useRef, useState } from "react";
 import { SOURCE_FILE_ACCEPT, SOURCE_FILE_LABEL, SOURCE_MIME, sourceFileFormat } from "@/lib/source-files";
 import { MAX_UPLOAD_BYTES } from "@/lib/upload-limits";
-import { completeSourceUpload, openSourceUpload, putSourceUpload, SourceUploadError } from "@/lib/upload-source";
+import { completeSourceUpload, openSourceUpload, putSourceUpload, sourceUploadErrorMessage } from "@/lib/upload-source";
 import { prepareStudioPhoto } from "@/lib/studio-photo";
 import { studioSourceStatusAction, resumeStudioSourceAction } from "@/app/actions/studio-sources";
 import { parentButton } from "@/app/parent/ui";
@@ -19,6 +19,7 @@ export function StudioSourceUpload({ enabled, selectedId = "", onSelect, onReady
   const [selectedTasks, setSelectedTasks] = useState<{ id: string; indexes: number[] }>({ id: "", indexes: [] });
   const [pickedFile, setPickedFile] = useState<File | null>(null);
   const [canRetry, setCanRetry] = useState(false);
+  const [retryComplete, setRetryComplete] = useState(false);
   const callbacks = useRef({ onSelect, onReady, onBusy });
   useEffect(() => { callbacks.current = { onSelect, onReady, onBusy }; }, [onSelect, onReady, onBusy]);
   const effectiveId = onSelect ? selectedId : id;
@@ -66,10 +67,8 @@ export function StudioSourceUpload({ enabled, selectedId = "", onSelect, onReady
       setId(materialId); callbacks.current.onSelect?.({ id: materialId, title: saved.file.name });
       retry.current = null; setPickedFile(null); setPhase("");
     } catch (error) {
-      const code = error instanceof SourceUploadError ? error.code : "";
-      const messages: Record<string, string> = { not_configured: "Підключи Google Drive у налаштуваннях інтеграцій, щоб застосунок міг зберігати файли.", too_large: "Обери файл до 50 МБ.", unsupported_type: `Підтримуються ${SOURCE_FILE_LABEL}.` };
-      setError(code ? messages[code] || "Не вдалося завершити завантаження. Повтори: використаємо збережену сесію, а не нову копію файла." : error instanceof Error ? error.message : "Не вдалося завантажити файл.");
-      setCanRetry(!!retry.current);
+      setError(sourceUploadErrorMessage(error));
+      setCanRetry(!!retry.current); setRetryComplete(!!retry.current?.driveId);
     } finally { lock.current = false; setUploading(false); callbacks.current.onBusy?.(false); }
   }
   async function resume(ocr: boolean) {
@@ -82,11 +81,11 @@ export function StudioSourceUpload({ enabled, selectedId = "", onSelect, onReady
     <h3 className="font-bold">Додати файл із комп’ютера або телефона</h3>
     <p className="text-sm leading-relaxed text-p-muted">{SOURCE_FILE_LABEL}, до 50 МБ; фото — до 15 МБ із автоматичним зменшенням перед розпізнаванням. Файл збережеться на твоєму Google Drive, обробка почнеться автоматично. Для фото й сканів використовується платне розпізнавання в межах бюджету застосунку; великі скани потребують окремого підтвердження.</p>
     {enabled ? <label className="block text-sm font-bold">Вибрати матеріал<input aria-label="Файл-джерело для уроку" type="file" accept={SOURCE_FILE_ACCEPT} disabled={uploading} className="mt-2 block min-h-11 w-full max-w-full rounded-xl border border-p-line p-2 font-normal" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) { retry.current = null; setPickedFile(file); setError(""); setCanRetry(false); } }} /></label> : <p className="text-sm">Для завантаження підключи <Link href="/parent/settings" className="font-bold text-p-primary underline">Google Drive в налаштуваннях</Link>. Уже додані джерела й власний текст доступні нижче.</p>}
-    {enabled && pickedFile && !uploading && !canRetry && <div className="space-y-2"><p className="break-words text-sm">{pickedFile.name} · {(pickedFile.size / 1024 / 1024).toFixed(1)} МБ</p><button type="button" onClick={() => void upload(pickedFile)} className={parentButton}>Завантажити й обробити матеріал</button></div>}
+    {enabled && pickedFile && !uploading && <div className="space-y-2"><p className="break-words text-sm">{pickedFile.name} · {(pickedFile.size / 1024 / 1024).toFixed(1)} МБ</p>{!canRetry && <button type="button" onClick={() => void upload(pickedFile)} className={parentButton}>Завантажити й обробити матеріал</button>}</div>}
     {uploading && <div role="status" aria-live="polite" className="space-y-2"><p className="flex items-center gap-2 text-sm"><span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-p-line border-t-p-primary" />{phase || "Продовжуємо обробку…"}</p>{phase.includes("Google Drive") && <><progress aria-label="Завантаження файла" max={100} value={percent} className="h-2 w-full" /><p className="text-xs">{percent}%</p></>}</div>}
     {effectiveId && pollError && <p role="status" className="text-sm text-p-muted">{pollError}</p>}
     {error && <p role="alert" className="break-words rounded-xl border border-p-danger p-3 text-sm">{error}</p>}
-    {canRetry && !uploading && <button type="button" onClick={() => void upload()} className={parentButton}>Повторити завершення завантаження</button>}
+    {canRetry && !uploading && <button type="button" onClick={() => void upload()} className={parentButton}>{retryComplete ? "Повторити завершення завантаження" : "Продовжити завантаження файла"}</button>}
     {effectiveId && source?.id === effectiveId && <div className="min-w-0 space-y-3 rounded-xl border border-p-line p-3"><p className="break-words font-bold">{source.title}</p>
       <p role="status" className="text-sm">{source.hasText ? "✓ Текст доступний для підготовки уроку" : source.status === "scan_awaiting_ocr" ? "Потрібне підтвердження розпізнавання" : source.status === "deferred" ? "Обробка призупинена через бюджет" : source.status === "error" ? "Потрібна увага" : stages[source.progress?.step ?? ""] || "Матеріал у черзі обробки"}{["queued", "indexing"].includes(source.status) && <span aria-hidden="true" className="ml-2 inline-block h-3 w-3 animate-spin rounded-full border-2 border-p-line border-t-p-primary" />}</p>
       {source.pageCount !== null && <p className="text-xs text-p-muted">Сторінок / частин: {source.pageCount}{source.charCount !== null ? ` · символів: ${source.charCount}` : ""}</p>}

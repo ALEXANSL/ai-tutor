@@ -1,5 +1,6 @@
 "use client";
 
+import { openSourceUpload, putSourceUpload, completeSourceUpload, sourceUploadErrorMessage } from "@/lib/upload-source";
 import { useRef, useState } from "react";
 import { importCoursePackageAction, type CourseImportSummary } from "@/app/actions/course-import";
 import { uk } from "@/i18n/uk";
@@ -101,39 +102,13 @@ export function MaterialsImportPanel({ subjects, uploadEnabled, materialsOnly = 
     }
     setState({ status: "uploading" });
     try {
-      const initRes = await fetch("/api/parent/books/upload", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ fileName: file.name, mimeType: file.type || "application/octet-stream", size: file.size }),
-      });
-      if (!initRes.ok) {
-        const detail = await initRes.text().catch(() => "");
-        setState({ status: "error", message: `${t.failed} (крок 1/3, код ${initRes.status}${detail ? `: ${detail.slice(0, 300)}` : ""})` });
-        return;
-      }
-      const { sessionUrl } = (await initRes.json()) as { sessionUrl: string };
-      const putRes = await fetch(sessionUrl, { method: "PUT", headers: { "content-type": file.type || "application/octet-stream" }, body: file });
-      if (!putRes.ok) {
-        const detail = await putRes.text().catch(() => "");
-        setState({ status: "error", message: `${t.failed} (крок 2/3, код ${putRes.status}${detail ? `: ${detail.slice(0, 300)}` : ""})` });
-        return;
-      }
-      const uploaded = (await putRes.json()) as { id: string };
-
+      const session = await openSourceUpload(file);
+      const driveFileId = await putSourceUpload(file, session, () => {});
       setState({ status: "processing" });
-      const completeRes = await fetch("/api/parent/books/upload/complete", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ driveFileId: uploaded.id, subjectId, category }),
-      });
-      if (!completeRes.ok) {
-        const detail = await completeRes.text().catch(() => "");
-        setState({ status: "error", message: `${t.failed} (крок 3/3, код ${completeRes.status}${detail ? `: ${detail.slice(0, 300)}` : ""})` });
-        return;
-      }
+      await completeSourceUpload(driveFileId, { subjectId, category });
       setState({ status: "guide_done" });
     } catch (e) {
-      setState({ status: "error", message: `${t.failed} (${(e as Error).message})` });
+      setState({ status: "error", message: `${t.failed} ${sourceUploadErrorMessage(e)}` });
     }
   }
 

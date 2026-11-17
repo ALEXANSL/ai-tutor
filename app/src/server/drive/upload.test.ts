@@ -116,6 +116,7 @@ describe("initResumableUpload — validation before any Drive call", () => {
     });
     const session = await initResumableUpload({
       familyId: "f1",
+      origin: "https://fixture.test",
       fileName: "book.pdf",
       mimeType: "application/pdf",
       declaredSize: 100,
@@ -128,6 +129,7 @@ describe("initResumableUpload — validation before any Drive call", () => {
     const [, init] = driveCall as [string, RequestInit];
     expect(typeof init.body).toBe("string");
     expect(JSON.parse(init.body as string)).toMatchObject({ name: "book.pdf", parents: ["UploadsFolderPlaceholder01"] });
+    expect(init.headers).toMatchObject({ origin: "https://fixture.test" });
   });
 });
 
