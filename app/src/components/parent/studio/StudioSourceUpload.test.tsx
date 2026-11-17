@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const id = "11111111-1111-4111-8111-111111111111";
 const f = vi.hoisted(() => ({ open: vi.fn(), put: vi.fn(), complete: vi.fn(), status: vi.fn(), resume: vi.fn() }));
-vi.mock("@/lib/upload-source", () => ({ openSourceUpload: f.open, putSourceUpload: f.put, completeSourceUpload: f.complete, SourceUploadError: class SourceUploadError extends Error {} }));
+vi.mock("@/lib/upload-source", async original => ({ ...await original<typeof import("@/lib/upload-source")>(), openSourceUpload: f.open, putSourceUpload: f.put, completeSourceUpload: f.complete }));
 vi.mock("@/app/actions/studio-sources", () => ({ studioSourceStatusAction: f.status, resumeStudioSourceAction: f.resume }));
 vi.mock("next/link", () => ({ default: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a href={href} {...props}>{children}</a> }));
 import { StudioSourceUpload } from "./StudioSourceUpload";
@@ -46,4 +46,10 @@ it("retains exercise selection from photo recognition inside the unified uploade
   await act(async () => root.render(<StudioSourceUpload enabled selectedId={id} onSelect={() => {}} onTasks={tasks} />));
   await act(async () => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click()); await click("Додати вибрані вправи");
   expect(tasks).toHaveBeenCalledWith("3: Übung: Guten Tag!");
+});
+it("keeps the presentation name, localizes a network failure and retries the same session", async () => {
+  f.put.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+  await act(async () => root.render(<StudioSourceUpload enabled />)); await pick(); await click("Завантажити й обробити");
+  expect(container.textContent).not.toContain("Failed to fetch"); expect(container.textContent).toContain("З’єднання перервалося"); expect(container.textContent).toContain("slides.pptx");
+  await click("Продовжити завантаження"); expect(f.open).toHaveBeenCalledOnce(); expect(f.put).toHaveBeenCalledTimes(2); expect(f.put.mock.calls[1]![3]).toBe(true); expect(f.complete).toHaveBeenCalledOnce();
 });

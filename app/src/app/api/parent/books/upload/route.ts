@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireParentAccess } from "@/server/auth/guards";
 import { DriveError } from "@/server/drive/google";
+import { createUploadRelay } from "@/server/drive/upload-relay";
+import { SOURCE_MIME, sourceFileFormat } from "@/lib/source-files";
 import { initResumableUpload, MAX_UPLOAD_BYTES } from "@/server/drive/upload";
 
 /**
@@ -8,8 +10,9 @@ import { initResumableUpload, MAX_UPLOAD_BYTES } from "@/server/drive/upload";
  * upload session and hands the browser its short-lived session URI — a
  * metadata-only request/response, never any file bytes, so it can never hit
  * Vercel's ~4.5 MB request-body limit (BUG-033's root cause). The browser
- * then `PUT`s the file straight to that URI itself (see
- * `UploadBookButton.tsx`); this route never sees the file at all.
+ * receives an authenticated same-origin chunk URL. Each chunk is <=1 MiB,
+ * below the platform limit; this init route still handles metadata only.
+ * sessionUrl remains for older clients during rollout.
  */
 export const dynamic = "force-dynamic";
 
@@ -47,8 +50,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const session = await initResumableUpload({ familyId, fileName, mimeType, declaredSize });
-    return NextResponse.json({ ok: true, sessionUrl: session.sessionUrl });
+    const session = await initResumableUpload({ familyId, fileName, mimeType, declaredSize, origin: request.nextUrl.origin });
+    const format = sourceFileFormat({ name: fileName, mimeType });
+    const uploadUrl = declaredSize && format ? await createUploadRelay(familyId, session.sessionUrl, declaredSize, SOURCE_MIME[format]) : undefined;
+    return NextResponse.json({ ok: true, sessionUrl: session.sessionUrl, uploadUrl });
   } catch (e) {
     const code = errorCodeOf(e);
     if (code === "failed") console.error(`book upload session failed: ${(e as Error).name}: ${(e as Error).message}`);

@@ -12,8 +12,9 @@ import { getUserAccessToken } from "./oauth";
  * at the platform/routing layer, before our function code ever runs — no
  * amount of streaming inside the function (the previous `boundedUploadStream`
  * approach) can work around that, because the request never reaches us. The
- * fix is the standard pattern for large uploads on serverless platforms: the
- * file bytes never pass through our server at all.
+ * legacy fix sends bytes directly to Google. The current browser uploader
+ * uses upload-relay.ts: authenticated chunks <=1 MiB, each below that limit,
+ * to avoid cross-origin/corporate network failures. Init remains metadata-only.
  *
  *   1. `initResumableUpload` — a *lightweight* call (JSON metadata only, no
  *      file bytes) that asks Google Drive for a resumable upload session
@@ -66,6 +67,7 @@ export interface InitResumableUploadOptions {
   /** Reported by the browser from `File.size` — an early, cheap check before opening a Drive session at all. */
   declaredSize: number | null;
   fetchImpl?: typeof fetch;
+  origin?: string;
 }
 
 export interface ResumableUploadSession {
@@ -111,6 +113,7 @@ export async function initResumableUpload(opts: InitResumableUploadOptions): Pro
         authorization: `Bearer ${token}`,
         "content-type": "application/json; charset=UTF-8",
         "x-upload-content-type": mimeType,
+        ...(opts.origin ? { origin: opts.origin } : {}),
         ...(opts.declaredSize != null ? { "x-upload-content-length": String(opts.declaredSize) } : {}),
       },
       body: JSON.stringify({ name, mimeType, parents: [folderId] }),
