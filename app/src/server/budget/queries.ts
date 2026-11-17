@@ -88,6 +88,7 @@ const ROLE_LABELS_UK: Record<string, string> = {
   "studio.design": "Майстерня — схеми",
   "studio.review": "Майстерня — рецензія",
   lesson_tutor: "Репетитор уроків (OpenAI)",
+  homework_author: "Домашні роботи: документи й презентації (OpenAI)",
   tutor_chat: "Попередній чат / чат книги",
   friend_chat: "ШІ-друг",
   "school.context_match": "Пошук уроку зі щоденника за змістом",

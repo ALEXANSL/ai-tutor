@@ -24,3 +24,21 @@ it("paginates dense slides without dropping text and refuses absent requested co
   const work = homeworkFixture(); work.result!.artifact!.slides = [];
   await expect(exportHomework(work, "pptx")).rejects.toThrow("PowerPoint");
 });
+
+const visual = { kind: "sequence" as const, title: "Як діяти при кібербулінгу", caption: "Послідовність допомагає припинити небезпечне спілкування й отримати допомогу дорослого.", unit: "", items: [{ label: "Зупини розмову", detail: "Не відповідай образами.", value: null }, { label: "Збережи докази", detail: "Зроби скриншот повідомлень.", value: null }, { label: "Звернися по допомогу", detail: "Покажи повідомлення дорослому.", value: null }] };
+const table = { title: "Що можна публікувати", columns: ["Можна обережно", "Не публікуємо"], rows: [["Власний малюнок", "Паролі"], ["Фото природи", "Домашню адресу"]] };
+it("embeds an actual PNG infographic, accessible captions and native editable tables into DOCX", async () => {
+  const work = homeworkFixture(); Object.assign(work.result!.artifact!.sections[0]!, { visuals: [visual], tables: [table] });
+  const files = unzipSync(await exportHomework(work, "docx")); const document = xml(files, "word/document.xml");
+  expect(document).toContain("<w:tbl>"); expect(document).toContain("<w:drawing>"); expect(document).toContain("Як діяти при кібербулінгу"); expect(document).toContain("Зроби скриншот");
+  const image = Object.entries(files).find(([name]) => name.startsWith("word/media/") && name.endsWith(".png"))![1]; expect([...image.slice(0, 4)]).toEqual([137, 80, 78, 71]);
+});
+it("embeds real diagram pixels and a PowerPoint table while retaining speaker explanations", async () => {
+  const work = homeworkFixture(); work.result!.artifact!.slides = [{ title: "Дії при небезпеці", bullets: ["Проси допомоги дорослого"], notes: "Не потрібно залишатися з проблемою наодинці. ".repeat(5), visual }, { title: "Дані", bullets: ["Порівняй дві групи"], notes: "Поясни обмеження", table }];
+  const files = unzipSync(await exportHomework(work, "pptx")); expect(Object.keys(files).some(name => name.startsWith("ppt/media/") && name.endsWith(".png"))).toBe(true);
+  expect(xml(files, "ppt/slides/slide2.xml")).toContain("<a:tbl>"); expect(xml(files, "ppt/notesSlides/notesSlide1.xml")).toContain("Не потрібно залишатися");
+});
+it("marks a structurally incomplete deliverable as a draft inside the exported files", async () => {
+  const work = homeworkFixture(); work.result!.quality = { status: "draft", issues: ["Потрібна карта"] };
+  const files = unzipSync(await exportHomework(work, "docx")); expect(xml(files, "word/document.xml")).toContain("ЧЕРНЕТКА"); expect(xml(files, "word/document.xml")).toContain("Потрібна карта");
+});

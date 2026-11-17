@@ -4,11 +4,12 @@ import type { StudioProject } from "@/lib/studio";
 import { studioLessonFixture, studioPlanFixture, studioProjectFixture, studioVisualFixture } from "./__fixtures__/project";
 const f = vi.hoisted(() => ({ read: vi.fn(), save: vi.fn(), create: vi.fn(), enqueue: vi.fn(), call: vi.fn(), sources: vi.fn(), config: vi.fn(), prepare: vi.fn(), activate: vi.fn() }));
 vi.mock("./store", () => ({ STUDIO_STEP: "studio.step", readStudioProject: f.read, saveStudioProject: f.save, createStudioProject: f.create }));
+vi.mock("./review-history", () => ({ saveStudioReviewEvent: vi.fn() }));
 vi.mock("./sources", () => ({ loadStudioSources: f.sources }));
 vi.mock("./model", () => ({ studioModelConfig: f.config, studioReservation: () => 0.1, callStudioModel: f.call }));
 vi.mock("./publish", () => ({ prepareStudioPublication: f.prepare, activateStudioPublication: f.activate }));
 vi.mock("@/server/jobs/runner", () => ({ enqueueJob: f.enqueue, registerJobHandler: vi.fn() }));
-import { failStudioStep, pauseStudio, resumeStudio, runStudioStep, startStudio, validateStudioLesson } from "./workflow";
+import { resumeLegacyStudioReview, failStudioStep, pauseStudio, resumeStudio, runStudioStep, startStudio, validateStudioLesson } from "./workflow";
 let project: StudioProject;
 const id = "11111111-1111-4111-8111-111111111111";
 const job = () => ({ id: "job", family_id: "family", type: "studio.step", payload: { projectId: id, token: project.token }, attempts: 1, max_attempts: 1 });
@@ -34,7 +35,7 @@ it("stops after the plan, requires parent approval, runs independent author/desi
 it("blocks publication after a failed review and preserves the full candidate for correction", async () => {
   project = studioProjectFixture({ state: "generating", phase: "review", plan: studioPlanFixture, units: [{ content: studioLessonFixture, visuals: [studioVisualFixture], review: null }] });
   f.call.mockResolvedValue({ result: { verdict: "revise", issues: ["Уточнити приклад"], corrections: [{ role: "author", blockIndex: 1, visualIndex: null, problem: "Нечіткий приклад", action: "Уточни значення Y перед переміщенням", acceptance: "Вказане початкове значення Y" }], summary: "Потрібні виправлення" }, model: { provider: "openai", model: "test" }, costUsd: 0.01 });
-  await step(); expect(project.state).toBe("needs_changes"); expect(project.units[0]!.content.title).toBe(studioLessonFixture.title);
+  await step(); expect(project.state).toBe("generating"); expect(project.phase).toBe("author"); expect(project.units[0]!.content.title).toBe(studioLessonFixture.title);
   await expect(resumeStudio("family", id, project.revision, "publish")).rejects.toThrow(); expect(f.prepare).not.toHaveBeenCalled();
 });
 it("reserves before a paid call, retains the reserve on uncertainty, and never silently retries it", async () => {
@@ -168,4 +169,32 @@ it("rejects written-response knowledge checks but keeps code examples and option
   practice.blocks[3]!.text = practice.blocks[3]!.text.replace("За бажанням", "Завдання");
   expect(() => validateStudioLesson(project, practice)).toThrow("STUDIO-TYPING-ASSESSMENT");
   expect(() => validateStudioLesson(project, studioLessonFixture)).not.toThrow();
+});
+
+it("automatically repairs and rechecks more than two times until pass, preserving parent instructions", async () => {
+  project = studioProjectFixture({ state: "generating", phase: "review", plan: studioPlanFixture, revisionInstructions: "Додай приклад із Roblox", units: [{ content: studioLessonFixture, visuals: [], review: null }] });
+  let reviews = 0;
+  f.call.mockImplementation(async (_family, _id, role) => ({ result: role === "studio.author" ? { ...studioLessonFixture, title: `Виправлення ${reviews}` } : role === "studio.design" ? { visuals: [] } : ++reviews < 4 ? { verdict: "revise", issues: [`Уточнення ${reviews}`], corrections: [{ ...visualFix, role: "author", problem: `Уточнення ${reviews}` }], summary: "Виправити приклад" } : { verdict: "pass", issues: [], corrections: [], summary: "Пройдено" }, model: { provider: "openai", model: "test" }, costUsd: 0.01 }));
+  for (let i = 0; i < 10; i++) await step();
+  expect(project.state).toBe("ready"); expect(project.units[0]!.reviewRound).toBe(4); expect(f.enqueue).not.toHaveBeenCalled();
+  for (const call of f.call.mock.calls.filter(call => call[2] === "studio.author")) expect(JSON.parse(call[4]).feedback).toContain("Додай приклад із Roblox");
+});
+it("routes visual-only review fixes automatically without rewriting lesson text", async () => {
+  project = studioProjectFixture({ state: "generating", phase: "review", plan: studioPlanFixture, units: [{ content: studioLessonFixture, visuals: [], review: null }] });
+  f.call.mockResolvedValueOnce({ result: { verdict: "revise", issues: [visualFix.problem], corrections: [visualFix], summary: "Додати схему" }, model: { provider: "openai", model: "test" }, costUsd: 0.01 });
+  await step(); expect(project.state).toBe("generating"); expect(project.phase).toBe("design"); await step(); await step(); expect(project.state).toBe("ready"); expect(f.call.mock.calls.map(call => call[2])).toEqual(["studio.review", "studio.design", "studio.review"]);
+});
+it("stops an identical candidate and identical failed review instead of silently burning the cap", async () => {
+  project = studioProjectFixture({ state: "generating", phase: "review", plan: studioPlanFixture, units: [{ content: studioLessonFixture, visuals: [], review: null }] });
+  const review = { verdict: "revise", issues: [visualFix.problem], corrections: [visualFix], summary: "Додати схему" };
+  f.call.mockImplementation(async (_family, _id, role) => ({ result: role === "studio.design" ? { visuals: [] } : review, model: { provider: "openai", model: "test" }, costUsd: 0.01 }));
+  await step(); await step(); await step(); expect(project.state).toBe("needs_changes"); expect(project.reviewAutomationStopped).toBe(true); expect(project.error).toContain("NO-PROGRESS");
+  await step(); expect(f.call).toHaveBeenCalledTimes(3);
+});
+
+it("automatically resumes an old waiting review once, without touching explicit stops or inventing a parent comment", async () => {
+  project = studioProjectFixture({ state: "needs_changes", phase: "review", plan: studioPlanFixture, units: [{ content: studioLessonFixture, visuals: [], review: { verdict: "revise", issues: ["Виправити"], summary: "Потрібна правка" } }] });
+  const before = project.token; await resumeLegacyStudioReview("family", id); expect(project.state).toBe("generating"); expect(project.token).not.toBe(before); expect(project.editorNotes).toBeUndefined(); expect(f.enqueue).toHaveBeenCalledOnce();
+  await resumeLegacyStudioReview("family", id); expect(f.enqueue).toHaveBeenCalledOnce();
+  for (const state of ["paused", "failed", "published", "needs_changes"] as const) { project.state = state; project.reviewAutomationStopped = true; await resumeLegacyStudioReview("family", id); expect(project.state).toBe(state); }
 });

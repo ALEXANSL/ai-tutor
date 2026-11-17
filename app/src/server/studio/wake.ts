@@ -1,6 +1,6 @@
 import "server-only";
 import { after } from "next/server";
-import { runStudioQueue } from "./workflow";
+import { resumeLegacyStudioReview, runStudioQueue } from "./workflow";
 import { forFamily } from "@/server/db/family-scope";
 import { studioActive } from "@/lib/studio";
 import { readStudioProject, STUDIO_STEP } from "./store";
@@ -9,7 +9,7 @@ import { signStudioWake, studioContinuationUrl } from "./wake-auth";
 export function kickStudio(familyId: string, projectId: string) {
   after(async () => {
     try {
-      const before = await readStudioProject(familyId, projectId); if (!before || !studioActive(before.state)) return;
+      const before = await resumeLegacyStudioReview(familyId, projectId); if (!before || !studioActive(before.state)) return;
       await runStudioQueue(familyId, projectId, before.token);
       const project = await readStudioProject(familyId, projectId); if (!project || !studioActive(project.state)) return;
       const { data: queued, error } = await forFamily(familyId).select("jobs", "run_after").eq("type", STUDIO_STEP).eq("status", "queued").eq("payload->>projectId", projectId).eq("payload->>token", project.token).limit(1).maybeSingle<{ run_after: string }>();
@@ -18,8 +18,15 @@ export function kickStudio(familyId: string, projectId: string) {
       if (delay) await new Promise(resolve => setTimeout(resolve, delay));
       const headers: Record<string, string> = { "content-type": "application/json" };
       if (new URL(url).hostname.endsWith(".vercel.app") && process.env.VERCEL_AUTOMATION_BYPASS_SECRET) headers["x-vercel-protection-bypass"] = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
-      const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(signStudioWake({ familyId, projectId, token: project.token, at: Date.now() })), signal: AbortSignal.timeout(10000), redirect: "error" });
-      if (!response.ok) console.error("studio continuation deferred", response.status);
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const response = await fetch(url, { method: "POST", headers, body: JSON.stringify(signStudioWake({ familyId, projectId, token: project.token, at: Date.now() })), signal: AbortSignal.timeout(10000), redirect: "error" });
+          if (response.ok) return;
+          if (![429, 500, 502, 503, 504].includes(response.status)) { console.error("studio continuation deferred", response.status); return; }
+        } catch { /* POST may have been accepted; the project lease deduplicates retries. */ }
+        if (attempt < 2) await new Promise(resolve => setTimeout(resolve, (attempt + 1) * 1000));
+      }
+      console.error("studio continuation deferred; durable job retained");
     } catch { console.error("studio worker deferred; durable job retained"); }
   });
 }

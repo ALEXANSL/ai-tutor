@@ -4,7 +4,7 @@ const f = vi.hoisted(() => ({ detail: vi.fn(), parent: vi.fn(), child: vi.fn(), 
 vi.mock("@/server/db/family-scope", () => ({ forFamily: (family: string) => { f.scope(family); const q = { eq: () => q, order: () => q, limit: () => q, maybeSingle: f.step }; return { select: () => q, update: (table: string, values: unknown) => { f.update(table, values); return q; } }; } }));
 vi.mock("@/server/subjects/queries", () => ({ getSubjectDetail: f.detail }));
 vi.mock("@/server/auth/guards", () => ({ requireParentAccess: f.parent, requireChild: f.child }));
-vi.mock("@/server/studio/workflow", () => ({ startStudio: f.start, resumeStudio: f.resume, pauseStudio: f.pause, scheduleStudio: f.schedule, validateStudioLesson: f.validate }));
+vi.mock("@/server/studio/workflow", () => ({ resumeLegacyStudioReview: f.read, startStudio: f.start, resumeStudio: f.resume, pauseStudio: f.pause, scheduleStudio: f.schedule, validateStudioLesson: f.validate }));
 vi.mock("@/server/studio/store", () => ({ readStudioProject: f.read, saveStudioProject: f.save, STUDIO_STEP: "studio.step" }));
 vi.mock("@/server/studio/publish", () => ({ activateStudioPublication: f.activate }));
 vi.mock("@/server/studio/wake", () => ({ kickStudio: f.kick }));
