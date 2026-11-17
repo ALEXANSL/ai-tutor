@@ -62,6 +62,7 @@ function ListenButton(props: {
 }) {
   const { refTable, refId, field, text } = props;
   return <NarrationButton {...props} identity={JSON.stringify([refTable, refId, field, text])}
+    synthesizePart={(part, index) => narrateLiteratureV3Action({ refTable, refId, field: `${field}:part:${index}`, text: part })}
     synthesize={() => narrateLiteratureV3Action({ refTable, refId, field, text })} />;
 }
 

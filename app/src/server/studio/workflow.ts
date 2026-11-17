@@ -1,7 +1,8 @@
 import "server-only";
 import { AiNotConfiguredError, BudgetBlockedError } from "@/server/ai/types";
+import { studioNarrationText } from "@/lib/studio-narration";
 import { createHash, randomUUID } from "node:crypto";
-import { STUDIO_PLAN_BATCH_SIZE, studioPlanBatchSchema, studioDesignSchema, studioLessonSchema, studioReviewResponseSchema, studioCanAutoResumeReview, studioActive, studioPublicationVisible, type StudioPlan, type StudioProject, type StudioRequest } from "@/lib/studio";
+import { STUDIO_PLAN_BATCH_SIZE, studioPlanBatchSchema, studioDesignSchema, studioLessonSchema, studioAuthorSchema, studioReviewResponseSchema, studioCanAutoResumeReview, studioActive, studioPublicationVisible, type StudioPlan, type StudioProject, type StudioRequest } from "@/lib/studio";
 import { enqueueJob, registerJobHandler, type JobRow } from "@/server/jobs/runner";
 import { forFamily } from "@/server/db/family-scope";
 import { loadStudioSources } from "./sources";
@@ -33,8 +34,9 @@ export async function startStudio(familyId: string, request: StudioRequest, requ
   return id;
 }
 export function validateStudioLesson(project: StudioProject, raw: unknown) {
-  const lesson = studioLessonSchema.parse(raw);
-  if (Buffer.byteLength(JSON.stringify(lesson)) > 70000) throw new Error("STUDIO-LESSON-SIZE");
+  const generated = studioAuthorSchema.parse(raw);
+  const lesson = studioLessonSchema.parse({ ...generated, blocks: generated.blocks.map(block => ({ ...block, narration: studioNarrationText(block) })) });
+  if (Buffer.byteLength(JSON.stringify(lesson)) > 250000) throw new Error("STUDIO-LESSON-SIZE");
   const ids = new Set(project.sources.map(source => source.id));
   if (lesson.sourceIds.some(id => !ids.has(id))) throw new Error("STUDIO-SOURCE-REF");
   if (lesson.blocks.reduce((sum, block) => sum + block.text.length, 0) < 1800 || !lesson.blocks.some(block => block.kind === "explanation") || !lesson.blocks.some(block => block.kind === "example") || !lesson.blocks.some(block => ["practice", "steps"].includes(block.kind))) throw new Error("STUDIO-INCOMPLETE-LESSON");
@@ -72,7 +74,7 @@ export async function runStudioStep(job: JobRow, deadline: number) {
     await saveStudioProject(job.family_id, id, project, { state: "published", publicationRevision: false, childAccess: "enabled", error: null }); return;
   }
   const role: StudioRole = project.phase === "plan" ? "studio.plan" : project.phase === "author" ? "studio.author" : project.phase === "design" ? "studio.design" : project.phase === "repair" ? "studio.repair" : "studio.review";
-  const schema = project.phase === "plan" ? studioPlanBatchSchema : project.phase === "author" ? studioLessonSchema : project.phase === "design" ? studioDesignSchema : project.phase === "repair" ? studioRepairSchema : studioReviewResponseSchema;
+  const schema = project.phase === "plan" ? studioPlanBatchSchema : project.phase === "author" ? studioAuthorSchema : project.phase === "design" ? studioDesignSchema : project.phase === "repair" ? studioRepairSchema : studioReviewResponseSchema;
   const system = studioSystem(role);
   const planned = project.plan?.lessons.length ?? 0;
   const planningBatch = { startLesson: planned + 1, count: Math.min(STUDIO_PLAN_BATCH_SIZE, project.request.lessonCount - planned), totalLessons: project.request.lessonCount };
@@ -156,6 +158,7 @@ export async function resumeStudio(familyId: string, id: string, revision: numbe
     const cursor = lessonIndex ?? project.cursor;
     if (!["needs_changes", "ready", "published", "withdrawn"].includes(project.state) || !Number.isSafeInteger(cursor) || !project.units[cursor]) throw new Error("Немає уроку для виправлення.");
     if (["published", "withdrawn"].includes(project.state) && !feedback.trim()) throw new Error("Опиши, що потрібно виправити в опублікованому уроці.");
+    if (project.request.materialId) changes = { ...changes, ...await loadStudioSources(familyId, changes.request ?? project.request) };
     const review = project.units[cursor]!.review;
     // Only structured, exclusively visual corrections can skip authoring. Legacy reviews
     // and parent instructions still receive a full, contextual revision.
@@ -164,6 +167,7 @@ export async function resumeStudio(familyId: string, id: string, revision: numbe
     changes = { ...changes, units, reviewAutomationStopped: false, reviewRepairAttempted: false, repairAdvice: "", revisionInstructions: feedback.trim(), state: "generating", publicationRevision: project.publicationRevision || !!project.publication, childAccess: studioPublicationVisible(project) ? "enabled" : "disabled", editorNotes: [...(project.editorNotes ?? []), { at: new Date().toISOString(), lessonIndex: cursor, text: feedback.trim() || "Виправити зауваження рецензента" }].slice(-30), phase: designOnly ? "design" : "author", cursor, feedback: `${studioReviewFeedback(review)}\nПобажання тата: ${feedback}` };
   } else {
     if (!["failed", "paused"].includes(project.state)) throw new Error("Продовження доступне після паузи або збою етапу.");
+    if (project.request.materialId) changes = { ...changes, ...await loadStudioSources(familyId, changes.request ?? project.request) };
     changes.state = project.phase === "plan" ? "planning" : project.phase === "publish" ? "publishing" : "generating";
   }
   const next = await saveStudioProject(familyId, id, project, changes);

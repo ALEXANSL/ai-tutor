@@ -5,6 +5,7 @@ import type { StudioProject } from "@/lib/studio";
 import { forFamily } from "@/server/db/family-scope";
 import { parseLiteratureV3Assets, parseLiteratureV3Course, parseLiteratureV3PackageManifest, type ParsedLiteratureV3Package } from "@/server/lessons/literatureV3Import";
 import { persistLiteratureV3Package } from "@/server/lessons/literatureV3Persist";
+import { studioNarrationText } from "@/lib/studio-narration";
 import { studioVisualSvg, studioVisualDescription } from "./visual";
 const content = (text: string) => ({ display: text, tts: { text, lang: "uk-UA" } });
 export function studioPackage(projectId: string, project: StudioProject, illustrationFiles = new Map<string, Uint8Array>()) {
@@ -15,6 +16,9 @@ export function studioPackage(projectId: string, project: StudioProject, illustr
   const tasks: Record<string, unknown>[] = [], keys: ParsedLiteratureV3Package["taskKeys"] = [];
   const lessons = project.units.map((unit, index) => {
     const lessonId = `L${index + 1}`;
+    const ukrainian = (block: typeof unit.content.blocks[number]) => !block.narrationLanguage || block.narrationLanguage === "uk-UA";
+    const practice = unit.content.blocks.findIndex(block => ukrainian(block) && ["practice", "steps"].includes(block.kind));
+    const safetyBlock = practice >= 0 ? practice : unit.content.blocks.findIndex(ukrainian);
     const screens = unit.content.blocks.map((block, blockIndex) => {
       const assetIds: string[] = [];
       for (const [visualIndex, visual] of unit.visuals.entries()) if (visual.blockIndex === blockIndex) {
@@ -29,10 +33,14 @@ export function studioPackage(projectId: string, project: StudioProject, illustr
         assetRows.push({ id, kind: "textbook_illustration", path, mime_type: "image/jpeg", byte_size: files.get(path)!.byteLength, title: picture.title, caption: [picture.caption, picture.credit, picture.license, picture.sourceUrl].filter(Boolean).join(" · "), alt: picture.caption || picture.title });
       }
       const descriptions = unit.visuals.filter(visual => visual.blockIndex === blockIndex).map(studioVisualDescription).join("\n\n");
-      return { id: `${lessonId}S${blockIndex + 1}`, title: block.title, step_type: block.kind, content: { display: (block.kind === "code" ? `\`\`\`\n${block.text}\n\`\`\`` : block.text) + (descriptions ? `\n\n**На схемі:** ${descriptions}` : ""), tts: { text: block.narration, lang: block.narrationLanguage ?? "uk-UA" } }, asset_ids: assetIds };
+      const native = block.narrationLanguage && block.narrationLanguage !== "uk-UA";
+      const spokenDescriptions = descriptions && (!native || !/[\p{Script=Cyrillic}]/u.test(descriptions)) ? `${native ? block.narrationLanguage === "de-DE" ? "Abbildung" : "Diagram" : "На схемі"}: ${descriptions}` : "";
+      return { id: `${lessonId}S${blockIndex + 1}`, title: block.title, step_type: block.kind, content: { display: (block.kind === "code" ? `\`\`\`\n${block.text}\n\`\`\`` : block.text) + (descriptions ? `\n\n**На схемі:** ${descriptions}` : "") + (blockIndex === safetyBlock && unit.content.adultAssistance ? `\n\n**Допомога дорослого:** ${unit.content.adultAssistance}` : ""), tts: { text: studioNarrationText(block) + (spokenDescriptions ? `\n\n${spokenDescriptions}` : "") + (blockIndex === safetyBlock && unit.content.adultAssistance ? `\n\nДопомога дорослого: ${unit.content.adultAssistance}` : ""), lang: block.narrationLanguage ?? "uk-UA" } }, asset_ids: assetIds };
     });
-    const references = project.sources.filter(source => unit.content.sourceIds.includes(source.id)).map(source => `${source.title}${source.page ? `, сторінка індексу ${source.page}` : ""}`).join("\n");
-    screens.push({ id: `${lessonId}Sources`, title: "Джерела й розширення", step_type: "summary", content: { display: `${unit.content.enrichmentNote}\n\n${references || "Урок підготовлено із загальних знань ШІ без наданого підручника."}${unit.content.adultAssistance ? `\n\nДопомога дорослого: ${unit.content.adultAssistance}` : ""}`, tts: { text: `${unit.content.enrichmentNote} ${unit.content.adultAssistance} Джерела наведено на екрані.`, lang: "uk-UA" } }, asset_ids: [] });
+    if (safetyBlock < 0 && unit.content.adultAssistance) {
+      const firstPractice = unit.content.blocks.findIndex(block => ["practice", "steps"].includes(block.kind));
+      screens.splice(Math.max(0, firstPractice), 0, { id: `${lessonId}Safety`, title: "Допомога дорослого", step_type: "explanation", content: { display: unit.content.adultAssistance, tts: { text: unit.content.adultAssistance, lang: "uk-UA" } }, asset_ids: [] });
+    }
     const taskIds = unit.content.questions.map((question, questionIndex) => {
       const id = `${lessonId}Q${questionIndex + 1}`;
       tasks.push({ id, lesson_id: lessonId, prompt: content(question.prompt), response_type: "single_choice", options: question.options.map((option, i) => ({ id: `o${i}`, content: content(option) })) });

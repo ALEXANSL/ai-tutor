@@ -5,7 +5,7 @@ import { studioLessonFixture, studioPlanFixture, studioProjectFixture, studioVis
 const f = vi.hoisted(() => ({ read: vi.fn(), save: vi.fn(), create: vi.fn(), enqueue: vi.fn(), call: vi.fn(), sources: vi.fn(), config: vi.fn(), prepare: vi.fn(), activate: vi.fn() }));
 vi.mock("./store", () => ({ STUDIO_STEP: "studio.step", readStudioProject: f.read, saveStudioProject: f.save, createStudioProject: f.create }));
 vi.mock("./review-history", () => ({ saveStudioReviewEvent: vi.fn() }));
-vi.mock("./sources", () => ({ loadStudioSources: f.sources }));
+vi.mock("./sources", async original => ({ ...await original<typeof import("./sources")>(), loadStudioSources: f.sources }));
 vi.mock("./model", () => ({ studioModelConfig: f.config, studioReservation: () => 0.1, callStudioModel: f.call }));
 vi.mock("./publish", () => ({ prepareStudioPublication: f.prepare, activateStudioPublication: f.activate }));
 vi.mock("@/server/jobs/runner", () => ({ enqueueJob: f.enqueue, registerJobHandler: vi.fn() }));
@@ -211,4 +211,13 @@ it("applies a diagnostic diagram replacement and reaches ready only after a new 
   f.call.mockResolvedValueOnce({ result: { diagnosis: "Крок схеми було обірвано попередньою межею підпису", reviewAdvice: "Перевір повне речення", blocks: [], questions: [], visuals: [fixed], title: null, objectives: null, sourceIds: null, enrichmentNote: null, adultAssistance: null }, model: { provider: "openai", model: "test" }, costUsd: 0.01 });
   await step(); expect(project.phase).toBe("review"); expect(project.state).toBe("generating"); expect(project.units[0]!.content).toEqual(original); expect(project.units[0]!.visuals).toEqual([fixed]);
   await step(); expect(project.state).toBe("ready"); expect(f.call.mock.calls.map(call => call[2])).toEqual(["studio.repair", "studio.review"]);
+});
+it("derives complete narration when the author returns null instead of a duplicate synopsis", () => {
+ const raw=structuredClone(studioLessonFixture); const response={...raw,blocks:raw.blocks.map(block=>({...block,narration:block.kind==="code"?block.narration:null}))};
+ const lesson=validateStudioLesson(project,response);expect(lesson.blocks[0]!.narration).toBe(lesson.blocks[0]!.text);expect(lesson.blocks[3]!.narration).toContain("початкову позицію");
+});
+it("reloads the complete selected document on explicit improvement without republishing the child version", async()=>{
+ project=studioProjectFixture({state:"published",phase:"publish",plan:studioPlanFixture,request:{...studioProjectFixture().request,materialId:"book"},publication:{subjectId:"subject",packageId:"package",lessons:[]},units:[{content:studioLessonFixture,visuals:[],review:{verdict:"pass",issues:[],summary:"Добре"}}]});
+ f.sources.mockResolvedValue({sources:[...project.sources,{id:"slide32",title:"Презентація",text:"Раніше пропущена тема",page:32,kind:"book"}],sourceNotes:["Увесь матеріал"],baseHref:null,baseTitle:null,subjectName:"Інформатика"});
+ await resumeStudio("family",id,project.revision,"revise",undefined,"Повністю розкрий усі теми");expect(f.sources).toHaveBeenCalledOnce();expect(project.sources.some(source=>source.id==="slide32")).toBe(true);expect(project.publicationRevision).toBe(true);expect(f.prepare).not.toHaveBeenCalled();
 });

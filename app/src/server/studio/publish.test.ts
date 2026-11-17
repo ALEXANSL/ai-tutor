@@ -6,7 +6,7 @@ const project = () => studioProjectFixture({ state: "ready", plan: studioPlanFix
 it("converts reviewed content to the existing V3 reader with separate quiz keys, safe diagrams and stable namespaced IDs", () => {
   const { parsed, files } = studioPackage("project", project());
   expect(parsed.errors).toEqual([]); expect(parsed.manifest?.book_id).toBe("studio.project");
-  expect(parsed.lessons[0]!.screens).toHaveLength(studioLessonFixture.blocks.length + 1);
+  expect(parsed.lessons[0]!.screens).toHaveLength(studioLessonFixture.blocks.length);
   expect(parsed.lessons[0]!.screens[0]!.content.display).toContain("На схемі:");
   expect(parsed.tasks[0]).not.toHaveProperty("correctIndex"); expect(parsed.tasks[0]).not.toHaveProperty("correct_option_ids");
   expect(parsed.taskKeys[0]!.correct_option_ids).toEqual(["o1"]); expect(files.size).toBe(1);
@@ -51,4 +51,17 @@ it("publishes parent-selected photos inside their assigned lesson block with dur
   expect(result.parsed.assets.find(asset => asset.id === "L1P1")?.caption).toContain("CC BY 4.0");
   expect(result.parsed.assets.find(asset => asset.id === "L1P1")?.caption).toContain("https://commons.wikimedia.org/");
   expect(() => studioPackage("project", value)).toThrow("Ілюстрація відсутня");
+});
+
+it("keeps provenance out of the child flow while preserving full narration and practical safety",()=>{
+ const value=project(), result=studioPackage("project",value).parsed;
+ expect(result.lessons[0]!.flow.some(item=>item.ref_id.endsWith("Sources"))).toBe(false);
+ const first=result.lessons[0]!.screens[0]!; expect(first.content.tts.text).toContain(studioLessonFixture.blocks[0]!.text.trim());
+ expect(result.lessons[0]!.screens.find(screen=>screen.step_type==="practice")!.content.tts.text).toContain(value.units[0]!.content.adultAssistance);
+ expect(result.lessons[0]!.screens.every(screen=>!screen.content.display.includes(value.units[0]!.content.enrichmentNote))).toBe(true);
+});
+it("never adds Ukrainian service wording to a native-language listening block",()=>{
+ const value=project(); value.units[0]!.content=structuredClone(value.units[0]!.content);
+ value.units[0]!.content.blocks[0]={...value.units[0]!.content.blocks[0]!,narrationLanguage:"en-GB",narration:"Hello, how are you?"};
+ const result=studioPackage("project",value).parsed;expect(result.lessons[0]!.screens[0]!.content.tts.text).toBe("Hello, how are you?");
 });
