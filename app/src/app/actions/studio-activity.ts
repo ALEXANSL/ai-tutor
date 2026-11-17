@@ -10,10 +10,10 @@ export async function wakeStudioWorkspaceAction() {
   const { familyId } = await requireParentAccess(); const scope = forFamily(familyId);
   const [steps, projects] = await Promise.all([
     scope.select("jobs", "payload").eq("type", STUDIO_STEP).eq("status", "queued").lte("run_after", new Date().toISOString()).limit(100).returns<{ payload: { projectId: string } }[]>(),
-    scope.select("jobs", "id,state:payload->>state,stopped:payload->>reviewAutomationStopped").eq("type", STUDIO_PROJECT).in("payload->>state", ["planning", "generating", "publishing", "needs_changes"]).limit(100).returns<{ id: string; state: string; stopped: string | null }[]>(),
+    scope.select("jobs", "id,state:payload->>state,stopped:payload->>reviewAutomationStopped,error:payload->>error,repairAttempted:payload->>reviewRepairAttempted").eq("type", STUDIO_PROJECT).in("payload->>state", ["planning", "generating", "publishing", "needs_changes"]).limit(100).returns<{ id: string; state: string; stopped: string | null; error?: string | null; repairAttempted?: string | null }[]>(),
   ]);
   if (steps.error || projects.error) throw new Error("Не вдалося перевірити чергу Майстерні.");
-  const active = (projects.data ?? []).filter(project => project.state !== "needs_changes" || project.stopped !== "true");
+  const active = (projects.data ?? []).filter(project => project.state !== "needs_changes" || (project.stopped !== "true" || (project.error?.startsWith("STUDIO-NO-PROGRESS") && project.repairAttempted !== "true")));
   const ids = new Set((steps.data ?? []).map(step => step.payload.projectId));
   for (const project of active) if (project.state === "needs_changes") ids.add(project.id);
   for (const id of ids) if (/^[a-f0-9-]{36}$/i.test(id)) kickStudio(familyId, id);

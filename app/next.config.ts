@@ -22,6 +22,7 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  experimental: { serverActions: { bodySizeLimit: "4mb" } },
   reactStrictMode: true,
   poweredByHeader: false,
   // Native argon2 binding must stay a server-side external module. `unpdf`/`pdfjs-dist`
@@ -30,7 +31,7 @@ const nextConfig: NextConfig = {
   // webpack bundles it, that resolve breaks silently (caught) and PDF text extraction loses
   // CMap support for embedded CID/subset fonts, which is exactly the bug this avoids (root
   // cause: PDF ingest support ticket 2026-09-28, "AI_for_Teenagers.pdf" misflagged as a scan).
-  serverExternalPackages: ["@node-rs/argon2", "unpdf", "pdfjs-dist"],
+  serverExternalPackages: ["@node-rs/argon2", "unpdf", "pdfjs-dist", "opentype.js"],
   // Prompt files are read at runtime on the server (Alex edits them as text). pdfjs-dist's
   // cmaps/standard_fonts are data files read at runtime by pdf.js (not `require`d/`import`ed),
   // so Next's file tracer would otherwise drop them from the deployed build.

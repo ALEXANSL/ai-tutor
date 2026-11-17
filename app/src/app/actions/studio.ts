@@ -6,7 +6,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { unstable_rethrow } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireParentAccess, requireChild } from "@/server/auth/guards";
-import { studioPlanSchema, studioRequestSchema, studioLessonSchema, studioActive, studioPublicationVisible, type StudioActivity } from "@/lib/studio";
+import { studioPlanSchema, studioRequestSchema, studioLessonSchema, studioCanAutoResumeReview, studioActive, studioPublicationVisible, type StudioActivity } from "@/lib/studio";
 import { readStudioProject, saveStudioProject, STUDIO_STEP } from "@/server/studio/store";
 import { resumeLegacyStudioReview, validateStudioLesson, scheduleStudio, pauseStudio, resumeStudio, startStudio } from "@/server/studio/workflow";
 import { activateStudioPublication } from "@/server/studio/publish";
@@ -48,7 +48,7 @@ export async function pollStudioAction(rawId: string, rawLessonIndex?: number) {
   const { familyId } = await requireParentAccess(); const id = idSchema.parse(rawId);
   let project = await readStudioProject(familyId, id);
   if (!project) return { status: "error" as const, message: "Чернетку не знайдено." };
-  if (project.state === "needs_changes" && !project.reviewAutomationStopped) project = await resumeLegacyStudioReview(familyId, id) ?? project;
+  if (studioCanAutoResumeReview(project)) project = await resumeLegacyStudioReview(familyId, id) ?? project;
   let activity: StudioActivity = { queue: "none", checkedAt: new Date().toISOString() };
   if (studioActive(project.state)) {
     const job = await forFamily(familyId).select("jobs", "status,locked_until,created_at,run_after").eq("type", STUDIO_STEP).eq("payload->>projectId", id).eq("payload->>token", project.token).order("created_at", { ascending: false }).limit(1).maybeSingle<{ status: string; locked_until: string | null; created_at: string; run_after?: string | null }>();
@@ -100,7 +100,7 @@ export async function saveStudioLessonAction(raw: unknown) {
     if (!project || project.revision !== value.revision || !["ready", "needs_changes", "published", "withdrawn"].includes(project.state) || !project.units[value.lessonIndex]) throw new Error("Онови матеріал перед редагуванням.");
     const lesson = validateStudioLesson(project, value.lesson); const units = [...project.units]; units[value.lessonIndex] = { ...units[value.lessonIndex]!, content: lesson, review: null, lastReviewFingerprint: null };
     const token = randomUUID();
-    const next = await saveStudioProject(familyId, value.id, project, { units, reviewAutomationStopped: false, revisionInstructions: "Збережено ручні виправлення; не скасовуй їх без обґрунтованої причини.", state: "generating", phase: "review", cursor: value.lessonIndex, token, activeCall: false, error: null, request: { ...project.request, budgetUsd: value.budgetUsd }, publicationRevision: !!project.publication, childAccess: studioPublicationVisible(project) ? "enabled" : "disabled", feedback: "Збережено ручні виправлення. Рецензуй поточний candidate, перевір факти й відповідність схем. Старі зауваження не є доказом помилки.", editorNotes: [...(project.editorNotes ?? []), { at: new Date().toISOString(), lessonIndex: value.lessonIndex, text: "Збережено ручні виправлення тексту й озвучення; запущено перевірку рецензента." }].slice(-30) });
+    const next = await saveStudioProject(familyId, value.id, project, { units, reviewAutomationStopped: false, reviewRepairAttempted: false, repairAdvice: "", revisionInstructions: "Збережено ручні виправлення; не скасовуй їх без обґрунтованої причини.", state: "generating", phase: "review", cursor: value.lessonIndex, token, activeCall: false, error: null, request: { ...project.request, budgetUsd: value.budgetUsd }, publicationRevision: !!project.publication, childAccess: studioPublicationVisible(project) ? "enabled" : "disabled", feedback: "Збережено ручні виправлення. Рецензуй поточний candidate, перевір факти й відповідність схем. Старі зауваження не є доказом помилки.", editorNotes: [...(project.editorNotes ?? []), { at: new Date().toISOString(), lessonIndex: value.lessonIndex, text: "Збережено ручні виправлення тексту й озвучення; запущено перевірку рецензента." }].slice(-30) });
     try { await scheduleStudio(familyId, value.id, token); kickStudio(familyId, value.id); }
     catch { await saveStudioProject(familyId, value.id, next, { state: "failed", error: "Правки збережено, але черга недоступна. Повтори етап рецензії." }); }
     revalidatePath("/parent/studio"); return { status: "ok" as const };
