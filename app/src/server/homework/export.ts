@@ -26,7 +26,7 @@ export function paginateSlides(slides: Slide[]) {
     const pages: string[][] = []; let current: string[] = []; let lines = 0;
     for (const bullet of slide.bullets) {
       const weight = Math.ceil(bullet.length / 65) + 1;
-      const capacity = pages.length === 0 && slide.visual ? 4 : 11;
+      const capacity = pages.length === 0 && slide.visual ? 8 : 11;
       if (current.length && lines + weight > capacity) { pages.push(current); current = []; lines = 0; }
       current.push(bullet); lines += weight;
     }
@@ -60,21 +60,53 @@ export async function exportHomework(work: HomeworkWork, format: "docx" | "pptx"
   if (!artifact.slides.length) throw new Error("Попроси репетитора підготувати версію для PowerPoint.");
   const pptx = new pptxgen(); pptx.layout = "LAYOUT_WIDE"; pptx.author = "ШІ-Репетитор"; pptx.subject = work.subject; pptx.title = artifact.title; pptx.theme = { headFontFace: "Aptos Display", bodyFontFace: "Aptos" };
   const slides = paginateSlides(artifact.slides);
+  const accents = ["2563EB", "0D9488", "7C3AED", "C2410C", "BE185D"];
   for (const [index, item] of slides.entries()) {
-    const slide = pptx.addSlide(); slide.background = { color: "F4F7FB" };
-    slide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 13.333, h: 1.35, fill: { color: "17243D" }, line: { color: "17243D" } });
-    slide.addText(item.title, { x: 0.65, y: 0.21, w: 12, h: 0.93, fontSize: 28, bold: true, color: "FFFFFF", margin: 0, valign: "middle", fit: "shrink" });
-    let y = item.visual ? 5.65 : item.table ? 1.5 : 1.8;
-    const w = 11.4;
-    if (item.visual) {
-      slide.addImage({ data: `image/png;base64,${(await homeworkVisualPng(item.visual)).toString("base64")}`, x: 2.28, y: 1.5, w: 8.78, h: 3.95, altText: `${item.visual.title}. ${item.visual.caption}` });
+    const slide = pptx.addSlide();
+    const cover = index === 0 && slides.length > 2 && !item.visual && !item.table;
+    const closing = index === slides.length - 1 && slides.length > 2 && !item.visual && !item.table;
+    const ink = "17243D", accent = accents[index % accents.length]!;
+    slide.background = { color: "F4F7FB" };
+    slide.addShape(pptx.ShapeType.rect, { x: 0.6, y: cover ? 1.2 : 0.92, w: 0.7, h: 0.075, fill: { color: accent }, line: { transparency: 100 } });
+    slide.addText(work.subject, { x: 0.65, y: 0.34, w: 11.8, h: 0.3, fontSize: 11, bold: true, charSpacing: 2, color: "64748B", margin: 0 });
+    slide.addText(item.title, { x: 0.65, y: cover ? 1.6 : 1.1, w: cover ? 11.6 : 12, h: cover ? 2.5 : 0.65, fontSize: cover ? 42 : 28, bold: true, color: ink, margin: 0, valign: "middle", fit: "shrink" });
+    if (cover) {
+      slide.addText(item.bullets.join("\n\n"), { x: 0.7, y: 4.35, w: 10.5, h: 1.7, fontSize: 22, color: "334155", margin: 0, fit: "shrink" });
+      slide.addShape(pptx.ShapeType.ellipse, { x: 11.6, y: 5.2, w: 1.1, h: 1.1, fill: { color: "0D9488" }, line: { transparency: 100 } });
+    } else if (item.table) {
+      if (item.bullets.length) slide.addText(item.bullets.join(" "), { x: 0.7, y: 1.95, w: 11.8, h: 0.5, fontSize: 17, color: "475569", margin: 0, fit: "shrink" });
+      slide.addTable([item.table.columns.map(text => ({ text, options: { bold: true, color: "FFFFFF", fill: { color: accent } } })), ...item.table.rows.map((row, i) => row.map(text => ({ text, options: { fill: { color: i % 2 ? "E8EEF6" : "FFFFFF" } } })))], { x: 0.65, y: 2.65, w: 12, h: 3.9, fontFace: "Aptos", fontSize: 16, color: "17243D", border: { color: "D2DCE8", pt: 1 }, margin: 0.12, autoPage: false });
+    } else if (item.visual) {
+      const visual = item.visual;
+      if (visual.kind === "chart") {
+        slide.addImage({ data: `image/png;base64,${(await homeworkVisualPng(visual)).toString("base64")}`, x: 0.6, y: 2.05, w: 8.4, h: 3.78, altText: `${visual.title}. ${visual.caption}` });
+      } else {
+        const compact = visual.items.length >= 4;
+        const cardW = 8.15, cardH = Math.min(1.45, 4.2 / visual.items.length - 0.1);
+        slide.addText(visual.title, { x: 0.7, y: 1.95, w: 8.05, h: 0.45, fontSize: 18, bold: true, color: accent, margin: 0, fit: "shrink" });
+        for (const [i, node] of visual.items.entries()) {
+          const x = 0.65, y = 2.6 + i * (cardH + 0.1), color = accents[i % accents.length]!;
+          slide.addShape(pptx.ShapeType.roundRect, { x, y, w: cardW, h: cardH, fill: { color: "FFFFFF" }, line: { color: "DCE5EF", width: 1 } });
+          slide.addShape(pptx.ShapeType.ellipse, { x: x + 0.15, y: y + 0.16, w: 0.32, h: 0.32, fill: { color }, line: { transparency: 100 } });
+          slide.addText(String(i + 1), { x: x + 0.15, y: y + 0.16, w: 0.32, h: 0.32, color: "FFFFFF", align: "center", valign: "middle", fontSize: 12, bold: true, margin: 0 });
+          slide.addText(node.label, { x: x + 0.6, y: y + 0.13, w: compact ? 2.2 : cardW - 0.8, h: compact ? cardH - 0.25 : 0.42, fontSize: compact ? 17 : 20, bold: true, color, margin: 0, fit: "shrink" });
+          slide.addText(node.detail, { x: x + (compact ? 3 : 0.22), y: y + (compact ? 0.12 : 0.65), w: compact ? cardW - 3.2 : cardW - 0.44, h: cardH - (compact ? 0.24 : 0.75), fontSize: 16, color: "334155", margin: 0, valign: "top", fit: "shrink" });
+        }
+      }
+      slide.addShape(pptx.ShapeType.roundRect, { x: 9.05, y: 2.05, w: 3.6, h: 4.7, fill: { color: "E4EDF8" }, line: { transparency: 100 } });
+      slide.addText("КЛЮЧОВА ДУМКА", { x: 9.3, y: 2.3, w: 3.1, h: 0.35, fontSize: 12, bold: true, color: accent, margin: 0 });
+      slide.addText(item.bullets.join("\n\n"), { x: 9.3, y: 2.95, w: 3.1, h: 3.1, fontSize: 19, color: "17243D", margin: 0, valign: "top", fit: "shrink" });
+    } else {
+      const gap = 0.18, rowH = Math.min(1.45, 4.6 / Math.max(1, item.bullets.length) - gap);
+      for (const [i, bullet] of item.bullets.entries()) {
+        const y = 2.05 + i * (rowH + gap);
+        slide.addShape(pptx.ShapeType.roundRect, { x: 0.65, y, w: 12, h: rowH, fill: { color: closing ? "E3F4EF" : "FFFFFF" }, line: { color: "DCE5EF", width: 1 } });
+        slide.addText(String(i + 1).padStart(2, "0"), { x: 0.9, y: y + 0.2, w: 0.65, h: rowH - 0.35, fontSize: 24, bold: true, color: accent, margin: 0, valign: "middle" });
+        slide.addText(bullet, { x: 1.85, y: y + 0.17, w: 10.3, h: rowH - 0.32, fontSize: 23, color: ink, margin: 0, valign: "middle", fit: "shrink" });
+      }
     }
-    if (item.table) slide.addTable([item.table.columns.map(text => ({ text, options: { bold: true, color: "FFFFFF", fill: "17243D" } })), ...item.table.rows.map(row => row.map(text => ({ text })))], { x: 0.9, y: 2.25, w: 11.4, h: 4.5, fontFace: "Aptos", fontSize: 15, color: "17243D", border: { color: "CBD5E1", pt: 1 }, margin: 0.07, autoPage: false });
-    for (const bullet of item.bullets) {
-      const h = (Math.ceil(bullet.length / 65) + 1) * (item.visual || item.table ? 0.18 : 0.32);
-      slide.addText(bullet, { x: 0.9, y, w, h, fontSize: item.visual || item.table ? 16 : 21, color: "17243D", margin: 0, valign: "top", bullet: { indent: 20 }, paraSpaceAfter: 10, fit: "shrink" }); y += h;
-    }
-    slide.addText(`${work.result?.quality?.status === "draft" ? "ЧЕРНЕТКА · " : ""}${work.subject} · ${index + 1} / ${slides.length}`, { x: 0.7, y: 7.05, w: 12, h: 0.2, fontSize: 10, color: "64748B", margin: 0 });
+    slide.addShape(pptx.ShapeType.rect, { x: 0.65, y: 6.95, w: 12 * (index + 1) / slides.length, h: 0.035, fill: { color: accent }, line: { transparency: 100 } });
+    slide.addText(`${work.result?.quality?.status === "draft" ? "ЧЕРНЕТКА · " : ""}${work.subject} · ${index + 1} / ${slides.length}`, { x: 0.7, y: 7.1, w: 12, h: 0.2, fontSize: 10, color: "64748B", margin: 0 });
     slide.addNotes(`${item.notes}\n${item.visual ? `${item.visual.caption}\n${item.visual.items.map(node => `${node.label}: ${node.detail}`).join("\n")}` : ""}\n${index === slides.length - 1 ? [...artifact.studyTips, provenance(work)].join("\n") : ""}`);
   }
   return new Uint8Array(await pptx.write({ outputType: "uint8array" }) as Uint8Array);
