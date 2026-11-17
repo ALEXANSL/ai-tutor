@@ -60,7 +60,7 @@ afterEach(() => {
   container.remove();
   vi.unstubAllGlobals();
 });
-function render(kind: Kind) {
+function render(kind: Kind, longText?: string) {
   const common = { id: "lesson", subjectId: "subject", topicId: "topic", title: "Урок", packageTitle: "Підручник", objectives: [], kind: "lesson", status: "ready", exercises: [], quizQuestions: [], definitions: [], tasks: [] };
   if (kind === "math") {
     const lesson = { ...common, screens: [1, 2].map((id) => ({ id: `step-${id}`, title: `Крок ${id}`, displayMd: `Текст ${id}`, narration: `Озвучка ${id}` })) };
@@ -69,7 +69,7 @@ function render(kind: Kind) {
     const lesson = { ...common, screens: [1, 2].map((id) => ({ id: `step-${id}`, assets: [], content: { display: `Текст ${id}`, tts: { text: `Озвучка ${id}` } } })) };
     act(() => root!.render(<LiteratureV2LessonScreen lesson={lesson as unknown as ComponentProps<typeof LiteratureV2LessonScreen>["lesson"]} packageLessons={[]} />));
   } else {
-    const lesson = { ...common, flow: [1, 2].map((id) => ({ id: `step-${id}`, kind: "screen", title: `Крок ${id}`, displayText: `Текст ${id}`, illustrations: [], ttsText: `Озвучка ${id}` })) };
+    const lesson = { ...common, flow: [1, 2].map((id) => ({ id: `step-${id}`, kind: "screen", title: `Крок ${id}`, displayText: `Текст ${id}`, illustrations: [], ttsText: id === 1 && longText ? longText : `Озвучка ${id}` })) };
     act(() => root!.render(<LiteratureV3LessonScreen lesson={lesson as unknown as ComponentProps<typeof LiteratureV3LessonScreen>["lesson"]} packageLessons={[]} bookIndex={[]} savedPosition={null} />));
   }
 }
@@ -168,4 +168,11 @@ describe.each<"math" | "literature">(["math", "literature"])("%s text lesson con
       kind: "course", refTable: kind === "math" ? "course_v2_screens" : "literature_v2_screens", refId: "step-2",
     });
   });
+});
+
+it("uses separate cache fields for long V3 narration and reads its tail",async()=>{
+ const text="Повне пояснення. ".repeat(450)+"Остання думка.";render("literatureV3",text);await click("🔊 Слухати");
+ expect(actions.literatureV3.mock.calls[0]![0].field).toBe("tts:part:0");
+ for(let index=0;index<audios.length;index++)await act(async()=>audios[index]!.dispatchEvent(new Event("ended")));
+ expect(actions.literatureV3.mock.calls.map(call=>call[0].text).join("")).toBe(text);expect(actions.literatureV3.mock.calls.at(-1)![0].field).not.toBe("tts:part:0");
 });

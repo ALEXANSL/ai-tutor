@@ -1,5 +1,7 @@
 import { z } from "zod";
 export const STUDIO_PLAN_BATCH_SIZE = 6;
+export const STUDIO_MAX_BLOCKS = 24;
+export const STUDIO_MAX_SOURCE_CHUNKS = 200;
 export const STUDIO_MAX_BUDGET = 250;
 const text = (max = 4000) => z.string().trim().min(1).max(max);
 export const studioRequestSchema = z.object({
@@ -12,22 +14,24 @@ export const studioRequestSchema = z.object({
   if ((value.pageFrom === null) !== (value.pageTo === null) || (value.pageFrom !== null && value.pageTo !== null && (value.pageTo < value.pageFrom || value.pageTo - value.pageFrom > 30))) ctx.addIssue({ code: "custom", message: "Вибери послідовний діапазон до 31 сторінки." });
 });
 export type StudioRequest = z.infer<typeof studioRequestSchema>;
-export const studioPlanSchema = z.object({ title: text(200), overview: text(3000), objectives: z.array(text(250)).min(1).max(8), lessons: z.array(z.object({ title: text(200), goal: text(700) }).strict()).min(1), prerequisites: z.array(text(250)).max(8), limitations: z.array(text(500)).max(8) }).strict();
+export const studioPlanSchema = z.object({ title: text(200), overview: text(3000), objectives: z.array(text(250)).min(1).max(8), lessons: z.array(z.object({ title: text(200), goal: text(700), topics: z.array(text(200)).max(24).optional(), sourceIds: z.array(text(100)).max(STUDIO_MAX_SOURCE_CHUNKS).optional() }).strict()).min(1), prerequisites: z.array(text(250)).max(8), limitations: z.array(text(500)).max(8) }).strict();
 export const studioPlanBatchSchema = studioPlanSchema.extend({ lessons: studioPlanSchema.shape.lessons.max(STUDIO_PLAN_BATCH_SIZE) });
 export type StudioPlan = z.infer<typeof studioPlanSchema>;
 export const studioLessonSchema = z.object({ title: text(200), objectives: z.array(text(250)).min(1).max(6),
-  blocks: z.array(z.object({ title: text(150), kind: z.enum(["explanation", "example", "practice", "steps", "summary", "code"]), text: text(4500), narration: text(3500), narrationLanguage: z.enum(["uk-UA", "en-GB", "de-DE"]).nullable().optional() }).strict()).min(4).max(8),
+  blocks: z.array(z.object({ title: text(150), kind: z.enum(["explanation", "example", "practice", "steps", "summary", "code"]), text: text(8000), narration: text(12000), narrationLanguage: z.enum(["uk-UA", "en-GB", "de-DE"]).nullable().optional() }).strict()).min(3).max(STUDIO_MAX_BLOCKS),
   questions: z.array(z.object({ prompt: text(800), options: z.array(text(400)).length(3), correctIndex: z.number().int().min(0).max(2), explanation: text(1200) }).strict()).min(2).max(3),
-  sourceIds: z.array(text(100)).max(30), enrichmentNote: text(1000), adultAssistance: z.string().max(1500),
+  sourceIds: z.array(text(100)).max(STUDIO_MAX_SOURCE_CHUNKS), enrichmentNote: text(1000), adultAssistance: z.string().max(1500),
 }).strict();
 export type StudioLesson = z.infer<typeof studioLessonSchema>;
-export const studioVisualSchema = z.object({ blockIndex: z.number().int().min(0).max(7), kind: z.enum(["sequence", "comparison", "timeline", "dimensions"]), title: text(120), items: z.array(z.object({ label: text(240), detail: text(600) }).strict()).min(2).max(5), width: z.number().positive().max(10000).nullable(), height: z.number().positive().max(10000).nullable(), unit: z.enum(["мм", "см", "м", ""]), caption: text(500) }).strict();
+/** Avoid paying for a duplicate Ukrainian narration; the server derives the full spoken text. */
+export const studioAuthorSchema = studioLessonSchema.extend({ blocks: z.array(studioLessonSchema.shape.blocks.element.extend({ narration: z.string().trim().max(12000).nullable() })).min(3).max(STUDIO_MAX_BLOCKS) });
+export const studioVisualSchema = z.object({ blockIndex: z.number().int().min(0).max(STUDIO_MAX_BLOCKS - 1), kind: z.enum(["sequence", "comparison", "timeline", "dimensions"]), title: text(120), items: z.array(z.object({ label: text(240), detail: text(600) }).strict()).min(2).max(5), width: z.number().positive().max(10000).nullable(), height: z.number().positive().max(10000).nullable(), unit: z.enum(["мм", "см", "м", ""]), caption: text(500) }).strict();
 export type StudioVisual = z.infer<typeof studioVisualSchema>;
 export const STUDIO_MAX_VISUALS = 16;
 export const studioDesignSchema = z.object({ visuals: z.array(studioVisualSchema).max(STUDIO_MAX_VISUALS) }).strict();
 export const studioCorrectionSchema = z.object({
   role: z.enum(["author", "design"]),
-  blockIndex: z.number().int().min(0).max(7).nullable(),
+  blockIndex: z.number().int().min(0).max(STUDIO_MAX_BLOCKS - 1).nullable(),
   visualIndex: z.number().int().min(0).max(STUDIO_MAX_VISUALS - 1).nullable(),
   problem: text(500), action: text(1000), acceptance: text(700),
 }).strict();
@@ -35,7 +39,7 @@ export const studioReviewSchema = z.object({ verdict: z.enum(["pass", "revise", 
 /** Required for new model calls; older saved reviews remain readable. */
 export const studioReviewResponseSchema = studioReviewSchema.extend({ corrections: z.array(studioCorrectionSchema).max(12) });
 export type StudioReview = z.infer<typeof studioReviewSchema>;
-export interface StudioSource { id: string; title: string; text: string; page: number | null; kind: "lesson" | "book" | "provided"; }
+export interface StudioSource { id: string; title: string; text: string; page: number | null; kind: "lesson" | "book" | "provided"; audience?: "learner" | "teacher" | "reference"; }
 export interface StudioIllustration { id: string; blockIndex: number; title: string; caption: string; sourceUrl: string; credit: string; license: string; storagePath: string; byteSize: number; }
 export interface StudioUnit { illustrations?: StudioIllustration[]; content: StudioLesson; visuals: StudioVisual[]; review: StudioReview | null; reviewRound?: number; lastReviewFingerprint?: string | null; }
 export type StudioState = "planning" | "plan_ready" | "generating" | "ready" | "needs_changes" | "failed" | "paused" | "publishing" | "published" | "withdrawn";

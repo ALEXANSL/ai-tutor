@@ -1,10 +1,11 @@
 import "server-only";
+import { studioNarrationText } from "@/lib/studio-narration";
 import { z } from "zod";
-import { studioLessonSchema, studioDesignSchema, type StudioUnit } from "@/lib/studio";
+import { STUDIO_MAX_BLOCKS, studioLessonSchema, studioAuthorSchema, studioDesignSchema, type StudioUnit } from "@/lib/studio";
 const nullableText = (max: number) => z.string().trim().min(1).max(max).nullable();
 export const studioRepairSchema = z.object({
   diagnosis: z.string().trim().min(20).max(2000), reviewAdvice: z.string().max(2000),
-  blocks: z.array(z.object({ blockIndex: z.number().int().min(0).max(7), replacement: studioLessonSchema.shape.blocks.element }).strict()).max(8),
+  blocks: z.array(z.object({ blockIndex: z.number().int().min(0).max(STUDIO_MAX_BLOCKS - 1), replacement: studioAuthorSchema.shape.blocks.element }).strict()).max(STUDIO_MAX_BLOCKS),
   questions: z.array(z.object({ questionIndex: z.number().int().min(0).max(2), replacement: studioLessonSchema.shape.questions.element }).strict()).max(3),
   visuals: studioDesignSchema.shape.visuals.nullable(), title: nullableText(200), objectives: studioLessonSchema.shape.objectives.nullable(),
   sourceIds: studioLessonSchema.shape.sourceIds.nullable(), enrichmentNote: nullableText(1000), adultAssistance: z.string().max(1500).nullable(),
@@ -15,7 +16,7 @@ export function applyStudioRepair(unit: StudioUnit, raw: unknown): { unit: Studi
   if (new Set(fix.blocks.map(block => block.blockIndex)).size !== fix.blocks.length || new Set(fix.questions.map(question => question.questionIndex)).size !== fix.questions.length) throw new Error("STUDIO-REPAIR-DUPLICATE");
   if (fix.blocks.some(block => !unit.content.blocks[block.blockIndex]) || fix.questions.some(question => !unit.content.questions[question.questionIndex])) throw new Error("STUDIO-REPAIR-REF");
   const content = { ...unit.content, blocks: [...unit.content.blocks], questions: [...unit.content.questions] };
-  for (const patch of fix.blocks) content.blocks[patch.blockIndex] = patch.replacement;
+  for (const patch of fix.blocks) content.blocks[patch.blockIndex] = { ...patch.replacement, narration: studioNarrationText(patch.replacement) };
   for (const patch of fix.questions) content.questions[patch.questionIndex] = patch.replacement;
   if (fix.title !== null) content.title = fix.title;
   if (fix.objectives !== null) content.objectives = fix.objectives;

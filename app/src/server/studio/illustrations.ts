@@ -3,11 +3,11 @@ import sharp from "sharp";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { StudioIllustration, StudioProject } from "@/lib/studio";
-import { studioPublicationVisible } from "@/lib/studio";
+import { STUDIO_MAX_BLOCKS, studioPublicationVisible } from "@/lib/studio";
 import { forFamily } from "@/server/db/family-scope";
 import { readStudioProject, saveStudioProject } from "./store";
 const BUCKET = "course_assets";
-export const illustrationTargetSchema = z.object({ id: z.string().uuid(), revision: z.number().int().nonnegative(), lessonIndex: z.number().int().nonnegative(), blockIndex: z.number().int().min(0).max(7) });
+export const illustrationTargetSchema = z.object({ id: z.string().uuid(), revision: z.number().int().nonnegative(), lessonIndex: z.number().int().nonnegative(), blockIndex: z.number().int().min(0).max(STUDIO_MAX_BLOCKS - 1) });
 export type IllustrationTarget = z.infer<typeof illustrationTargetSchema>;
 export interface CommonsPicture { pageId: number; title: string; url: string; sourceUrl: string; credit: string; license: string; }
 const plain = (value: unknown, max = 300) => typeof value === "string" ? value.replace(/<[^>]*>/g, "").replace(/&(?:quot|amp|lt|gt);/g, code => ({ "&quot;": '"', "&amp;": "&", "&lt;": "<", "&gt;": ">" })[code]!).trim().slice(0, max) : "";

@@ -34,9 +34,21 @@ it("uses every chunk of a small uploaded source without relying on a keyword mat
   expect(result.sourceNotes.join(" ")).toContain("весь розпізнаний текст");
   expect(f.rpc).not.toHaveBeenCalled();
 });
-it("does not mistake a truncated 31-chunk scan for the full source", async () => {
-  f.chunks.mockResolvedValue({ data: Array.from({ length: 31 }, (_, index) => ({ id: `chunk-${index}`, material_id: "book", page: index + 1, text: "Матеріал" })), error: null });
+it("does not mistake a truncated 201-chunk scan for the full source", async () => {
+  f.chunks.mockResolvedValue({ data: Array.from({ length: 201 }, (_, index) => ({ id: `chunk-${index}`, material_id: "book", page: index + 1, text: "Матеріал" })), error: null });
   const result = await loadStudioSources("family", { ...studioProjectFixture().request, materialId: "book" });
   expect(f.rpc).toHaveBeenCalled();
   expect(result.sourceNotes.join(" ")).not.toContain("весь розпізнаний текст");
+});
+
+it("passes all 32 presentation fragments including explicit teacher/reference annotations",async()=>{
+ f.book.mockResolvedValue({data:{id:"book",title:"Цифровий слід",name:"slides.pptx",structure_outline_result:{kind:"source_document"}},error:null});
+ f.chunks.mockResolvedValue({data:Array.from({length:32},(_,i)=>({id:`s${i}`,material_id:"book",page:i+1,text:i===31?"ДЛЯ ВЧИТЕЛЯ\nДжерела презентації":`Тема слайда ${i+1}: повне пояснення`})),error:null});
+ const result=await loadStudioSources("family",{...studioProjectFixture().request,materialId:"book"});
+ expect(result.sources.filter(source=>source.kind==="book")).toHaveLength(32); expect(result.sources.at(-1)?.audience).toBe("teacher"); expect(result.sources.some(source=>source.text.includes("Тема слайда 31"))).toBe(true); expect(f.rpc).not.toHaveBeenCalled();
+});
+it("never substitutes search results for an oversized explicitly uploaded document",async()=>{
+ f.book.mockResolvedValue({data:{id:"book",title:"Презентація",name:"slides.pptx",structure_outline_result:{kind:"source_document"}},error:null});
+ f.chunks.mockResolvedValue({data:Array.from({length:201},(_,i)=>({id:`s${i}`,material_id:"book",page:i+1,text:"Текст"})),error:null});
+ await expect(loadStudioSources("family",{...studioProjectFixture().request,materialId:"book"})).rejects.toThrow("завеликі");expect(f.rpc).not.toHaveBeenCalled();
 });
