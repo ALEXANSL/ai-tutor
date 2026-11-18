@@ -8,7 +8,7 @@ import { recordCall } from "@/server/ai/store";
 import { BackgroundResponsePending, AiNotConfiguredError, BudgetBlockedError, ProviderError } from "@/server/ai/types";
 import { studioNarrationText, studioModelLesson } from "@/lib/studio-narration";
 import { createHash, randomUUID } from "node:crypto";
-import { STUDIO_PLAN_BATCH_SIZE, studioPlanBatchSchema, studioDesignSchema, studioLessonSchema, studioAuthorSchema, studioReviewResponseSchema, studioCanAutoResumeReview, studioActive, studioPublicationVisible, type StudioPlan, type StudioProject, type StudioRequest } from "@/lib/studio";
+import { STUDIO_PLAN_BATCH_SIZE, studioPlanBatchSchema, studioDesignSchema, studioLessonSchema, studioAuthorSchema, studioReviewResponseSchema, studioCanAutoResumeReview, studioCanResumeIncompleteRepair, studioActive, studioPublicationVisible, type StudioPlan, type StudioProject, type StudioRequest } from "@/lib/studio";
 import { enqueueJob, registerJobHandler, type JobRow } from "@/server/jobs/runner";
 import { forFamily } from "@/server/db/family-scope";
 import { studioBaseCandidates } from "./base-sources";
@@ -138,7 +138,14 @@ export async function runStudioStep(job: JobRow, deadline: number) {
   const planContext = project.plan ? { ...project.plan, lessons: project.phase === "plan" ? project.plan.lessons.slice(-STUDIO_PLAN_BATCH_SIZE) : project.plan.lessons.slice(Math.max(0, project.cursor - 2), project.cursor + 3) } : null;
   const candidate = !sourceTask && !["resolve", "assess"].includes(project.phase) && project.units[project.cursor] ? studioModelLesson(project.units[project.cursor]!.content) : null;
   const rejected = project.regeneration ? await readStudioPaidResult(job.family_id, id, project.regeneration.pending) : null;
-  const prompt = JSON.stringify({ request: sourceTask?.scope === "book" ? { purpose: "Незалежний від конкретного курсу огляд усіх наданих частин джерела" } : { ...project.request, hasSelectedMaterial: !!project.request.materialId, sourceText: undefined, subjectId: undefined, topicId: undefined, materialId: undefined }, subject: sourceTask?.scope === "book" ? null : project.subjectName, baseTitle: sourceTask?.scope === "book" ? null : project.baseTitle, plan: sourceTask?.scope === "book" ? null : planContext, ...(project.phase === "plan" ? { planningBatch } : {}), currentLesson: sourceTask?.scope === "book" || project.phase === "plan" ? null : project.plan?.lessons[project.cursor] ?? null, sources: modelSources, sourceNotes: sourceTask?.scope === "book" ? [] : project.sourceNotes, ...(project.phase === "resolve" ? { selectedTopicId: project.request.topicId, availableTopics: project.sourceSelection?.candidates.map(({ id, subjectId, title, pageFrom, pageTo }) => ({ id, subjectId, title, pageFrom, pageTo })) } : {}), ...(sourceTask ? { sourceTask: { scope: sourceTask.scope, reducing: sourceTask.reducing, fromPart: sourceTask.fromPart, toPart: sourceTask.toPart, verifiedQuotes: sourceTask.verifiedQuotes } } : {}), feedback: sourceTask?.scope === "book" ? "" : project.feedback, ...(project.regeneration ? { validationRepair: { diagnostic: project.regeneration.diagnostic, rejectedResult: rejected?.result, instruction: "Виправ саме цю помилку за поточною схемою. Збережи правильний зміст; не повторюй відхилену відповідь." } } : {}), ...(candidate ? { candidate: { content: project.phase === "design" ? { title: candidate!.title, objectives: candidate!.objectives, blocks: candidate!.blocks } : candidate, visuals: project.units[project.cursor]!.visuals, parentSelectedIllustrations: project.units[project.cursor]!.illustrations?.map(({ title, caption, blockIndex, sourceUrl }) => ({ title, caption, blockIndex, sourceUrl })), ...(project.phase === "repair" ? { review: project.units[project.cursor]!.review } : {}) } } : {}) });
+  const review = project.units[project.cursor]?.review;
+  const part = project.phase === "repair" ? project.repairPart : undefined;
+  const partCount = Math.max(1, review?.corrections?.length ?? 0, review?.issues.length ?? 0);
+  const focusedReview = part !== undefined && review ? {
+    verdict: review.verdict, issues: review.issues.slice(part, part + 1), corrections: review.corrections?.slice(part, part + 1),
+    ...(partCount === 1 ? { summary: review.summary } : {}),
+  } : review;
+  const prompt = JSON.stringify({ request: sourceTask?.scope === "book" ? { purpose: "Незалежний від конкретного курсу огляд усіх наданих частин джерела" } : { ...project.request, hasSelectedMaterial: !!project.request.materialId, sourceText: undefined, subjectId: undefined, topicId: undefined, materialId: undefined }, subject: sourceTask?.scope === "book" ? null : project.subjectName, baseTitle: sourceTask?.scope === "book" ? null : project.baseTitle, plan: sourceTask?.scope === "book" ? null : planContext, ...(project.phase === "plan" ? { planningBatch } : {}), currentLesson: sourceTask?.scope === "book" || project.phase === "plan" ? null : project.plan?.lessons[project.cursor] ?? null, sources: modelSources, sourceNotes: sourceTask?.scope === "book" ? [] : project.sourceNotes, ...(project.phase === "resolve" ? { selectedTopicId: project.request.topicId, availableTopics: project.sourceSelection?.candidates.map(({ id, subjectId, title, pageFrom, pageTo }) => ({ id, subjectId, title, pageFrom, pageTo })) } : {}), ...(sourceTask ? { sourceTask: { scope: sourceTask.scope, reducing: sourceTask.reducing, fromPart: sourceTask.fromPart, toPart: sourceTask.toPart, verifiedQuotes: sourceTask.verifiedQuotes } } : {}), feedback: sourceTask?.scope === "book" ? "" : part !== undefined ? project.revisionInstructions ?? "" : project.feedback, ...(part !== undefined ? { repairTask: { index: part, count: partCount, instruction: "Виконай лише поточне зауваження з candidate.review. Поверни тільки потрібні зміни. Решту полів залиш порожніми або null за схемою." } } : {}), ...(project.regeneration ? { validationRepair: { diagnostic: project.regeneration.diagnostic, rejectedResult: rejected?.result, instruction: "Виправ саме цю помилку за поточною схемою. Збережи правильний зміст; не повторюй відхилену відповідь." } } : {}), ...(candidate ? { candidate: { content: project.phase === "design" ? { title: candidate!.title, objectives: candidate!.objectives, blocks: candidate!.blocks } : candidate, visuals: project.units[project.cursor]!.visuals, parentSelectedIllustrations: project.units[project.cursor]!.illustrations?.map(({ title, caption, blockIndex, sourceUrl }) => ({ title, caption, blockIndex, sourceUrl })), ...(project.phase === "repair" ? { review: focusedReview } : {}) } } : {}) });
   if (Buffer.byteLength(system + prompt + JSON.stringify(schema.toJSONSchema())) > 250000) throw new Error("STUDIO-CONTEXT");
   const context = JSON.parse(prompt); if (context.request) delete context.request.budgetUsd;
   const inputHash = createHash("sha256").update(JSON.stringify({ phase: project.phase, cursor: project.cursor, context })).digest("hex");
@@ -229,6 +236,10 @@ export async function runStudioStep(job: JobRow, deadline: number) {
       validateStudioLesson(project, repaired.unit.content, modelSources.map(source => source.id));
       units[project.cursor] = repaired.unit;
       Object.assign(changes, { phase: "review", repairAdvice: repaired.diagnosis, feedback: `${studioReviewFeedback(project.units[project.cursor]!.review)}\nДіагностичне виправлення: ${repaired.diagnosis}\nПеревір за контрактом незалежно, не довіряй висновку редактора без перевірки: ${repaired.reviewAdvice}` });
+      if (part !== undefined && part + 1 < partCount) {
+        units[project.cursor] = { ...repaired.unit, review: review ?? null };
+        Object.assign(changes, { phase: "repair", repairPart: part + 1 });
+      } else changes.repairPart = undefined;
     } else {
       const review = studioReviewResponseSchema.parse(result.result);
       if (review.corrections.some(fix => (fix.blockIndex !== null && fix.blockIndex >= units[project.cursor]!.content.blocks.length) || (fix.visualIndex !== null && fix.visualIndex >= units[project.cursor]!.visuals.length))) throw new Error("STUDIO-CORRECTION-REF");
@@ -256,6 +267,10 @@ export async function runStudioStep(job: JobRow, deadline: number) {
   }
   } catch (error) {
     const diagnostic = studioFailureDiagnostic(error, project.phase);
+    if (project.phase === "repair" && diagnostic.code === "STUDIO-AI-INCOMPLETE" && !project.reviewOnly && review && part === undefined && project.pendingModelCall?.billed) {
+      await saveStudioProject(job.family_id, id, project, { activeCall: false, pendingModelCall: undefined, regeneration: undefined, repairPart: 0 });
+      return { requeue: true as const };
+    }
     if ((project.autonomous || diagnostic.code === "STUDIO-AI-INCOMPLETE") && diagnostic.category === "content" && !project.regeneration && project.pendingModelCall?.billed && !project.reviewOnly) {
       await saveStudioProject(job.family_id, id, project, {
         activeCall: false, pendingModelCall: undefined,
@@ -330,6 +345,15 @@ export async function resumeStudio(familyId: string, id: string, revision: numbe
 }
 export async function resumeLegacyStudioReview(familyId: string, id: string) {
   const project = await readStudioProject(familyId, id);
+  if (project && studioCanResumeIncompleteRepair(project)) {
+    const token = randomUUID();
+    const next = await saveStudioProject(familyId, id, project, {
+      token, state: "generating", repairPart: 0, regeneration: undefined, pendingModelCall: undefined, failureDiagnostic: undefined, error: null,
+    });
+    try { await scheduleStudio(familyId, id, token); }
+    catch { return saveStudioProject(familyId, id, next, { state: "failed", error: "Не вдалося відновити чергу редактора." }); }
+    return next;
+  }
   if (!project || !studioCanAutoResumeReview(project)) return project;
   const review = project.units[project.cursor]?.review;
   if (!review || review.verdict === "pass") return project;

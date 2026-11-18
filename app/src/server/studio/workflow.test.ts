@@ -408,3 +408,22 @@ it("bounds rephrased objections even when the text and fingerprint change every 
   expect(project).toMatchObject({state:"needs_changes",reviewRepairAttempted:true,reviewAutomationStopped:true});
   expect(f.call).toHaveBeenCalledTimes(7);
 });
+
+it("resumes a previously failed paid repair, checkpoints individual corrections, and sends the combined lesson for review",async()=>{
+ const fixes=[{...visualFix,problem:"Заголовок"},{...visualFix,problem:"Мета"}];
+ project=studioProjectFixture({state:"failed",phase:"repair",plan:studioPlanFixture,spentUsd:1,heldUsd:0.3,
+ units:[{content:studioLessonFixture,visuals:[],review:{verdict:"revise",summary:"Дві правки",issues:["Заголовок","Мета"],corrections:fixes}}],
+ failureDiagnostic:{code:"STUDIO-AI-INCOMPLETE",category:"content",paths:[],phase:"repair",at:new Date().toISOString()},
+ pendingModelCall:{id,phase:"repair",cursor:0,billed:true,reservedUsd:.2,inputHash:"old"}});
+ await resumeLegacyStudioReview("family",id);await resumeLegacyStudioReview("family",id);
+ expect(f.enqueue).toHaveBeenCalledOnce();expect(project).toMatchObject({repairPart:0,spentUsd:1,heldUsd:.3});
+ f.call.mockImplementation(async(_family,_id,role,_sys,prompt)=>{
+  const data=JSON.parse(prompt);
+  if(role==="studio.review")return {result:{verdict:"pass",summary:"Готово",issues:[],corrections:[]},model:{provider:"anthropic",model:"test"},costUsd:.01};
+  expect(data.candidate.review.corrections).toHaveLength(1);
+  return {result:{diagnosis:"Виконано поточне зауваження рецензента.",reviewAdvice:"Перевір підсумок",blocks:[],questions:[],visuals:null,title:data.repairTask.index===0?"Оновлена назва":null,objectives:data.repairTask.index===1?["Уточнена мета"]:null,sourceIds:null,enrichmentNote:null,adultAssistance:null},model:{provider:"openai",model:"test"},costUsd:.02};
+ });
+ await step(); expect(project.repairPart).toBe(1);await step();expect(project.phase).toBe("review");
+ await step();expect(project.state).toBe("ready");expect(project.units[0]!.content).toMatchObject({title:"Оновлена назва",objectives:["Уточнена мета"]});
+ expect(project.spentUsd).toBeCloseTo(1.05);expect(project.heldUsd).toBeCloseTo(.3);
+});
