@@ -235,6 +235,9 @@ export async function resumeStudio(familyId: string, id: string, revision: numbe
       await saveStudioProject(familyId, id, project, { ...changes, state: "failed", failureDiagnostic: project.failureDiagnostic ?? uncertain, error: studioFailureMessage(uncertain, false) });
       return;
     }
+    if (!receipt && command === "restart" && project.phase === "lesson_sources" && project.lessonSources) {
+      changes.lessonSources = { ...project.lessonSources, recoverySlice: project.lessonSources.recoverySlice ?? 0 };
+    }
     if (!receipt) Object.assign(changes, { pendingModelCall: undefined, unresolvedModelCalls: [...(project.unresolvedModelCalls ?? []), project.pendingModelCall] });
   }
   if (changes.sourceCorpus && !project.sourceCorpus) Object.assign(changes, { state: "planning", phase: "analyze", plan: null, lessonSources: undefined, cursor: 0 });

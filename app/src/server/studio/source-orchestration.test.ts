@@ -51,3 +51,20 @@ it("preserves a paid completed overview if optional shared-cache persistence fai
  project.sourceCorpus!.partCount=1;f.cache.mockRejectedValueOnce(new Error("cache unavailable"));const changes=await applyStudioSourceTask("family",project,await studioSourceTask("family",project),noteResult);
  expect(changes.phase).toBe("plan");expect(changes.sourceCorpus?.analyzed).toBe(1);expect(changes.sourceCorpus?.notes).toHaveLength(1);expect(changes.sourceNotes?.join(" ")).toContain("повторний платний аналіз тут не запускається");
 });
+
+it("resumes a split lesson part without losing text or repeating completed notes",async()=>{
+ const original="Література 📖 ".repeat(1200);
+ f.parts=[[source("p1",original)]];
+ project.phase="lesson_sources";
+ project.lessonSources={lessonIndex:0,targetPhase:"author",partIndexes:[0],cursor:0,notes:[],catalog:[],reduceCursor:0,reduced:[],recoverySlice:0};
+ const fragments:string[]=[];
+ while(project.phase==="lesson_sources" && fragments.length<10){
+   const task=await studioSourceTask("family",project);
+   fragments.push(task.sources[0]!.text);
+   expect(Array.from(task.sources[0]!.text).length).toBeLessThanOrEqual(5000);
+   project={...project,...await applyStudioSourceTask("family",project,task,noteResult)};
+ }
+ expect(fragments.join("")).toBe(original);
+ expect(new Set(project.lessonSources!.context!.ids).size).toBe(fragments.length);
+ expect(project.phase).toBe("author");
+});
