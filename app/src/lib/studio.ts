@@ -53,7 +53,7 @@ export interface StudioLessonSources { targetPhase: "author" | "design" | "revie
 export interface StudioUnit { sourceContext?: StudioSourceContext; illustrations?: StudioIllustration[]; content: StudioLesson; visuals: StudioVisual[]; review: StudioReview | null; reviewRound?: number; lastReviewFingerprint?: string | null; }
 export type StudioState = "planning" | "plan_ready" | "generating" | "ready" | "needs_changes" | "failed" | "paused" | "publishing" | "published" | "withdrawn";
 export interface StudioPendingModelCall { id: string; phase: StudioProject["phase"]; cursor: number; inputHash: string; reservedUsd: number; billed: boolean; }
-export interface StudioFailureDiagnostic { phase: StudioProject["phase"]; code: string; paths: string[]; category: "content" | "processing"; at: string; }
+export interface StudioFailureDiagnostic { evidence?: "provider_audit"; provider?: string; status?: number; phase: StudioProject["phase"]; code: string; paths: string[]; category: "content" | "processing"; at: string; }
 export interface StudioProject {
   pendingModelCall?: StudioPendingModelCall;
   unresolvedModelCalls?: StudioPendingModelCall[];
@@ -61,6 +61,7 @@ export interface StudioProject {
   failureDiagnostic?: StudioFailureDiagnostic;
   savedModelResult?: boolean;
   canRegenerate?: boolean;
+  canRestart?: boolean;
   version: 1; revision: number;
   /** Immutable backing documents; omitted from parent responses. */
   unitRefs?: string[];

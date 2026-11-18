@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { openaiStructuredCaptured, type OpenAiCapturedResult } from "@/server/ai/providers/openai";
 import { callStructured, defaultRouterDeps } from "@/server/ai/router";
 import { loadPrice } from "@/server/ai/store";
 import { AiNotConfiguredError, type ModelRoute } from "@/server/ai/types";
@@ -34,5 +35,7 @@ export function studioReservation(system: string, prompt: string, schema: z.ZodT
 }
 export async function callStudioModel<S extends z.ZodType>(familyId: string, projectId: string, role: StudioRole, system: string, prompt: string, schema: S, config: Awaited<ReturnType<typeof studioModelConfig>>) {
   // Use the exact validated and reserved route/rates, never a stale router cache.
-  return callStructured(config.route.role, { system, prompt, schema }, { familyId, ref: { table: "jobs", id: projectId } }, { ...defaultRouterDeps, loadRoute: async () => config.route, loadPrice: async () => config.rates });
+  const captured = await callStructured(config.route.role, { system, prompt, schema }, { familyId, ref: { table: "jobs", id: projectId } }, { ...defaultRouterDeps, loadRoute: async () => config.route, loadPrice: async () => config.rates, providers: { ...defaultRouterDeps.providers, structured: { ...defaultRouterDeps.providers.structured, openai: req => openaiStructuredCaptured(req) } } });
+  const envelope = captured.result as OpenAiCapturedResult;
+  return { ...captured, result: envelope.result, ...(envelope.failure ? { failure: envelope.failure } : {}) };
 }

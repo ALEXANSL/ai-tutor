@@ -319,3 +319,19 @@ it("preserves learner context while a saved call awaits processing",async()=>{
  project=studioProjectFixture({state:"paused",pendingModelCall:{id:"11111111-1111-4111-8111-111111111112",phase:"plan",cursor:0,inputHash:"a".repeat(64),reservedUsd:0.1,billed:true}});
  await expect(resumeStudio("family",id,project.revision,"retry",undefined,"",5,undefined,undefined,{age:project.request.age+1,grade:project.request.grade})).rejects.toThrow("вік і клас");expect(f.enqueue).not.toHaveBeenCalled();expect(f.call).not.toHaveBeenCalled();
 });
+
+it("accounts and retains an incomplete paid response without applying or silently regenerating it",async()=>{
+ f.call.mockResolvedValueOnce({result:'{"title":',failure:{code:"STUDIO-AI-INCOMPLETE",paths:[]},model:{provider:"openai",model:"test"},costUsd:0.023});await step();
+ expect(project.state).toBe("failed");expect(project.failureDiagnostic?.code).toBe("STUDIO-AI-INCOMPLETE");expect(project.spentUsd).toBeCloseTo(0.023);expect(project.heldUsd).toBe(0);expect(project.pendingModelCall?.billed).toBe(true);expect(project.plan).toBeNull();
+ await resumeStudio("family",id,project.revision,"retry");await step();expect(f.call).toHaveBeenCalledTimes(1);expect(project.spentUsd).toBeCloseTo(0.023);expect(project.models).toHaveLength(1);expect(project.state).toBe("failed");
+});
+it("makes uncertain-response verification free and requires explicit paid restart while retaining the old reserve",async()=>{
+ const {ProviderError}=await import("@/server/ai/types");f.call.mockRejectedValueOnce(new ProviderError("private timeout", "openai", null, true, "timeout"));const oldJob=job();let failure:unknown;try{await step();}catch(error){failure=error;}await failStudioStep(oldJob,failure);
+ expect(project.failureDiagnostic?.code).toBe("STUDIO-AI-TIMEOUT");expect(project.error).not.toContain("private timeout");expect(project.heldUsd).toBeCloseTo(0.1);
+ f.enqueue.mockClear();await resumeStudio("family",id,project.revision,"retry");expect(project.state).toBe("failed");expect(project.failureDiagnostic?.code).toBe("STUDIO-AI-TIMEOUT");expect(f.enqueue).not.toHaveBeenCalled();expect(f.call).toHaveBeenCalledTimes(1);
+ const pending=project.pendingModelCall;await resumeStudio("family",id,project.revision,"restart");await step();expect(project.unresolvedModelCalls).toContainEqual(pending);expect(project.heldUsd).toBeCloseTo(0.1);expect(project.spentUsd).toBeCloseTo(0.02);expect(project.state).toBe("plan_ready");expect(f.call).toHaveBeenCalledTimes(2);
+});
+it("releases only the current reserve for a definitive rejected request, retaining older uncertain holds",async()=>{
+ const {ProviderError}=await import("@/server/ai/types");project.heldUsd=0.7;f.call.mockRejectedValueOnce(new ProviderError("provider secret", "openai", 400, false, "invalid_schema"));const oldJob=job();let failure:unknown;try{await step();}catch(error){failure=error;}await failStudioStep(oldJob,failure);
+ expect(project.heldUsd).toBeCloseTo(0.7);expect(project.pendingModelCall).toBeUndefined();expect(project.spentUsd).toBe(0);expect(project.failureDiagnostic).toMatchObject({code:"STUDIO-AI-REQUEST-SCHEMA",provider:"openai",status:400});
+});

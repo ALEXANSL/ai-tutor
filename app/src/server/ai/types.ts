@@ -158,6 +158,7 @@ export class ProviderError extends Error {
     readonly provider: string,
     readonly status: number | null,
     readonly retryable: boolean,
+    readonly code?: "timeout" | "network" | "invalid_schema" | "http" | "response_body" | "unknown_usage",
   ) {
     super(message);
     this.name = "ProviderError";

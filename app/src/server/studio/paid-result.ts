@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { forFamily } from "@/server/db/family-scope";
 import type { StudioPendingModelCall } from "@/lib/studio";
 
-export interface StudioPaidModelResult { result: unknown; model: { provider: string; model: string }; costUsd: number }
+export interface StudioPaidModelResult { result: unknown; model: { provider: string; model: string }; costUsd: number; failure?: { code: string; paths: string[] } }
 const TYPE = "studio.model_result";
 const MAX_RESULT_BYTES = 500000;
 interface Receipt extends StudioPaidModelResult {
@@ -42,7 +42,9 @@ function checkedResult(value: unknown): StudioPaidModelResult {
   if (!result || typeof result !== "object" || !Object.hasOwn(result, "result") || !result.model || typeof result.model !== "object"
       || !nonempty(result.model.provider) || !nonempty(result.model.model) || typeof result.costUsd !== "number" || !Number.isFinite(result.costUsd) || result.costUsd < 0) throw invalid();
   if (Buffer.byteLength(canonical(result.result)) > MAX_RESULT_BYTES) throw new Error("STUDIO-RESULT-SIZE: оплачений результат перевищує місткість збереження. Резерв слід зберегти; автоматичного повторного виклику немає.");
-  return { result: result.result, model: { provider: result.model.provider, model: result.model.model }, costUsd: result.costUsd };
+  const failure = result.failure;
+  if (failure && (!["STUDIO-AI-INCOMPLETE", "STUDIO-AI-REFUSAL", "STUDIO-AI-JSON", "STUDIO-AI-OUTPUT-SCHEMA", "STUDIO-AI-NO-OUTPUT", "STUDIO-AI-RESPONSE-STATE"].includes(failure.code) || !Array.isArray(failure.paths) || failure.paths.length > 8 || failure.paths.some(path => typeof path !== "string" || path.length > 400 || !/^[a-zA-Z0-9_.]+$/.test(path)))) throw invalid();
+  return { ...(failure ? { failure: { code: failure.code, paths: [...failure.paths] } } : {}), result: result.result, model: { provider: result.model.provider, model: result.model.model }, costUsd: result.costUsd };
 }
 function receipt(familyId: string, projectId: string, pending: StudioPendingModelCall, value: StudioPaidModelResult): Receipt {
   const body = { version: 1 as const, familyId, projectId: projectId.toLowerCase(), callId: pending.id.toLowerCase(), inputHash: pending.inputHash,

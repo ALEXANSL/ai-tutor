@@ -3,6 +3,7 @@ import type { StudioProject } from "./studio";
 export function studioParentView(project: StudioProject, requestedIndex?: number): StudioProject {
   const result = { ...project, units: project.units.map(unit => { const copy = { ...unit }; delete copy.sourceContext; return copy; }) }; delete result.unitRefs;
   delete result.sourceCorpus; delete result.lessonSources; delete result.sourceSelection;
+  result.canRestart = ["failed", "paused"].includes(project.state) && !!project.pendingModelCall && !project.pendingModelCall.billed;
   result.savedModelResult = !!project.pendingModelCall?.billed;
   result.canRegenerate = project.state === "failed" && !!project.pendingModelCall?.billed && project.failureDiagnostic?.category === "content";
   delete result.pendingModelCall; delete result.unresolvedModelCalls; delete result.regeneration;
