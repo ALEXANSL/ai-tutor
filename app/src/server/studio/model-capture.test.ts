@@ -29,7 +29,7 @@ it("submits the author once and reads the same response through queued and compl
   vi.stubGlobal("fetch",fake);
   await expect(callStudioModel("family","project","studio.author","rules","prompt",schema,config)).rejects.toMatchObject({responseId:"resp_abc"});
   expect(JSON.parse(String(fake.mock.calls[0]![1]?.body))).toMatchObject({background:true,store:true});
-  expect(await retrieveStudioResponse("resp_abc",schema)).toBeNull();
+  expect(await retrieveStudioResponse("resp_abc",schema)).toEqual({pending:"in_progress"});
   expect(await retrieveStudioResponse("resp_abc",schema)).toMatchObject({data:{result:{title:"Lesson"}}});
   expect(fake.mock.calls.slice(1).every(([url, init]) => String(url).endsWith("/resp_abc") && (init?.method ?? "GET") === "GET")).toBe(true);
 });

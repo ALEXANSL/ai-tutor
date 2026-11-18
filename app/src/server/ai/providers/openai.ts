@@ -233,7 +233,7 @@ export async function retrieveStudioResponse(id: string, schema: z.ZodType, fetc
   try { body = await response.json(); }
   catch { throw new ProviderError("OpenAI retrieval interrupted", "openai", null, true, "network"); }
   if (body.id !== id) throw new Error("STUDIO-RESULT-CONTEXT");
-  if (body.status === "queued" || body.status === "in_progress") return null;
+  if (body.status === "queued" || body.status === "in_progress") return { pending: body.status as "queued" | "in_progress" };
   return captureStructuredBody(body, response.status, schema);
 }
 

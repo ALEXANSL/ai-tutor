@@ -380,12 +380,14 @@ it("resumes an accepted background author response without resubmitting or charg
   const openai = await import("@/server/ai/providers/openai");
   const store = await import("@/server/ai/store");
   const audit = vi.spyOn(store,"recordCall").mockResolvedValue();
-  const poll = vi.spyOn(openai,"retrieveStudioResponse").mockResolvedValueOnce(null).mockResolvedValueOnce({data:{result:studioLessonFixture},usage:{inputTokens:200,outputTokens:100}});
+  const poll = vi.spyOn(openai,"retrieveStudioResponse").mockResolvedValueOnce({pending:"queued"}).mockResolvedValueOnce({data:{result:studioLessonFixture},usage:{inputTokens:200,outputTokens:100}});
   try {
     project = studioProjectFixture({autonomous:true,state:"generating",phase:"author",plan:studioPlanFixture});
     f.config.mockResolvedValueOnce({route:{role:"studio.author_full",primary_model:"test",params:{max_tokens:1000}},rates:{input_usd_per_mtok:2,output_usd_per_mtok:10}});
     f.call.mockRejectedValueOnce(new BackgroundResponsePending("resp_author"));
-    await step(); await step(); await step();
+    await step(); await step();
+    expect(project.pendingModelCall?.background?.observation?.status).toBe("queued");
+    await step();
     expect(project.phase).toBe("design"); expect(project.heldUsd).toBe(0);
     expect(project.spentUsd).toBeCloseTo(0.0014,6);
     expect(f.call).toHaveBeenCalledTimes(1); expect(poll).toHaveBeenCalledTimes(2); expect(audit).toHaveBeenCalledTimes(1);

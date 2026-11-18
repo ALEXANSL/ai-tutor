@@ -53,7 +53,7 @@ export interface StudioSourceCorpus {
 export interface StudioLessonSources { recoverySlice?: number; targetPhase: "author" | "design" | "review" | "repair"; lessonIndex: number; partIndexes: number[]; cursor: number; notes: string[]; catalog: string[]; reduceCursor: number; reduced: string[]; context?: StudioSourceContext; }
 export interface StudioUnit { sourceContext?: StudioSourceContext; illustrations?: StudioIllustration[]; content: StudioLesson; visuals: StudioVisual[]; review: StudioReview | null; reviewRound?: number; lastReviewFingerprint?: string | null; }
 export type StudioState = "planning" | "plan_ready" | "generating" | "ready" | "needs_changes" | "failed" | "paused" | "publishing" | "published" | "withdrawn";
-export interface StudioPendingModelCall { background?: { id: string; started: number; model: string; role: string; rates: import("../server/ai/types").ModelPrice }; id: string; phase: StudioProject["phase"]; cursor: number; inputHash: string; reservedUsd: number; billed: boolean; }
+export interface StudioPendingModelCall { background?: { id: string; started: number; observation?: StudioProviderObservation; model: string; role: string; rates: import("../server/ai/types").ModelPrice }; id: string; phase: StudioProject["phase"]; cursor: number; inputHash: string; reservedUsd: number; billed: boolean; }
 export interface StudioFailureDiagnostic { evidence?: "provider_audit"; provider?: string; status?: number; phase: StudioProject["phase"]; code: string; paths: string[]; category: "content" | "processing"; at: string; }
 export interface StudioProject {
   autonomous?: boolean;
@@ -100,7 +100,9 @@ export const studioStateLabels: Record<StudioState, string> = { planning: "Го�
 export function studioActive(state: StudioState) { return ["planning", "generating", "publishing"].includes(state); }
 
 /** Read-only queue observation returned to the authenticated parent, not a claim of provider progress. */
+export interface StudioProviderObservation { status: "queued" | "in_progress"; at: number }
 export interface StudioActivity {
+  providerObservation?: StudioProviderObservation;
   queue: "queued" | "running" | "finished" | "interrupted" | "unavailable" | "none";
   checkedAt: string;
   backgroundStartedAt?: number;

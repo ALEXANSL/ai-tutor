@@ -126,3 +126,16 @@ it("routes explicit re-review through parent authorization, family scope and the
  const result=await commandStudioAction({id,revision:4,command:"review",budgetUsd:3,lessonIndex:0});
  expect(result.status).toBe("ok");expect(f.resume).toHaveBeenCalledWith("own-family",id,4,"review",undefined,undefined,3,0);expect(f.kick).toHaveBeenCalledWith("own-family",id);
 });
+
+it("schedules retrieval of the existing provider response when the previous worker lease expired", async()=>{
+ const project=studioProjectFixture({state:"generating",phase:"author",activeCall:true});
+ const background={id:"resp_saved",started:Date.now()-22*60000,role:"studio.author_full",model:"test",rates:{input_usd_per_mtok:1,output_usd_per_mtok:1,cache_read_usd_per_mtok:null,cache_write_usd_per_mtok:null}};
+ project.pendingModelCall={id,phase:"author",cursor:0,inputHash:"hash",reservedUsd:1,billed:false,background};
+ f.read.mockResolvedValue(project);f.save.mockImplementation(async(_f,_id,p,changes)=>({...p,...changes}));
+ f.step.mockResolvedValue({data:{status:"running",locked_until:"2025-01-01T00:00:00Z"},error:null});
+ const result=await pollStudioAction(id);
+ expect(result).toMatchObject({status:"ok",project:{state:"generating"}});
+ expect(f.save.mock.calls[0]![3]).toEqual({token:expect.any(String)});
+ expect(f.schedule).toHaveBeenCalledWith("own-family",id,f.save.mock.calls[0]![3].token);
+ expect(f.start).not.toHaveBeenCalled();
+});
