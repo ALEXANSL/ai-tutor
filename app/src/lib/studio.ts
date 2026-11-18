@@ -53,6 +53,8 @@ export interface StudioProject {
   publicationRevision?: boolean;
   revisionRequestId?: string;
   childAccess?: "enabled" | "disabled";
+  /** Explicit parent-requested review: never auto-start author/design after its verdict. */
+  reviewOnly?: boolean;
   reviewAutomationStopped?: boolean;
   reviewRepairAttempted?: boolean;
   repairAdvice?: string;
@@ -80,7 +82,7 @@ export function studioPublicationVisible(project: Pick<StudioProject, "publicati
   return !!project.publication && (project.childAccess ? project.childAccess === "enabled" : project.state === "published" || (project.publicationRevision === true && project.state !== "withdrawn"));
 }
 
-export interface StudioReviewEvent { at: string; lessonIndex: number; round: number; review: StudioReview; next: "author" | "design" | "repair" | "ready" | "stopped"; }
+export interface StudioReviewEvent { at: string; lessonIndex: number; round: number; review: StudioReview; next: "author" | "design" | "repair" | "ready" | "stopped" | "parent"; }
 
 /** Old no-progress stops get one automatic diagnostic repair, without restarting failed/paused/uncertain jobs. */
 export function studioCanAutoResumeReview(project: Pick<StudioProject, "state" | "activeCall" | "reviewAutomationStopped" | "reviewRepairAttempted" | "error">) {

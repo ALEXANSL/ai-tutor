@@ -9,6 +9,7 @@ vi.mock("./sources", async original => ({ ...await original<typeof import("./sou
 vi.mock("./model", () => ({ studioModelConfig: f.config, studioReservation: () => 0.1, callStudioModel: f.call }));
 vi.mock("./publish", () => ({ prepareStudioPublication: f.prepare, activateStudioPublication: f.activate }));
 vi.mock("@/server/jobs/runner", () => ({ enqueueJob: f.enqueue, registerJobHandler: vi.fn() }));
+import { saveStudioReviewEvent } from "./review-history";
 import { resumeLegacyStudioReview, failStudioStep, pauseStudio, resumeStudio, runStudioStep, startStudio, validateStudioLesson } from "./workflow";
 let project: StudioProject;
 const id = "11111111-1111-4111-8111-111111111111";
@@ -94,7 +95,7 @@ it("repairs a third diagram without rewriting approved content and accepts null 
   await step();
   const prompt = JSON.parse(f.call.mock.calls[0]![4]);
   expect(prompt.candidate.visuals).toEqual(visuals);
-  expect(prompt.candidate.content.blocks).toEqual(content.blocks);
+  expect(prompt.candidate.content.blocks).toEqual(content.blocks.map(block => ({ ...block, narration: block.kind === "code" ? block.narration : null })));
   expect(prompt.candidate.content.questions).toBeUndefined();
   expect(prompt.feedback).toContain(visualFix.acceptance);
   expect(project.units[0]!.content).toEqual(content);
@@ -106,7 +107,7 @@ it("gives authors the existing lesson and preserves previous visuals for the des
   project = studioProjectFixture({ state: "needs_changes", phase: "review", plan: studioPlanFixture, units: [{ content: studioLessonFixture, visuals: [studioVisualFixture], review: { verdict: "revise", issues: ["Позначити інтерпретацію емоджі"], summary: "Уточнити приклад" } }] });
   await resumeStudio("family", id, project.revision, "revise", undefined, "Не змінюй решту");
   await step();
-  expect(JSON.parse(f.call.mock.calls[0]![4]).candidate.content).toEqual(studioLessonFixture);
+  expect(JSON.parse(f.call.mock.calls[0]![4]).candidate.content).toEqual({ ...studioLessonFixture, blocks: studioLessonFixture.blocks.map(block => ({ ...block, narration: block.kind === "code" ? block.narration : null })) });
   expect(project.units[0]!.visuals).toEqual([studioVisualFixture]);
   await step(); expect(JSON.parse(f.call.mock.calls[1]![4]).candidate.visuals).toEqual([studioVisualFixture]);
 });
@@ -220,4 +221,45 @@ it("reloads the complete selected document on explicit improvement without repub
  project=studioProjectFixture({state:"published",phase:"publish",plan:studioPlanFixture,request:{...studioProjectFixture().request,materialId:"book"},publication:{subjectId:"subject",packageId:"package",lessons:[]},units:[{content:studioLessonFixture,visuals:[],review:{verdict:"pass",issues:[],summary:"Добре"}}]});
  f.sources.mockResolvedValue({sources:[...project.sources,{id:"slide32",title:"Презентація",text:"Раніше пропущена тема",page:32,kind:"book"}],sourceNotes:["Увесь матеріал"],baseHref:null,baseTitle:null,subjectName:"Інформатика"});
  await resumeStudio("family",id,project.revision,"revise",undefined,"Повністю розкрий усі теми");expect(f.sources).toHaveBeenCalledOnce();expect(project.sources.some(source=>source.id==="slide32")).toBe(true);expect(project.publicationRevision).toBe(true);expect(f.prepare).not.toHaveBeenCalled();
+});
+
+it("sends the same nullable narration contract to author, designer, reviewer and repair while retaining full runtime speech", async () => {
+ for (const phase of ["author","design","review","repair"] as const) {
+  project=studioProjectFixture({state:"generating",phase,plan:studioPlanFixture,units:[{content:validateStudioLesson(studioProjectFixture(),studioLessonFixture),visuals:[],review:null}]});
+  const storedNarration=project.units[0]!.content.blocks[0]!.narration;
+  if(phase==="repair") f.call.mockResolvedValueOnce({result:{diagnosis:"Поточний матеріал відповідає контракту озвучення.",reviewAdvice:"Перевір за чинним контрактом",blocks:[],questions:[],visuals:null,title:null,objectives:null,sourceIds:null,enrichmentNote:null,adultAssistance:null},model:{provider:"openai",model:"test"},costUsd:0.02});
+  await step();const prompt=JSON.parse(f.call.mock.calls.at(-1)![4]);
+  expect(prompt.candidate.content.blocks[0].narration).toBeNull();expect(prompt.candidate.content.blocks[2].narration).toBe(studioLessonFixture.blocks[2]!.narration);
+  expect(project.units[0]!.content.blocks[0]!.narration).toBe(storedNarration);expect(storedNarration.length).toBeGreaterThan(100);
+ }
+});
+it("re-reviews a budget-stopped lesson without rewriting it, deleting uncertain reserves or publishing", async()=>{
+ const content=validateStudioLesson(studioProjectFixture(),studioLessonFixture);
+ project=studioProjectFixture({state:"failed",phase:"author",error:"STUDIO-CAP",plan:studioPlanFixture,spentUsd:1.512,heldUsd:1.057,units:[{content,visuals:[],review:{verdict:"revise",issues:["narration повинно бути null"],summary:"Застаріле зауваження"}}]});
+ await resumeStudio("family",id,project.revision,"review");expect(project).toMatchObject({state:"generating",phase:"review",reviewOnly:true,spentUsd:1.512,heldUsd:1.057});
+ await step();expect(project.state).toBe("ready");expect(project.units[0]!.content).toEqual(content);expect(project.heldUsd).toBeCloseTo(1.057);expect(project.spentUsd).toBeCloseTo(1.532);
+ expect(f.call.mock.calls.map(call=>call[2])).toEqual(["studio.review"]);expect(f.prepare).not.toHaveBeenCalled();expect(f.activate).not.toHaveBeenCalled();
+});
+it("stops explicit re-review after substantive negative feedback instead of starting hidden paid revisions",async()=>{
+ project=studioProjectFixture({state:"needs_changes",phase:"review",plan:studioPlanFixture,units:[{content:studioLessonFixture,visuals:[],review:null}]});
+ f.call.mockResolvedValueOnce({result:{verdict:"revise",issues:["Помилка у прикладі"],summary:"Потрібне виправлення",corrections:[{role:"author",blockIndex:1,visualIndex:null,problem:"Помилка у прикладі",action:"Виправити приклад",acceptance:"Приклад узгоджений"}]},model:{provider:"openai",model:"test"},costUsd:0.02});
+ await resumeStudio("family",id,project.revision,"review");await step();await step();
+ expect(project).toMatchObject({state:"needs_changes",reviewOnly:true,reviewAutomationStopped:true});expect(project.units[0]!.review?.verdict).toBe("revise");expect(f.call).toHaveBeenCalledTimes(1);expect(f.prepare).not.toHaveBeenCalled();expect(saveStudioReviewEvent).toHaveBeenLastCalledWith("family",id,expect.any(String),expect.any(Number),expect.objectContaining({next:"parent"}));
+ await resumeStudio("family",id,project.revision,"revise");expect(project.reviewOnly).toBe(false);expect(project.phase).toBe("author");
+});
+it("re-review of one course lesson does not automatically generate the remaining lessons",async()=>{
+ project=studioProjectFixture({state:"paused",phase:"design",plan:{...studioPlanFixture,lessons:[...studioPlanFixture.lessons,{title:"Інша тема",goal:"Інший результат"}]},units:[{content:studioLessonFixture,visuals:[],review:null}]});
+ await resumeStudio("family",id,project.revision,"review");await step();await step();
+ expect(project).toMatchObject({state:"paused",cursor:1,phase:"author",reviewOnly:false});expect(f.call).toHaveBeenCalledTimes(1);expect(project.units[0]!.review?.verdict).toBe("pass");
+});
+it("refuses re-review with no saved lesson, a stale revision or interrupted publication",async()=>{
+ project=studioProjectFixture({state:"failed"});await expect(resumeStudio("family",id,project.revision,"review")).rejects.toThrow();
+ project=studioProjectFixture({state:"failed",phase:"publish",plan:studioPlanFixture,units:[{content:studioLessonFixture,visuals:[],review:null}]});await expect(resumeStudio("family",id,project.revision,"review")).rejects.toThrow();
+ project.phase="review";await expect(resumeStudio("family",id,project.revision+1,"review")).rejects.toThrow();expect(f.call).not.toHaveBeenCalled();expect(f.enqueue).not.toHaveBeenCalled();
+});
+it("reports required and available project reserve without starting a call or discarding prior uncertain reservations",async()=>{
+ project=studioProjectFixture({state:"generating",phase:"review",plan:studioPlanFixture,request:{...studioProjectFixture().request,budgetUsd:3},spentUsd:1.90,heldUsd:1.057,units:[{content:studioLessonFixture,visuals:[],review:null}]});
+ const currentJob=job();let failure:unknown;try{await step();}catch(error){failure=error;}
+ expect(failure).toBeInstanceOf(Error);await failStudioStep(currentJob,failure);
+ expect(project.error).toContain("потрібен резерв $0.100");expect(project.error).toContain("доступно $0.043");expect(project.heldUsd).toBe(1.057);expect(project.spentUsd).toBe(1.90);expect(project.request.budgetUsd).toBe(3);expect(f.call).not.toHaveBeenCalled();
 });

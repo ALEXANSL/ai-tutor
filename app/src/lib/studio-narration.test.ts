@@ -18,3 +18,19 @@ it("splits long speech losslessly without cutting a sentence or losing the tail"
  expect(parts.length).toBeGreaterThan(1);expect(parts.every(part=>part.length<=3500)).toBe(true);expect(parts.join("")).toBe(text);expect(parts.at(-1)).toContain("Остання важлива думка.");
 });
 it("does not split surrogate pairs when there are no word boundaries",()=>{const text="🙂".repeat(4001),parts=splitNarrationParts(text);expect(parts.join("")).toBe(text);expect(parts.every(part=>!/[\uD800-\uDBFF]$/.test(part))).toBe(true);});
+
+it("projects stored full Ukrainian narration back to the model contract without changing the lesson or native/code scripts", async () => {
+ const { studioModelLesson } = await import("./studio-narration");
+ const { studioLessonFixture } = await import("@/server/studio/__fixtures__/project");
+ const lesson={...studioLessonFixture,blocks:[
+  {...studioLessonFixture.blocks[0]!,narration:"Повний runtime текст",narrationLanguage:"uk-UA" as const},
+  {...studioLessonFixture.blocks[0]!,narration:"Сценарій без мовної мітки"},
+  {...studioLessonFixture.blocks[2]!},
+  {...studioLessonFixture.blocks[1]!,narration:"Listen carefully.",narrationLanguage:"en-GB" as const},
+  {...studioLessonFixture.blocks[1]!,narration:"Hör gut zu.",narrationLanguage:"de-DE" as const},
+ ]};
+ const original=structuredClone(lesson),model=studioModelLesson(lesson);
+ expect(model.blocks.map(block=>block.narration)).toEqual([null,null,lesson.blocks[2]!.narration,"Listen carefully.","Hör gut zu."]);
+ expect(model.blocks.map(block=>block.text)).toEqual(lesson.blocks.map(block=>block.text));expect(lesson).toEqual(original);
+ expect(studioModelLesson({...lesson,blocks:model.blocks.map((block,index)=>({...block,narration:block.narration??lesson.blocks[index]!.narration}))})).toEqual(model);
+});

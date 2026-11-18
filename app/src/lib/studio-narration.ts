@@ -1,6 +1,16 @@
+import type { StudioLesson } from "./studio";
+
+/** Model-facing author contract; runtime narration is materialized only in storage/playback. */
+export function studioModelLesson(lesson: StudioLesson) {
+  return { ...lesson, blocks: lesson.blocks.map(block => ({ ...block, narration: usesGeneratedStudioNarration(block) ? null : block.narration })) };
+}
+function usesGeneratedStudioNarration(block: { kind: string; narrationLanguage?: string | null }) {
+  return block.kind !== "code" && (!block.narrationLanguage || block.narrationLanguage === "uk-UA");
+}
+
 /** Same learning content on screen and in speech; strip presentation syntax, never summarise. */
 export function studioNarrationText(block: { kind: string; text: string; narration?: string | null; narrationLanguage?: string | null }): string {
-  if (block.kind === "code" || (block.narrationLanguage && block.narrationLanguage !== "uk-UA")) return (block.narration ?? "").trim();
+  if (!usesGeneratedStudioNarration(block)) return (block.narration ?? "").trim();
   const lines = block.text.split("\n"), spoken: string[] = [];
   const cells = (line: string) => line.trim().replace(/^\||\|$/g, "").split("|").map(value => value.trim());
   for (let index = 0; index < lines.length; index++) {
