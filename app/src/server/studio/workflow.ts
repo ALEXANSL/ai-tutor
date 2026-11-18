@@ -150,7 +150,7 @@ export async function resumeStudio(familyId: string, id: string, revision: numbe
   const project = await readStudioProject(familyId, id);
   if (!project || project.revision !== revision || studioActive(project.state) || (["published", "withdrawn"].includes(project.state) && command !== "revise")) throw new Error("Онови чернетку перед дією.");
   const token = randomUUID();
-  let changes: Partial<StudioProject> = { ...(revisionRequestId ? { revisionRequestId } : {}), token, activeCall: false, error: null, reviewOnly: false };
+  let changes: Partial<StudioProject> = { ...(revisionRequestId ? { revisionRequestId } : {}), token, activeCall: false, error: null, reviewOnly: command === "retry" && project.reviewOnly === true };
   if (budgetUsd !== undefined) changes.request = { ...project.request, budgetUsd };
   if (learner) changes.request = { ...(changes.request ?? project.request), age: learner.age, grade: learner.grade };
   if (command === "approve") {

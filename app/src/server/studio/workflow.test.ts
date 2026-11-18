@@ -263,3 +263,10 @@ it("reports required and available project reserve without starting a call or di
  expect(failure).toBeInstanceOf(Error);await failStudioStep(currentJob,failure);
  expect(project.error).toContain("потрібен резерв $0.100");expect(project.error).toContain("доступно $0.043");expect(project.heldUsd).toBe(1.057);expect(project.spentUsd).toBe(1.90);expect(project.request.budgetUsd).toBe(3);expect(f.call).not.toHaveBeenCalled();
 });
+
+it("retains reviewer-only scope after an interrupted review is retried",async()=>{
+ project=studioProjectFixture({state:"failed",phase:"review",reviewOnly:true,plan:studioPlanFixture,heldUsd:0.1,units:[{content:studioLessonFixture,visuals:[],review:null}]});
+ f.call.mockResolvedValueOnce({result:{verdict:"revise",issues:["Неточне пояснення"],summary:"Потрібне виправлення",corrections:[{role:"author",blockIndex:0,visualIndex:null,problem:"Неточне пояснення",action:"Уточни визначення",acceptance:"Визначення правильне"}]},model:{provider:"openai",model:"test"},costUsd:0.02});
+ await resumeStudio("family",id,project.revision,"retry");expect(project.reviewOnly).toBe(true);await step();await step();
+ expect(project.state).toBe("needs_changes");expect(project.reviewAutomationStopped).toBe(true);expect(project.heldUsd).toBeCloseTo(0.1);expect(f.call).toHaveBeenCalledTimes(1);
+});
