@@ -26,7 +26,13 @@ export async function studioModelConfig(familyId: string, role: StudioRole) {
   if (error || !route || route.primary_provider !== "openai" || route.fallback_model || route.economy_model || route.escalation_model || !Number.isSafeInteger(route.params.max_tokens) || (route.params.max_tokens ?? 0) < 1 || (route.params.max_tokens ?? 0) > 16000 || (route.params.timeout_ms ?? 120000) > 120000) throw new AiNotConfiguredError("studio_route_must_be_bounded_openai");
   const rates = await loadPrice("openai", route.primary_model);
   if (!rates || !Number.isFinite(rates.input_usd_per_mtok) || !Number.isFinite(rates.output_usd_per_mtok) || rates.input_usd_per_mtok <= 0 || rates.output_usd_per_mtok <= 0) throw new AiNotConfiguredError("studio_price_missing");
-  return { route: { ...route, role: routingRole }, rates };
+  // Existing seeded author routes have a two-minute timeout. A complete lesson
+  // has the largest output allowance and runs in a 300-second worker.
+  const seededAuthor = role === "studio.author" && route.primary_model === "gpt-5.4"
+    && route.params.max_tokens === OUTPUT[role] && route.params.effort === "medium"
+    && route.params.timeout_ms === 120000 && route.params.budget_policy === "defer";
+  const params = seededAuthor ? { ...route.params, timeout_ms: 210000 } : route.params;
+  return { route: { ...route, role: routingRole, params }, rates };
 }
 export function studioReservation(system: string, prompt: string, schema: z.ZodType, maxTokens: number, rates: { input_usd_per_mtok: number; output_usd_per_mtok: number }) {
   // UTF-8 bytes are a conservative token bound, including schema + protocol overhead.

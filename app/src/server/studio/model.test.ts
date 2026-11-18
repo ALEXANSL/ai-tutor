@@ -41,3 +41,7 @@ it("inherits explicit parent model parameters without overwriting either route",
  f.route.mockResolvedValue({data:custom}); const result=await studioModelConfig("family","studio.author");
  expect(result.route.params).toEqual(custom.params); expect(f.upsert).toHaveBeenCalledWith(expect.objectContaining({role:"studio.author_full",params:custom.params}),expect.objectContaining({ignoreDuplicates:true}));
 });
+it("allows a full author response more time while preserving the source timeout", async () => {
+  expect((await studioModelConfig("family", "studio.author")).route.params.timeout_ms).toBe(210000);
+  expect((await studioModelConfig("family", "studio.source")).route.params.timeout_ms).toBe(120000);
+});
