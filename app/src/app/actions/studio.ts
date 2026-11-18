@@ -53,9 +53,16 @@ export async function pollStudioAction(rawId: string, rawLessonIndex?: number) {
   let activity: StudioActivity = { queue: "none", checkedAt: new Date().toISOString() };
   if (studioActive(project.state)) {
     const job = await forFamily(familyId).select("jobs", "status,locked_until,created_at,run_after").eq("type", STUDIO_STEP).eq("payload->>projectId", id).eq("payload->>token", project.token).order("created_at", { ascending: false }).limit(1).maybeSingle<{ status: string; locked_until: string | null; created_at: string; run_after?: string | null }>();
-    activity = { queue: job.error ? "unavailable" : job.data?.status === "queued" ? "queued" : job.data?.status === "running" ? "running" : job.data?.status === "done" ? "finished" : job.data?.status === "failed" ? "interrupted" : "none", checkedAt: new Date().toISOString(), backgroundStartedAt: project.pendingModelCall?.background?.started, runAfter: job.data?.run_after };
+    activity = { queue: job.error ? "unavailable" : job.data?.status === "queued" ? "queued" : job.data?.status === "running" ? "running" : job.data?.status === "done" ? "finished" : job.data?.status === "failed" ? "interrupted" : "none", checkedAt: new Date().toISOString(), providerObservation: project.pendingModelCall?.background?.observation, backgroundStartedAt: project.pendingModelCall?.background?.started, runAfter: job.data?.run_after };
     if (!job.error && (job.data?.status === "failed" || (job.data?.status === "running" && job.data.locked_until && Date.parse(job.data.locked_until) + 30000 < Date.now()) || (!job.data && Date.now() - Date.parse(project.createdAt) > 120000))) {
-      project = await saveStudioProject(familyId, id, project, { state: "failed", error: "STUDIO-INTERRUPTED: фоновий етап перервано. Готові частини збережено; можна повторити. Резерв невизначеного виклику не списано повторно." });
+      if (project.pendingModelCall?.background && project.phase === "author") {
+        const token = randomUUID();
+        project = await saveStudioProject(familyId, id, project, { token });
+        await scheduleStudio(familyId, id, token);
+        kickStudio(familyId, id);
+      } else {
+        project = await saveStudioProject(familyId, id, project, { state: "failed", error: "STUDIO-INTERRUPTED: фоновий етап перервано. Готові частини збережено; можна повторити. Резерв невизначеного виклику не списано повторно." });
+      }
     } else if (job.data?.status === "queued") kickStudio(familyId, id);
   }
   return { status: "ok" as const, project: studioParentView(await studioDiagnosticFromHistory(familyId, id, project), rawLessonIndex === undefined ? undefined : z.number().int().safe().min(0).parse(rawLessonIndex)), activity };

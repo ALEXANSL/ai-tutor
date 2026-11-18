@@ -101,7 +101,13 @@ export async function runStudioStep(job: JobRow, deadline: number) {
       if (error instanceof ProviderError && error.retryable && age < 3600000) return { requeue: true as const, delaySeconds: 15 };
       throw error;
     }
-    if (!retrieved) {
+    if ("pending" in retrieved) {
+      const last = background.observation;
+      if (last?.status !== retrieved.pending || Date.now() - last.at >= 60000) {
+        await saveStudioProject(job.family_id, id, project, { pendingModelCall: {
+          ...pending, background: { ...background, observation: { status: retrieved.pending, at: Date.now() } },
+        } });
+      }
       if (age > 3600000) throw new Error("STUDIO-BACKGROUND-WAIT");
       return { requeue: true as const, delaySeconds: 15 };
     }
