@@ -6,7 +6,7 @@ export function studioParentView(project: StudioProject, requestedIndex?: number
   result.canRestart = ["failed", "paused"].includes(project.state) && !!project.pendingModelCall && !project.pendingModelCall.billed;
   result.savedModelResult = !!project.pendingModelCall?.billed;
   result.canRegenerate = project.state === "failed" && !!project.pendingModelCall?.billed && project.failureDiagnostic?.category === "content";
-  delete result.pendingModelCall; delete result.unresolvedModelCalls; delete result.regeneration;
+  delete result.lastRateLimitRetryHash; delete result.pendingModelCall; delete result.unresolvedModelCalls; delete result.regeneration;
   if (project.sourceCorpus) result.sourceProgress = { partCount: project.sourceCorpus.partCount, analyzed: project.sourceCorpus.analyzed, characters: project.sourceCorpus.characterCount, stage: project.phase, lessonParts: project.lessonSources?.partIndexes.length ?? 0, lessonPrepared: project.lessonSources?.cursor ?? 0 };
   if (project.request.lessonCount <= 6 && !project.unitRefs) return result;
   const index = Math.min(Math.max(0, requestedIndex ?? project.cursor), Math.max(0, project.units.length - 1));

@@ -14,7 +14,7 @@ import { loadStudioSources } from "./sources";
 import { createStudioProject, readStudioProject, saveStudioProject, STUDIO_STEP } from "./store";
 import { callStudioModel, studioModelConfig, studioReservation, type StudioRole } from "./model";
 import { studioSystem } from "./prompts";
-import { applyStudioSourceTask, isStudioSourcePhase, prepareStudioLessonSources, studioLessonModelSources, studioPlanSources, studioSourceTask, validateStudioSourcePlan } from "./source-orchestration";
+import { reusePreparedLessonSources, applyStudioSourceTask, isStudioSourcePhase, prepareStudioLessonSources, studioLessonModelSources, studioPlanSources, studioSourceTask, validateStudioSourcePlan } from "./source-orchestration";
 import { studioRepairSchema, applyStudioRepair } from "./repair";
 import { saveStudioReviewEvent } from "./review-history";
 import { activateStudioPublication, prepareStudioPublication } from "./publish";
@@ -91,6 +91,13 @@ export async function runStudioStep(job: JobRow, deadline: number) {
     project = await saveStudioProject(job.family_id, id, project, await prepareStudioLessonSources(job.family_id, project));
     if (isStudioSourcePhase(project.phase)) return { requeue: true as const };
   }
+  if (project.phase === "lesson_sources" && !project.pendingModelCall && !project.activeCall && !project.regeneration) {
+    const prepared = await reusePreparedLessonSources(job.family_id, project);
+    if (prepared) {
+      await saveStudioProject(job.family_id, id, project, prepared);
+      return { requeue: true as const };
+    }
+  }
   const sourceTask = isStudioSourcePhase(project.phase) ? await studioSourceTask(job.family_id, project) : null;
   const modelSources = sourceTask?.sources ?? (project.phase === "resolve" ? [] : ["plan", "assess"].includes(project.phase) ? await studioPlanSources(job.family_id, project) : await studioLessonModelSources(job.family_id, project));
   const role: StudioRole = project.phase === "resolve" ? "studio.resolve" : project.phase === "assess" ? "studio.assess" : sourceTask ? "studio.source" : project.phase === "plan" ? "studio.plan" : project.phase === "author" ? "studio.author" : project.phase === "design" ? "studio.design" : project.phase === "repair" ? "studio.repair" : "studio.review";
@@ -120,6 +127,15 @@ export async function runStudioStep(job: JobRow, deadline: number) {
     project = await saveStudioProject(job.family_id, id, project, { activeCall: true, heldUsd: project.heldUsd + reserved, pendingModelCall: pending });
     try { result = await callStudioModel(job.family_id, id, role, system, prompt, schema, config); }
     catch (error) {
+      if (error instanceof ProviderError && error.status === 429 && project.lastRateLimitRetryHash !== inputHash) {
+        await saveStudioProject(job.family_id, id, project, {
+          activeCall: false,
+          pendingModelCall: undefined,
+          heldUsd: Math.max(0, project.heldUsd - reserved),
+          lastRateLimitRetryHash: inputHash,
+        });
+        return { requeue: true as const, delaySeconds: 30 };
+      }
       if (error instanceof AiNotConfiguredError || error instanceof BudgetBlockedError || (error instanceof ProviderError && error.status !== null && error.status >= 400 && error.status < 500 && ![408, 409].includes(error.status))) await saveStudioProject(job.family_id, id, project, { activeCall: false, pendingModelCall: undefined, heldUsd: Math.max(0, project.heldUsd - reserved) });
       throw error;
     }
