@@ -121,6 +121,10 @@ export async function runStudioStep(job: JobRow, deadline: number) {
   } else {
     if (project.activeCall) throw new Error("STUDIO-UNCERTAIN-CALL");
     const config = await studioModelConfig(job.family_id, role);
+    // Hand the job to a fresh worker before reserving or sending a paid call.
+    if (deadline - Date.now() < (config.route.params.timeout_ms ?? 120000) + 25000) {
+      return { requeue: true as const, delaySeconds: 1 };
+    }
     const reserved = studioReservation(system, prompt, schema, config.route.params.max_tokens!, config.rates);
     if (project.spentUsd + project.heldUsd + reserved > project.request.budgetUsd) throw new StudioCapError(reserved, project.request.budgetUsd - project.spentUsd - project.heldUsd);
     const pending = { id: randomUUID(), phase: project.phase, cursor: project.cursor, inputHash, reservedUsd: reserved, billed: false };
@@ -282,7 +286,7 @@ export async function failStudioStep(job: JobRow, error: unknown) {
   if (project && project.token === job.payload.token && studioActive(project.state)) await saveStudioProject(job.family_id, id, project, { state: "failed", failureDiagnostic: studioFailureDiagnostic(error, project.phase), error: error instanceof ProviderError ? studioFailureMessage(studioFailureDiagnostic(error, project.phase), false) : safeStageError(error) });
 }
 /** Project-specific CAS claim: does not start unrelated ingest/warmup jobs. Compatible with generic claim_jobs leases. */
-export async function runStudioQueue(familyId: string, projectId: string, token: string, budgetMs = 220000) {
+export async function runStudioQueue(familyId: string, projectId: string, token: string, budgetMs = 255000) {
   const scope = forFamily(familyId); const deadline = Date.now() + budgetMs;
   for (let processed = 0; processed < 12 && Date.now() < deadline - 15000; processed++) {
     const found = await scope.select("jobs", "*").eq("type", STUDIO_STEP).eq("status", "queued").eq("payload->>projectId", projectId).eq("payload->>token", token).lte("run_after", new Date().toISOString()).limit(1).maybeSingle<JobRow>();

@@ -345,3 +345,13 @@ it("backs off once per unchanged request after a provider rate limit", async () 
  expect(f.call).toHaveBeenCalledTimes(2);
  expect(project.spentUsd).toBe(0);
 });
+it("hands authoring to a fresh worker before reserving when time is short", async () => {
+  project = studioProjectFixture({ phase: "author", state: "generating", plan: studioPlanFixture });
+  f.config.mockResolvedValue({ route: { params: { max_tokens: 16000, timeout_ms: 210000 } }, rates: {} });
+  expect(await runStudioStep(job(), Date.now() + 180000)).toMatchObject({ requeue: true });
+  expect(f.call).not.toHaveBeenCalled();
+  expect(project.heldUsd).toBe(0);
+  await runStudioStep(job(), Date.now() + 255000);
+  expect(f.call).toHaveBeenCalledTimes(1);
+  expect(project.phase).toBe("design");
+});
