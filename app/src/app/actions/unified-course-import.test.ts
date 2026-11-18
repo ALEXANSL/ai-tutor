@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { redirect } from "next/navigation";
-const mock = vi.hoisted(() => ({ auth: vi.fn(), parse: vi.fn(), download: vi.fn(), remove: vi.fn(), persist: vi.fn(), replay: vi.fn(), acquire: vi.fn(), complete: vi.fn(), fail: vi.fn(), packageSubject: null as string | null }));
+const mock = vi.hoisted(() => ({ auth: vi.fn(), upload: vi.fn(), cleanup: vi.fn(), parse: vi.fn(), download: vi.fn(), remove: vi.fn(), persist: vi.fn(), replay: vi.fn(), acquire: vi.fn(), complete: vi.fn(), fail: vi.fn(), packageSubject: null as string | null }));
 vi.mock("@/server/auth/guards", () => ({ requireParentAccess: mock.auth }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
-vi.mock("@/server/supabase/clients", () => ({ createServiceClient: () => ({ storage: { from: () => ({ download: mock.download, remove: mock.remove }) } }) }));
+vi.mock("@/server/supabase/clients", () => ({ createServiceClient: () => ({ storage: { from: () => ({ upload: mock.upload, download: mock.download, remove: mock.remove }) } }) }));
 vi.mock("@/server/db/family-scope", () => ({ forFamily: (familyId: string, client: unknown) => ({ familyId, client, select: (table: string) => {
   const chain = { eq: () => chain, maybeSingle: async () => ({ error: null, data: table === "subjects" ? { id: "subject" } : mock.packageSubject ? { id: "existing", subject_id: mock.packageSubject } : null }) };
   return chain;
@@ -15,10 +15,11 @@ vi.mock("@/server/lessons/mathCourseV2Persist", () => ({ persistMathCourseV2Pack
 vi.mock("@/server/lessons/coursePersist", () => ({ persistCoursePackage: mock.persist }));
 vi.mock("@/server/lessons/literatureExtraction", () => ({ persistLiteratureTopic: mock.persist }));
 vi.mock("@/server/lessons/unifiedImportLifecycle", () => ({
+  scheduleUnifiedImportCleanup: mock.cleanup,
   isUnifiedImportStoragePath: (family: string, path: string) => path === `${family}/course.zip`,
   findCompletedUnifiedImport: mock.replay, acquireUnifiedImport: mock.acquire, completeUnifiedImport: mock.complete, failUnifiedImport: mock.fail,
 }));
-import { inspectUnifiedCourseAction, importUnifiedCourseAction } from "./unified-course-import";
+import { stageSmallCourseAction, inspectUnifiedCourseAction, importUnifiedCourseAction } from "./unified-course-import";
 const input = { subjectId: "11111111-1111-4111-8111-111111111111", storagePath: "family/course.zip" };
 const summary = { title: "Курс", lessons: 1, tasks: 2, assetsUploaded: 0, warnings: [] };
 beforeEach(() => {
@@ -32,6 +33,26 @@ beforeEach(() => {
 });
 async function verified() { const result = await inspectUnifiedCourseAction(input); if (result.status !== "ready") throw new Error(result.message); return { ...input, fingerprint: result.preview.fingerprint }; }
 describe("unified import server boundary", () => {
+  it("stages ZIP bytes under a generated family key, with cleanup scheduled before writing", async () => {
+    const data = new FormData();
+    data.set("archive", new Blob(["PK\x03\x04test"]), "урок.zip");
+    mock.upload.mockResolvedValue({ error: null });
+    const staged = await stageSmallCourseAction(data);
+    expect(staged.status).toBe("ok");
+    if (staged.status !== "ok") throw new Error(staged.message);
+    expect(staged.path).toMatch(/^family\/[a-f0-9-]+-course\.zip$/);
+    expect(mock.cleanup).toHaveBeenCalledWith("family", staged.path);
+    expect(mock.upload).toHaveBeenCalledWith(staged.path, Buffer.from("PK\x03\x04test"), { contentType: "application/zip" });
+    expect(mock.cleanup.mock.invocationCallOrder[0]).toBeLessThan(mock.upload.mock.invocationCallOrder[0]!);
+  });
+  it("rejects renamed text and oversize uploads before staging", async () => {
+    for (const bytes of ["not a zip", new Uint8Array(524289)]) {
+      const data = new FormData();
+      data.set("archive", new Blob([bytes]), "lesson.zip");
+      expect((await stageSmallCourseAction(data)).status).toBe("error");
+    }
+    expect(mock.upload).not.toHaveBeenCalled();
+  });
   it("checks authentication and family path before reading any object", async () => {
     mock.auth.mockRejectedValueOnce(new Error("Потрібен вхід"));
     expect((await inspectUnifiedCourseAction(input)).status).toBe("error");

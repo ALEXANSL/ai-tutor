@@ -3,8 +3,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ inspect: vi.fn(), commit: vi.fn(), upload: vi.fn(), fetch: vi.fn() }));
-vi.mock("@/app/actions/unified-course-import", () => ({ inspectUnifiedCourseAction: mocks.inspect, importUnifiedCourseAction: mocks.commit }));
+const mocks = vi.hoisted(() => ({ stage: vi.fn(), inspect: vi.fn(), commit: vi.fn(), upload: vi.fn(), fetch: vi.fn() }));
+vi.mock("@/app/actions/unified-course-import", () => ({ stageSmallCourseAction: mocks.stage, inspectUnifiedCourseAction: mocks.inspect, importUnifiedCourseAction: mocks.commit }));
 vi.mock("@/lib/supabase-browser", () => ({ getBrowserSupabaseStorageClient: () => ({ storage: { from: () => ({ uploadToSignedUrl: mocks.upload }) } }) }));
 vi.mock("@/lib/busy-signal", () => ({ withBusySignal: (work: () => unknown) => work() }));
 const { UnifiedCourseImportPanel } = await import("./UnifiedCourseImportPanel");
@@ -35,10 +35,10 @@ async function selectSubject(id = "geo") {
   const select = container.querySelector("select")!;
   await act(async () => { select.value = id; select.dispatchEvent(new Event("change", { bubbles: true })); });
 }
-async function chooseFile(name = "geography.zip") {
+async function chooseFile(name = "geography.zip", size = 524289) {
   const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
   await act(async () => {
-    Object.defineProperty(input, "files", { configurable: true, value: [new File(["zip"], name, { type: "application/zip" })] });
+    Object.defineProperty(input, "files", { configurable: true, value: [new File([new Uint8Array(size)], name, { type: "application/zip" })] });
     input.dispatchEvent(new Event("change", { bubbles: true }));
   });
 }
@@ -51,6 +51,16 @@ async function click(text: string) {
 async function ready() { await selectSubject(); await chooseFile(); await click("Перевірити архів"); }
 
 describe("one archive course upload", () => {
+  it("stages small ZIPs through the parent app and imports the inspected path", async () => {
+    mocks.stage.mockResolvedValue({ status: "ok", path: "family/small.zip" });
+    await selectSubject(); await chooseFile("урок.zip", 9606); await click("Перевірити архів");
+    expect(mocks.stage.mock.calls[0]![0].get("archive").size).toBe(9606);
+    expect(mocks.upload).not.toHaveBeenCalled();
+    expect(mocks.fetch).not.toHaveBeenCalled();
+    expect(mocks.inspect).toHaveBeenCalledWith({ subjectId: "geo", storagePath: "family/small.zip" });
+    await click("Додати курс");
+    expect(mocks.commit).toHaveBeenCalledWith({ subjectId: "geo", storagePath: "family/small.zip", fingerprint: preview.fingerprint });
+  });
   it("uploads one ZIP and requires a verified preview before any import", async () => {
     await ready();
     expect(mocks.upload).toHaveBeenCalledTimes(1);

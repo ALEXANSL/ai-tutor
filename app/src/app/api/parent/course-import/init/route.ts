@@ -33,11 +33,6 @@ interface InitBody {
   size?: unknown;
 }
 
-function sanitizeFileName(name: string): string {
-  const cleaned = name.replace(/[/\\]+/g, "_").replace(/\p{Cc}/gu, "_").trim();
-  return (cleaned || "course.zip").slice(0, 200);
-}
-
 export async function POST(request: NextRequest) {
   const { familyId } = await requireParentAccess();
   const body = (await request.json().catch(() => null)) as InitBody | null;
@@ -51,7 +46,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "too_large" }, { status: 413 });
   }
 
-  const storagePath = `${familyId}/${randomUUID()}-${sanitizeFileName(fileName)}`;
+  const storagePath = `${familyId}/${randomUUID()}-course.zip`;
   const client = createServiceClient();
   const { data, error } = await client.storage.from("course_import_staging").createSignedUploadUrl(storagePath, { upsert: true });
   if (error || !data) {

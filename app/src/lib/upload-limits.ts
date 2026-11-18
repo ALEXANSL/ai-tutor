@@ -12,6 +12,7 @@ export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
  * 20261016100000) is the real ceiling — this constant mirrors it for
  * instant client-side feedback, same pattern as `MAX_UPLOAD_BYTES` above.
  */
+export const SMALL_COURSE_ZIP_BYTES = 512 * 1024;
 export const MAX_COURSE_ZIP_BYTES = 300 * 1024 * 1024;
 
 /**

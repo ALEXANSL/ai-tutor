@@ -1,19 +1,19 @@
 "use server";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { unstable_rethrow } from "next/navigation";
 import { z } from "zod";
 import { requireParentAccess } from "@/server/auth/guards";
 import { forFamily, type FamilyScope } from "@/server/db/family-scope";
 import { createServiceClient } from "@/server/supabase/clients";
-import { MAX_COURSE_ZIP_BYTES } from "@/lib/upload-limits";
+import { MAX_COURSE_ZIP_BYTES, SMALL_COURSE_ZIP_BYTES } from "@/lib/upload-limits";
 import { parseUnifiedCourseArchive, type UnifiedCourseArchive } from "@/server/lessons/unifiedCourseArchive";
 import { persistLiteratureV3Package } from "@/server/lessons/literatureV3Persist";
 import { persistLiteratureV2Package } from "@/server/lessons/literatureV2Persist";
 import { persistMathCourseV2Package } from "@/server/lessons/mathCourseV2Persist";
 import { persistCoursePackage } from "@/server/lessons/coursePersist";
 import { persistLiteratureTopic } from "@/server/lessons/literatureExtraction";
-import { acquireUnifiedImport, completeUnifiedImport, failUnifiedImport, findCompletedUnifiedImport, isUnifiedImportStoragePath, type UnifiedImportSavedSummary } from "@/server/lessons/unifiedImportLifecycle";
+import { scheduleUnifiedImportCleanup, acquireUnifiedImport, completeUnifiedImport, failUnifiedImport, findCompletedUnifiedImport, isUnifiedImportStoragePath, type UnifiedImportSavedSummary } from "@/server/lessons/unifiedImportLifecycle";
 interface Input { subjectId: string; storagePath: string }
 interface Preview { readingBlocks?: number; biographyBlocks?: number; title: string; formatLabel: string; lessons: number; tasks: number; images: number; pdfs: number; warnings: string[]; existing: boolean; fingerprint: string; canImport: boolean }
 type Failure = { status: "error"; message: string; retryable?: boolean };
@@ -22,6 +22,25 @@ const labels = { chapter_v3: "Універсальний пакет курсу",
 const tables = { chapter_v3: "literature_v3_packages", math_v2: "course_v2_packages", literature_v2: "literature_v2_packages", course_v1: "course_packages" };
 const notes = (values: string[]) => [...new Set(values)].slice(0, 2000).map(value => value.slice(0, 4000));
 const message = (error: unknown) => error instanceof Error ? error.message.slice(0, 2000) : "Не вдалося обробити архів.";
+export async function stageSmallCourseAction(form: FormData): Promise<{ status: "ok"; path: string } | Failure> {
+  const { familyId } = await requireParentAccess();
+  const file = form.get("archive");
+  if (!(file instanceof Blob) || file.size < 4 || file.size > SMALL_COURSE_ZIP_BYTES) {
+    return { status: "error", message: "Не вдалося отримати невеликий ZIP-архів." };
+  }
+  const bytes = Buffer.from(await file.arrayBuffer());
+  if (bytes.readUInt32LE(0) !== 0x04034b50) {
+    return { status: "error", message: "Вибраний файл не має заголовка ZIP. Перевірте, що обрали сам архів." };
+  }
+  const path = `${familyId}/${randomUUID()}-course.zip`;
+  await scheduleUnifiedImportCleanup(familyId, path);
+  const { error } = await createServiceClient().storage.from(bucket).upload(path, bytes, { contentType: "application/zip" });
+  if (error) {
+    console.error("course_import_staging upload failed", error.name);
+    return { status: "error", message: "Сервер отримав ZIP, але не зміг записати його в тимчасове сховище." };
+  }
+  return { status: "ok", path };
+}
 async function context(input: Input) {
   const { familyId } = await requireParentAccess();
   if (!z.string().uuid().safeParse(input.subjectId).success || !isUnifiedImportStoragePath(familyId, input.storagePath)) throw new Error("Невірний предмет або шлях архіву.");
