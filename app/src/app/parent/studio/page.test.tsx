@@ -3,6 +3,7 @@ import { expect, it, vi } from "vitest";
 const catalog = vi.hoisted(() => vi.fn());
 vi.mock("@/server/auth/guards", () => ({ requireParentAccess: async () => ({ familyId: "own-family" }) }));
 vi.mock("@/server/studio/catalog", () => ({ studioCatalog: catalog }));
+vi.mock("@/server/studio/drafts", () => ({ listStudioFormDrafts: async () => [] }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/app/actions/studio", () => ({ setStudioAccessAction: vi.fn() }));
 vi.mock("next/link", () => ({ default: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a> }));

@@ -5,10 +5,13 @@ import { createHash, randomUUID } from "node:crypto";
 import { STUDIO_PLAN_BATCH_SIZE, studioPlanBatchSchema, studioDesignSchema, studioLessonSchema, studioAuthorSchema, studioReviewResponseSchema, studioCanAutoResumeReview, studioActive, studioPublicationVisible, type StudioPlan, type StudioProject, type StudioRequest } from "@/lib/studio";
 import { enqueueJob, registerJobHandler, type JobRow } from "@/server/jobs/runner";
 import { forFamily } from "@/server/db/family-scope";
+import { studioBaseCandidates } from "./base-sources";
+import { applyStudioResolution, applyStudioAssessment, studioResolveSchema, studioAssessSchema } from "./source-selection";
 import { loadStudioSources } from "./sources";
 import { createStudioProject, readStudioProject, saveStudioProject, STUDIO_STEP } from "./store";
 import { callStudioModel, studioModelConfig, studioReservation, type StudioRole } from "./model";
 import { studioSystem } from "./prompts";
+import { applyStudioSourceTask, isStudioSourcePhase, prepareStudioLessonSources, studioLessonModelSources, studioPlanSources, studioSourceNoteSchema, studioSourceTask, validateStudioSourcePlan } from "./source-orchestration";
 import { studioRepairSchema, applyStudioRepair } from "./repair";
 import { saveStudioReviewEvent } from "./review-history";
 import { activateStudioPublication, prepareStudioPublication } from "./publish";
@@ -24,8 +27,9 @@ export async function scheduleStudio(familyId: string, id: string, token: string
 export async function startStudio(familyId: string, request: StudioRequest, requestId: string, revisionRequestId?: string): Promise<string> {
   const existing = await readStudioProject(familyId, requestId);
   if (existing) { if (JSON.stringify(existing.request) !== JSON.stringify(request)) throw new Error("Ця чернетка вже має інший запит. Створи нову з оновленими полями."); return requestId; }
-  const source = await loadStudioSources(familyId, request);
-  const project: StudioProject = { ...(revisionRequestId ? { revisionRequestId } : {}), version: 1, revision: 0, request, ...source, createdAt: new Date().toISOString(), state: "planning", phase: "plan", plan: null, units: [], cursor: 0, token: randomUUID(), activeCall: false, spentUsd: 0, heldUsd: 0, feedback: "", error: null, models: [], publication: null };
+  const available = await studioBaseCandidates(familyId, request);
+  const source = available.topics.length ? { sources: [], sourceNotes: ["Шукаємо відповідні готові матеріали базового предмета перед зверненням до книги."], baseHref: null, baseTitle: null, subjectName: available.subjectName, sourceCorpus: undefined, sourceSelection: { candidates: available.topics, fallbackMaterialId: available.fallbackMaterialId, selectedIds: [], assessed: false } } : await loadStudioSources(familyId, { ...request, materialId: request.materialId ?? available.fallbackMaterialId });
+  const project: StudioProject = { ...(revisionRequestId ? { revisionRequestId } : {}), version: 1, revision: 0, request, ...source, createdAt: new Date().toISOString(), state: "planning", phase: "sourceSelection" in source ? "resolve" : source.sourceCorpus && source.sourceCorpus.analyzed < source.sourceCorpus.partCount ? "analyze" : "plan", plan: null, units: [], cursor: 0, token: randomUUID(), activeCall: false, spentUsd: 0, heldUsd: 0, feedback: "", error: null, models: [], publication: null };
   const id = await createStudioProject(familyId, project, requestId);
   const saved = await readStudioProject(familyId, id);
   if (saved?.token !== project.token) return id;
@@ -33,11 +37,11 @@ export async function startStudio(familyId: string, request: StudioRequest, requ
   catch { await saveStudioProject(familyId, id, project, { state: "failed", error: "Не вдалося поставити план у чергу. Чернетку збережено; можна повторити." }); }
   return id;
 }
-export function validateStudioLesson(project: StudioProject, raw: unknown) {
+export function validateStudioLesson(project: StudioProject, raw: unknown, contextIds?: string[]) {
   const generated = studioAuthorSchema.parse(raw);
   const lesson = studioLessonSchema.parse({ ...generated, blocks: generated.blocks.map(block => ({ ...block, narration: studioNarrationText(block) })) });
   if (Buffer.byteLength(JSON.stringify(lesson)) > 250000) throw new Error("STUDIO-LESSON-SIZE");
-  const ids = new Set(project.sources.map(source => source.id));
+  const ids = new Set(contextIds ?? project.units[project.cursor]?.sourceContext?.ids ?? project.lessonSources?.context?.ids ?? project.sources.map(source => source.id));
   if (lesson.sourceIds.some(id => !ids.has(id))) throw new Error("STUDIO-SOURCE-REF");
   if (lesson.blocks.reduce((sum, block) => sum + block.text.length, 0) < 1800 || !lesson.blocks.some(block => block.kind === "explanation") || !lesson.blocks.some(block => block.kind === "example") || !lesson.blocks.some(block => ["practice", "steps"].includes(block.kind))) throw new Error("STUDIO-INCOMPLETE-LESSON");
   if (lesson.questions.some(question => new Set(question.options.map(option => option.toLocaleLowerCase("uk").trim())).size !== 3)) throw new Error("STUDIO-DUPLICATE-OPTIONS");
@@ -77,14 +81,20 @@ export async function runStudioStep(job: JobRow, deadline: number) {
     await activateStudioPublication(job.family_id, publication, !project.request.subjectId);
     await saveStudioProject(job.family_id, id, project, { state: "published", publicationRevision: false, childAccess: "enabled", error: null }); return;
   }
-  const role: StudioRole = project.phase === "plan" ? "studio.plan" : project.phase === "author" ? "studio.author" : project.phase === "design" ? "studio.design" : project.phase === "repair" ? "studio.repair" : "studio.review";
-  const schema = project.phase === "plan" ? studioPlanBatchSchema : project.phase === "author" ? studioAuthorSchema : project.phase === "design" ? studioDesignSchema : project.phase === "repair" ? studioRepairSchema : studioReviewResponseSchema;
+  if (project.sourceCorpus && !["plan", "publish", "resolve", "assess"].includes(project.phase) && !isStudioSourcePhase(project.phase) && !project.units[project.cursor]?.sourceContext && !(project.lessonSources?.lessonIndex === project.cursor && project.lessonSources.context)) {
+    project = await saveStudioProject(job.family_id, id, project, await prepareStudioLessonSources(job.family_id, project));
+    if (isStudioSourcePhase(project.phase)) return { requeue: true as const };
+  }
+  const sourceTask = isStudioSourcePhase(project.phase) ? await studioSourceTask(job.family_id, project) : null;
+  const modelSources = sourceTask?.sources ?? (project.phase === "resolve" ? [] : ["plan", "assess"].includes(project.phase) ? await studioPlanSources(job.family_id, project) : await studioLessonModelSources(job.family_id, project));
+  const role: StudioRole = project.phase === "resolve" ? "studio.resolve" : project.phase === "assess" ? "studio.assess" : sourceTask ? "studio.source" : project.phase === "plan" ? "studio.plan" : project.phase === "author" ? "studio.author" : project.phase === "design" ? "studio.design" : project.phase === "repair" ? "studio.repair" : "studio.review";
+  const schema = project.phase === "resolve" ? studioResolveSchema : project.phase === "assess" ? studioAssessSchema : sourceTask ? studioSourceNoteSchema : project.phase === "plan" ? studioPlanBatchSchema : project.phase === "author" ? studioAuthorSchema : project.phase === "design" ? studioDesignSchema : project.phase === "repair" ? studioRepairSchema : studioReviewResponseSchema;
   const system = studioSystem(role);
   const planned = project.plan?.lessons.length ?? 0;
   const planningBatch = { startLesson: planned + 1, count: Math.min(STUDIO_PLAN_BATCH_SIZE, project.request.lessonCount - planned), totalLessons: project.request.lessonCount };
   const planContext = project.plan ? { ...project.plan, lessons: project.phase === "plan" ? project.plan.lessons.slice(-STUDIO_PLAN_BATCH_SIZE) : project.plan.lessons.slice(Math.max(0, project.cursor - 2), project.cursor + 3) } : null;
-  const candidate = project.units[project.cursor] ? studioModelLesson(project.units[project.cursor]!.content) : null;
-  const prompt = JSON.stringify({ request: { ...project.request, sourceText: undefined, subjectId: undefined, topicId: undefined, materialId: undefined }, subject: project.subjectName, baseTitle: project.baseTitle, plan: planContext, ...(project.phase === "plan" ? { planningBatch } : {}), currentLesson: project.phase === "plan" ? null : project.plan?.lessons[project.cursor] ?? null, sources: project.sources, sourceNotes: project.sourceNotes, feedback: project.feedback, ...(project.units[project.cursor] ? { candidate: { content: project.phase === "design" ? { title: candidate!.title, objectives: candidate!.objectives, blocks: candidate!.blocks } : candidate, visuals: project.units[project.cursor]!.visuals, parentSelectedIllustrations: project.units[project.cursor]!.illustrations?.map(({ title, caption, blockIndex, sourceUrl }) => ({ title, caption, blockIndex, sourceUrl })), ...(project.phase === "repair" ? { review: project.units[project.cursor]!.review } : {}) } } : {}) });
+  const candidate = !sourceTask && !["resolve", "assess"].includes(project.phase) && project.units[project.cursor] ? studioModelLesson(project.units[project.cursor]!.content) : null;
+  const prompt = JSON.stringify({ request: sourceTask?.scope === "book" ? { purpose: "Незалежний від конкретного курсу огляд усіх наданих частин джерела" } : { ...project.request, hasSelectedMaterial: !!project.request.materialId, sourceText: undefined, subjectId: undefined, topicId: undefined, materialId: undefined }, subject: sourceTask?.scope === "book" ? null : project.subjectName, baseTitle: sourceTask?.scope === "book" ? null : project.baseTitle, plan: sourceTask?.scope === "book" ? null : planContext, ...(project.phase === "plan" ? { planningBatch } : {}), currentLesson: sourceTask?.scope === "book" || project.phase === "plan" ? null : project.plan?.lessons[project.cursor] ?? null, sources: modelSources, sourceNotes: sourceTask?.scope === "book" ? [] : project.sourceNotes, ...(project.phase === "resolve" ? { selectedTopicId: project.request.topicId, availableTopics: project.sourceSelection?.candidates.map(({ id, subjectId, title, pageFrom, pageTo }) => ({ id, subjectId, title, pageFrom, pageTo })) } : {}), ...(sourceTask ? { sourceTask: { scope: sourceTask.scope, reducing: sourceTask.reducing, fromPart: sourceTask.fromPart, toPart: sourceTask.toPart, verifiedQuotes: sourceTask.verifiedQuotes } } : {}), feedback: sourceTask?.scope === "book" ? "" : project.feedback, ...(candidate ? { candidate: { content: project.phase === "design" ? { title: candidate!.title, objectives: candidate!.objectives, blocks: candidate!.blocks } : candidate, visuals: project.units[project.cursor]!.visuals, parentSelectedIllustrations: project.units[project.cursor]!.illustrations?.map(({ title, caption, blockIndex, sourceUrl }) => ({ title, caption, blockIndex, sourceUrl })), ...(project.phase === "repair" ? { review: project.units[project.cursor]!.review } : {}) } } : {}) });
   if (Buffer.byteLength(system + prompt + JSON.stringify(schema.toJSONSchema())) > 250000) throw new Error("STUDIO-CONTEXT");
   const config = await studioModelConfig(job.family_id, role);
   const reserved = studioReservation(system, prompt, schema, config.route.params.max_tokens!, config.rates);
@@ -98,24 +108,28 @@ export async function runStudioStep(job: JobRow, deadline: number) {
   }
   const changes: Partial<StudioProject> = { activeCall: false, heldUsd: Math.max(0, project.heldUsd - reserved), spentUsd: project.spentUsd + result.costUsd, models: [...project.models, { role, model: `${result.model.provider}/${result.model.model}`, costUsd: result.costUsd }] };
   try {
-  if (project.phase === "plan") {
+  if (project.phase === "resolve") Object.assign(changes, await applyStudioResolution(job.family_id, project, result.result));
+  else if (project.phase === "assess") Object.assign(changes, await applyStudioAssessment(job.family_id, project, modelSources, result.result));
+  else if (sourceTask) Object.assign(changes, await applyStudioSourceTask(job.family_id, project, sourceTask, result.result));
+  else if (project.phase === "plan") {
     const batch = studioPlanBatchSchema.parse(result.result);
     if (batch.lessons.length !== planningBatch.count) throw new Error("STUDIO-PLAN-COUNT");
     const lessons = [...(project.plan?.lessons ?? []), ...batch.lessons];
     if (new Set(lessons.map(lesson => lesson.title.toLocaleLowerCase("uk").trim())).size !== lessons.length) throw new Error("STUDIO-PLAN-DUPLICATE");
-    const plan = project.plan ? { ...project.plan, lessons } : batch;
+    const plan = project.plan ? { ...project.plan, lessons, sourceExclusions: [...new Map([...(project.plan.sourceExclusions ?? []), ...(batch.sourceExclusions ?? [])].map(item => [item.sourceId, item])).values()] } : batch;
+    await validateStudioSourcePlan(job.family_id, project, plan, lessons.length === project.request.lessonCount);
     Object.assign(changes, { plan, state: lessons.length === project.request.lessonCount ? "plan_ready" : "planning" });
   } else {
     const units = [...project.units];
     if (project.phase === "author") {
-      units[project.cursor] = { ...units[project.cursor], content: validateStudioLesson(project, result.result), visuals: units[project.cursor]?.visuals ?? [], review: null }; changes.phase = "design";
+      units[project.cursor] = { ...units[project.cursor], content: validateStudioLesson(project, result.result, modelSources.map(source => source.id)), sourceContext: project.units[project.cursor]?.sourceContext ?? project.lessonSources?.context, visuals: units[project.cursor]?.visuals ?? [], review: null }; changes.phase = "design";
     } else if (project.phase === "design") {
       const { visuals } = studioDesignSchema.parse(result.result);
       if (visuals.some(visual => visual.blockIndex >= units[project.cursor]!.content.blocks.length || (visual.kind === "dimensions" && (!visual.width || !visual.height || !visual.unit)))) throw new Error("STUDIO-VISUAL-REF");
       units[project.cursor] = { ...units[project.cursor]!, visuals }; changes.phase = "review";
     } else if (project.phase === "repair") {
       const repaired = applyStudioRepair(units[project.cursor]!, result.result);
-      validateStudioLesson(project, repaired.unit.content);
+      validateStudioLesson(project, repaired.unit.content, modelSources.map(source => source.id));
       units[project.cursor] = repaired.unit;
       Object.assign(changes, { phase: "review", repairAdvice: repaired.diagnosis, feedback: `${studioReviewFeedback(project.units[project.cursor]!.review)}\nДіагностичне виправлення: ${repaired.diagnosis}\nПеревір за контрактом незалежно, не довіряй висновку редактора без перевірки: ${repaired.reviewAdvice}` });
     } else {
@@ -155,7 +169,8 @@ export async function resumeStudio(familyId: string, id: string, revision: numbe
   if (learner) changes.request = { ...(changes.request ?? project.request), age: learner.age, grade: learner.grade };
   if (command === "approve") {
     if (project.state !== "plan_ready" || !plan || plan.lessons.length !== project.request.lessonCount) throw new Error("Перевір план та кількість уроків.");
-    changes = { ...changes, plan, state: "generating", phase: "author", cursor: 0, units: [] };
+    await validateStudioSourcePlan(familyId, project, plan);
+    changes = { ...changes, plan, state: "generating", phase: "author", cursor: 0, units: [], lessonSources: undefined };
   } else if (command === "publish") {
     if (project.state !== "ready" || project.units.length !== project.plan?.lessons.length || project.units.some(unit => unit.review?.verdict !== "pass")) throw new Error("Спочатку потрібні готові уроки й позитивна рецензія.");
     changes = { ...changes, state: "publishing", phase: "publish" };
@@ -168,7 +183,7 @@ export async function resumeStudio(familyId: string, id: string, revision: numbe
     const cursor = lessonIndex ?? project.cursor;
     if (!["needs_changes", "ready", "published", "withdrawn"].includes(project.state) || !Number.isSafeInteger(cursor) || !project.units[cursor]) throw new Error("Немає уроку для виправлення.");
     if (["published", "withdrawn"].includes(project.state) && !feedback.trim()) throw new Error("Опиши, що потрібно виправити в опублікованому уроці.");
-    if (project.request.materialId) changes = { ...changes, ...await loadStudioSources(familyId, changes.request ?? project.request) };
+    if (project.request.materialId && !project.sourceCorpus) changes = { ...changes, ...await loadStudioSources(familyId, changes.request ?? project.request) };
     const review = project.units[cursor]!.review;
     // Only structured, exclusively visual corrections can skip authoring. Legacy reviews
     // and parent instructions still receive a full, contextual revision.
@@ -177,9 +192,10 @@ export async function resumeStudio(familyId: string, id: string, revision: numbe
     changes = { ...changes, units, reviewAutomationStopped: false, reviewRepairAttempted: false, repairAdvice: "", revisionInstructions: feedback.trim(), state: "generating", publicationRevision: project.publicationRevision || !!project.publication, childAccess: studioPublicationVisible(project) ? "enabled" : "disabled", editorNotes: [...(project.editorNotes ?? []), { at: new Date().toISOString(), lessonIndex: cursor, text: feedback.trim() || "Виправити зауваження рецензента" }].slice(-30), phase: designOnly ? "design" : "author", cursor, feedback: `${studioReviewFeedback(review)}\nПобажання тата: ${feedback}` };
   } else {
     if (!["failed", "paused"].includes(project.state)) throw new Error("Продовження доступне після паузи або збою етапу.");
-    if (project.request.materialId) changes = { ...changes, ...await loadStudioSources(familyId, changes.request ?? project.request) };
-    changes.state = project.phase === "plan" ? "planning" : project.phase === "publish" ? "publishing" : "generating";
+    if (project.request.materialId && !project.sourceCorpus) changes = { ...changes, ...await loadStudioSources(familyId, changes.request ?? project.request) };
+    changes.state = ["resolve", "assess", "analyze", "outline", "plan"].includes(project.phase) ? "planning" : project.phase === "publish" ? "publishing" : "generating";
   }
+  if (changes.sourceCorpus && !project.sourceCorpus) Object.assign(changes, { state: "planning", phase: "analyze", plan: null, lessonSources: undefined, cursor: 0 });
   const next = await saveStudioProject(familyId, id, project, changes);
   try { await scheduleStudio(familyId, id, token); }
   catch { await saveStudioProject(familyId, id, next, { state: "failed", error: "Чернетку збережено, але черга недоступна. Повтори етап пізніше." }); }

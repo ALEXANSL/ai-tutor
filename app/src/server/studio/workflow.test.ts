@@ -5,6 +5,7 @@ import { studioLessonFixture, studioPlanFixture, studioProjectFixture, studioVis
 const f = vi.hoisted(() => ({ read: vi.fn(), save: vi.fn(), create: vi.fn(), enqueue: vi.fn(), call: vi.fn(), sources: vi.fn(), config: vi.fn(), prepare: vi.fn(), activate: vi.fn() }));
 vi.mock("./store", () => ({ STUDIO_STEP: "studio.step", readStudioProject: f.read, saveStudioProject: f.save, createStudioProject: f.create }));
 vi.mock("./review-history", () => ({ saveStudioReviewEvent: vi.fn() }));
+vi.mock("./base-sources", () => ({ studioBaseCandidates: async () => ({topics:[],subjectName:null,fallbackMaterialId:null}), studioPreparedBaseSources: vi.fn() }));
 vi.mock("./sources", async original => ({ ...await original<typeof import("./sources")>(), loadStudioSources: f.sources }));
 vi.mock("./model", () => ({ studioModelConfig: f.config, studioReservation: () => 0.1, callStudioModel: f.call }));
 vi.mock("./publish", () => ({ prepareStudioPublication: f.prepare, activateStudioPublication: f.activate }));
