@@ -391,3 +391,18 @@ it("resumes an accepted background author response without resubmitting or charg
     expect(f.call).toHaveBeenCalledTimes(1); expect(poll).toHaveBeenCalledTimes(2); expect(audit).toHaveBeenCalledTimes(1);
   } finally { poll.mockRestore(); audit.mockRestore(); }
 });
+
+it("bounds rephrased objections even when the text and fingerprint change every round", async () => {
+  project = studioProjectFixture({state:"generating", phase:"review",plan:studioPlanFixture,units:[{content:studioLessonFixture,visuals:[],review:null}]});
+  let reviews = 0;
+  f.call.mockImplementation(async (_family,_id,role) => ({
+    result: role === "studio.review"
+      ? {verdict:"revise", summary:"Є прогалина", issues:[`Доказ ${++reviews}`], corrections:[{...visualFix, role:"author",problem:`Доказ ${reviews}`}]}
+      : {diagnosis:"Змінюємо приклад відповідно до зауваження.",reviewAdvice:"Перевір доказ.",blocks:[],questions:[],visuals:null,title:`Урок ${reviews}`,objectives:null,sourceIds:null,enrichmentNote:null,adultAssistance:null},
+    model:{provider:"openai",model:"test"},costUsd:0.01,
+  }));
+  for(let i=0;i<12;i++) await step();
+  expect(reviews).toBe(4);
+  expect(project).toMatchObject({state:"needs_changes",reviewRepairAttempted:true,reviewAutomationStopped:true});
+  expect(f.call).toHaveBeenCalledTimes(7);
+});

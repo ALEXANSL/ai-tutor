@@ -85,6 +85,7 @@ export interface StudioProject {
   reviewOnly?: boolean;
   reviewAutomationStopped?: boolean;
   reviewRepairAttempted?: boolean;
+  consecutiveReviewFailures?: number;
   repairAdvice?: string;
   revisionInstructions?: string;
   editorNotes?: { at: string; lessonIndex: number; text: string }[];
