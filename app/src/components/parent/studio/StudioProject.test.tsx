@@ -27,12 +27,12 @@ it("acknowledges a revision immediately, disables repeat clicks and shows the ru
   await click("Виправити зауваження рецензента"); expect(container.textContent).toContain("Запускаємо доопрацювання уроку…"); expect(container.querySelector(".animate-spin")).not.toBeNull(); expect(button("Виправити зауваження рецензента").disabled).toBe(true); expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled();
   await act(async () => { accept({ status: "ok" }); });
   expect(f.command).toHaveBeenCalledTimes(1); expect(f.command.mock.calls[0]![0]).toMatchObject({ command: "revise", feedback: "", lessonIndex: 0 });
-  expect(container.textContent).toContain("Доопрацювання запущено"); expect(container.textContent).toContain("ШІ обробляє запит"); expect(container.textContent).toContain("попередня версія, готуємо оновлення");
+  expect(container.textContent).toContain("Доопрацювання запущено"); expect(container.textContent).toContain("Запит надіслано"); expect(container.textContent).toContain("попередня версія, готуємо оновлення");
 });
 it("distinguishes queued work and advances the stage on refresh without fabricated percentages", async () => {
   f.poll.mockResolvedValueOnce(observed(project({ state: "generating", phase: "author", revision: 1 }), "queued"));
   render(project({ state: "generating", phase: "author", revision: 1 })); await act(async () => {});
-  expect(container.textContent).toContain("Завдання в черзі"); expect(container.textContent).not.toContain("ШІ обробляє запит");
+  expect(container.textContent).toContain("Завдання в черзі"); expect(container.textContent).not.toContain("Запит надіслано");
   f.poll.mockResolvedValueOnce(observed(project({ state: "generating", phase: "design", revision: 2, activeCall: true })));
   await click("Оновити стан"); expect(container.querySelector('[aria-current="step"]')!.textContent).toContain("Схеми"); expect(container.textContent).toContain("Стан перевірено"); expect(container.querySelector('[role="progressbar"]')).toBeNull();
 });

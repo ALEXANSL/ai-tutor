@@ -1,5 +1,6 @@
 import { z } from "zod";
 export const STUDIO_PLAN_BATCH_SIZE = 6;
+export const STUDIO_MAX_QUIZZES = 24;
 export const STUDIO_MAX_BLOCKS = 24;
 export const STUDIO_MAX_SOURCE_CHUNKS = 200;
 export const STUDIO_MAX_BUDGET = 250;
@@ -19,7 +20,7 @@ export const studioPlanBatchSchema = studioPlanSchema.extend({ lessons: studioPl
 export type StudioPlan = z.infer<typeof studioPlanSchema>;
 export const studioLessonSchema = z.object({ title: text(200), objectives: z.array(text(250)).min(1).max(6),
   blocks: z.array(z.object({ title: text(150), kind: z.enum(["explanation", "example", "practice", "steps", "summary", "code"]), text: text(8000), narration: text(12000), narrationLanguage: z.enum(["uk-UA", "en-GB", "de-DE"]).nullable().optional() }).strict()).min(3).max(STUDIO_MAX_BLOCKS),
-  questions: z.array(z.object({ prompt: text(800), options: z.array(text(400)).length(3), correctIndex: z.number().int().min(0).max(2), explanation: text(1200) }).strict()).min(2).max(3),
+  questions: z.array(z.object({ prompt: text(800), options: z.array(text(400)).length(3), correctIndex: z.number().int().min(0).max(2), explanation: text(1200) }).strict()).min(2).max(STUDIO_MAX_QUIZZES),
   sourceIds: z.array(text(100)).max(STUDIO_MAX_SOURCE_CHUNKS), enrichmentNote: text(1000), adultAssistance: z.string().max(1500),
 }).strict();
 export type StudioLesson = z.infer<typeof studioLessonSchema>;
@@ -101,6 +102,7 @@ export function studioActive(state: StudioState) { return ["planning", "generati
 export interface StudioActivity {
   queue: "queued" | "running" | "finished" | "interrupted" | "unavailable" | "none";
   checkedAt: string;
+  backgroundStartedAt?: number;
   runAfter?: string | null;
 }
 

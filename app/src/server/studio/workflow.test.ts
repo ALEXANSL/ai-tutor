@@ -42,7 +42,7 @@ it("stops after the plan, requires parent approval, runs independent author/desi
 it("blocks publication after a failed review and preserves the full candidate for correction", async () => {
   project = studioProjectFixture({ state: "generating", phase: "review", plan: studioPlanFixture, units: [{ content: studioLessonFixture, visuals: [studioVisualFixture], review: null }] });
   f.call.mockResolvedValue({ result: { verdict: "revise", issues: ["Уточнити приклад"], corrections: [{ role: "author", blockIndex: 1, visualIndex: null, problem: "Нечіткий приклад", action: "Уточни значення Y перед переміщенням", acceptance: "Вказане початкове значення Y" }], summary: "Потрібні виправлення" }, model: { provider: "openai", model: "test" }, costUsd: 0.01 });
-  await step(); expect(project.state).toBe("generating"); expect(project.phase).toBe("author"); expect(project.units[0]!.content.title).toBe(studioLessonFixture.title);
+  await step(); expect(project.state).toBe("generating"); expect(project.phase).toBe("repair"); expect(project.units[0]!.content.title).toBe(studioLessonFixture.title);
   await expect(resumeStudio("family", id, project.revision, "publish")).rejects.toThrow(); expect(f.prepare).not.toHaveBeenCalled();
 });
 it("reserves before a paid call, retains the reserve on uncertainty, and never silently retries it", async () => {
@@ -181,7 +181,7 @@ it("rejects written-response knowledge checks but keeps code examples and option
 it("automatically repairs and rechecks more than two times until pass, preserving parent instructions", async () => {
   project = studioProjectFixture({ state: "generating", phase: "review", plan: studioPlanFixture, revisionInstructions: "Додай приклад із Roblox", units: [{ content: studioLessonFixture, visuals: [], review: null }] });
   let reviews = 0;
-  f.call.mockImplementation(async (_family, _id, role) => ({ result: role === "studio.author" ? { ...studioLessonFixture, title: `Виправлення ${reviews}` } : role === "studio.design" ? { visuals: [] } : ++reviews < 4 ? { verdict: "revise", issues: [`Уточнення ${reviews}`], corrections: [{ ...visualFix, role: "author", problem: `Уточнення ${reviews}` }], summary: "Виправити приклад" } : { verdict: "pass", issues: [], corrections: [], summary: "Пройдено" }, model: { provider: "openai", model: "test" }, costUsd: 0.01 }));
+  f.call.mockImplementation(async (_family, _id, role) => ({ result: role === "studio.repair" ? {diagnosis:"Уточнюємо приклад за першою рецензією.",reviewAdvice:"Перевір приклад.",blocks:[],questions:[],visuals:null,title:"Виправлений урок",objectives:null,sourceIds:null,enrichmentNote:null,adultAssistance:null} : role === "studio.author" ? { ...studioLessonFixture, title: `Виправлення ${reviews}` } : role === "studio.design" ? { visuals: [] } : ++reviews < 4 ? { verdict: "revise", issues: [`Уточнення ${reviews}`], corrections: [{ ...visualFix, role: "author", problem: `Уточнення ${reviews}` }], summary: "Виправити приклад" } : { verdict: "pass", issues: [], corrections: [], summary: "Пройдено" }, model: { provider: "openai", model: "test" }, costUsd: 0.01 }));
   for (let i = 0; i < 10; i++) await step();
   expect(project.state).toBe("ready"); expect(project.units[0]!.reviewRound).toBe(4); expect(f.enqueue).not.toHaveBeenCalled();
   for (const call of f.call.mock.calls.filter(call => call[2] === "studio.author")) expect(JSON.parse(call[4]).feedback).toContain("Додай приклад із Roblox");
@@ -320,10 +320,17 @@ it("preserves learner context while a saved call awaits processing",async()=>{
  await expect(resumeStudio("family",id,project.revision,"retry",undefined,"",5,undefined,undefined,{age:project.request.age+1,grade:project.request.grade})).rejects.toThrow("вік і клас");expect(f.enqueue).not.toHaveBeenCalled();expect(f.call).not.toHaveBeenCalled();
 });
 
-it("accounts and retains an incomplete paid response without applying or silently regenerating it",async()=>{
- f.call.mockResolvedValueOnce({result:'{"title":',failure:{code:"STUDIO-AI-INCOMPLETE",paths:[]},model:{provider:"openai",model:"test"},costUsd:0.023});await step();
- expect(project.state).toBe("failed");expect(project.failureDiagnostic?.code).toBe("STUDIO-AI-INCOMPLETE");expect(project.spentUsd).toBeCloseTo(0.023);expect(project.heldUsd).toBe(0);expect(project.pendingModelCall?.billed).toBe(true);expect(project.plan).toBeNull();
- await resumeStudio("family",id,project.revision,"retry");await step();expect(f.call).toHaveBeenCalledTimes(1);expect(project.spentUsd).toBeCloseTo(0.023);expect(project.models).toHaveLength(1);expect(project.state).toBe("failed");
+it("recovers a confirmed incomplete response once in a legacy project and respects the cap",async()=>{
+ const incomplete = {result:'{"title":',failure:{code:"STUDIO-AI-INCOMPLETE",paths:[]},model:{provider:"openai",model:"test"},costUsd:0.023};
+ f.call.mockResolvedValueOnce(incomplete).mockResolvedValueOnce(incomplete);
+ expect(await step()).toMatchObject({requeue:true});
+ expect(project.regeneration?.diagnostic.code).toBe("STUDIO-AI-INCOMPLETE");
+ expect(project.spentUsd).toBeCloseTo(0.023);expect(project.heldUsd).toBe(0);
+ project.request.budgetUsd=0.1;
+ await expect(step()).rejects.toThrow("STUDIO-CAP");expect(f.call).toHaveBeenCalledTimes(1);
+ project.request.budgetUsd=1;await step();
+ expect(project.state).toBe("failed");expect(project.plan).toBeNull();expect(project.spentUsd).toBeCloseTo(0.046);
+ await step();expect(f.call).toHaveBeenCalledTimes(2);
 });
 it("makes uncertain-response verification free and requires explicit paid restart while retaining the old reserve",async()=>{
  const {ProviderError}=await import("@/server/ai/types");f.call.mockRejectedValueOnce(new ProviderError("private timeout", "openai", null, true, "timeout"));const oldJob=job();let failure:unknown;try{await step();}catch(error){failure=error;}await failStudioStep(oldJob,failure);
