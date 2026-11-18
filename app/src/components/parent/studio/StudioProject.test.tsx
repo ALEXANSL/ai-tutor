@@ -107,3 +107,8 @@ it("separates saved-response verification from explicit paid regeneration and re
  const p=project({state:"failed",phase:"analyze",savedModelResult:true,canRegenerate:true,error:"STUDIO-SCHEMA",failureDiagnostic:{phase:"analyze",code:"STUDIO-SCHEMA",paths:["summary"],category:"content",at:"2026-11-18T12:00:00Z"}});
  f.poll.mockResolvedValue(observed({...p,revision:1},"none"));render(p);expect(button("Згенерувати нову відповідь")).toBeTruthy();expect(button("Скопіювати діагностику")).toBeTruthy();expect(container.textContent).toContain("без нового виклику ШІ");await click("Перевірити збережену відповідь");expect(f.command.mock.calls[0]![0].command).toBe("retry");expect(container.textContent).not.toContain("Запит прийнято.");await click("Згенерувати нову відповідь");expect(f.command.mock.calls[1]![0].command).toBe("regenerate");
 });
+
+it("makes unknown-response verification distinct from an explicit paid restart",async()=>{
+ const p=project({state:"failed",phase:"lesson_sources",canRestart:true,error:"STUDIO-AI-TIMEOUT",failureDiagnostic:{phase:"lesson_sources",code:"STUDIO-AI-TIMEOUT",provider:"openai",category:"processing",paths:[],at:"2026-11-18T12:00:00Z"}});
+ f.poll.mockResolvedValue(observed(p,"none"));render(p);expect(container.textContent).toContain("попередній невизначений резерв збережеться");expect(container.textContent).not.toContain("Перевірити готовий урок повторно");await click("Перевірити отримання відповіді");expect(f.command.mock.calls[0]![0].command).toBe("retry");await click("Повторити запит ШІ (платно)");expect(f.command.mock.calls[1]![0].command).toBe("restart");
+});

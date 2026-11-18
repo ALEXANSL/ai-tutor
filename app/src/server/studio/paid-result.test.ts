@@ -112,3 +112,8 @@ describe("immutable paid model receipts", () => {
     expect(call).toEqual(before);
   });
 });
+
+it("roundtrips and integrity-checks a captured paid output failure", async()=>{
+ const value={result:'{"unfinished":',model:{provider:"openai",model:"test"},costUsd:0.034,failure:{code:"STUDIO-AI-INCOMPLETE",paths:[]}};
+ await writeStudioPaidResult("family-a",PROJECT,pending(),value);expect(await readStudioPaidResult("family-a",PROJECT,pending())).toEqual(value);
+});

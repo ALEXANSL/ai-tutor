@@ -1,3 +1,15 @@
+## 2026-11-18 — помилки провайдера до збереження результату
+
+Наступний скриншот показав інший failureboundary: lesson_sources, spent$1.149, held$1.496, cap$5, genericSTUDIO-STAGE/PROCESSING. Попередній release159 захищав результат після returncallStudioModel, але incomplete/JSON/schemafail усередині OpenAIадаптера відкидали відповідь та usage до цього return. Сам скриншот не доводить timeout чи incomplete. Приватних productionБД/логів/ключів немає; справжню причину цього запуску ще не підтверджено.
+
+Studio-onlycaptureadapter іде через чинний router/budget: зберігає отриманий output та відомий usage навіть при incomplete/refusal/JSON/schemafailure, враховує їх у receipt/ledger, не застосовує як готовий урок. Cachedinput відокремлено від uncached (без подвійного обліку). Звичайний openaiStructured зберігає rejectконтракт для інших споживачів. Transporttimeout/network/missingusage зберігають невизначеність. DefinitiveHTTP4xxвідмова звільняє лише свіжий резерв (крім408/409); старі held залишаються.
+
+Звичайна перевірка без receipt не запускає нового провайдера. Явна кнопка «Повторити запит ШІ (платно)» архівує невизначений pending і може почати новий виклик у межах cap зі старим held; пізній уже наявний receipt натомість повторно використовується. Первісні diagnostic/time зберігаються. Окремі safeкоди timeout/network/auth/rate/requestsсhema/outputschema/incomplete; raw повідомлення/секрети не показуються.
+
+Для старого genericзбою parentpage/poll виконує readonlylookup останнього ai_calls.error: та сама сім’я/project/role/provider,30сек доfailuretimestamp і1сек після. Відомий adapterprefix перетворюється на безпечний код з позначкою provider_audit; невідомий/stale/недоступний запис ігнорується. Це не є підставою скинути резерв чи відновити втрачений текст. Нових paidвикликів цей lookup не виконує.
+
+Перевірено2626unit/243files; typecheck; lint0errors/8baselinewarnings; productionbuild і canary130files/57needles/0leaks;24Chromiumсценарії320/390/768/1440×light/dark×content/processing/uncertain з mockAPI. Є окремі fakeHTTP→реальніadapter/router/modelтести обліку completed/incomplete/cacheusage та timeout; workflowтести повторного використання/явного restart. Живих платних викликів не робили, старий урок у production автоматично не запускали. Реліз потребує підтвердження цільового productiondeployment.
+
 ## 2026-11-18 — відновлення оплаченої відповіді Майстерні
 
 За списком ролей власника ($0.537) підтверджено збій обробки studio.source до написання уроку, а не вичерпання $5 cap. Точну минулу причину встановити неможливо: старий catch втрачав exception і raw результат. Виправлено конкретні дефекти: необов’язкова непідтверджена цитата більше не знищує весь аналіз; нотатки мають окрему місткість100KB при незмінних rawparts60KB; один великий note можна звести. Попередження про непідтверджені уривки зберігаються для автора/рецензента; summary не стає оригіналом або підтвердженим фактом. Модель отримує актуальні source IDs і точну кількість уроків порції.

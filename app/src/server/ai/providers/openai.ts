@@ -154,10 +154,10 @@ function toStrictJsonSchema(node: unknown): unknown {
  * like `openaiEmbed` above — no OpenAI SDK dependency needed for one call
  * shape, and it keeps this adapter mockable the same way in tests.
  */
-export async function openaiStructured<S extends z.ZodType>(
+async function requestOpenAiStructured<S extends z.ZodType>(
   req: OpenAiStructuredRequest<S>,
   fetchImpl: typeof fetch = fetch,
-): Promise<OpenAiStructuredResult<z.infer<S>>> {
+): Promise<{ body: OpenAiResponseBody; status: number }> {
   const key = getServerSecret("OPENAI_API_KEY");
   if (!key) throw new AiNotConfiguredError("OPENAI_API_KEY is not set");
 
@@ -185,36 +185,71 @@ export async function openaiStructured<S extends z.ZodType>(
       signal: AbortSignal.timeout(req.params.timeout_ms ?? 120_000),
     });
   } catch (e) {
-    throw new ProviderError(`openai network error: ${(e as Error).name}`, "openai", null, true);
+    throw new ProviderError("openai request did not complete", "openai", null, true, ["TimeoutError", "AbortError"].includes((e as Error).name) ? "timeout" : "network");
   }
   if (!res.ok) {
     const retryable = res.status === 429 || res.status >= 500;
-    throw new ProviderError(`openai responses error ${res.status}`, "openai", res.status, retryable);
+    let code: "http" | "invalid_schema" = "http";
+    try { const detail = await res.json(); if (detail?.error?.code === "invalid_json_schema") code = "invalid_schema"; } catch { /* HTTP status remains safe diagnostic evidence. */ }
+    throw new ProviderError(`openai responses error ${res.status}`, "openai", res.status, retryable, code);
   }
-  const body = (await res.json()) as {
-    status?: string;
-    output_text?: string;
-    output?: { content?: { type: string; text?: string }[] }[];
-    usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number } };
-  };
+  try {
+    const body: unknown = await res.json();
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("invalid body");
+    return { body: body as OpenAiResponseBody, status: res.status };
+  } catch (error) { throw new ProviderError("openai response body unreadable", "openai", res.status, true, ["TimeoutError", "AbortError"].includes((error as Error).name) ? "timeout" : "response_body"); }
+}
+
+interface OpenAiResponseBody {
+  status?: string;
+  output_text?: string;
+  output?: { content?: { type: string; text?: string }[] }[];
+  usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number } };
+}
+
+export type OpenAiCapturedFailureCode = "STUDIO-AI-INCOMPLETE" | "STUDIO-AI-REFUSAL" | "STUDIO-AI-JSON" | "STUDIO-AI-OUTPUT-SCHEMA" | "STUDIO-AI-NO-OUTPUT" | "STUDIO-AI-RESPONSE-STATE";
+export interface OpenAiCapturedResult { result: unknown; failure?: { code: OpenAiCapturedFailureCode; paths: string[] } }
+
+/** Studio-only: retain usable HTTP response and known usage before rejecting content. */
+export async function openaiStructuredCaptured<S extends z.ZodType>(req: OpenAiStructuredRequest<S>, fetchImpl: typeof fetch = fetch): Promise<OpenAiStructuredResult<OpenAiCapturedResult>> {
+  const { body, status } = await requestOpenAiStructured(req, fetchImpl);
+  const input = body.usage?.input_tokens, output = body.usage?.output_tokens, cached = body.usage?.input_tokens_details?.cached_tokens ?? 0;
+  if (![input, output, cached].every(value => typeof value === "number" && Number.isSafeInteger(value) && value >= 0) || cached > input!) throw new ProviderError("openai usage missing or invalid", "openai", status, false, "unknown_usage");
+  const usage: Usage = { inputTokens: input! - cached, outputTokens: output!, cachedInputTokens: cached };
+  const content = Array.isArray(body.output) ? body.output.flatMap(item => Array.isArray(item?.content) ? item.content : []).filter(item => !!item && typeof item === "object") : [];
+  const text = typeof body.output_text === "string" ? body.output_text : content.filter(item => ["output_text", "text"].includes(item?.type)).map(item => typeof item.text === "string" ? item.text : "").join("");
+  const fail = (code: OpenAiCapturedFailureCode, result: unknown, paths: string[] = []) => ({ data: { result, failure: { code, paths } }, usage });
+  if (body.status === "incomplete") return fail("STUDIO-AI-INCOMPLETE", text);
+  if (content.some(item => item.type === "refusal")) return fail("STUDIO-AI-REFUSAL", null);
+  if (body.status !== "completed") return fail("STUDIO-AI-RESPONSE-STATE", text);
+  if (!text) return fail("STUDIO-AI-NO-OUTPUT", null);
+  let parsed: unknown;
+  try { parsed = JSON.parse(text); } catch { return fail("STUDIO-AI-JSON", text); }
+  const validated = req.schema.safeParse(parsed);
+  if (!validated.success) return fail("STUDIO-AI-OUTPUT-SCHEMA", parsed, validated.error.issues.slice(0, 8).map(issue => issue.path.map(value => String(value).replace(/[^a-zA-Z0-9_]/g, "").slice(0, 40)).join(".") || "result"));
+  return { data: { result: validated.data }, usage };
+}
+
+export async function openaiStructured<S extends z.ZodType>(req: OpenAiStructuredRequest<S>, fetchImpl: typeof fetch = fetch): Promise<OpenAiStructuredResult<z.infer<S>>> {
+  const { body, status } = await requestOpenAiStructured(req, fetchImpl);
   if (body.status === "incomplete") {
-    throw new ProviderError("openai response incomplete (max_output_tokens?)", "openai", res.status, true);
+    throw new ProviderError("openai response incomplete (max_output_tokens?)", "openai", status, true);
   }
   const text =
     body.output_text ??
     body.output?.flatMap((o) => o.content ?? []).find((c) => c.type === "output_text" || c.type === "text")?.text ??
     null;
-  if (!text) throw new ProviderError("openai response had no text output", "openai", res.status, true);
+  if (!text) throw new ProviderError("openai response had no text output", "openai", status, true);
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new ProviderError("openai structured output was not valid JSON", "openai", res.status, true);
+    throw new ProviderError("openai structured output was not valid JSON", "openai", status, true);
   }
   const validated = req.schema.safeParse(parsed);
   if (!validated.success) {
-    throw new ProviderError(`openai structured output did not match the schema: ${validated.error.issues[0]?.message ?? "invalid"}`, "openai", res.status, true);
+    throw new ProviderError(`openai structured output did not match the schema: ${validated.error.issues[0]?.message ?? "invalid"}`, "openai", status, true);
   }
   return {
     data: validated.data as z.infer<S>,

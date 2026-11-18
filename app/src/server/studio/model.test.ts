@@ -3,7 +3,7 @@ import { z } from "zod";
 const f = vi.hoisted(() => ({ upsert: vi.fn(), route: vi.fn(), price: vi.fn() }));
 vi.mock("@/server/supabase/clients", () => ({ createServiceClient: () => ({ from: () => ({ upsert: f.upsert }) }) }));
 vi.mock("@/server/ai/store", () => ({ loadPrice: f.price }));
-vi.mock("@/server/ai/router", () => ({ callStructured: vi.fn(), defaultRouterDeps: {} }));
+vi.mock("@/server/ai/router", () => ({ callStructured: vi.fn(), defaultRouterDeps: { providers: { structured: {} } } }));
 vi.mock("@/server/db/family-scope", () => ({ forFamily: () => ({ select: () => ({ eq: () => ({ maybeSingle: f.route }) }) }) }));
 import { callStructured } from "@/server/ai/router";
 import { callStudioModel, studioModelConfig, studioReservation } from "./model";
@@ -24,6 +24,7 @@ it("reserves for UTF-8 input, schema, overhead and the output limit instead of g
 
 it("passes the validated route and prices to the router instead of cached configuration", async () => {
   const config = await studioModelConfig("family", "studio.author");
+  vi.mocked(callStructured).mockResolvedValueOnce({ result: { result: { text: "Lesson" } }, model: { provider: "openai", model: "gpt-5.4" }, costUsd: 0.01, fallbackUsed: false });
   await callStudioModel("family", "project", "studio.author", "Rules", "Lesson", z.object({ text: z.string() }), config);
   const deps = vi.mocked(callStructured).mock.calls[0]![3]!;
   expect(await deps.loadRoute("family", "studio.author")).toBe(config.route);

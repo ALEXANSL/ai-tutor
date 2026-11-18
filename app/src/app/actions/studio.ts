@@ -1,4 +1,5 @@
 "use server";
+import { studioDiagnosticFromHistory } from "@/server/studio/provider-history";
 import { studioParentView } from "@/lib/studio-parent-view";
 import { STUDIO_MAX_BUDGET } from "@/lib/studio";
 import { z } from "zod";
@@ -57,9 +58,9 @@ export async function pollStudioAction(rawId: string, rawLessonIndex?: number) {
       project = await saveStudioProject(familyId, id, project, { state: "failed", error: "STUDIO-INTERRUPTED: фоновий етап перервано. Готові частини збережено; можна повторити. Резерв невизначеного виклику не списано повторно." });
     } else if (job.data?.status === "queued") kickStudio(familyId, id);
   }
-  return { status: "ok" as const, project: studioParentView(project, rawLessonIndex === undefined ? undefined : z.number().int().safe().min(0).parse(rawLessonIndex)), activity };
+  return { status: "ok" as const, project: studioParentView(await studioDiagnosticFromHistory(familyId, id, project), rawLessonIndex === undefined ? undefined : z.number().int().safe().min(0).parse(rawLessonIndex)), activity };
 }
-const commandSchema = z.object({ id: idSchema, revision: z.number().int().nonnegative(), command: z.enum(["approve", "retry", "revise", "publish", "review", "regenerate"]), plan: studioPlanSchema.optional(), feedback: z.string().max(3000).optional(), budgetUsd: z.number().min(0.5).max(STUDIO_MAX_BUDGET).optional(), lessonIndex: z.number().int().safe().min(0).optional() }).strict();
+const commandSchema = z.object({ id: idSchema, revision: z.number().int().nonnegative(), command: z.enum(["approve", "retry", "revise", "publish", "review", "regenerate", "restart"]), plan: studioPlanSchema.optional(), feedback: z.string().max(3000).optional(), budgetUsd: z.number().min(0.5).max(STUDIO_MAX_BUDGET).optional(), lessonIndex: z.number().int().safe().min(0).optional() }).strict();
 export async function commandStudioAction(raw: unknown) {
   const { familyId } = await requireParentAccess();
   try { const input = commandSchema.parse(raw); await resumeStudio(familyId, input.id, input.revision, input.command, input.plan, input.feedback, input.budgetUsd, input.lessonIndex); kickStudio(familyId, input.id); revalidatePath("/parent/studio"); return { status: "ok" as const }; }
