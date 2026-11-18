@@ -65,3 +65,23 @@ it("never adds Ukrainian service wording to a native-language listening block",(
  value.units[0]!.content.blocks[0]={...value.units[0]!.content.blocks[0]!,narrationLanguage:"en-GB",narration:"Hello, how are you?"};
  const result=studioPackage("project",value).parsed;expect(result.lessons[0]!.screens[0]!.content.tts.text).toBe("Hello, how are you?");
 });
+
+it("adds ten missing diagnostic questions with one edit and exports all twelve to the lesson reader", async () => {
+  const { applyStudioRepair } = await import("./repair");
+  const draft = project();
+  const original = draft.units[0]!;
+  const questions = Array.from({length:10}, (_,i) => ({
+    questionIndex:i + 2, replacement:{...original.content.questions[0]!, prompt:"Завдання " + (i + 3)},
+  }));
+  const change = {diagnosis:"Додаємо перевірку за кожною темою.", reviewAdvice:"Перевір усі відповіді.",blocks:[],questions,visuals:null,title:null,objectives:null,sourceIds:null,enrichmentNote:null,adultAssistance:null};
+  const { unit } = applyStudioRepair(original, change);
+  expect(unit.content.blocks).toEqual(original.content.blocks);
+  expect(unit.content.questions.slice(0,2)).toEqual(original.content.questions);
+  expect(unit.review).toBeNull();
+  expect(() => applyStudioRepair(original,{...change, questions:questions.slice(1)})).toThrow("STUDIO-REPAIR-REF");
+  draft.units[0] = {...unit,review:original.review};
+  const { parsed } = studioPackage("diagnostic",draft);
+  expect(parsed.errors).toEqual([]);
+  expect(parsed.lessons[0]!.task_ids).toHaveLength(12);
+  expect(parsed.taskKeys).toHaveLength(12);
+});

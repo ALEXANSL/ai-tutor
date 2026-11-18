@@ -90,6 +90,27 @@ export async function runStudioStep(job: JobRow, deadline: number) {
     await activateStudioPublication(job.family_id, publication, !project.request.subjectId);
     await saveStudioProject(job.family_id, id, project, { state: "published", publicationRevision: false, childAccess: "enabled", error: null }); return;
   }
+  // Poll by response ID before rebuilding the book context. Only completed work needs sources.
+  const pending = project.pendingModelCall;
+  if (project.phase === "author" && pending?.phase === "author" && pending.cursor === project.cursor && pending.background && !await readStudioPaidResult(job.family_id, id, pending)) {
+    const background = pending.background;
+    const age = Date.now() - background.started;
+    let retrieved;
+    try { retrieved = await retrieveStudioResponse(background.id, studioAuthorSchema); }
+    catch (error) {
+      if (error instanceof ProviderError && error.retryable && age < 3600000) return { requeue: true as const, delaySeconds: 15 };
+      throw error;
+    }
+    if (!retrieved) {
+      if (age > 3600000) throw new Error("STUDIO-BACKGROUND-WAIT");
+      return { requeue: true as const, delaySeconds: 15 };
+    }
+    const {usage, data} = retrieved;
+    const costUsd = estimateCostUsd(background.rates, usage);
+    const result = { ...data, model: { provider: "openai", model: background.model }, costUsd };
+    await writeStudioPaidResult(job.family_id, id, pending, result);
+    await recordCall(job.family_id, { role: background.role, provider: "openai", model: background.model, status: "ok", input_tokens: usage.inputTokens, output_tokens: usage.outputTokens, cached_input_tokens: usage.cachedInputTokens ?? 0, cache_write_tokens: 0, latency_ms: age, fallback_used: false, cost_usd: costUsd, ref_table: "jobs", ref_id: id });
+  }
   if (project.sourceCorpus && !["plan", "publish", "resolve", "assess"].includes(project.phase) && !isStudioSourcePhase(project.phase) && !project.units[project.cursor]?.sourceContext && !(project.lessonSources?.lessonIndex === project.cursor && project.lessonSources.context)) {
     project = await saveStudioProject(job.family_id, id, project, await prepareStudioLessonSources(job.family_id, project));
     if (isStudioSourcePhase(project.phase)) return { requeue: true as const };
@@ -120,25 +141,7 @@ export async function runStudioStep(job: JobRow, deadline: number) {
     const pending = project.pendingModelCall;
     const saved = await readStudioPaidResult(job.family_id, id, pending);
     if (saved) result = saved;
-    else if (pending.background) {
-      const background = pending.background;
-      const age = Date.now() - background.started;
-      let retrieved;
-      try { retrieved = await retrieveStudioResponse(background.id, schema); }
-      catch (error) {
-        if (error instanceof ProviderError && error.retryable && age < 3600000) return { requeue: true as const, delaySeconds: 15 };
-        throw error;
-      }
-      if (!retrieved) {
-        if (age > 3600000) throw new Error("STUDIO-BACKGROUND-WAIT");
-        return { requeue: true as const, delaySeconds: 15 };
-      }
-      const {usage, data} = retrieved;
-      const costUsd = estimateCostUsd(background.rates, usage);
-      result = { ...data, model: { provider: "openai", model: background.model }, costUsd };
-      await writeStudioPaidResult(job.family_id, id, pending, result);
-      await recordCall(job.family_id, { role: background.role, provider: "openai", model: background.model, status: "ok", input_tokens: usage.inputTokens, output_tokens: usage.outputTokens, cached_input_tokens: usage.cachedInputTokens ?? 0, cache_write_tokens: 0, latency_ms: age, fallback_used: false, cost_usd: costUsd, ref_table: "jobs", ref_id: id });
-    } else throw new Error("STUDIO-UNCERTAIN-CALL");
+    else throw new Error("STUDIO-UNCERTAIN-CALL");
   } else {
     if (project.activeCall) throw new Error("STUDIO-UNCERTAIN-CALL");
     const config = await studioModelConfig(job.family_id, role, project.unavailableSpecialists?.includes(role));
@@ -228,23 +231,26 @@ export async function runStudioStep(job: JobRow, deadline: number) {
       const round = (units[project.cursor]!.reviewRound ?? 0) + 1;
       const fingerprint = createHash("sha256").update(JSON.stringify({ content: units[project.cursor]!.content, visuals: units[project.cursor]!.visuals, corrections: review.corrections.map(fix => JSON.stringify(fix)).sort(), issues: [...review.issues].sort() })).digest("hex");
       const stuck = review.verdict !== "pass" && units[project.cursor]!.lastReviewFingerprint === fingerprint;
-      const escalate = stuck && !project.reviewRepairAttempted && !project.reviewOnly;
-      const stop = !!project.reviewOnly || (stuck && !escalate);
-      const nextPhase = review.corrections.length && review.corrections.every(fix => fix.role === "design") ? "design" : "author";
+      const failures = review.verdict === "pass" ? 0 : (project.consecutiveReviewFailures ?? 0) + 1;
+      const unresolved = stuck || failures >= 3;
+      const escalate = unresolved && !project.reviewRepairAttempted && !project.reviewOnly;
+      const stop = !!project.reviewOnly || (unresolved && !escalate);
+      changes.consecutiveReviewFailures = failures;
+      const nextPhase = review.corrections.length && review.corrections.every(fix => fix.role === "design") ? "design" : failures <= 2 ? "repair" : "author";
       units[project.cursor] = { ...units[project.cursor]!, review, reviewRound: round, lastReviewFingerprint: review.verdict === "pass" ? null : fingerprint };
       await saveStudioReviewEvent(job.family_id, id, project.pendingModelCall?.id ?? token, project.pendingModelCall ? 0 : project.revision, { at: new Date().toISOString(), lessonIndex: project.cursor, round, review, next: review.verdict === "pass" ? "ready" : project.reviewOnly ? "parent" : stop ? "stopped" : escalate ? "repair" : nextPhase });
-      if (review.verdict !== "pass") Object.assign(changes, { state: stop ? "needs_changes" : "generating", phase: escalate ? "repair" : nextPhase, reviewRepairAttempted: project.reviewRepairAttempted || escalate, reviewAutomationStopped: stop, error: stop && !project.reviewOnly ? "STUDIO-NO-PROGRESS: звичайні й діагностичні виправлення не змінили результат. Нові платні етапи зупинено. Переглянь рецензію та діагноз нижче; матеріал збережено." : null, feedback: `${studioReviewFeedback(review)}\nПобажання тата: ${project.revisionInstructions ?? project.editorNotes?.at(-1)?.text ?? ""}` });
+      if (review.verdict !== "pass") Object.assign(changes, { state: stop ? "needs_changes" : "generating", phase: escalate ? "repair" : nextPhase, reviewRepairAttempted: project.reviewRepairAttempted || escalate, reviewAutomationStopped: stop, error: stop && !project.reviewOnly ? "STUDIO-NO-PROGRESS: після доопрацювання й незалежної перевірки залишилися блокувальні зауваження. Нові платні етапи зупинено. Переглянь рецензію та діагноз нижче; матеріал збережено." : null, feedback: `${studioReviewFeedback(review)}\nПобажання тата: ${project.revisionInstructions ?? project.editorNotes?.at(-1)?.text ?? ""}` });
       else {
         const next = project.plan!.lessons.findIndex((_lesson, index) => units[index]?.review?.verdict !== "pass");
         if (next < 0) { changes.state = "ready"; changes.reviewOnly = false; changes.reviewAutomationStopped = false; changes.error = null; }
-        else Object.assign(changes, { ...(project.reviewOnly ? { state: "paused", reviewOnly: false, error: "Повторну рецензію цього уроку завершено. Решту курсу збережено; продовж підготовку окремо." } : {}), cursor: next, phase: "author", feedback: "", revisionInstructions: "", reviewRepairAttempted: false, repairAdvice: "", reviewAutomationStopped: false });
+        else Object.assign(changes, { ...(project.reviewOnly ? { state: "paused", reviewOnly: false, error: "Повторну рецензію цього уроку завершено. Решту курсу збережено; продовж підготовку окремо." } : {}), cursor: next, phase: "author", feedback: "", revisionInstructions: "", reviewRepairAttempted: false, consecutiveReviewFailures: 0, repairAdvice: "", reviewAutomationStopped: false });
       }
     }
     changes.units = units;
   }
   } catch (error) {
     const diagnostic = studioFailureDiagnostic(error, project.phase);
-    if (project.autonomous && diagnostic.category === "content" && !project.regeneration && project.pendingModelCall?.billed && !project.reviewOnly) {
+    if ((project.autonomous || diagnostic.code === "STUDIO-AI-INCOMPLETE") && diagnostic.category === "content" && !project.regeneration && project.pendingModelCall?.billed && !project.reviewOnly) {
       await saveStudioProject(job.family_id, id, project, {
         activeCall: false, pendingModelCall: undefined,
         regeneration: { pending: project.pendingModelCall, diagnostic },
@@ -282,7 +288,7 @@ export async function resumeStudio(familyId: string, id: string, revision: numbe
     const cursor = lessonIndex ?? project.cursor;
     if (!["failed", "paused", "needs_changes"].includes(project.state) || project.phase === "publish" || !project.plan || !Number.isSafeInteger(cursor) || !project.plan.lessons[cursor] || !project.units[cursor]) throw new Error("Повторна рецензія доступна для збереженого чернеткового уроку після зупинки.");
     const units = project.units.map((unit, index) => index === cursor ? { ...unit, lastReviewFingerprint: null } : unit);
-    changes = { ...changes, units, cursor, phase: "review", state: "generating", reviewOnly: true, reviewAutomationStopped: false, reviewRepairAttempted: false, repairAdvice: "", feedback: "Незалежно перевір поточний готовий урок за актуальним контрактом. Попередні зауваження не є доказом помилки. Після вердикту підготовка зупиниться для батьківського рішення." };
+    changes = { ...changes, units, cursor, phase: "review", state: "generating", reviewOnly: true, reviewAutomationStopped: false, reviewRepairAttempted: false, consecutiveReviewFailures: 0, repairAdvice: "", feedback: "Незалежно перевір поточний готовий урок за актуальним контрактом. Попередні зауваження не є доказом помилки. Після вердикту підготовка зупиниться для батьківського рішення." };
   } else if (command === "revise") {
     const cursor = lessonIndex ?? project.cursor;
     if (!["needs_changes", "ready", "published", "withdrawn"].includes(project.state) || !Number.isSafeInteger(cursor) || !project.units[cursor]) throw new Error("Немає уроку для виправлення.");
@@ -293,7 +299,7 @@ export async function resumeStudio(familyId: string, id: string, revision: numbe
     // and parent instructions still receive a full, contextual revision.
     const designOnly = !feedback.trim() && review?.corrections?.length && review.corrections.every(fix => fix.role === "design");
     const units = project.units.map((unit, index) => index === cursor ? { ...unit, lastReviewFingerprint: null } : unit);
-    changes = { ...changes, units, reviewAutomationStopped: false, reviewRepairAttempted: false, repairAdvice: "", revisionInstructions: feedback.trim(), state: "generating", publicationRevision: project.publicationRevision || !!project.publication, childAccess: studioPublicationVisible(project) ? "enabled" : "disabled", editorNotes: [...(project.editorNotes ?? []), { at: new Date().toISOString(), lessonIndex: cursor, text: feedback.trim() || "Виправити зауваження рецензента" }].slice(-30), phase: designOnly ? "design" : "author", cursor, feedback: `${studioReviewFeedback(review)}\nПобажання тата: ${feedback}` };
+    changes = { ...changes, units, reviewAutomationStopped: false, reviewRepairAttempted: false, consecutiveReviewFailures: 0, repairAdvice: "", revisionInstructions: feedback.trim(), state: "generating", publicationRevision: project.publicationRevision || !!project.publication, childAccess: studioPublicationVisible(project) ? "enabled" : "disabled", editorNotes: [...(project.editorNotes ?? []), { at: new Date().toISOString(), lessonIndex: cursor, text: feedback.trim() || "Виправити зауваження рецензента" }].slice(-30), phase: designOnly ? "design" : "author", cursor, feedback: `${studioReviewFeedback(review)}\nПобажання тата: ${feedback}` };
   } else {
     if (!["failed", "paused"].includes(project.state)) throw new Error("Продовження доступне після паузи або збою етапу.");
     if (project.request.materialId && !project.sourceCorpus && !project.pendingModelCall) changes = { ...changes, ...await loadStudioSources(familyId, changes.request ?? project.request) };
