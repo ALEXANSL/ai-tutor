@@ -3,10 +3,10 @@ import type { StudioProject } from "./studio";
 export function studioParentView(project: StudioProject, requestedIndex?: number): StudioProject {
   const result = { ...project, units: project.units.map(unit => { const copy = { ...unit }; delete copy.sourceContext; return copy; }) }; delete result.unitRefs;
   delete result.sourceCorpus; delete result.lessonSources; delete result.sourceSelection;
-  result.canRestart = ["failed", "paused"].includes(project.state) && !!project.pendingModelCall && !project.pendingModelCall.billed;
+  result.canRestart = ["failed", "paused"].includes(project.state) && !!project.pendingModelCall && !project.pendingModelCall.billed && !project.pendingModelCall.background;
   result.savedModelResult = !!project.pendingModelCall?.billed;
   result.canRegenerate = project.state === "failed" && !!project.pendingModelCall?.billed && project.failureDiagnostic?.category === "content";
-  delete result.lastRateLimitRetryHash; delete result.pendingModelCall; delete result.unresolvedModelCalls; delete result.regeneration;
+  delete result.unavailableSpecialists; delete result.lastTransportRetryHash; delete result.lastRateLimitRetryHash; delete result.pendingModelCall; delete result.unresolvedModelCalls; delete result.regeneration;
   if (project.sourceCorpus) result.sourceProgress = { partCount: project.sourceCorpus.partCount, analyzed: project.sourceCorpus.analyzed, characters: project.sourceCorpus.characterCount, stage: project.phase, lessonParts: project.lessonSources?.partIndexes.length ?? 0, lessonPrepared: project.lessonSources?.cursor ?? 0 };
   if (project.request.lessonCount <= 6 && !project.unitRefs) return result;
   const index = Math.min(Math.max(0, requestedIndex ?? project.cursor), Math.max(0, project.units.length - 1));

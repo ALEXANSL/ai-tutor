@@ -164,3 +164,8 @@ export class ProviderError extends Error {
     this.name = "ProviderError";
   }
 }
+
+/** OpenAI accepted the request; usage becomes available when retrieval completes. */
+export class BackgroundResponsePending extends Error {
+  constructor(readonly responseId: string) { super("OpenAI background response pending"); }
+}

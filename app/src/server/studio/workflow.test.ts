@@ -355,3 +355,32 @@ it("hands authoring to a fresh worker before reserving when time is short", asyn
   expect(f.call).toHaveBeenCalledTimes(1);
   expect(project.phase).toBe("design");
 });
+
+it("recovers from a specialist quota rejection using a fresh reservation and independent routing", async () => {
+  const { ProviderError } = await import("@/server/ai/types");
+  project = studioProjectFixture({autonomous:true,state:"generating",phase:"review",plan:studioPlanFixture,units:[{content:studioLessonFixture,visuals:[],review:null}]});
+  f.config.mockResolvedValueOnce({specialist:true,route:{params:{max_tokens:1000}},rates:{}});
+  f.call.mockRejectedValueOnce(new ProviderError("quota","anthropic",429,true));
+  expect(await step()).toMatchObject({requeue:true});
+  expect(project.heldUsd).toBe(0);
+  await step();
+  expect(f.config).toHaveBeenLastCalledWith("family","studio.review",true);
+  expect(project.state).toBe("ready");
+  expect(project.spentUsd).toBeCloseTo(0.02);
+});
+it("resumes an accepted background author response without resubmitting or charging two calls", async () => {
+  const { BackgroundResponsePending } = await import("@/server/ai/types");
+  const openai = await import("@/server/ai/providers/openai");
+  const store = await import("@/server/ai/store");
+  const audit = vi.spyOn(store,"recordCall").mockResolvedValue();
+  const poll = vi.spyOn(openai,"retrieveStudioResponse").mockResolvedValueOnce(null).mockResolvedValueOnce({data:{result:studioLessonFixture},usage:{inputTokens:200,outputTokens:100}});
+  try {
+    project = studioProjectFixture({autonomous:true,state:"generating",phase:"author",plan:studioPlanFixture});
+    f.config.mockResolvedValueOnce({route:{role:"studio.author_full",primary_model:"test",params:{max_tokens:1000}},rates:{input_usd_per_mtok:2,output_usd_per_mtok:10}});
+    f.call.mockRejectedValueOnce(new BackgroundResponsePending("resp_author"));
+    await step(); await step(); await step();
+    expect(project.phase).toBe("design"); expect(project.heldUsd).toBe(0);
+    expect(project.spentUsd).toBeCloseTo(0.0014,6);
+    expect(f.call).toHaveBeenCalledTimes(1); expect(poll).toHaveBeenCalledTimes(2); expect(audit).toHaveBeenCalledTimes(1);
+  } finally { poll.mockRestore(); audit.mockRestore(); }
+});

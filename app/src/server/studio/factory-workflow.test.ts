@@ -32,8 +32,8 @@ beforeEach(()=>{vi.clearAllMocks();f.project=null;f.notes.clear();f.seen=[];f.av
 it("prepares forty automatically named lessons from existing subject material without reading the book",async()=>{
  f.available.mockResolvedValue({topics:[{id:topic,subjectId:"subject",title:"Відповідна базова тема",pageFrom:42,pageTo:84}],subjectName:"Предмет",fallbackMaterialId:"book"});
  const request={...studioProjectFixture().request,lessonCount:40,sourceText:"",subjectId:"subject",materialId:"book"};
- await startStudio("family",request,id);await until("plan_ready");expect(f.load).not.toHaveBeenCalled();expect(f.prepared).toHaveBeenCalledTimes(1);expect(f.project!.plan!.lessons).toHaveLength(40);
- await resumeStudio("family",id,f.project!.revision,"approve",f.project!.plan!);await until("ready");expect(f.project!.units).toHaveLength(40);expect(f.project!.units.every(unit=>unit.review?.verdict==="pass")).toBe(true);expect(f.model.mock.calls.some(call=>call[2]==="studio.source")).toBe(false);expect(f.load).not.toHaveBeenCalled();
+ await startStudio("family",request,id);await until("generating");expect(f.load).not.toHaveBeenCalled();expect(f.prepared).toHaveBeenCalledTimes(1);expect(f.project!.plan!.lessons).toHaveLength(40);
+ await until("ready");expect(f.project!.units).toHaveLength(40);expect(f.project!.units.every(unit=>unit.review?.verdict==="pass")).toBe(true);expect(f.model.mock.calls.some(call=>call[2]==="studio.source")).toBe(false);expect(f.load).not.toHaveBeenCalled();
 });
 it("checkpoints all 306 parsed pages and automatically builds ten lessons when no prepared source exists",async()=>{
  const originals=Array.from({length:306},(_,i)=>source(i+1));f.parts=packStudioSources(originals);
@@ -41,11 +41,11 @@ it("checkpoints all 306 parsed pages and automatically builds ten lessons when n
  await startStudio("family",{...studioProjectFixture().request,lessonCount:10,sourceText:"",materialId:"book",pageFrom:null,pageTo:null},id);
  await step();const completed=f.project!.sourceCorpus!.analyzed,cost=f.project!.spentUsd;
  await pauseStudio("family",id,f.project!.revision);await resumeStudio("family",id,f.project!.revision,"retry");expect(f.project!.sourceCorpus!.analyzed).toBe(completed);expect(f.project!.spentUsd).toBe(cost);expect(f.load).toHaveBeenCalledTimes(1);
- await until("plan_ready");expect(new Set(f.seen).size).toBe(306);expect(f.cache).toHaveBeenCalledTimes(1);expect(f.project!.plan!.lessons).toHaveLength(10);
- await resumeStudio("family",id,f.project!.revision,"approve",f.project!.plan!);await until("ready");expect(f.project!.units).toHaveLength(10);expect(f.project!.units.every(unit=>unit.sourceContext&&unit.review?.verdict==="pass")).toBe(true);expect(f.project!.request.budgetUsd).toBe(3);expect(f.project!.request.pageFrom).toBeNull();
+ await until("generating");expect(new Set(f.seen).size).toBe(306);expect(f.cache).toHaveBeenCalledTimes(1);expect(f.project!.plan!.lessons).toHaveLength(10);
+ await until("ready");expect(f.project!.units).toHaveLength(10);expect(f.project!.units.every(unit=>unit.sourceContext&&unit.review?.verdict==="pass")).toBe(true);expect(f.project!.request.budgetUsd).toBe(3);expect(f.project!.request.pageFrom).toBeNull();
 });
 it("reuses a completed neutral catalog without restarting paid book analysis",async()=>{
  f.notes.set("cached",{fromPart:0,toPart:0,source:{id:"book-parts-1-1",title:"Огляд матеріалу",text:"Готовий нейтральний огляд",kind:"summary",page:null}});
  f.load.mockResolvedValue({sources:[],sourceNotes:["Огляд уже підготовлено"],subjectName:null,baseHref:null,baseTitle:null,sourceCorpus:{id:"corpus",partCount:1,chunkCount:43,characterCount:70000,blankChunks:0,pageFrom:42,pageTo:84,analyzed:1,notes:["cached"],catalog:["cached"],reduceCursor:0,reduced:[]}});
- await startStudio("family",{...studioProjectFixture().request,sourceText:"",materialId:"book"},id);expect(f.project!.phase).toBe("plan");await until("plan_ready");expect(f.model.mock.calls.map(call=>call[2])).toEqual(["studio.plan"]);
+ await startStudio("family",{...studioProjectFixture().request,sourceText:"",materialId:"book"},id);expect(f.project!.phase).toBe("plan");await until("generating");expect(f.model.mock.calls.map(call=>call[2])).toEqual(["studio.plan"]);
 });

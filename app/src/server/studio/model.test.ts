@@ -45,3 +45,16 @@ it("allows a full author response more time while preserving the source timeout"
   expect((await studioModelConfig("family", "studio.author")).route.params.timeout_ms).toBe(210000);
   expect((await studioModelConfig("family", "studio.source")).route.params.timeout_ms).toBe(120000);
 });
+
+it.each([
+  ["studio.source", "GEMINI_API_KEY", "gemini", "gemini-3.1-flash-lite", 8000],
+  ["studio.review", "ANTHROPIC_API_KEY", "anthropic", "claude-sonnet-5", 8000],
+] as const)("assigns %s to its connected specialist and separately prices recovery", async (role, key, provider, model, max_tokens) => {
+  vi.stubEnv(key, "test");
+  try {
+    f.route.mockResolvedValue({data: {primary_provider:"openai",primary_model:"gpt-5.4",params:{max_tokens,effort:"medium",timeout_ms:120000,budget_policy:"defer"}}});
+    expect((await studioModelConfig("family", role)).route.primary_provider).toBe(provider);
+    expect(f.price).toHaveBeenCalledWith(provider, model);
+    expect((await studioModelConfig("family", role, true)).route.primary_provider).toBe("openai");
+  } finally { vi.unstubAllEnvs(); }
+});
