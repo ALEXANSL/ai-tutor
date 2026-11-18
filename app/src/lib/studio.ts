@@ -55,6 +55,7 @@ export type StudioState = "planning" | "plan_ready" | "generating" | "ready" | "
 export interface StudioPendingModelCall { id: string; phase: StudioProject["phase"]; cursor: number; inputHash: string; reservedUsd: number; billed: boolean; }
 export interface StudioFailureDiagnostic { evidence?: "provider_audit"; provider?: string; status?: number; phase: StudioProject["phase"]; code: string; paths: string[]; category: "content" | "processing"; at: string; }
 export interface StudioProject {
+  lastRateLimitRetryHash?: string;
   pendingModelCall?: StudioPendingModelCall;
   unresolvedModelCalls?: StudioPendingModelCall[];
   regeneration?: { pending: StudioPendingModelCall; diagnostic: StudioFailureDiagnostic };

@@ -29,11 +29,11 @@ beforeEach(()=>{vi.clearAllMocks();f.project=null;f.notes.clear();f.seen=[];f.av
  else if(role==="studio.design")result={visuals:[]};else result={verdict:"pass",summary:"Зміст і перевірки узгоджені",issues:[],corrections:[]};
  return{result,model:{provider:"openai",model:"test"},costUsd:0.005};
  });});
-it("prepares ten automatically named lessons from existing subject material without reading the book",async()=>{
+it("prepares forty automatically named lessons from existing subject material without reading the book",async()=>{
  f.available.mockResolvedValue({topics:[{id:topic,subjectId:"subject",title:"Відповідна базова тема",pageFrom:42,pageTo:84}],subjectName:"Предмет",fallbackMaterialId:"book"});
- const request={...studioProjectFixture().request,lessonCount:10,sourceText:"",subjectId:"subject",materialId:"book"};
- await startStudio("family",request,id);await until("plan_ready");expect(f.load).not.toHaveBeenCalled();expect(f.prepared).toHaveBeenCalledTimes(1);expect(f.project!.plan!.lessons).toHaveLength(10);
- await resumeStudio("family",id,f.project!.revision,"approve",f.project!.plan!);await until("ready");expect(f.project!.units).toHaveLength(10);expect(f.project!.units.every(unit=>unit.review?.verdict==="pass")).toBe(true);expect(f.model.mock.calls.some(call=>call[2]==="studio.source")).toBe(false);expect(f.load).not.toHaveBeenCalled();
+ const request={...studioProjectFixture().request,lessonCount:40,sourceText:"",subjectId:"subject",materialId:"book"};
+ await startStudio("family",request,id);await until("plan_ready");expect(f.load).not.toHaveBeenCalled();expect(f.prepared).toHaveBeenCalledTimes(1);expect(f.project!.plan!.lessons).toHaveLength(40);
+ await resumeStudio("family",id,f.project!.revision,"approve",f.project!.plan!);await until("ready");expect(f.project!.units).toHaveLength(40);expect(f.project!.units.every(unit=>unit.review?.verdict==="pass")).toBe(true);expect(f.model.mock.calls.some(call=>call[2]==="studio.source")).toBe(false);expect(f.load).not.toHaveBeenCalled();
 });
 it("checkpoints all 306 parsed pages and automatically builds ten lessons when no prepared source exists",async()=>{
  const originals=Array.from({length:306},(_,i)=>source(i+1));f.parts=packStudioSources(originals);

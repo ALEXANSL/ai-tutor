@@ -335,3 +335,13 @@ it("releases only the current reserve for a definitive rejected request, retaini
  const {ProviderError}=await import("@/server/ai/types");project.heldUsd=0.7;f.call.mockRejectedValueOnce(new ProviderError("provider secret", "openai", 400, false, "invalid_schema"));const oldJob=job();let failure:unknown;try{await step();}catch(error){failure=error;}await failStudioStep(oldJob,failure);
  expect(project.heldUsd).toBeCloseTo(0.7);expect(project.pendingModelCall).toBeUndefined();expect(project.spentUsd).toBe(0);expect(project.failureDiagnostic).toMatchObject({code:"STUDIO-AI-REQUEST-SCHEMA",provider:"openai",status:400});
 });
+
+it("backs off once per unchanged request after a provider rate limit", async () => {
+ const {ProviderError}=await import("@/server/ai/types");
+ f.call.mockRejectedValue(new ProviderError("rate limited","openai",429,true));
+ expect(await step()).toEqual({requeue:true,delaySeconds:30});
+ expect(project.heldUsd).toBe(0);
+ await expect(step()).rejects.toMatchObject({status:429});
+ expect(f.call).toHaveBeenCalledTimes(2);
+ expect(project.spentUsd).toBe(0);
+});

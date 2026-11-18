@@ -134,9 +134,45 @@ export async function prepareStudioLessonSources(familyId: string, project: Stud
   }
   return { lessonSources: work, phase: "lesson_sources" };
 }
+/** Reuse the verified per-part notes from planning, including already finished lesson work. */
+export async function reusePreparedLessonSources(familyId: string, project: StudioProject): Promise<Partial<StudioProject> | null> {
+  const corpus = project.sourceCorpus;
+  const work = project.lessonSources;
+  if (!corpus || !work || corpus.notes.length !== corpus.partCount || corpus.analyzed !== corpus.partCount) return null;
+  const remaining = work.partIndexes.slice(work.cursor);
+  const refs = remaining.map(index => corpus.notes[index]!);
+  const notes = await readStudioSourceNotes(familyId, corpus.id, refs);
+  if (notes.some((note, i) => note.fromPart !== remaining[i] || note.toPart !== remaining[i])) return null;
+  const catalog = [...work.notes, ...refs];
+  const prepared = [...await readStudioSourceNotes(familyId, corpus.id, work.notes), ...notes];
+  const sources = prepared.map(note => note.source);
+  const completed = { ...work, cursor: work.partIndexes.length, notes: catalog, catalog, recoverySlice: undefined };
+  if (bytes(sources) > CATALOG_BYTES) return { lessonSources: completed, phase: "lesson_outline" };
+
+  // Give the author original examples alongside every assigned summary.
+  const lesson = project.plan?.lessons[project.cursor];
+  const terms = new Set((`${lesson?.title ?? ""} ${lesson?.goal ?? ""}`).toLocaleLowerCase("uk").match(/[\p{L}\p{N}]{4,}/gu) ?? []);
+  const ranked = prepared.map(note => {
+    const text = (note.source.title + " " + note.source.text).toLocaleLowerCase("uk");
+    return { index: note.fromPart, score: [...terms].filter(term => text.includes(term)).length };
+  }).sort((a, b) => b.score - a.score);
+  const rawParts: number[] = [];
+  const originals: StudioSource[] = [];
+  for (const index of [...new Set(ranked.map(item => item.index))].slice(0, 2)) {
+    const part = await readStudioSourcePart(familyId, corpus, index);
+    if (bytes([...sources, ...originals, ...part]) <= RAW_BYTES) {
+      originals.push(...part);
+      rawParts.push(index);
+    }
+  }
+  const context = { rawParts, noteRefs: catalog, ids: [...sources, ...originals].map(source => source.id) };
+  return { lessonSources: { ...completed, context }, phase: work.targetPhase };
+}
 export async function studioLessonModelSources(familyId: string, project: StudioProject) {
   if (!project.sourceCorpus) return project.sources;
   const context = project.units[project.cursor]?.sourceContext ?? project.lessonSources?.context;
   if (!context) throw new Error("STUDIO-SOURCE-STATE");
-  return context.rawParts ? (await Promise.all(context.rawParts.map(index => readStudioSourcePart(familyId, project.sourceCorpus!, index)))).flat() : (await readStudioSourceNotes(familyId, project.sourceCorpus.id, context.noteRefs ?? [])).map(note => note.source);
+  const notes = await readStudioSourceNotes(familyId, project.sourceCorpus.id, context.noteRefs ?? []);
+  const parts = await Promise.all((context.rawParts ?? []).map(index => readStudioSourcePart(familyId, project.sourceCorpus!, index)));
+  return [...notes.map(note => note.source), ...parts.flat()];
 }

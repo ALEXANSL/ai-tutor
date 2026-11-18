@@ -68,3 +68,19 @@ it("resumes a split lesson part without losing text or repeating completed notes
  expect(new Set(project.lessonSources!.context!.ids).size).toBe(fragments.length);
  expect(project.phase).toBe("author");
 });
+
+it("reuses completed lesson notes and fills remaining parts from planning with original text",async()=>{
+ const {reusePreparedLessonSources}=await import("./source-orchestration");
+ project.sourceCorpus!.analyzed=2;
+ project.sourceCorpus!.notes=["first","second"];
+ for(const [index,ref] of ["first","second","focused"].entries()){
+   const part=index===2?0:index;
+   f.notes.set(ref,{fromPart:part,toPart:part,source:{...source(ref),kind:"summary"}});
+ }
+ project.phase="lesson_sources";
+ project.lessonSources={lessonIndex:0,targetPhase:"author",partIndexes:[0,1],cursor:1,notes:["focused"],catalog:[],reduceCursor:0,reduced:[]};
+ project={...project,...await reusePreparedLessonSources("family",project)};
+ expect(project.phase).toBe("author");
+ expect(project.lessonSources!.context!.noteRefs).toEqual(["focused","second"]);
+ expect((await studioLessonModelSources("family",project)).map(item=>item.id)).toEqual(["focused","second","p1","p2"]);
+});
