@@ -11,10 +11,10 @@ export const studioRequestSchema = z.object({
   pageFrom: z.number().int().min(1).max(10000).nullable(), pageTo: z.number().int().min(1).max(10000).nullable(), sourceText: z.string().max(40000),
 }).strict().superRefine((value, ctx) => {
   if (["extension", "revision"].includes(value.mode) && (!value.subjectId || !value.topicId || value.lessonCount !== 1)) ctx.addIssue({ code: "custom", message: "Для розширення обери предмет і базовий урок; готуємо один розширений урок." });
-  if ((value.pageFrom === null) !== (value.pageTo === null) || (value.pageFrom !== null && value.pageTo !== null && (value.pageTo < value.pageFrom || value.pageTo - value.pageFrom > 30))) ctx.addIssue({ code: "custom", message: "Вибери послідовний діапазон до 31 сторінки." });
+  if ((value.pageFrom === null) !== (value.pageTo === null) || (value.pageFrom !== null && value.pageTo !== null && (value.pageTo < value.pageFrom))) ctx.addIssue({ code: "custom", message: "Укажи обидві межі діапазону; кінцева сторінка має бути не меншою за початкову." });
 });
 export type StudioRequest = z.infer<typeof studioRequestSchema>;
-export const studioPlanSchema = z.object({ title: text(200), overview: text(3000), objectives: z.array(text(250)).min(1).max(8), lessons: z.array(z.object({ title: text(200), goal: text(700), topics: z.array(text(200)).max(24).optional(), sourceIds: z.array(text(100)).max(STUDIO_MAX_SOURCE_CHUNKS).optional() }).strict()).min(1), prerequisites: z.array(text(250)).max(8), limitations: z.array(text(500)).max(8) }).strict();
+export const studioPlanSchema = z.object({ title: text(200), overview: text(3000), objectives: z.array(text(250)).min(1).max(8), lessons: z.array(z.object({ title: text(200), goal: text(700), topics: z.array(text(200)).max(24).optional(), sourceIds: z.array(text(100)).max(STUDIO_MAX_SOURCE_CHUNKS).optional() }).strict()).min(1), prerequisites: z.array(text(250)).max(8), limitations: z.array(text(500)).max(8), sourceExclusions: z.array(z.object({ sourceId: text(100), reason: text(500) }).strict()).max(200).optional() }).strict();
 export const studioPlanBatchSchema = studioPlanSchema.extend({ lessons: studioPlanSchema.shape.lessons.max(STUDIO_PLAN_BATCH_SIZE) });
 export type StudioPlan = z.infer<typeof studioPlanSchema>;
 export const studioLessonSchema = z.object({ title: text(200), objectives: z.array(text(250)).min(1).max(6),
@@ -39,14 +39,28 @@ export const studioReviewSchema = z.object({ verdict: z.enum(["pass", "revise", 
 /** Required for new model calls; older saved reviews remain readable. */
 export const studioReviewResponseSchema = studioReviewSchema.extend({ corrections: z.array(studioCorrectionSchema).max(12) });
 export type StudioReview = z.infer<typeof studioReviewSchema>;
-export interface StudioSource { id: string; title: string; text: string; page: number | null; kind: "lesson" | "book" | "provided"; audience?: "learner" | "teacher" | "reference"; }
+export interface StudioSource { id: string; title: string; text: string; page: number | null; kind: "lesson" | "book" | "provided" | "summary"; audience?: "learner" | "teacher" | "reference"; }
 export interface StudioIllustration { id: string; blockIndex: number; title: string; caption: string; sourceUrl: string; credit: string; license: string; storagePath: string; byteSize: number; }
-export interface StudioUnit { illustrations?: StudioIllustration[]; content: StudioLesson; visuals: StudioVisual[]; review: StudioReview | null; reviewRound?: number; lastReviewFingerprint?: string | null; }
+export interface StudioBaseTopic { id: string; subjectId: string; title: string; pageFrom: number | null; pageTo: number | null; href?: string; }
+export interface StudioSourceSelection { candidates: StudioBaseTopic[]; fallbackMaterialId: string | null; selectedIds: string[]; assessed: boolean; reason?: string; }
+export interface StudioSourceContext { rawParts?: number[]; noteRefs?: string[]; ids: string[]; }
+export interface StudioSourceCorpus {
+  id: string; partCount: number; chunkCount: number; characterCount: number; blankChunks: number; pageFrom: number | null; pageTo: number | null;
+  analysisContract?: string;
+  analyzed: number; notes: string[]; catalog: string[]; reduceCursor: number; reduced: string[];
+}
+export interface StudioLessonSources { targetPhase: "author" | "design" | "review" | "repair"; lessonIndex: number; partIndexes: number[]; cursor: number; notes: string[]; catalog: string[]; reduceCursor: number; reduced: string[]; context?: StudioSourceContext; }
+export interface StudioUnit { sourceContext?: StudioSourceContext; illustrations?: StudioIllustration[]; content: StudioLesson; visuals: StudioVisual[]; review: StudioReview | null; reviewRound?: number; lastReviewFingerprint?: string | null; }
 export type StudioState = "planning" | "plan_ready" | "generating" | "ready" | "needs_changes" | "failed" | "paused" | "publishing" | "published" | "withdrawn";
 export interface StudioProject {
   version: 1; revision: number;
   /** Immutable backing documents; omitted from parent responses. */
   unitRefs?: string[];
+  sourceCorpus?: StudioSourceCorpus;
+  sourceSelection?: StudioSourceSelection;
+  lessonSources?: StudioLessonSources;
+  /** Public progress only; private corpus state is removed from parent responses. */
+  sourceProgress?: { partCount: number; analyzed: number; characters: number; stage: string; lessonParts: number; lessonPrepared: number };
   /** Parent response contains full content only for this preview index. */
   previewIndex?: number;
   /** Draft corrections over an existing publication; child content changes only on republish. */
@@ -62,7 +76,7 @@ export interface StudioProject {
   editorNotes?: { at: string; lessonIndex: number; text: string }[];
   request: StudioRequest; state: StudioState; createdAt: string;
   sources: StudioSource[]; sourceNotes: string[]; subjectName: string | null; baseHref: string | null; baseTitle: string | null;
-  plan: StudioPlan | null; units: StudioUnit[]; cursor: number; phase: "plan" | "author" | "design" | "review" | "repair" | "publish";
+  plan: StudioPlan | null; units: StudioUnit[]; cursor: number; phase: "resolve" | "assess" | "analyze" | "outline" | "lesson_sources" | "lesson_outline" | "plan" | "author" | "design" | "review" | "repair" | "publish";
   token: string; activeCall: boolean; spentUsd: number; heldUsd: number; feedback: string; error: string | null;
   models: { role: string; model: string; costUsd: number }[];
   publication: { subjectId: string; packageId: string; lessons: { id: string; topicId: string; title: string }[] } | null;

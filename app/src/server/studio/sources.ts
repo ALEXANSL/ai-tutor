@@ -4,14 +4,16 @@ import { loadVideoLessonSource, VideoSourceError } from "@/server/video-script/s
 import { getSubjectDetail } from "@/server/subjects/queries";
 import { importedLessonHref } from "@/lib/imported-lesson-link";
 import { buildTsQuery } from "@/server/search/query";
+import { readStudioSourceCatalog, studioSourceAnalysisContract } from "./source-catalog";
+import { snapshotStudioSources } from "./source-corpus";
 import { STUDIO_MAX_SOURCE_CHUNKS, type StudioRequest, type StudioSource } from "@/lib/studio";
 
-export async function loadStudioSources(familyId: string, request: StudioRequest) {
-  const scope = forFamily(familyId); const sources: StudioSource[] = []; const notes: string[] = [];
+export async function loadStudioSources(familyId: string, request: StudioRequest, preparedSources: StudioSource[] = []) {
+  const scope = forFamily(familyId); const sources: StudioSource[] = [...preparedSources]; const notes: string[] = [];
   let baseHref: string | null = null, baseTitle: string | null = null;
   const subject = request.subjectId ? await getSubjectDetail(familyId, request.subjectId) : null;
   if (request.subjectId && !subject) throw new Error("Предмет або курс недоступний.");
-  if (["extension", "revision"].includes(request.mode)) {
+  if (["extension", "revision"].includes(request.mode) && !preparedSources.length) {
     const topic = subject?.topics.find(item => item.id === request.topicId);
     baseHref = topic ? importedLessonHref(topic) : null; baseTitle = topic?.title ?? null;
     if (!baseHref || !request.subjectId || !request.topicId) throw new Error("Вибери готовий базовий урок цього предмета.");
@@ -23,49 +25,66 @@ export async function loadStudioSources(familyId: string, request: StudioRequest
       notes.push("У базовому уроці недостатньо основного тексту. Шукаємо матеріал у книгах; якщо фрагментів немає, підготовка уроку ґрунтуватиметься на загальних знаннях, а не на повному тексті підручника.");
     }
   }
-  if (request.sourceText.trim()) sources.push({ id: "provided-1", title: "Текст, наданий татом", text: request.sourceText.trim(), page: null, kind: "provided" });
-  let materialTitle: string | null = null; let isDocument = false;
+  if (request.sourceText.trim() && !sources.some(source => source.id === "provided-1")) sources.push({ id: "provided-1", title: "Текст, наданий татом", text: request.sourceText.trim(), page: null, kind: "provided" });
+  let materialTitle: string | null = null;
+  type Material = { id: string; title: string | null; name: string; status: string; content_hash: string | null; indexed_at: string | null; structure_outline_result?: { kind?: string; warnings?: string[] } };
+  const materialFields = "id,title,name,status,content_hash,indexed_at,structure_outline_result";
+  let material: Material | null = null;
   if (request.materialId) {
-    const { data: material, error } = await scope.select("materials", "id,title,name,structure_outline_result").eq("id", request.materialId).neq("status", "removed").maybeSingle<{ id: string; title: string | null; name: string; structure_outline_result?: { kind?: string; warnings?: string[] } }>();
-    if (error || !material) throw new Error("Вибрана книга недоступна."); materialTitle = material.title || material.name;
-    isDocument = material.structure_outline_result?.kind === "source_document" || /\.(?:pptx|docx|txt|text|md)$/i.test(material.name);
-    if (/^source_(?:image|document)$/.test(material.structure_outline_result?.kind ?? "")) notes.push(...(material.structure_outline_result?.warnings ?? []));
+    const found = await scope.select("materials", materialFields).eq("id", request.materialId).neq("status", "removed").maybeSingle<Material>();
+    if (found.error || !found.data) throw new Error("Вибрана книга недоступна.");
+    material = found.data; materialTitle = material.title || material.name;
+    if (!["ready", "ready_partial"].includes(material.status)) throw new Error("Дочекайся завершення обробки вибраної книги: курс має спиратися на повний доступний текст.");
+    notes.push(...(material.structure_outline_result?.warnings ?? []));
+    if (material.status === "ready_partial") notes.push("Структуру книги підготовлено частково: використовуємо доступний розпізнаний текст і враховуємо прогалини, а не стверджуємо повне відновлення оригіналу.");
   }
-  let chunks: { id: string; material_id: string; page: number | null; text: string }[] = [];
-  let completeSmallSource = false;
-  if (request.materialId && request.pageFrom === null && request.pageTo === null) {
-    const all = await scope.select("chunks", "id,material_id,page,text").eq("material_id", request.materialId).order("ordinal").limit(STUDIO_MAX_SOURCE_CHUNKS + 1).returns<typeof chunks>();
-    if (all.error) throw new Error("Не вдалося прочитати вибраний матеріал.");
-    if (all.data?.length && all.data.length <= STUDIO_MAX_SOURCE_CHUNKS && Buffer.byteLength(JSON.stringify(all.data)) <= 55000) { chunks = all.data; completeSmallSource = true; }
-    else if (isDocument && all.data?.length) throw new Error("Презентація або документ завеликі для одного запиту. Вибери діапазон слайдів чи частин: не замінюємо весь матеріал випадковими результатами пошуку.");
-  }
-  if (request.materialId && request.pageFrom !== null && request.pageTo !== null) {
-    const { data, error } = await scope.select("chunks", "id,material_id,page,text").eq("material_id", request.materialId).gte("page", request.pageFrom).lte("page", request.pageTo).order("ordinal").limit(151).returns<typeof chunks>();
-    if (error) throw new Error("Не вдалося прочитати вибрані сторінки."); chunks = data ?? [];
-    if (chunks.length > 150) throw new Error("У вибраному діапазоні забагато фрагментів. Звузь діапазон; сторінки не обрізалися.");
-  } else if (!completeSmallSource && (request.materialId || request.subjectId)) {
-    const { data, error } = await scope.client.rpc("search_chunks", { p_family_id: familyId, p_query_text: request.title.slice(0, 200), p_tsquery: buildTsQuery(`${baseTitle ?? request.title} ${request.idea.slice(0, 150)}`), p_query_embedding: null, p_subject_id: request.materialId ? null : request.subjectId, p_kind: null, p_material_id: request.materialId, p_limit: 8 });
+  let chunks: { id: string; material_id: string; ordinal: number; page: number | null; text: string }[] = [];
+  if (request.materialId) {
+    let lastOrdinal = -1;
+    while (true) {
+      let query = scope.select("chunks", "id,material_id,ordinal,page,text").eq("material_id", request.materialId).gt("ordinal", lastOrdinal);
+      if (request.pageFrom !== null && request.pageTo !== null) query = query.gte("page", request.pageFrom).lte("page", request.pageTo);
+      const page = await query.order("ordinal").limit(200).returns<typeof chunks>();
+      if (page.error) throw new Error("Не вдалося прочитати всі частини вибраної книги. Підготовку ще не розпочато.");
+      const rows = page.data ?? []; if (!rows.length) break;
+      if (rows.some((row, index) => !Number.isSafeInteger(row.ordinal) || row.ordinal <= (index ? rows[index - 1]!.ordinal : lastOrdinal))) throw new Error("Порядок частин книги змінився. Онови джерело перед підготовкою.");
+      chunks.push(...rows); lastOrdinal = rows.at(-1)!.ordinal;
+      if (rows.length < 200) break;
+    }
+    const after = await scope.select("materials", materialFields).eq("id", request.materialId).neq("status", "removed").maybeSingle<Material>();
+    if (after.error || !after.data || after.data.status !== material!.status || after.data.content_hash !== material!.content_hash || after.data.indexed_at !== material!.indexed_at) throw new Error("Книга змінилася під час читання. Дочекайся завершення її обробки й повтори запит.");
+    if (!chunks.some(chunk => chunk.text.trim())) throw new Error("У вибраній книзі не знайдено читабельного тексту. Перевір розпізнавання джерела; генерацію ще не розпочато.");
+    notes.push(request.pageFrom === null ? "Збережено весь доступний розпізнаний текст книги. Майстерня сама визначить теми й матеріал кожного уроку. Це не гарантує розпізнавання сторінок без тексту або ілюстрацій." : "Збережено всі доступні частини в обраному діапазоні. Межі уроків визначає Майстерня, а не технічний поділ на порції.");
+  } else if (request.subjectId) {
+    const { data, error } = await scope.client.rpc("search_chunks", { p_family_id: familyId, p_query_text: request.title.slice(0, 200), p_tsquery: buildTsQuery(`${baseTitle ?? request.title} ${request.idea.slice(0, 150)}`), p_query_embedding: null, p_subject_id: request.subjectId, p_kind: null, p_material_id: null, p_limit: 8 });
     if (error) notes.push("Пошук у книгах зараз недоступний; використано лише явно надані джерела.");
     const ids = (data ?? []).map((row: { chunk_id: string }) => row.chunk_id);
     if (ids.length) {
-      let selected = scope.select("chunks", "id,material_id,page,text").in("id", ids);
-      if (request.materialId) selected = selected.eq("material_id", request.materialId);
-      const result = await selected.returns<typeof chunks>();
+      const result = await scope.select("chunks", "id,material_id,ordinal,page,text").in("id", ids).returns<typeof chunks>();
       if (result.error) throw new Error("Не вдалося прочитати знайдені фрагменти."); chunks = result.data ?? [];
     }
+    if (chunks.length) notes.push("За темою предмета знайдено окремі фрагменти; цілий підручник не вибирався.");
   }
-  if (request.materialId && !chunks.length) throw new Error("У вибраній книзі не знайдено читабельних фрагментів. Укажи сторінки, дочекайся обробки книги або встав потрібний текст. Генерацію ще не розпочато.");
   const names = new Map<string, string>();
   if (!materialTitle && chunks.length) {
     const result = await scope.select("materials", "id,title,name").in("id", [...new Set(chunks.map(chunk => chunk.material_id))]).returns<{ id: string; title: string | null; name: string }[]>();
     if (!result.error) for (const book of result.data ?? []) names.set(book.id, book.title || book.name);
   }
   for (const chunk of chunks) sources.push({ id: `chunk-${chunk.id}`, title: materialTitle ?? names.get(chunk.material_id) ?? "Матеріал вибраного предмета", text: chunk.text, page: chunk.page, kind: "book", audience: sourceAudience(chunk.text) });
-  if (completeSmallSource) notes.push("Використано весь розпізнаний текст невеликого матеріалу, а не лише результати пошуку.");
-  else if (chunks.length) notes.push("Використано знайдені фрагменти, а не прочитано всю книгу. Номери сторінок індексу можуть відрізнятися від друкованих.");
+  return stageStudioSources(familyId, sources, notes, { baseHref, baseTitle, subjectName: subject?.name ?? null });
+}
+
+export async function stageStudioSources(familyId: string, sources: StudioSource[], notes: string[], { baseHref, baseTitle, subjectName }: { baseHref: string | null; baseTitle: string | null; subjectName: string | null }) {
   if (!sources.length) notes.push("Наданих джерел немає: урок готується із загальних знань ШІ. Це буде зазначено у матеріалі.");
-  if (JSON.stringify(sources).length > 65000) throw new Error("Вибраних матеріалів більше ніж 65 000 символів. Звузь діапазон сторінок або розділи курс; джерела не обрізалися.");
-  return { sources, sourceNotes: notes, baseHref, baseTitle, subjectName: subject?.name ?? null };
+  if (sources.length > STUDIO_MAX_SOURCE_CHUNKS || Buffer.byteLength(JSON.stringify(sources)) > 55000) {
+    const snapshot = await snapshotStudioSources(familyId, sources);
+    const cached = await readStudioSourceCatalog(familyId, snapshot);
+    if (cached) notes.push("Використано збережений огляд незмінного джерела; повторний аналіз частин не запускається.");
+    return { sources: [], sourceCorpus: { ...snapshot, analysisContract: studioSourceAnalysisContract(), analyzed: cached ? snapshot.partCount : 0, notes: cached?.notes ?? [], catalog: cached?.catalog ?? [], reduceCursor: 0, reduced: [] }, sourceNotes: [...notes, "Великий матеріал аналізується послідовно й зберігається частинами; жодна частина не замінюється випадковим пошуком."], baseHref, baseTitle, subjectName };
+  }
+  if (sources.length) notes.push("Невеликий матеріал передається повністю без окремого зведення.");
+  return { sources, sourceCorpus: undefined, sourceNotes: notes, baseHref, baseTitle, subjectName };
+
 }
 
 /** Explicit service headers only; a lesson about historical sources is still learner content. */

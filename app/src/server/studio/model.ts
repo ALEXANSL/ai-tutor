@@ -5,9 +5,9 @@ import { loadPrice } from "@/server/ai/store";
 import { AiNotConfiguredError, type ModelRoute } from "@/server/ai/types";
 import { createServiceClient } from "@/server/supabase/clients";
 import { forFamily } from "@/server/db/family-scope";
-export type StudioRole = "studio.plan" | "studio.author" | "studio.design" | "studio.review" | "studio.repair";
-const OUTPUT: Record<StudioRole, number> = { "studio.plan": 6000, "studio.author": 16000, "studio.design": 5000, "studio.review": 8000, "studio.repair": 6000 };
-const OLD_OUTPUT: Record<StudioRole, number> = { "studio.plan": 4500, "studio.author": 12000, "studio.design": 5000, "studio.review": 6000, "studio.repair": 6000 };
+export type StudioRole = "studio.resolve" | "studio.assess" | "studio.source" | "studio.plan" | "studio.author" | "studio.design" | "studio.review" | "studio.repair";
+const OUTPUT: Record<StudioRole, number> = { "studio.resolve": 6000, "studio.assess": 4000, "studio.source": 8000, "studio.plan": 6000, "studio.author": 16000, "studio.design": 5000, "studio.review": 8000, "studio.repair": 6000 };
+const OLD_OUTPUT: Record<StudioRole, number> = { "studio.resolve": 6000, "studio.assess": 4000, "studio.source": 8000, "studio.plan": 4500, "studio.author": 12000, "studio.design": 5000, "studio.review": 6000, "studio.repair": 6000 };
 export function studioRouteRole(role: StudioRole) { return ["studio.plan", "studio.author", "studio.review"].includes(role) ? `${role}_full` : role; }
 export async function studioModelConfig(familyId: string, role: StudioRole) {
   const db = createServiceClient();
