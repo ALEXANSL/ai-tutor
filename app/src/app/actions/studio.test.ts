@@ -139,3 +139,15 @@ it("schedules retrieval of the existing provider response when the previous work
  expect(f.schedule).toHaveBeenCalledWith("own-family",id,f.save.mock.calls[0]![3].token);
  expect(f.start).not.toHaveBeenCalled();
 });
+
+it("exports a stopped lesson from family storage without scheduling work or changing spend", async()=>{
+  const {downloadStoppedLessonAction}=await import("./studio");
+  f.read.mockResolvedValue(studioProjectFixture({state:"failed",phase:"repair",units:[{content:studioLessonFixture,review:null,visuals:[studioVisualFixture]}]}));
+  const result=await downloadStoppedLessonAction(id);
+  expect(result).toMatchObject({status:"ok",recovered:false,text:expect.stringContaining(studioLessonFixture.blocks[0]!.text)});
+  expect(f.read).toHaveBeenCalledWith("own-family",id);
+  expect(f.save).not.toHaveBeenCalled();expect(f.schedule).not.toHaveBeenCalled();expect(f.kick).not.toHaveBeenCalled();
+  f.parent.mockRejectedValueOnce(new Error("unauthorized"));
+  await expect(downloadStoppedLessonAction(id)).rejects.toThrow("unauthorized");
+  expect(f.read).toHaveBeenCalledTimes(1);
+});

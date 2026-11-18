@@ -7,7 +7,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { unstable_rethrow } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireParentAccess, requireChild } from "@/server/auth/guards";
-import { studioPlanSchema, studioRequestSchema, studioLessonSchema, studioCanResumeIncompleteRepair, studioCanAutoResumeReview, studioActive, studioPublicationVisible, type StudioActivity } from "@/lib/studio";
+import { studioPlanSchema, studioRequestSchema, studioLessonSchema, studioCanAutoResumeReview, studioActive, studioPublicationVisible, type StudioActivity } from "@/lib/studio";
 import { readStudioProject, saveStudioProject, STUDIO_STEP } from "@/server/studio/store";
 import { resumeLegacyStudioReview, validateStudioLesson, scheduleStudio, pauseStudio, resumeStudio, startStudio } from "@/server/studio/workflow";
 import { activateStudioPublication } from "@/server/studio/publish";
@@ -49,7 +49,7 @@ export async function pollStudioAction(rawId: string, rawLessonIndex?: number) {
   const { familyId } = await requireParentAccess(); const id = idSchema.parse(rawId);
   let project = await readStudioProject(familyId, id);
   if (!project) return { status: "error" as const, message: "Чернетку не знайдено." };
-  if ((studioCanAutoResumeReview(project) || studioCanResumeIncompleteRepair(project))) project = await resumeLegacyStudioReview(familyId, id) ?? project;
+  if (studioCanAutoResumeReview(project)) project = await resumeLegacyStudioReview(familyId, id) ?? project;
   let activity: StudioActivity = { queue: "none", checkedAt: new Date().toISOString() };
   if (studioActive(project.state)) {
     const job = await forFamily(familyId).select("jobs", "status,locked_until,created_at,run_after").eq("type", STUDIO_STEP).eq("payload->>projectId", id).eq("payload->>token", project.token).order("created_at", { ascending: false }).limit(1).maybeSingle<{ status: string; locked_until: string | null; created_at: string; run_after?: string | null }>();
@@ -137,4 +137,38 @@ export async function extractStudioFileAction(form: FormData) {
     if (text.length < 100 || text.length > 40000) throw new Error("Потрібно від 100 до 40 000 символів читабельного тексту. Для скану потрібна обробка книги, для великого тексту — вибір сторінок." );
     return { status: "ok" as const, text };
   } catch (error) { return { status: "error" as const, message: message(error) }; }
+}
+
+export async function downloadStoppedLessonAction(rawId: string) {
+  const { familyId } = await requireParentAccess();
+  const id = idSchema.parse(rawId);
+  const project = await readStudioProject(familyId, id);
+  const unit = project?.units[project.cursor];
+  if (!project || !unit) return { status: "error" as const, message: "У проєкті ще немає збереженої версії уроку." };
+  let lesson = unit;
+  let recovered = false;
+  const pending = project.pendingModelCall;
+  if (project.state === "failed" && project.failureDiagnostic?.code === "STUDIO-AI-INCOMPLETE" && pending?.billed && pending.phase === "repair" && pending.cursor === project.cursor) {
+    const { readStudioPaidResult } = await import("@/server/studio/paid-result");
+    const { recoverRepairForExport } = await import("@/server/studio/repair");
+    const receipt = await readStudioPaidResult(familyId,id,pending).catch(() => null);
+    const candidate = receipt?.failure?.code === "STUDIO-AI-INCOMPLETE" && recoverRepairForExport(unit,receipt.result);
+    if (candidate) {
+      try {
+        validateStudioLesson(project,candidate.content);
+        lesson = candidate;
+        recovered = true;
+      } catch { /* retain the saved lesson when recovered edits fail validation */ }
+    }
+  }
+  const lines = [lesson.content.title, "Чернетка для батьківського перегляду", ...lesson.content.objectives];
+  for (const [index, block] of lesson.content.blocks.entries()) {
+    lines.push("", block.title, block.text);
+    for (const visual of lesson.visuals.filter(v => v.blockIndex === index)) lines.push(visual.title,...visual.items.map(v => v.label + " — " + v.detail), visual.caption);
+  }
+  lines.push("", "Перевірка знань");
+  lesson.content.questions.forEach((q,i) => lines.push("", (i+1)+". "+q.prompt, ...q.options.map((v,j) => (j+1)+") "+v)));
+  lines.push("", "Ключ і пояснення");
+  lesson.content.questions.forEach((q,i) => lines.push((i+1)+". "+q.options[q.correctIndex]+" — "+q.explanation));
+  return { status:"ok" as const, title:lesson.content.title, text:lines.join("\n"), recovered };
 }

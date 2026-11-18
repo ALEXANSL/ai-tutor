@@ -85,3 +85,14 @@ it("adds ten missing diagnostic questions with one edit and exports all twelve t
   expect(parsed.lessons[0]!.task_ids).toHaveLength(12);
   expect(parsed.taskKeys).toHaveLength(12);
 });
+
+it("recovers a whole quiz from a paid fragment while discarding the unfinished quiz and preserving the original", async()=>{
+  const {recoverRepairForExport}=await import("./repair");
+  const unit=project().units[0]!;
+  const replacement={...unit.content.questions[0]!,prompt:'Чи є тут символи "}],"?',explanation:"Повне пояснення."};
+  const patch=JSON.stringify({questionIndex:2,replacement});
+  const restored=recoverRepairForExport(unit,'{"blocks":[],"questions":['+patch+',{"questionIndex":3,"replacement":{"prompt":"Урив');
+  expect(restored?.content.questions).toEqual([...unit.content.questions,replacement]);
+  expect(unit.content.questions).toHaveLength(2);
+  expect(recoverRepairForExport(unit,'{"questions":[{"questionIndex":2')).toBeNull();
+});
