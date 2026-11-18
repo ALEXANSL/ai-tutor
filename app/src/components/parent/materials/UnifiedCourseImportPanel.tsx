@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { unstable_rethrow } from "next/navigation";
-import { inspectUnifiedCourseAction, importUnifiedCourseAction } from "@/app/actions/unified-course-import";
+import { stageSmallCourseAction, inspectUnifiedCourseAction, importUnifiedCourseAction } from "@/app/actions/unified-course-import";
 import { getBrowserSupabaseStorageClient } from "@/lib/supabase-browser";
 import { withBusySignal } from "@/lib/busy-signal";
-import { MAX_COURSE_ZIP_BYTES } from "@/lib/upload-limits";
+import { MAX_COURSE_ZIP_BYTES, SMALL_COURSE_ZIP_BYTES } from "@/lib/upload-limits";
 import type { SubjectOption } from "@/server/books/queries";
 import { parentButton, parentInput } from "@/app/parent/ui";
 
@@ -71,20 +71,29 @@ export function UnifiedCourseImportPanel({ subjects }: { subjects: SubjectOption
         let path = storagePath;
         if (!path) {
           setPhase("uploading");
-          const init = await fetch("/api/parent/course-import/init", {
-            method: "POST", headers: { "content-type": "application/json" },
-            body: JSON.stringify({ fileName: file.name, size: file.size }),
-          });
-          if (!init.ok) throw new Error("Не вдалося підготувати завантаження. Спробуйте ще раз.");
-          const upload = await init.json() as { path: string; token: string };
-          if (!valid()) return;
-          if (typeof upload.path !== "string" || typeof upload.token !== "string") throw new Error("Не вдалося підготувати завантаження. Спробуйте ще раз.");
-          const client = getBrowserSupabaseStorageClient();
-          if (!client) throw new Error("Завантаження тимчасово недоступне. Спробуйте пізніше.");
-          const { error } = await client.storage.from("course_import_staging").uploadToSignedUrl(upload.path, upload.token, file);
-          if (!valid()) return;
-          if (error) throw new Error("Не вдалося передати архів. Перевірте з’єднання та спробуйте ще раз.");
-          path = upload.path;
+          if (file.size <= SMALL_COURSE_ZIP_BYTES) {
+            const form = new FormData();
+            form.set("archive", file);
+            const staged = await stageSmallCourseAction(form);
+            if (!valid()) return;
+            if (staged.status === "error") throw new Error(staged.message);
+            path = staged.path;
+          } else {
+            const init = await fetch("/api/parent/course-import/init", {
+              method: "POST", headers: { "content-type": "application/json" },
+              body: JSON.stringify({ fileName: file.name, size: file.size }),
+            });
+            if (!init.ok) throw new Error("Не вдалося підготувати завантаження. Спробуйте ще раз.");
+            const upload = await init.json() as { path: string; token: string };
+            if (!valid()) return;
+            if (typeof upload.path !== "string" || typeof upload.token !== "string") throw new Error("Не вдалося підготувати завантаження. Спробуйте ще раз.");
+            const client = getBrowserSupabaseStorageClient();
+            if (!client) throw new Error("Завантаження тимчасово недоступне. Спробуйте пізніше.");
+            const { error } = await client.storage.from("course_import_staging").uploadToSignedUrl(upload.path, upload.token, file);
+            if (!valid()) return;
+            if (error) throw new Error("Не вдалося передати архів. Перевірте з’єднання та спробуйте ще раз.");
+            path = upload.path;
+          }
           setStoragePath(path);
         }
         if (!valid()) return;
