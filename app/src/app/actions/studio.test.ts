@@ -121,3 +121,8 @@ it("accepts a long course, returns one full selected preview, and permits editin
   const edited = await saveStudioLessonAction({ id, revision: 0, lessonIndex: 17, lesson: studioLessonFixture, budgetUsd: 30 });
   expect(edited.status).toBe("ok"); expect(f.save.mock.calls.at(-1)![3].units[17].review).toBeNull();
 });
+
+it("routes explicit re-review through parent authorization, family scope and the existing durable command",async()=>{
+ const result=await commandStudioAction({id,revision:4,command:"review",budgetUsd:3,lessonIndex:0});
+ expect(result.status).toBe("ok");expect(f.resume).toHaveBeenCalledWith("own-family",id,4,"review",undefined,undefined,3,0);expect(f.kick).toHaveBeenCalledWith("own-family",id);
+});

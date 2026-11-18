@@ -1,6 +1,6 @@
 import "server-only";
 import { AiNotConfiguredError, BudgetBlockedError } from "@/server/ai/types";
-import { studioNarrationText } from "@/lib/studio-narration";
+import { studioNarrationText, studioModelLesson } from "@/lib/studio-narration";
 import { createHash, randomUUID } from "node:crypto";
 import { STUDIO_PLAN_BATCH_SIZE, studioPlanBatchSchema, studioDesignSchema, studioLessonSchema, studioAuthorSchema, studioReviewResponseSchema, studioCanAutoResumeReview, studioActive, studioPublicationVisible, type StudioPlan, type StudioProject, type StudioRequest } from "@/lib/studio";
 import { enqueueJob, registerJobHandler, type JobRow } from "@/server/jobs/runner";
@@ -52,7 +52,11 @@ export function validateStudioLesson(project: StudioProject, raw: unknown) {
   }
   return lesson;
 }
+class StudioCapError extends Error {
+  constructor(readonly requiredUsd: number, readonly availableUsd: number) { super("STUDIO-CAP"); }
+}
 function safeStageError(error: unknown): string {
+  if (error instanceof StudioCapError) return `STUDIO-CAP: для наступного етапу потрібен резерв $${error.requiredUsd.toFixed(3)}, доступно $${Math.max(0, error.availableUsd).toFixed(3)} після врахованих витрат і збережених резервів. Виклик не запускався. Готові частини збережено; ліміт не збільшено.`;
   const name = (error as Error)?.name;
   if (name === "BudgetBlockedError") return "STUDIO-BUDGET: загальний ліміт ШІ призупинив підготовку. Перевір «Бюджет і моделі».";
   if (name === "AiNotConfiguredError") return "STUDIO-CONFIG: перевір OpenAI та налаштування моделей майстерні у «Бюджет і моделі».";
@@ -79,11 +83,12 @@ export async function runStudioStep(job: JobRow, deadline: number) {
   const planned = project.plan?.lessons.length ?? 0;
   const planningBatch = { startLesson: planned + 1, count: Math.min(STUDIO_PLAN_BATCH_SIZE, project.request.lessonCount - planned), totalLessons: project.request.lessonCount };
   const planContext = project.plan ? { ...project.plan, lessons: project.phase === "plan" ? project.plan.lessons.slice(-STUDIO_PLAN_BATCH_SIZE) : project.plan.lessons.slice(Math.max(0, project.cursor - 2), project.cursor + 3) } : null;
-  const prompt = JSON.stringify({ request: { ...project.request, sourceText: undefined, subjectId: undefined, topicId: undefined, materialId: undefined }, subject: project.subjectName, baseTitle: project.baseTitle, plan: planContext, ...(project.phase === "plan" ? { planningBatch } : {}), currentLesson: project.phase === "plan" ? null : project.plan?.lessons[project.cursor] ?? null, sources: project.sources, sourceNotes: project.sourceNotes, feedback: project.feedback, ...(project.units[project.cursor] ? { candidate: { content: project.phase === "design" ? { title: project.units[project.cursor]!.content.title, objectives: project.units[project.cursor]!.content.objectives, blocks: project.units[project.cursor]!.content.blocks } : project.units[project.cursor]!.content, visuals: project.units[project.cursor]!.visuals, parentSelectedIllustrations: project.units[project.cursor]!.illustrations?.map(({ title, caption, blockIndex, sourceUrl }) => ({ title, caption, blockIndex, sourceUrl })), ...(project.phase === "repair" ? { review: project.units[project.cursor]!.review } : {}) } } : {}) });
+  const candidate = project.units[project.cursor] ? studioModelLesson(project.units[project.cursor]!.content) : null;
+  const prompt = JSON.stringify({ request: { ...project.request, sourceText: undefined, subjectId: undefined, topicId: undefined, materialId: undefined }, subject: project.subjectName, baseTitle: project.baseTitle, plan: planContext, ...(project.phase === "plan" ? { planningBatch } : {}), currentLesson: project.phase === "plan" ? null : project.plan?.lessons[project.cursor] ?? null, sources: project.sources, sourceNotes: project.sourceNotes, feedback: project.feedback, ...(project.units[project.cursor] ? { candidate: { content: project.phase === "design" ? { title: candidate!.title, objectives: candidate!.objectives, blocks: candidate!.blocks } : candidate, visuals: project.units[project.cursor]!.visuals, parentSelectedIllustrations: project.units[project.cursor]!.illustrations?.map(({ title, caption, blockIndex, sourceUrl }) => ({ title, caption, blockIndex, sourceUrl })), ...(project.phase === "repair" ? { review: project.units[project.cursor]!.review } : {}) } } : {}) });
   if (Buffer.byteLength(system + prompt + JSON.stringify(schema.toJSONSchema())) > 250000) throw new Error("STUDIO-CONTEXT");
   const config = await studioModelConfig(job.family_id, role);
   const reserved = studioReservation(system, prompt, schema, config.route.params.max_tokens!, config.rates);
-  if (project.spentUsd + project.heldUsd + reserved > project.request.budgetUsd) throw new Error("STUDIO-CAP");
+  if (project.spentUsd + project.heldUsd + reserved > project.request.budgetUsd) throw new StudioCapError(reserved, project.request.budgetUsd - project.spentUsd - project.heldUsd);
   project = await saveStudioProject(job.family_id, id, project, { activeCall: true, heldUsd: project.heldUsd + reserved });
   let result;
   try { result = await callStudioModel(job.family_id, id, role, system, prompt, schema, config); }
@@ -121,16 +126,16 @@ export async function runStudioStep(job: JobRow, deadline: number) {
       const round = (units[project.cursor]!.reviewRound ?? 0) + 1;
       const fingerprint = createHash("sha256").update(JSON.stringify({ content: units[project.cursor]!.content, visuals: units[project.cursor]!.visuals, corrections: review.corrections.map(fix => JSON.stringify(fix)).sort(), issues: [...review.issues].sort() })).digest("hex");
       const stuck = review.verdict !== "pass" && units[project.cursor]!.lastReviewFingerprint === fingerprint;
-      const escalate = stuck && !project.reviewRepairAttempted;
-      const stop = stuck && !escalate;
+      const escalate = stuck && !project.reviewRepairAttempted && !project.reviewOnly;
+      const stop = !!project.reviewOnly || (stuck && !escalate);
       const nextPhase = review.corrections.length && review.corrections.every(fix => fix.role === "design") ? "design" : "author";
       units[project.cursor] = { ...units[project.cursor]!, review, reviewRound: round, lastReviewFingerprint: review.verdict === "pass" ? null : fingerprint };
-      await saveStudioReviewEvent(job.family_id, id, token, project.revision, { at: new Date().toISOString(), lessonIndex: project.cursor, round, review, next: review.verdict === "pass" ? "ready" : stop ? "stopped" : escalate ? "repair" : nextPhase });
-      if (review.verdict !== "pass") Object.assign(changes, { state: stop ? "needs_changes" : "generating", phase: escalate ? "repair" : nextPhase, reviewRepairAttempted: project.reviewRepairAttempted || escalate, reviewAutomationStopped: stop, error: stop ? "STUDIO-NO-PROGRESS: звичайні й діагностичні виправлення не змінили результат. Нові платні етапи зупинено. Переглянь рецензію та діагноз нижче; матеріал збережено." : null, feedback: `${studioReviewFeedback(review)}\nПобажання тата: ${project.revisionInstructions ?? project.editorNotes?.at(-1)?.text ?? ""}` });
+      await saveStudioReviewEvent(job.family_id, id, token, project.revision, { at: new Date().toISOString(), lessonIndex: project.cursor, round, review, next: review.verdict === "pass" ? "ready" : project.reviewOnly ? "parent" : stop ? "stopped" : escalate ? "repair" : nextPhase });
+      if (review.verdict !== "pass") Object.assign(changes, { state: stop ? "needs_changes" : "generating", phase: escalate ? "repair" : nextPhase, reviewRepairAttempted: project.reviewRepairAttempted || escalate, reviewAutomationStopped: stop, error: stop && !project.reviewOnly ? "STUDIO-NO-PROGRESS: звичайні й діагностичні виправлення не змінили результат. Нові платні етапи зупинено. Переглянь рецензію та діагноз нижче; матеріал збережено." : null, feedback: `${studioReviewFeedback(review)}\nПобажання тата: ${project.revisionInstructions ?? project.editorNotes?.at(-1)?.text ?? ""}` });
       else {
         const next = project.plan!.lessons.findIndex((_lesson, index) => units[index]?.review?.verdict !== "pass");
-        if (next < 0) { changes.state = "ready"; changes.reviewAutomationStopped = false; changes.error = null; }
-        else Object.assign(changes, { cursor: next, phase: "author", feedback: "", revisionInstructions: "", reviewRepairAttempted: false, repairAdvice: "", reviewAutomationStopped: false });
+        if (next < 0) { changes.state = "ready"; changes.reviewOnly = false; changes.reviewAutomationStopped = false; changes.error = null; }
+        else Object.assign(changes, { ...(project.reviewOnly ? { state: "paused", reviewOnly: false, error: "Повторну рецензію цього уроку завершено. Решту курсу збережено; продовж підготовку окремо." } : {}), cursor: next, phase: "author", feedback: "", revisionInstructions: "", reviewRepairAttempted: false, repairAdvice: "", reviewAutomationStopped: false });
       }
     }
     changes.units = units;
@@ -141,11 +146,11 @@ export async function runStudioStep(job: JobRow, deadline: number) {
   const next = await saveStudioProject(job.family_id, id, project, changes);
   if (studioActive(next.state)) return { requeue: true as const };
 }
-export async function resumeStudio(familyId: string, id: string, revision: number, command: "approve" | "retry" | "revise" | "publish", plan?: StudioPlan, feedback = "", budgetUsd?: number, lessonIndex?: number, revisionRequestId?: string, learner?: { age: number; grade: number }) {
+export async function resumeStudio(familyId: string, id: string, revision: number, command: "approve" | "retry" | "revise" | "publish" | "review", plan?: StudioPlan, feedback = "", budgetUsd?: number, lessonIndex?: number, revisionRequestId?: string, learner?: { age: number; grade: number }) {
   const project = await readStudioProject(familyId, id);
   if (!project || project.revision !== revision || studioActive(project.state) || (["published", "withdrawn"].includes(project.state) && command !== "revise")) throw new Error("Онови чернетку перед дією.");
   const token = randomUUID();
-  let changes: Partial<StudioProject> = { ...(revisionRequestId ? { revisionRequestId } : {}), token, activeCall: false, error: null };
+  let changes: Partial<StudioProject> = { ...(revisionRequestId ? { revisionRequestId } : {}), token, activeCall: false, error: null, reviewOnly: command === "retry" && project.reviewOnly === true };
   if (budgetUsd !== undefined) changes.request = { ...project.request, budgetUsd };
   if (learner) changes.request = { ...(changes.request ?? project.request), age: learner.age, grade: learner.grade };
   if (command === "approve") {
@@ -154,6 +159,11 @@ export async function resumeStudio(familyId: string, id: string, revision: numbe
   } else if (command === "publish") {
     if (project.state !== "ready" || project.units.length !== project.plan?.lessons.length || project.units.some(unit => unit.review?.verdict !== "pass")) throw new Error("Спочатку потрібні готові уроки й позитивна рецензія.");
     changes = { ...changes, state: "publishing", phase: "publish" };
+  } else if (command === "review") {
+    const cursor = lessonIndex ?? project.cursor;
+    if (!["failed", "paused", "needs_changes"].includes(project.state) || project.phase === "publish" || !project.plan || !Number.isSafeInteger(cursor) || !project.plan.lessons[cursor] || !project.units[cursor]) throw new Error("Повторна рецензія доступна для збереженого чернеткового уроку після зупинки.");
+    const units = project.units.map((unit, index) => index === cursor ? { ...unit, lastReviewFingerprint: null } : unit);
+    changes = { ...changes, units, cursor, phase: "review", state: "generating", reviewOnly: true, reviewAutomationStopped: false, reviewRepairAttempted: false, repairAdvice: "", feedback: "Незалежно перевір поточний готовий урок за актуальним контрактом. Попередні зауваження не є доказом помилки. Після вердикту підготовка зупиниться для батьківського рішення." };
   } else if (command === "revise") {
     const cursor = lessonIndex ?? project.cursor;
     if (!["needs_changes", "ready", "published", "withdrawn"].includes(project.state) || !Number.isSafeInteger(cursor) || !project.units[cursor]) throw new Error("Немає уроку для виправлення.");

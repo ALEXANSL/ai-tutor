@@ -90,3 +90,15 @@ it("loads the complete eighteenth lesson before opening its editor in a long cou
   await click("Редагувати матеріал");
   expect(container.textContent).toContain("Редактор уроку 18"); expect(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Текст для читання блоку 1"]')!.value).toBe(studioLessonFixture.blocks[0]!.text);
 });
+
+it("offers explicit reviewer-only recovery for a saved failed lesson and shows available budget",async()=>{
+ const p=project({state:"failed",phase:"author",error:"STUDIO-CAP",spentUsd:1.512,heldUsd:1.057});
+ f.poll.mockResolvedValue(observed({...p,state:"generating",phase:"review",reviewOnly:true,revision:1}));
+ render(p);expect(container.textContent).toContain("$0.431");expect(container.textContent).toContain("Автор і дизайнер не переписують матеріал");
+ await click("Перевірити готовий урок повторно");expect(f.command.mock.calls[0]![0]).toMatchObject({command:"review",lessonIndex:0,budgetUsd:3});
+ expect(container.textContent).toContain("рецензент перевіряє урок");
+});
+it("does not offer re-review without saved content or during interrupted publication",()=>{
+ render(project({state:"failed",units:[]}));expect(container.textContent).not.toContain("Перевірити готовий урок повторно");
+ act(()=>root.unmount());root=createRoot(container);render(project({state:"failed",phase:"publish"}));expect(container.textContent).not.toContain("Перевірити готовий урок повторно");
+});
