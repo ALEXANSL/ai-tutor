@@ -4,8 +4,8 @@ import { StudioIllustrations } from "./StudioIllustrations";
 import { StudioLessonEditor } from "./StudioLessonEditor";
 import { StudioAccessButton } from "./StudioAccessButton";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { commandStudioAction, pollStudioAction, pauseStudioAction } from "@/app/actions/studio";
-import { STUDIO_MAX_BUDGET, studioCanResumeIncompleteRepair, studioCanAutoResumeReview, studioActive, studioPublicationVisible, studioStateLabels, type StudioActivity, type StudioPlan, type StudioProject as Project } from "@/lib/studio";
+import { downloadStoppedLessonAction, commandStudioAction, pollStudioAction, pauseStudioAction } from "@/app/actions/studio";
+import { STUDIO_MAX_BUDGET, studioCanAutoResumeReview, studioActive, studioPublicationVisible, studioStateLabels, type StudioActivity, type StudioPlan, type StudioProject as Project } from "@/lib/studio";
 import { parentButton, parentInput } from "@/app/parent/ui";
 import { withBusySignal } from "@/lib/busy-signal";
 import { StudioProgress } from "./StudioProgress";
@@ -31,6 +31,16 @@ export function StudioProject({ id, initial, startEditing = false }: { id: strin
     if (next.state === "published") setNotice("Публікацію завершено. Матеріал доступний у каталозі.");
   }, []);
   function showProgress(label: string) { setPendingLabel(label); setNotice(""); progressRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }); progressRef.current?.focus({ preventScroll: true }); }
+  async function downloadDraft() {
+    try {
+      const result = await downloadStoppedLessonAction(id);
+      if (result.status === "error") { setError(result.message); return; }
+      const url = URL.createObjectURL(new Blob(["\uFEFF",result.text],{type:"text/plain;charset=utf-8"}));
+      const a = document.createElement("a"); a.href = url; a.download = result.title.slice(0,100)+".txt"; a.click();
+      window.setTimeout(() => URL.revokeObjectURL(url),1000);
+      setNotice(result.recovered ? "Завантажено чернетку з відновленими правками." : "Завантажено останню збережену чернетку.");
+    } catch { setError("Не вдалося прочитати збережений матеріал."); }
+  }
   async function refresh() {
     if (checking || lock.current) return; setChecking(true);
     try { const result = await loadProject(); if (result.status === "ok") { applyProject(result.project, result.activity); setError(""); } else setError(result.message); }
@@ -55,7 +65,7 @@ export function StudioProject({ id, initial, startEditing = false }: { id: strin
     return () => cancelAnimationFrame(frame);
   }, [editing, revisionIndex]);
   const [feedback, setFeedback] = useState(""); const [budget, setBudget] = useState(initial.request.budgetUsd);
-  const shouldPoll = studioActive(project.state) || (studioCanAutoResumeReview(project) || studioCanResumeIncompleteRepair(project));
+  const shouldPoll = studioActive(project.state) || studioCanAutoResumeReview(project);
   useEffect(() => {
     if (!shouldPoll) return;
     let alive = true, running = false;
@@ -90,6 +100,7 @@ export function StudioProject({ id, initial, startEditing = false }: { id: strin
       <div className="mt-4 flex flex-wrap gap-4 text-sm"><span>Враховано: <strong>${project.spentUsd.toFixed(3)}</strong></span><span>Резерв: <strong>${project.heldUsd.toFixed(3)}</strong></span><span>Ліміт: <strong>${project.request.budgetUsd.toFixed(2)}</strong></span><span>Доступно для нового резерву: <strong>${Math.max(0, project.request.budgetUsd - project.spentUsd - project.heldUsd).toFixed(3)}</strong></span></div>
       {project.heldUsd > 0 && <p className="mt-2 text-xs leading-relaxed text-p-muted">Резерв захищає ліміт під час виклику. Після невизначеного збою він зберігається, бо постачальник міг уже обробити запит; це не повторне списання.</p>}
     </section>
+    {project.state === "failed" && project.units[project.cursor] && <button type="button" className={parentButton} onClick={() => void downloadDraft()}>Завантажити збережений урок (.txt) без виклику ШІ</button>}
     {project.failureDiagnostic && <section className="rounded-2xl border border-p-line p-4 text-sm" aria-label="Діагностика етапу"><p className="font-bold">Код: {project.failureDiagnostic.code} · етап: {project.failureDiagnostic.phase}{project.failureDiagnostic.provider ? ` · ${project.failureDiagnostic.provider}` : ""}{project.failureDiagnostic.status ? ` · HTTP ${project.failureDiagnostic.status}` : ""}</p>{project.failureDiagnostic.evidence === "provider_audit" && <p className="mt-2 text-p-muted">Причину уточнено за останнім записом провайдера цього етапу. Витрати й резерв не змінено.</p>}{project.failureDiagnostic.paths.length > 0 && <p className="mt-2 break-words">Поля: {project.failureDiagnostic.paths.join(", ")}</p>}<button type="button" className="mt-2 min-h-11 font-bold text-p-primary" onClick={() => { void navigator.clipboard.writeText(JSON.stringify({ projectId: id, ...project.failureDiagnostic, savedResult: !!project.savedModelResult, models: project.models.slice(-3) }, null, 2)).then(() => setNotice("Діагностику скопійовано.")).catch(() => setError("Не вдалося скопіювати діагностику. Код і етап показано вище.")); }}>Скопіювати діагностику</button></section>}
     {(error || project.error) && <p role={project.state === "paused" ? "status" : "alert"} className="rounded-2xl border border-p-line p-4 text-sm leading-relaxed">{error || project.error}</p>}
     <details className="rounded-2xl border border-p-line p-4"><summary className="cursor-pointer text-sm font-bold">Збережені джерела й межі матеріалу ({project.sourceProgress?.partCount ?? project.sources.length})</summary><div className="mt-3 space-y-3 text-sm">{project.request.materialId && <Link href={`/parent/books/${project.request.materialId}`} className="inline-flex min-h-11 items-center font-bold text-p-primary">Відкрити джерело в бібліотеці →</Link>}{project.sourceNotes.map(note => <p key={note} className="text-p-muted">{note}</p>)}{project.sources.map(source => <details key={source.id}><summary className="cursor-pointer font-semibold">{source.title}{source.page ? ` · сторінка індексу ${source.page}` : ""}</summary><p className="mt-2 max-h-72 overflow-y-auto whitespace-pre-wrap text-p-muted">{source.text}</p></details>)}</div></details>

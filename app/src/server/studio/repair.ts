@@ -32,3 +32,45 @@ export function applyStudioRepair(unit: StudioUnit, raw: unknown): { unit: Studi
   if (visuals.some(visual => visual.blockIndex >= content.blocks.length || (visual.kind === "dimensions" && (!visual.width || !visual.height || !visual.unit)))) throw new Error("STUDIO-REPAIR-VISUAL");
   return { unit: { ...unit, content, visuals, review: null }, diagnosis: fix.diagnosis, reviewAdvice: fix.reviewAdvice };
 }
+
+/** Take only complete JSON values from an interrupted patch. Never finish a string or invent a missing item. */
+export function recoverRepairForExport(unit: StudioUnit, raw: unknown): StudioUnit | null {
+  if (typeof raw !== "string" || raw.length > 500000) return null;
+  try { return applyStudioRepair(unit, JSON.parse(raw)).unit; } catch { /* inspect the complete prefix */ }
+  const stack: string[] = [];
+  let quoted = false, escaped = false, rootStart = -1, array = "", itemStart = -1;
+  const blocks: unknown[] = [], questions: unknown[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i]!;
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (c === "\\") escaped = true;
+      else if (c === '"') quoted = false;
+      continue;
+    }
+    if (c === '"') { quoted = true; continue; }
+    if (c === "{" || c === "[") {
+      if (!stack.length) {
+        if (c !== "{" || raw.slice(0,i).trim()) return null;
+        rootStart = i + 1;
+      } else if (stack.length === 1 && c === "[") {
+        const key = raw.slice(rootStart,i).trim();
+        array = /^"blocks"\s*:$/.test(key) ? "blocks" : /^"questions"\s*:$/.test(key) ? "questions" : "";
+      } else if (stack.length === 2 && array && c === "{") itemStart = i;
+      stack.push(c);
+    } else if (c === "}" || c === "]") {
+      if (stack.pop() !== (c === "}" ? "{" : "[")) return null;
+      if (stack.length === 2 && array && itemStart >= 0 && c === "}") {
+        try { (array === "blocks" ? blocks : questions).push(JSON.parse(raw.slice(itemStart,i+1))); }
+        catch { return null; }
+        itemStart = -1;
+      }
+      if (stack.length === 1) array = "";
+      if (!stack.length) break;
+    } else if (stack.length === 1 && c === ",") rootStart = i + 1;
+  }
+  if (!blocks.length && !questions.length) return null;
+  try {
+    return applyStudioRepair(unit,{diagnosis:"Відновлено завершені елементи відповіді.",reviewAdvice:"",blocks,questions,visuals:null,title:null,objectives:null,sourceIds:null,enrichmentNote:null,adultAssistance:null}).unit;
+  } catch { return null; }
+}
