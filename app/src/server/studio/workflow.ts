@@ -2,7 +2,10 @@ import "server-only";
 import { readStudioPaidResult, writeStudioPaidResult, type StudioPaidModelResult } from "./paid-result";
 import { studioFailureDiagnostic, studioFailureMessage, StudioCapturedOutputError } from "./diagnostics";
 import { studioPlanStageSchema, studioSourceStageSchema } from "./stage-schema";
-import { AiNotConfiguredError, BudgetBlockedError, ProviderError } from "@/server/ai/types";
+import { retrieveStudioResponse } from "@/server/ai/providers/openai";
+import { estimateCostUsd } from "@/server/ai/policy";
+import { recordCall } from "@/server/ai/store";
+import { BackgroundResponsePending, AiNotConfiguredError, BudgetBlockedError, ProviderError } from "@/server/ai/types";
 import { studioNarrationText, studioModelLesson } from "@/lib/studio-narration";
 import { createHash, randomUUID } from "node:crypto";
 import { STUDIO_PLAN_BATCH_SIZE, studioPlanBatchSchema, studioDesignSchema, studioLessonSchema, studioAuthorSchema, studioReviewResponseSchema, studioCanAutoResumeReview, studioActive, studioPublicationVisible, type StudioPlan, type StudioProject, type StudioRequest } from "@/lib/studio";
@@ -35,7 +38,7 @@ export async function startStudio(familyId: string, request: StudioRequest, requ
   if (existing) { if (JSON.stringify(existing.request) !== JSON.stringify(request)) throw new Error("Ця чернетка вже має інший запит. Створи нову з оновленими полями."); return requestId; }
   const available = await studioBaseCandidates(familyId, request);
   const source = available.topics.length ? { sources: [], sourceNotes: ["Шукаємо відповідні готові матеріали базового предмета перед зверненням до книги."], baseHref: null, baseTitle: null, subjectName: available.subjectName, sourceCorpus: undefined, sourceSelection: { candidates: available.topics, fallbackMaterialId: available.fallbackMaterialId, selectedIds: [], assessed: false } } : await loadStudioSources(familyId, { ...request, materialId: request.materialId ?? available.fallbackMaterialId });
-  const project: StudioProject = { ...(revisionRequestId ? { revisionRequestId } : {}), version: 1, revision: 0, request, ...source, createdAt: new Date().toISOString(), state: "planning", phase: "sourceSelection" in source ? "resolve" : source.sourceCorpus && source.sourceCorpus.analyzed < source.sourceCorpus.partCount ? "analyze" : "plan", plan: null, units: [], cursor: 0, token: randomUUID(), activeCall: false, spentUsd: 0, heldUsd: 0, feedback: "", error: null, models: [], publication: null };
+  const project: StudioProject = { autonomous: true, ...(revisionRequestId ? { revisionRequestId } : {}), version: 1, revision: 0, request, ...source, createdAt: new Date().toISOString(), state: "planning", phase: "sourceSelection" in source ? "resolve" : source.sourceCorpus && source.sourceCorpus.analyzed < source.sourceCorpus.partCount ? "analyze" : "plan", plan: null, units: [], cursor: 0, token: randomUUID(), activeCall: false, spentUsd: 0, heldUsd: 0, feedback: "", error: null, models: [], publication: null };
   const id = await createStudioProject(familyId, project, requestId);
   const saved = await readStudioProject(familyId, id);
   if (saved?.token !== project.token) return id;
@@ -116,11 +119,29 @@ export async function runStudioStep(job: JobRow, deadline: number) {
   if (project.pendingModelCall) {
     const pending = project.pendingModelCall;
     const saved = await readStudioPaidResult(job.family_id, id, pending);
-    if (!saved) throw new Error("STUDIO-UNCERTAIN-CALL");
-    result = saved;
+    if (saved) result = saved;
+    else if (pending.background) {
+      const background = pending.background;
+      const age = Date.now() - background.started;
+      let retrieved;
+      try { retrieved = await retrieveStudioResponse(background.id, schema); }
+      catch (error) {
+        if (error instanceof ProviderError && error.retryable && age < 3600000) return { requeue: true as const, delaySeconds: 15 };
+        throw error;
+      }
+      if (!retrieved) {
+        if (age > 3600000) throw new Error("STUDIO-BACKGROUND-WAIT");
+        return { requeue: true as const, delaySeconds: 15 };
+      }
+      const {usage, data} = retrieved;
+      const costUsd = estimateCostUsd(background.rates, usage);
+      result = { ...data, model: { provider: "openai", model: background.model }, costUsd };
+      await writeStudioPaidResult(job.family_id, id, pending, result);
+      await recordCall(job.family_id, { role: background.role, provider: "openai", model: background.model, status: "ok", input_tokens: usage.inputTokens, output_tokens: usage.outputTokens, cached_input_tokens: usage.cachedInputTokens ?? 0, cache_write_tokens: 0, latency_ms: age, fallback_used: false, cost_usd: costUsd, ref_table: "jobs", ref_id: id });
+    } else throw new Error("STUDIO-UNCERTAIN-CALL");
   } else {
     if (project.activeCall) throw new Error("STUDIO-UNCERTAIN-CALL");
-    const config = await studioModelConfig(job.family_id, role);
+    const config = await studioModelConfig(job.family_id, role, project.unavailableSpecialists?.includes(role));
     // Hand the job to a fresh worker before reserving or sending a paid call.
     if (deadline - Date.now() < (config.route.params.timeout_ms ?? 120000) + 25000) {
       return { requeue: true as const, delaySeconds: 1 };
@@ -131,6 +152,27 @@ export async function runStudioStep(job: JobRow, deadline: number) {
     project = await saveStudioProject(job.family_id, id, project, { activeCall: true, heldUsd: project.heldUsd + reserved, pendingModelCall: pending });
     try { result = await callStudioModel(job.family_id, id, role, system, prompt, schema, config); }
     catch (error) {
+      if (error instanceof BackgroundResponsePending) {
+        const current = await readStudioProject(job.family_id, id);
+        if (!current || current.pendingModelCall?.id !== pending.id) throw new Error("STUDIO-RESULT-CONTEXT");
+        await saveStudioProject(job.family_id, id, current, { pendingModelCall: { ...pending, background: { id: error.responseId, started: Date.now(), model: config.route.primary_model, role: config.route.role, rates: config.rates } } });
+        return { requeue: true as const, delaySeconds: 15 };
+      }
+      if (project.autonomous && project.lastTransportRetryHash !== inputHash && error instanceof ProviderError && error.retryable && (error.status === null || error.status >= 500)) {
+        await saveStudioProject(job.family_id, id, project, {
+          activeCall: false, pendingModelCall: undefined, lastTransportRetryHash: inputHash,
+          unresolvedModelCalls: [...(project.unresolvedModelCalls ?? []), pending],
+          ...(config.specialist ? { unavailableSpecialists: [...(project.unavailableSpecialists ?? []), role] } : {}),
+        });
+        return { requeue: true as const, delaySeconds: 10 };
+      }
+      if (config.specialist && error instanceof ProviderError && [400, 401, 403, 404, 429].includes(error.status ?? 0)) {
+        await saveStudioProject(job.family_id, id, project, {
+          unavailableSpecialists: [...(project.unavailableSpecialists ?? []), role],
+          activeCall: false, pendingModelCall: undefined, heldUsd: Math.max(0, project.heldUsd - reserved),
+        });
+        return { requeue: true as const, delaySeconds: 1 };
+      }
       if (error instanceof ProviderError && error.status === 429 && project.lastRateLimitRetryHash !== inputHash) {
         await saveStudioProject(job.family_id, id, project, {
           activeCall: false,
@@ -162,7 +204,9 @@ export async function runStudioStep(job: JobRow, deadline: number) {
     if (new Set(lessons.map(lesson => lesson.title.toLocaleLowerCase("uk").trim())).size !== lessons.length) throw new Error("STUDIO-PLAN-DUPLICATE");
     const plan = project.plan ? { ...project.plan, lessons, sourceExclusions: [...new Map([...(project.plan.sourceExclusions ?? []), ...(batch.sourceExclusions ?? [])].map(item => [item.sourceId, item])).values()] } : batch;
     await validateStudioSourcePlan(job.family_id, project, plan, lessons.length === project.request.lessonCount);
-    Object.assign(changes, { plan, state: lessons.length === project.request.lessonCount ? "plan_ready" : "planning" });
+    const planComplete = lessons.length === project.request.lessonCount;
+    Object.assign(changes, { plan, state: planComplete ? "plan_ready" : "planning" });
+    if (planComplete && project.autonomous) Object.assign(changes, { state: "generating", phase: "author", cursor: 0 });
   } else {
     const units = [...project.units];
     if (project.phase === "author") {
@@ -200,6 +244,13 @@ export async function runStudioStep(job: JobRow, deadline: number) {
   }
   } catch (error) {
     const diagnostic = studioFailureDiagnostic(error, project.phase);
+    if (project.autonomous && diagnostic.category === "content" && !project.regeneration && project.pendingModelCall?.billed && !project.reviewOnly) {
+      await saveStudioProject(job.family_id, id, project, {
+        activeCall: false, pendingModelCall: undefined,
+        regeneration: { pending: project.pendingModelCall, diagnostic },
+      });
+      return { requeue: true as const };
+    }
     await saveStudioProject(job.family_id, id, project, { activeCall: false, state: "failed", failureDiagnostic: diagnostic, error: studioFailureMessage(diagnostic, true) }); return;
   }
   const next = await saveStudioProject(job.family_id, id, project, { ...changes, pendingModelCall: undefined, regeneration: undefined, failureDiagnostic: undefined, error: changes.error ?? null });
@@ -250,15 +301,15 @@ export async function resumeStudio(familyId: string, id: string, revision: numbe
   }
   if (["retry", "restart"].includes(command) && project.pendingModelCall && !project.pendingModelCall.billed) {
     const receipt = await readStudioPaidResult(familyId, id, project.pendingModelCall);
-    if (!receipt && command === "retry") {
+    if (!receipt && !project.pendingModelCall.background && command === "retry") {
       const uncertain = studioFailureDiagnostic(new Error("STUDIO-AI-UNCERTAIN"), project.phase);
       await saveStudioProject(familyId, id, project, { ...changes, state: "failed", failureDiagnostic: project.failureDiagnostic ?? uncertain, error: studioFailureMessage(uncertain, false) });
       return;
     }
-    if (!receipt && command === "restart" && project.phase === "lesson_sources" && project.lessonSources) {
+    if (!receipt && !project.pendingModelCall.background && command === "restart" && project.phase === "lesson_sources" && project.lessonSources) {
       changes.lessonSources = { ...project.lessonSources, recoverySlice: project.lessonSources.recoverySlice ?? 0 };
     }
-    if (!receipt) Object.assign(changes, { pendingModelCall: undefined, unresolvedModelCalls: [...(project.unresolvedModelCalls ?? []), project.pendingModelCall] });
+    if (!receipt && !project.pendingModelCall.background) Object.assign(changes, { pendingModelCall: undefined, unresolvedModelCalls: [...(project.unresolvedModelCalls ?? []), project.pendingModelCall] });
   }
   if (changes.sourceCorpus && !project.sourceCorpus) Object.assign(changes, { state: "planning", phase: "analyze", plan: null, lessonSources: undefined, cursor: 0 });
   const next = await saveStudioProject(familyId, id, project, changes);

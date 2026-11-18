@@ -34,7 +34,7 @@ const descriptions: Record<string,string> = {
 export function studioFailureDiagnostic(error:unknown, phase:StudioProject["phase"]):StudioFailureDiagnostic{
  if(error instanceof ProviderError){
   const code=error.code==="timeout"?"STUDIO-AI-TIMEOUT":error.code==="network"?"STUDIO-AI-NETWORK":error.code==="invalid_schema"?"STUDIO-AI-REQUEST-SCHEMA":[401,403].includes(error.status??0)?"STUDIO-AI-AUTH":error.status===429?"STUDIO-AI-RATE":error.status!==null&&error.status>=400?"STUDIO-AI-HTTP":"STUDIO-AI-RESPONSE";
-  return{phase,code,paths:[],category:"processing",at:new Date().toISOString(),...(error.provider==="openai"?{provider:"openai"}:{}),...(error.status!==null?{status:error.status}:{})};
+  return{phase,code,paths:[],category:"processing",at:new Date().toISOString(),...(["openai","anthropic","gemini"].includes(error.provider)?{provider:error.provider}:{}),...(error.status!==null?{status:error.status}:{})};
  }
  if(error instanceof StudioCapturedOutputError && descriptions[error.failure.code])return{phase,code:error.failure.code,paths:error.failure.paths,category:"content",at:new Date().toISOString()};
  if(error instanceof z.ZodError)return{phase,code:"STUDIO-SCHEMA",paths:error.issues.slice(0,8).map(issue=>issue.path.map(value=>typeof value==="number"?String(value):String(value).replace(/[^a-zA-Z0-9_]/g,"").slice(0,40)).join(".")||"result"),category:"content",at:new Date().toISOString()};

@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { getServerSecret } from "../../env";
-import { AiNotConfiguredError, ProviderError, type AudioResult, type PromptContent, type RouteParams, type Usage, type VisionDocument } from "../types";
+import { BackgroundResponsePending, AiNotConfiguredError, ProviderError, type AudioResult, type PromptContent, type RouteParams, type Usage, type VisionDocument } from "../types";
 
 export interface EmbedRequest {
   model: string;
@@ -157,6 +157,7 @@ function toStrictJsonSchema(node: unknown): unknown {
 async function requestOpenAiStructured<S extends z.ZodType>(
   req: OpenAiStructuredRequest<S>,
   fetchImpl: typeof fetch = fetch,
+  background = false,
 ): Promise<{ body: OpenAiResponseBody; status: number }> {
   const key = getServerSecret("OPENAI_API_KEY");
   if (!key) throw new AiNotConfiguredError("OPENAI_API_KEY is not set");
@@ -170,6 +171,7 @@ async function requestOpenAiStructured<S extends z.ZodType>(
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
       body: JSON.stringify({
+        ...(background ? {background: true, store: true} : {}),
         model: req.model,
         instructions: req.system,
         input: req.documents?.length ? [{ role: "user", content: [
@@ -201,6 +203,7 @@ async function requestOpenAiStructured<S extends z.ZodType>(
 }
 
 interface OpenAiResponseBody {
+  id?: string;
   status?: string;
   output_text?: string;
   output?: { content?: { type: string; text?: string }[] }[];
@@ -211,8 +214,30 @@ export type OpenAiCapturedFailureCode = "STUDIO-AI-INCOMPLETE" | "STUDIO-AI-REFU
 export interface OpenAiCapturedResult { result: unknown; failure?: { code: OpenAiCapturedFailureCode; paths: string[] } }
 
 /** Studio-only: retain usable HTTP response and known usage before rejecting content. */
-export async function openaiStructuredCaptured<S extends z.ZodType>(req: OpenAiStructuredRequest<S>, fetchImpl: typeof fetch = fetch): Promise<OpenAiStructuredResult<OpenAiCapturedResult>> {
-  const { body, status } = await requestOpenAiStructured(req, fetchImpl);
+export async function openaiStructuredCaptured<S extends z.ZodType>(req: OpenAiStructuredRequest<S>, fetchImpl: typeof fetch = fetch, background = false): Promise<OpenAiStructuredResult<OpenAiCapturedResult>> {
+  const { body, status } = await requestOpenAiStructured(req, fetchImpl, background);
+  if (background && ["in_progress","queued"].includes(body.status ?? "") && /^resp_[a-zA-Z0-9_-]+$/.test(body.id ?? "")) throw new BackgroundResponsePending(body.id!);
+  return captureStructuredBody(body, status, req.schema);
+}
+
+export async function retrieveStudioResponse(id: string, schema: z.ZodType, fetchImpl: typeof fetch = fetch) {
+  if (!/^resp_[a-zA-Z0-9_-]+$/.test(id)) throw new Error("STUDIO-RESULT-CONTEXT");
+  const key = getServerSecret("OPENAI_API_KEY");
+  if (!key) throw new AiNotConfiguredError("OPENAI_API_KEY is not set");
+  let response: Response;
+  try {
+    response = await fetchImpl(RESPONSES_ENDPOINT + "/" + id, { headers: { authorization: "Bearer " + key }, signal: AbortSignal.timeout(20000), cache: "no-store" });
+  } catch { throw new ProviderError("OpenAI retrieval interrupted", "openai", null, true, "network"); }
+  if (!response.ok) throw new ProviderError("OpenAI retrieval failed", "openai", response.status, response.status === 429 || response.status >= 500, "http");
+  let body: OpenAiResponseBody;
+  try { body = await response.json(); }
+  catch { throw new ProviderError("OpenAI retrieval interrupted", "openai", null, true, "network"); }
+  if (body.id !== id) throw new Error("STUDIO-RESULT-CONTEXT");
+  if (body.status === "queued" || body.status === "in_progress") return null;
+  return captureStructuredBody(body, response.status, schema);
+}
+
+function captureStructuredBody(body: OpenAiResponseBody, status: number, schema: z.ZodType): OpenAiStructuredResult<OpenAiCapturedResult> {
   const input = body.usage?.input_tokens, output = body.usage?.output_tokens, cached = body.usage?.input_tokens_details?.cached_tokens ?? 0;
   if (![input, output, cached].every(value => typeof value === "number" && Number.isSafeInteger(value) && value >= 0) || cached > input!) throw new ProviderError("openai usage missing or invalid", "openai", status, false, "unknown_usage");
   const usage: Usage = { inputTokens: input! - cached, outputTokens: output!, cachedInputTokens: cached };
@@ -225,7 +250,7 @@ export async function openaiStructuredCaptured<S extends z.ZodType>(req: OpenAiS
   if (!text) return fail("STUDIO-AI-NO-OUTPUT", null);
   let parsed: unknown;
   try { parsed = JSON.parse(text); } catch { return fail("STUDIO-AI-JSON", text); }
-  const validated = req.schema.safeParse(parsed);
+  const validated = schema.safeParse(parsed);
   if (!validated.success) return fail("STUDIO-AI-OUTPUT-SCHEMA", parsed, validated.error.issues.slice(0, 8).map(issue => issue.path.map(value => String(value).replace(/[^a-zA-Z0-9_]/g, "").slice(0, 40)).join(".") || "result"));
   return { data: { result: validated.data }, usage };
 }

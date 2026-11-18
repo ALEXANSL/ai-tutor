@@ -18,3 +18,25 @@ it("retains provider timeout classification and never starts fallback or another
  const fetcher = vi.fn(async () => { throw new DOMException("private", "TimeoutError"); });vi.stubGlobal("fetch", fetcher);
  await expect(callStudioModel("family", "project", "studio.source", "Rules", "Source", z.object({ title: z.string() }), config)).rejects.toMatchObject({ code: "timeout" });expect(fetcher).toHaveBeenCalledTimes(1);expect(f.record).toHaveBeenCalledTimes(1);
 });
+
+it("submits the author once and reads the same response through queued and completed states", async () => {
+  const { retrieveStudioResponse } = await import("@/server/ai/providers/openai");
+  const schema = z.object({title:z.string()});
+  const fake = vi.fn<typeof fetch>()
+    .mockResolvedValueOnce(Response.json({id:"resp_abc",status:"queued"}))
+    .mockResolvedValueOnce(Response.json({id:"resp_abc",status:"in_progress"}))
+    .mockResolvedValueOnce(Response.json({id:"resp_abc",status:"completed",output_text:'{"title":"Lesson"}',usage:{input_tokens:20,output_tokens:6}}));
+  vi.stubGlobal("fetch",fake);
+  await expect(callStudioModel("family","project","studio.author","rules","prompt",schema,config)).rejects.toMatchObject({responseId:"resp_abc"});
+  expect(JSON.parse(String(fake.mock.calls[0]![1]?.body))).toMatchObject({background:true,store:true});
+  expect(await retrieveStudioResponse("resp_abc",schema)).toBeNull();
+  expect(await retrieveStudioResponse("resp_abc",schema)).toMatchObject({data:{result:{title:"Lesson"}}});
+  expect(fake.mock.calls.slice(1).every(([url, init]) => String(url).endsWith("/resp_abc") && (init?.method ?? "GET") === "GET")).toBe(true);
+});
+it("retains Gemini schema errors with confirmed usage for automated correction",async()=>{
+  vi.stubEnv("GEMINI_API_KEY","test");
+  vi.stubGlobal("fetch", vi.fn(async()=>Response.json({usageMetadata:{promptTokenCount:100,candidatesTokenCount:10,thoughtsTokenCount:3,totalTokenCount:113},candidates:[{finishReason:"STOP",content:{parts:[{text:'{"title":9}'}]}}]})));
+  const result=await callStudioModel("family","project","studio.source","Rules","Source",z.object({title:z.string()}),{...config,route:{...route,primary_provider:"gemini"}});
+  expect(result.failure).toEqual({code:"STUDIO-AI-OUTPUT-SCHEMA",paths:["title"]});
+  expect(f.record).toHaveBeenCalledWith("family",expect.objectContaining({provider:"gemini",input_tokens:100,output_tokens:13}));
+});

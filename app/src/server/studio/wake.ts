@@ -33,7 +33,7 @@ export function kickStudio(familyId: string, projectId: string) {
       const project = await readStudioProject(familyId, projectId); if (!project || !studioActive(project.state)) return;
       const { data: queued, error } = await forFamily(familyId).select("jobs", "run_after").eq("type", STUDIO_STEP).eq("status", "queued").eq("payload->>projectId", projectId).eq("payload->>token", project.token).limit(1).maybeSingle<{ run_after: string }>();
       if (error || !queued) return;
-      const delay = Math.max(0, Date.parse(queued.run_after) - Date.now() + 500); if (delay > 30000) return;
+      const delay = Math.max(0, Date.parse(queued.run_after) - Date.now() + 500); if (delay > 31000) return;
       if (delay) await new Promise(resolve => setTimeout(resolve, delay));
       await requestStudioContinuation(familyId, projectId, project.token);
     } catch { console.error("studio worker deferred; durable job retained"); }

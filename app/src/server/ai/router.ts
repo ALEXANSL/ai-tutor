@@ -7,6 +7,7 @@ import * as store from "./store";
 import {
   AiNotConfiguredError,
   BudgetBlockedError,
+  BackgroundResponsePending,
   ProviderError,
   type AudioResult,
   type BudgetState,
@@ -161,6 +162,7 @@ async function routed<T>(
       });
       return { result: value, model, costUsd, fallbackUsed };
     } catch (e) {
+      if (e instanceof BackgroundResponsePending) throw e;
       if (!(e instanceof AiNotConfiguredError)) {
         await deps.recordCall(ctx.familyId, {
           ...base,

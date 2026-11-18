@@ -52,9 +52,12 @@ export interface StudioSourceCorpus {
 export interface StudioLessonSources { recoverySlice?: number; targetPhase: "author" | "design" | "review" | "repair"; lessonIndex: number; partIndexes: number[]; cursor: number; notes: string[]; catalog: string[]; reduceCursor: number; reduced: string[]; context?: StudioSourceContext; }
 export interface StudioUnit { sourceContext?: StudioSourceContext; illustrations?: StudioIllustration[]; content: StudioLesson; visuals: StudioVisual[]; review: StudioReview | null; reviewRound?: number; lastReviewFingerprint?: string | null; }
 export type StudioState = "planning" | "plan_ready" | "generating" | "ready" | "needs_changes" | "failed" | "paused" | "publishing" | "published" | "withdrawn";
-export interface StudioPendingModelCall { id: string; phase: StudioProject["phase"]; cursor: number; inputHash: string; reservedUsd: number; billed: boolean; }
+export interface StudioPendingModelCall { background?: { id: string; started: number; model: string; role: string; rates: import("../server/ai/types").ModelPrice }; id: string; phase: StudioProject["phase"]; cursor: number; inputHash: string; reservedUsd: number; billed: boolean; }
 export interface StudioFailureDiagnostic { evidence?: "provider_audit"; provider?: string; status?: number; phase: StudioProject["phase"]; code: string; paths: string[]; category: "content" | "processing"; at: string; }
 export interface StudioProject {
+  autonomous?: boolean;
+  unavailableSpecialists?: string[];
+  lastTransportRetryHash?: string;
   lastRateLimitRetryHash?: string;
   pendingModelCall?: StudioPendingModelCall;
   unresolvedModelCalls?: StudioPendingModelCall[];
