@@ -15,6 +15,7 @@ export interface CorpusSnapshot {
 }
 
 export const STUDIO_SOURCE_PART_BYTES = 60000;
+export const STUDIO_SOURCE_NOTE_BYTES = 100000;
 const SOURCE_BYTES = STUDIO_SOURCE_PART_BYTES - 2048;
 const MAX_SOURCES_PER_PART = 200;
 const PART_TYPE = "studio.source_part";
@@ -25,7 +26,7 @@ interface NotePayload { version: 1; familyId: string; corpusId: string; note: So
 interface StoredRow { id: string; type: string; payload: unknown }
 interface WriteRow { id: string; type: string; status: "done"; payload: PartPayload | NotePayload }
 
-const unavailable = () => new Error("Збережений текст джерела або його аналіз недоступний чи пошкоджений. Частини не обрізалися; підготовку зупинено.");
+const unavailable = () => new Error("STUDIO-SOURCE-INTEGRITY: збережений текст джерела або його аналіз недоступний чи пошкоджений. Частини не обрізалися; підготовку зупинено.");
 /** Stable object ordering makes source identity independent of JS property insertion order. */
 function canonical(value: unknown): string {
   return JSON.stringify(value, (_key, item) => item && typeof item === "object" && !Array.isArray(item)
@@ -44,6 +45,7 @@ function validSource(value: unknown): value is StudioSource {
   return typeof source.id === "string" && !!source.id && typeof source.title === "string" && typeof source.text === "string"
     && typeof source.kind === "string" && !!source.kind
     && (source.page === null || (Number.isSafeInteger(source.page) && Number(source.page) >= 1))
+    && (source.evidenceWarnings === undefined || (Array.isArray(source.evidenceWarnings) && source.evidenceWarnings.every(warning => typeof warning === "string")))
     && (source.audience === undefined || ["learner", "teacher", "reference"].includes(source.audience));
 }
 function validCorpus(value: CorpusSnapshot): boolean {
@@ -131,9 +133,9 @@ async function saveImmutable(familyId: string, corpusId: string, rows: WriteRow[
   const scope = forFamily(familyId);
   for (let offset = 0; offset < rows.length; offset += IO_BATCH) {
     const batch = rows.slice(offset, offset + IO_BATCH);
-    for (const row of batch) if (Buffer.byteLength(canonical(row.payload)) > STUDIO_SOURCE_PART_BYTES) throw new Error("Один збережений фрагмент джерела завеликий. Текст не обрізався.");
+    for (const row of batch) if (Buffer.byteLength(canonical(row.payload)) > (row.type === NOTE_TYPE ? STUDIO_SOURCE_NOTE_BYTES : STUDIO_SOURCE_PART_BYTES)) throw new Error(`${row.type === NOTE_TYPE ? "STUDIO-SOURCE-NOTE-SIZE" : "STUDIO-SOURCE-PART-SIZE"}: один збережений фрагмент джерела завеликий. Текст не обрізався.`);
     const { error } = await scope.client.from("jobs").upsert(batch.map(row => ({ ...row, family_id: familyId })), { onConflict: "id", ignoreDuplicates: true });
-    if (error) throw new Error("Не вдалося зберегти повний текст джерела або його аналіз. Попередні частини залишилися збереженими.");
+    if (error) throw new Error("STUDIO-SOURCE-STORE: не вдалося зберегти повний текст джерела або його аналіз. Попередні частини залишилися збереженими.");
     // Ignore-duplicate writes never repair or overwrite an immutable version.
     // Verify any preexisting row is precisely the content this hash identifies.
     const saved = await loadRows(familyId, batch[0]!.type, corpusId, batch.map(row => row.id));
@@ -166,7 +168,7 @@ async function readCorpusMetadata(familyId: string, corpusId: string): Promise<C
 }
 export async function writeStudioSourceNote(familyId: string, corpusId: string, note: SourceNote): Promise<string> {
   const corpus = await readCorpusMetadata(familyId, corpusId);
-  if (!validNote(note, corpus)) throw new Error("Аналіз посилається на недоступні частини джерела. Підготовку зупинено.");
+  if (!validNote(note, corpus)) throw new Error("STUDIO-SOURCE-NOTE-REF: аналіз посилається на недоступні частини джерела. Підготовку зупинено.");
   const id = noteId(familyId, corpusId, note);
   await saveImmutable(familyId, corpusId, [{ id, type: NOTE_TYPE, status: "done", payload: { version: 1, familyId, corpusId, note, digest: digest(note) } }]);
   return id;
@@ -181,7 +183,7 @@ export async function readStudioSourceNotes(familyId: string, corpusId: string, 
       const payload = row.payload as NotePayload;
       if (row.type !== NOTE_TYPE || !payload || payload.version !== 1 || payload.familyId !== familyId || payload.corpusId !== corpusId
           || !validNote(payload.note, corpus) || payload.digest !== digest(payload.note)
-          || row.id !== noteId(familyId, corpusId, payload.note) || Buffer.byteLength(canonical(payload)) > STUDIO_SOURCE_PART_BYTES) throw unavailable();
+          || row.id !== noteId(familyId, corpusId, payload.note) || Buffer.byteLength(canonical(payload)) > STUDIO_SOURCE_NOTE_BYTES) throw unavailable();
       found.set(row.id, payload.note);
     }
   }

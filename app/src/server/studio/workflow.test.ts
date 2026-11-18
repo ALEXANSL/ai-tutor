@@ -1,3 +1,7 @@
+vi.mock("./paid-result", () => {
+  const receipts = new Map<string, unknown>();
+  return { writeStudioPaidResult: vi.fn(async (_family: string, _project: string, pending: { id: string }, result: unknown) => { receipts.set(pending.id, structuredClone(result)); }), readStudioPaidResult: async (_family: string, _project: string, pending: { id: string }) => receipts.get(pending.id) ?? null };
+});
 import { BudgetBlockedError } from "@/server/ai/types";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { StudioProject } from "@/lib/studio";
@@ -10,6 +14,7 @@ vi.mock("./sources", async original => ({ ...await original<typeof import("./sou
 vi.mock("./model", () => ({ studioModelConfig: f.config, studioReservation: () => 0.1, callStudioModel: f.call }));
 vi.mock("./publish", () => ({ prepareStudioPublication: f.prepare, activateStudioPublication: f.activate }));
 vi.mock("@/server/jobs/runner", () => ({ enqueueJob: f.enqueue, registerJobHandler: vi.fn() }));
+import { writeStudioPaidResult } from "./paid-result";
 import { saveStudioReviewEvent } from "./review-history";
 import { resumeLegacyStudioReview, failStudioStep, pauseStudio, resumeStudio, runStudioStep, startStudio, validateStudioLesson } from "./workflow";
 let project: StudioProject;
@@ -270,4 +275,47 @@ it("retains reviewer-only scope after an interrupted review is retried",async()=
  f.call.mockResolvedValueOnce({result:{verdict:"revise",issues:["Неточне пояснення"],summary:"Потрібне виправлення",corrections:[{role:"author",blockIndex:0,visualIndex:null,problem:"Неточне пояснення",action:"Уточни визначення",acceptance:"Визначення правильне"}]},model:{provider:"openai",model:"test"},costUsd:0.02});
  await resumeStudio("family",id,project.revision,"retry");expect(project.reviewOnly).toBe(true);await step();await step();
  expect(project.state).toBe("needs_changes");expect(project.reviewAutomationStopped).toBe(true);expect(project.heldUsd).toBeCloseTo(0.1);expect(f.call).toHaveBeenCalledTimes(1);
+});
+
+it("retains a paid invalid response and revalidates it without another provider call, reserve, or cost",async()=>{
+ project=studioProjectFixture({state:"generating",phase:"author",plan:studioPlanFixture,units:[]});
+ f.call.mockResolvedValueOnce({result:{...studioLessonFixture,blocks:studioLessonFixture.blocks.map(block=>({...block,text:"Короткий текст"}))},model:{provider:"openai",model:"test"},costUsd:0.02});
+ await step();expect(project.state).toBe("failed");expect(project.pendingModelCall?.billed).toBe(true);expect(project.failureDiagnostic?.code).toBe("STUDIO-INCOMPLETE-LESSON");expect(project.spentUsd).toBeCloseTo(0.02);expect(project.heldUsd).toBe(0);
+ await resumeStudio("family",id,project.revision,"retry",undefined,"",5);await step();
+ expect(f.call).toHaveBeenCalledTimes(1);expect(f.config).toHaveBeenCalledTimes(1);expect(project.spentUsd).toBeCloseTo(0.02);expect(project.models).toHaveLength(1);expect(project.state).toBe("failed");
+ await resumeStudio("family",id,project.revision,"regenerate");await step();
+ expect(f.call).toHaveBeenCalledTimes(2);const input=JSON.parse(f.call.mock.calls[1]![4]);expect(input.validationRepair.diagnostic.code).toBe("STUDIO-INCOMPLETE-LESSON");expect(input.validationRepair.rejectedResult.blocks[0].text).toBe("Короткий текст");expect(project.phase).toBe("design");expect(project.pendingModelCall).toBeUndefined();expect(project.spentUsd).toBeCloseTo(0.04);
+});
+it("reapplies a valid paid reviewer result after a transient history-storage error without paying again",async()=>{
+ project=studioProjectFixture({state:"generating",phase:"review",plan:studioPlanFixture,units:[{content:studioLessonFixture,visuals:[],review:null}]});
+ vi.mocked(saveStudioReviewEvent).mockRejectedValueOnce(new Error("db temporarily unavailable"));await step();
+ expect(project.failureDiagnostic?.category).toBe("processing");expect(project.pendingModelCall?.billed).toBe(true);expect(project.units[0]!.review).toBeNull();
+ await resumeStudio("family",id,project.revision,"retry");await step();expect(project.state).toBe("ready");expect(project.spentUsd).toBeCloseTo(0.02);expect(project.models).toHaveLength(1);expect(f.call).toHaveBeenCalledTimes(1);expect(f.config).toHaveBeenCalledTimes(1);
+ const events=vi.mocked(saveStudioReviewEvent).mock.calls;expect(events.at(-1)![2]).toBe(events.at(-2)![2]);expect(events.at(-1)![3]).toBe(0);
+});
+it("reconciles an ambiguously successful receipt write exactly once on explicit retry",async()=>{
+ const original=vi.mocked(writeStudioPaidResult).getMockImplementation()!;
+ vi.mocked(writeStudioPaidResult).mockImplementationOnce(async(...args)=>{await original(...args);throw Error("write acknowledgement lost");});
+ const current=job();let failure:unknown;try{await step();}catch(error){failure=error;}
+ expect(failure).toBeInstanceOf(Error);expect(project.pendingModelCall?.billed).toBe(false);expect(project.heldUsd).toBeCloseTo(0.1);expect(project.spentUsd).toBe(0);await failStudioStep(current,failure);
+ await resumeStudio("family",id,project.revision,"retry");await step();expect(project.state).toBe("plan_ready");expect(project.spentUsd).toBeCloseTo(0.02);expect(project.heldUsd).toBe(0);expect(project.models).toHaveLength(1);expect(f.call).toHaveBeenCalledTimes(1);
+});
+it("never replays a saved paid response into a changed educational context",async()=>{
+ project=studioProjectFixture({state:"generating",phase:"author",plan:studioPlanFixture});f.call.mockResolvedValueOnce({result:{...studioLessonFixture,blocks:studioLessonFixture.blocks.map(block=>({...block,text:"Коротко"}))},model:{provider:"openai",model:"test"},costUsd:0.02});await step();
+ project.request={...project.request,idea:"Інша мета й інший зміст уроку"};await resumeStudio("family",id,project.revision,"retry");await expect(step()).rejects.toThrow("RESULT-CONTEXT");expect(f.call).toHaveBeenCalledTimes(1);expect(project.spentUsd).toBeCloseTo(0.02);
+});
+it("keeps a late paid result across a pause and settles it only when the parent resumes",async()=>{
+ let resolve!: (value:{result:typeof studioPlanFixture;model:{provider:string;model:string};costUsd:number})=>void;
+ f.call.mockImplementationOnce(()=>new Promise(value=>{resolve=value;}));const old=job();const running=runStudioStep(old,Date.now()+220000);await vi.waitFor(()=>expect(f.call).toHaveBeenCalledTimes(1));
+ await pauseStudio("family",id,project.revision);resolve({result:studioPlanFixture,model:{provider:"openai",model:"test"},costUsd:0.02});await expect(running).rejects.toThrow("stale");expect(project.state).toBe("paused");expect(project.spentUsd).toBe(0);expect(project.heldUsd).toBeCloseTo(0.1);
+ await resumeStudio("family",id,project.revision,"retry");await step();expect(project.state).toBe("plan_ready");expect(project.spentUsd).toBeCloseTo(0.02);expect(project.heldUsd).toBe(0);expect(f.call).toHaveBeenCalledTimes(1);
+});
+it("blocks context-changing review commands while an unsettled author call is pending",async()=>{
+ project=studioProjectFixture({state:"paused",phase:"author",plan:studioPlanFixture,units:[{content:studioLessonFixture,visuals:[],review:null}],pendingModelCall:{id:"11111111-1111-4111-8111-111111111112",phase:"author",cursor:0,inputHash:"a".repeat(64),reservedUsd:0.1,billed:false},heldUsd:0.1});
+ await expect(resumeStudio("family",id,project.revision,"review")).rejects.toThrow("контекст");expect(project.phase).toBe("author");expect(project.pendingModelCall?.billed).toBe(false);expect(project.heldUsd).toBe(0.1);expect(f.enqueue).not.toHaveBeenCalled();expect(f.call).not.toHaveBeenCalled();
+});
+
+it("preserves learner context while a saved call awaits processing",async()=>{
+ project=studioProjectFixture({state:"paused",pendingModelCall:{id:"11111111-1111-4111-8111-111111111112",phase:"plan",cursor:0,inputHash:"a".repeat(64),reservedUsd:0.1,billed:true}});
+ await expect(resumeStudio("family",id,project.revision,"retry",undefined,"",5,undefined,undefined,{age:project.request.age+1,grade:project.request.grade})).rejects.toThrow("вік і клас");expect(f.enqueue).not.toHaveBeenCalled();expect(f.call).not.toHaveBeenCalled();
 });

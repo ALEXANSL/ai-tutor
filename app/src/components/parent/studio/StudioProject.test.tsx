@@ -102,3 +102,8 @@ it("does not offer re-review without saved content or during interrupted publica
  render(project({state:"failed",units:[]}));expect(container.textContent).not.toContain("Перевірити готовий урок повторно");
  act(()=>root.unmount());root=createRoot(container);render(project({state:"failed",phase:"publish"}));expect(container.textContent).not.toContain("Перевірити готовий урок повторно");
 });
+
+it("separates saved-response verification from explicit paid regeneration and removes stale success notices on failure",async()=>{
+ const p=project({state:"failed",phase:"analyze",savedModelResult:true,canRegenerate:true,error:"STUDIO-SCHEMA",failureDiagnostic:{phase:"analyze",code:"STUDIO-SCHEMA",paths:["summary"],category:"content",at:"2026-11-18T12:00:00Z"}});
+ f.poll.mockResolvedValue(observed({...p,revision:1},"none"));render(p);expect(button("Згенерувати нову відповідь")).toBeTruthy();expect(button("Скопіювати діагностику")).toBeTruthy();expect(container.textContent).toContain("без нового виклику ШІ");await click("Перевірити збережену відповідь");expect(f.command.mock.calls[0]![0].command).toBe("retry");expect(container.textContent).not.toContain("Запит прийнято.");await click("Згенерувати нову відповідь");expect(f.command.mock.calls[1]![0].command).toBe("regenerate");
+});

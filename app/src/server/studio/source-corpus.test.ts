@@ -193,7 +193,7 @@ describe("durable source analysis notes", () => {
     for (const item of [note(-1), note(0, 1), note(1, 0), { ...note(0), fromPart: 0.5 }]) {
       await expect(writeStudioSourceNote("family-a", corpus.id, item)).rejects.toThrow();
     }
-    const oversized = note(0); oversized.source.text = "а".repeat(40000);
+    const oversized = note(0); oversized.source.text = "а".repeat(60000);
     await expect(writeStudioSourceNote("family-a", corpus.id, oversized)).rejects.toThrow(/завеликий/);
     const id = await writeStudioSourceNote("family-a", corpus.id, note(0));
     const other = await snapshotStudioSources("family-a", [source(1, "Інший корпус")]);
@@ -204,4 +204,8 @@ describe("durable source analysis notes", () => {
     f.failRead = true;
     await expect(readStudioSourcePart("family-a", corpus, 0)).rejects.toThrow();
   });
+});
+
+it("stores a valid analysis note above the raw-part limit without truncating source text or evidence",async()=>{
+ const corpus=await snapshotStudioSources("family-a",[source(1)]);const large=note(0);large.source.text="я".repeat(33000);const id=await writeStudioSourceNote("family-a",corpus.id,large);expect((await readStudioSourceNotes("family-a",corpus.id,[id]))[0]).toEqual(large);expect(f.rows.filter(row=>row.type==="studio.source_part").every(row=>Buffer.byteLength(JSON.stringify(row.payload))<=60000)).toBe(true);
 });

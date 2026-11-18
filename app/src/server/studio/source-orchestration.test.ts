@@ -28,10 +28,14 @@ it("builds focused notes for every assigned large source part rather than trunca
  for(let i=0;i<3;i++){const task=await studioSourceTask("family",project);expect(task.fromPart).toBe(i);project={...project,...await applyStudioSourceTask("family",project,task,noteResult)};}
  expect(project.phase).toBe("author");expect((await studioLessonModelSources("family",project))).toHaveLength(3);
 });
-it("rejects invented raw quotations and paraphrases promoted to quotes during reduction",async()=>{
- const task=await studioSourceTask("family",project);await expect(applyStudioSourceTask("family",project,task,{...noteResult,quotes:[{sourceId:"p1",text:"Вигадана цитата"}]})).rejects.toThrow("QUOTE");
- const summary={...source("summary","Переказ не є цитатою"),kind:"summary" as const};await expect(applyStudioSourceTask("family",project,{scope:"book",reducing:true,sources:[summary],fromPart:0,toPart:1,count:2,verifiedQuotes:[]},{...noteResult,quotes:[{sourceId:"summary",text:summary.text}]})).rejects.toThrow("QUOTE");
+it("drops only unverified optional quotes and propagates their warning through reduction",async()=>{
+ const task=await studioSourceTask("family",project);const changes=await applyStudioSourceTask("family",project,task,{...noteResult,quotes:[{sourceId:"p1",text:"Вигадана цитата"},{sourceId:"p1",text:"Навчальний матеріал"}]});
+ const first=f.notes.get(changes.sourceCorpus!.notes[0]!)!;expect(first.quotes).toEqual([{sourceId:"p1",text:"Навчальний матеріал"}]);expect(first.source.text).toContain("Відхилено непідтверджені цитати: 1");expect(first.source.evidenceWarnings).toHaveLength(1);
+ const summary={...source("summary","Переказ не є цитатою. ".repeat(300)),kind:"summary" as const,evidenceWarnings:first.source.evidenceWarnings};
+ const reduced=await applyStudioSourceTask("family",project,{scope:"book",reducing:true,sources:[summary],fromPart:0,toPart:1,count:2,verifiedQuotes:[]},{...noteResult,quotes:[{sourceId:"summary",text:"Переказ не є цитатою"}]});
+ const saved=f.notes.get(reduced.sourceCorpus!.reduced[0]??reduced.sourceCorpus!.catalog[0]!)!;expect(saved.quotes).toEqual([]);expect(saved.source.evidenceWarnings).toHaveLength(1);expect(saved.source.text).toContain("Не цитуй такі фрази з summary");
 });
+
 it("requires complete source-group mapping or explicit justified exclusions",async()=>{
  f.notes.set("a",{fromPart:0,toPart:0,source:source("part-a")});f.notes.set("b",{fromPart:1,toPart:1,source:source("part-b")});project.sourceCorpus!.catalog=["a","b"];
  const plan={...studioPlanFixture,lessons:[{...studioPlanFixture.lessons[0]!,sourceIds:["part-a"]}]};await expect(validateStudioSourcePlan("f",project,plan)).rejects.toThrow("COVERAGE");await expect(validateStudioSourcePlan("f",project,{...plan,sourceExclusions:[{sourceId:"part-b",reason:"Службова бібліографія"}]})).resolves.toBeUndefined();
