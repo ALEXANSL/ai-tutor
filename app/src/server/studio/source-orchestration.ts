@@ -34,7 +34,7 @@ export async function studioSourceTask(familyId: string, project: StudioProject)
       if (notes.length && bytes([...notes, candidates[i]]) > 105000) break;
       notes.push(candidates[i]!); refs.push(pending[i]!);
     }
-    if (notes.length < 2 && pending.length > 1) throw new Error("STUDIO-SOURCE-NOTE-SIZE: опорні нотатки завеликі для зведення.");
+
     if (!notes.length) throw new Error("STUDIO-SOURCE-STATE");
     return { scope, reducing, sources: notes.map(note => note.source), fromPart: Math.min(...notes.map(note => note.fromPart)), toPart: Math.max(...notes.map(note => note.toPart)), count: refs.length, verifiedQuotes: notes.flatMap(note => note.quotes ?? []) };
   }
@@ -43,9 +43,14 @@ export async function studioSourceTask(familyId: string, project: StudioProject)
 }
 export async function applyStudioSourceTask(familyId: string, project: StudioProject, task: StudioSourceTask, raw: unknown): Promise<Partial<StudioProject>> {
   const result = studioSourceNoteSchema.parse(raw), corpus = project.sourceCorpus!;
-  for (const quote of result.quotes) if (!(task.reducing ? task.verifiedQuotes?.some(verified => verified.sourceId === quote.sourceId && verified.text === quote.text) : task.sources.some(source => source.id === quote.sourceId && source.kind !== "summary" && source.text.includes(quote.text)))) throw new Error("STUDIO-SOURCE-QUOTE: цитата не збігається з наданим текстом.");
+  const verified = result.quotes.filter(quote => task.reducing ? task.verifiedQuotes?.some(known => known.sourceId === quote.sourceId && known.text === quote.text) : task.sources.some(source => source.id === quote.sourceId && source.kind !== "summary" && source.text.includes(quote.text)));
+  const dropped = result.quotes.length - verified.length;
+  const evidenceWarning = "Частину дослівних уривків не підтверджено. Не цитуй такі фрази з summary: для точного тексту або умови потрібен оригінал; за його відсутності явно познач прогалину.";
+  const evidenceWarnings = [...new Set([...task.sources.flatMap(source => source.evidenceWarnings ?? []), ...(dropped ? [evidenceWarning] : [])])];
+  if (dropped) result.limitations.push(`Відхилено непідтверджені цитати: ${dropped}. ${evidenceWarning}`);
+  result.quotes = verified;
   const scopeId = task.scope === "book" ? "book" : `lesson-${project.cursor + 1}`;
-  const note: SourceNote = { quotes: result.quotes, fromPart: task.fromPart, toPart: task.toPart, source: { id: `${scopeId}-parts-${task.fromPart + 1}-${task.toPart + 1}`, title: result.title, page: null, kind: "summary", audience: "learner", text: `Опорний конспект ШІ, не оригінал книги. Технічні частини: ${task.fromPart + 1}–${task.toPart + 1}.\n${result.summary}\nТеми:\n${result.topics.join("\n")}\nМежі й нерозпізнане:\n${result.limitations.join("\n")}\nПеревірені дослівні уривки:\n${result.quotes.map(quote => `[${quote.sourceId}]\n${quote.text}`).join("\n\n")}` } };
+  const note: SourceNote = { quotes: result.quotes, fromPart: task.fromPart, toPart: task.toPart, source: { id: `${scopeId}-parts-${task.fromPart + 1}-${task.toPart + 1}`, title: result.title, page: null, kind: "summary", audience: "learner", ...(evidenceWarnings.length ? { evidenceWarnings } : {}), text: `Опорний конспект ШІ, не оригінал книги. Технічні частини: ${task.fromPart + 1}–${task.toPart + 1}.\n${result.summary}\nТеми:\n${result.topics.join("\n")}\nМежі й нерозпізнане:\n${[...result.limitations, ...evidenceWarnings].join("\n")}\nПеревірені дослівні уривки:\n${result.quotes.map(quote => `[${quote.sourceId}]\n${quote.text}`).join("\n\n")}` } };
   if (task.reducing && bytes(note.source) >= bytes(task.sources)) throw new Error("STUDIO-SOURCE-NO-PROGRESS: зведення не зменшило обсяг матеріалу; зайві платні повтори зупинено.");
   const ref = await writeStudioSourceNote(familyId, corpus.id, note);
   const book = task.scope === "book";

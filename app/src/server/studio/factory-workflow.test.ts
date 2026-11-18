@@ -1,3 +1,7 @@
+vi.mock("./paid-result", () => {
+  const receipts = new Map<string, unknown>();
+  return { writeStudioPaidResult: async (_family: string, _project: string, pending: { id: string }, result: unknown) => { receipts.set(pending.id, structuredClone(result)); }, readStudioPaidResult: async (_family: string, _project: string, pending: { id: string }) => receipts.get(pending.id) ?? null };
+});
 import{beforeEach,expect,it,vi}from"vitest";
 import type{StudioProject,StudioSource}from"@/lib/studio";
 import{studioLessonFixture,studioProjectFixture}from"./__fixtures__/project";

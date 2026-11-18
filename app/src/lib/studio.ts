@@ -39,7 +39,7 @@ export const studioReviewSchema = z.object({ verdict: z.enum(["pass", "revise", 
 /** Required for new model calls; older saved reviews remain readable. */
 export const studioReviewResponseSchema = studioReviewSchema.extend({ corrections: z.array(studioCorrectionSchema).max(12) });
 export type StudioReview = z.infer<typeof studioReviewSchema>;
-export interface StudioSource { id: string; title: string; text: string; page: number | null; kind: "lesson" | "book" | "provided" | "summary"; audience?: "learner" | "teacher" | "reference"; }
+export interface StudioSource { id: string; title: string; text: string; page: number | null; kind: "lesson" | "book" | "provided" | "summary"; audience?: "learner" | "teacher" | "reference"; evidenceWarnings?: string[]; }
 export interface StudioIllustration { id: string; blockIndex: number; title: string; caption: string; sourceUrl: string; credit: string; license: string; storagePath: string; byteSize: number; }
 export interface StudioBaseTopic { id: string; subjectId: string; title: string; pageFrom: number | null; pageTo: number | null; href?: string; }
 export interface StudioSourceSelection { candidates: StudioBaseTopic[]; fallbackMaterialId: string | null; selectedIds: string[]; assessed: boolean; reason?: string; }
@@ -52,7 +52,15 @@ export interface StudioSourceCorpus {
 export interface StudioLessonSources { targetPhase: "author" | "design" | "review" | "repair"; lessonIndex: number; partIndexes: number[]; cursor: number; notes: string[]; catalog: string[]; reduceCursor: number; reduced: string[]; context?: StudioSourceContext; }
 export interface StudioUnit { sourceContext?: StudioSourceContext; illustrations?: StudioIllustration[]; content: StudioLesson; visuals: StudioVisual[]; review: StudioReview | null; reviewRound?: number; lastReviewFingerprint?: string | null; }
 export type StudioState = "planning" | "plan_ready" | "generating" | "ready" | "needs_changes" | "failed" | "paused" | "publishing" | "published" | "withdrawn";
+export interface StudioPendingModelCall { id: string; phase: StudioProject["phase"]; cursor: number; inputHash: string; reservedUsd: number; billed: boolean; }
+export interface StudioFailureDiagnostic { phase: StudioProject["phase"]; code: string; paths: string[]; category: "content" | "processing"; at: string; }
 export interface StudioProject {
+  pendingModelCall?: StudioPendingModelCall;
+  unresolvedModelCalls?: StudioPendingModelCall[];
+  regeneration?: { pending: StudioPendingModelCall; diagnostic: StudioFailureDiagnostic };
+  failureDiagnostic?: StudioFailureDiagnostic;
+  savedModelResult?: boolean;
+  canRegenerate?: boolean;
   version: 1; revision: number;
   /** Immutable backing documents; omitted from parent responses. */
   unitRefs?: string[];

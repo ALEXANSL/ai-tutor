@@ -1,4 +1,7 @@
 import "server-only";
+import { readStudioPaidResult, writeStudioPaidResult, type StudioPaidModelResult } from "./paid-result";
+import { studioFailureDiagnostic, studioFailureMessage } from "./diagnostics";
+import { studioPlanStageSchema, studioSourceStageSchema } from "./stage-schema";
 import { AiNotConfiguredError, BudgetBlockedError } from "@/server/ai/types";
 import { studioNarrationText, studioModelLesson } from "@/lib/studio-narration";
 import { createHash, randomUUID } from "node:crypto";
@@ -11,11 +14,14 @@ import { loadStudioSources } from "./sources";
 import { createStudioProject, readStudioProject, saveStudioProject, STUDIO_STEP } from "./store";
 import { callStudioModel, studioModelConfig, studioReservation, type StudioRole } from "./model";
 import { studioSystem } from "./prompts";
-import { applyStudioSourceTask, isStudioSourcePhase, prepareStudioLessonSources, studioLessonModelSources, studioPlanSources, studioSourceNoteSchema, studioSourceTask, validateStudioSourcePlan } from "./source-orchestration";
+import { applyStudioSourceTask, isStudioSourcePhase, prepareStudioLessonSources, studioLessonModelSources, studioPlanSources, studioSourceTask, validateStudioSourcePlan } from "./source-orchestration";
 import { studioRepairSchema, applyStudioRepair } from "./repair";
 import { saveStudioReviewEvent } from "./review-history";
 import { activateStudioPublication, prepareStudioPublication } from "./publish";
 
+function pendingStudioRole(phase: StudioProject["phase"]): StudioRole {
+  return phase === "resolve" ? "studio.resolve" : phase === "assess" ? "studio.assess" : ["analyze", "outline", "lesson_sources", "lesson_outline"].includes(phase) ? "studio.source" : phase === "plan" ? "studio.plan" : phase === "author" ? "studio.author" : phase === "design" ? "studio.design" : phase === "repair" ? "studio.repair" : "studio.review";
+}
 function studioReviewFeedback(review: import("@/lib/studio").StudioReview | null | undefined): string {
   if (!review) return "";
   return JSON.stringify({ summary: review.summary, issues: review.issues, corrections: review.corrections ?? [], instruction: "Виправ перелічене у попередньому candidate. Збережи коректні частини. Старі зауваження перевір заново за чинним контрактом; не виконуй вимоги, що суперечать йому." });
@@ -61,6 +67,7 @@ class StudioCapError extends Error {
 }
 function safeStageError(error: unknown): string {
   if (error instanceof StudioCapError) return `STUDIO-CAP: для наступного етапу потрібен резерв $${error.requiredUsd.toFixed(3)}, доступно $${Math.max(0, error.availableUsd).toFixed(3)} після врахованих витрат і збережених резервів. Виклик не запускався. Готові частини збережено; ліміт не збільшено.`;
+  if (error instanceof Error && error.message.startsWith("STUDIO-RESULT")) return "STUDIO-RESULT: не вдалося підтвердити збережену відповідь для цього контексту. Новий платний виклик не запускався; резерв не видалено.";
   const name = (error as Error)?.name;
   if (name === "BudgetBlockedError") return "STUDIO-BUDGET: загальний ліміт ШІ призупинив підготовку. Перевір «Бюджет і моделі».";
   if (name === "AiNotConfiguredError") return "STUDIO-CONFIG: перевір OpenAI та налаштування моделей майстерні у «Бюджет і моделі».";
@@ -73,7 +80,6 @@ export async function runStudioStep(job: JobRow, deadline: number) {
   if (!/^[a-f0-9-]{36}$/i.test(id)) throw new Error("Invalid studio project");
   let project = await readStudioProject(job.family_id, id);
   if (!project || project.token !== token || !studioActive(project.state)) return;
-  if (project.activeCall) throw new Error("STUDIO-UNCERTAIN-CALL");
   if (deadline - Date.now() < 145000) return { requeue: true as const, delaySeconds: 10 };
   if (project.phase === "publish") {
     const publication = project.publicationRevision ? await prepareStudioPublication(job.family_id, id, project) : project.publication ?? await prepareStudioPublication(job.family_id, id, project);
@@ -88,25 +94,42 @@ export async function runStudioStep(job: JobRow, deadline: number) {
   const sourceTask = isStudioSourcePhase(project.phase) ? await studioSourceTask(job.family_id, project) : null;
   const modelSources = sourceTask?.sources ?? (project.phase === "resolve" ? [] : ["plan", "assess"].includes(project.phase) ? await studioPlanSources(job.family_id, project) : await studioLessonModelSources(job.family_id, project));
   const role: StudioRole = project.phase === "resolve" ? "studio.resolve" : project.phase === "assess" ? "studio.assess" : sourceTask ? "studio.source" : project.phase === "plan" ? "studio.plan" : project.phase === "author" ? "studio.author" : project.phase === "design" ? "studio.design" : project.phase === "repair" ? "studio.repair" : "studio.review";
-  const schema = project.phase === "resolve" ? studioResolveSchema : project.phase === "assess" ? studioAssessSchema : sourceTask ? studioSourceNoteSchema : project.phase === "plan" ? studioPlanBatchSchema : project.phase === "author" ? studioAuthorSchema : project.phase === "design" ? studioDesignSchema : project.phase === "repair" ? studioRepairSchema : studioReviewResponseSchema;
-  const system = studioSystem(role);
   const planned = project.plan?.lessons.length ?? 0;
   const planningBatch = { startLesson: planned + 1, count: Math.min(STUDIO_PLAN_BATCH_SIZE, project.request.lessonCount - planned), totalLessons: project.request.lessonCount };
+  const schema = project.phase === "resolve" ? studioResolveSchema : project.phase === "assess" ? studioAssessSchema : sourceTask ? studioSourceStageSchema(sourceTask) : project.phase === "plan" ? studioPlanStageSchema(planningBatch.count, modelSources, !!project.sourceCorpus) : project.phase === "author" ? studioAuthorSchema : project.phase === "design" ? studioDesignSchema : project.phase === "repair" ? studioRepairSchema : studioReviewResponseSchema;
+  const system = studioSystem(role);
   const planContext = project.plan ? { ...project.plan, lessons: project.phase === "plan" ? project.plan.lessons.slice(-STUDIO_PLAN_BATCH_SIZE) : project.plan.lessons.slice(Math.max(0, project.cursor - 2), project.cursor + 3) } : null;
   const candidate = !sourceTask && !["resolve", "assess"].includes(project.phase) && project.units[project.cursor] ? studioModelLesson(project.units[project.cursor]!.content) : null;
-  const prompt = JSON.stringify({ request: sourceTask?.scope === "book" ? { purpose: "Незалежний від конкретного курсу огляд усіх наданих частин джерела" } : { ...project.request, hasSelectedMaterial: !!project.request.materialId, sourceText: undefined, subjectId: undefined, topicId: undefined, materialId: undefined }, subject: sourceTask?.scope === "book" ? null : project.subjectName, baseTitle: sourceTask?.scope === "book" ? null : project.baseTitle, plan: sourceTask?.scope === "book" ? null : planContext, ...(project.phase === "plan" ? { planningBatch } : {}), currentLesson: sourceTask?.scope === "book" || project.phase === "plan" ? null : project.plan?.lessons[project.cursor] ?? null, sources: modelSources, sourceNotes: sourceTask?.scope === "book" ? [] : project.sourceNotes, ...(project.phase === "resolve" ? { selectedTopicId: project.request.topicId, availableTopics: project.sourceSelection?.candidates.map(({ id, subjectId, title, pageFrom, pageTo }) => ({ id, subjectId, title, pageFrom, pageTo })) } : {}), ...(sourceTask ? { sourceTask: { scope: sourceTask.scope, reducing: sourceTask.reducing, fromPart: sourceTask.fromPart, toPart: sourceTask.toPart, verifiedQuotes: sourceTask.verifiedQuotes } } : {}), feedback: sourceTask?.scope === "book" ? "" : project.feedback, ...(candidate ? { candidate: { content: project.phase === "design" ? { title: candidate!.title, objectives: candidate!.objectives, blocks: candidate!.blocks } : candidate, visuals: project.units[project.cursor]!.visuals, parentSelectedIllustrations: project.units[project.cursor]!.illustrations?.map(({ title, caption, blockIndex, sourceUrl }) => ({ title, caption, blockIndex, sourceUrl })), ...(project.phase === "repair" ? { review: project.units[project.cursor]!.review } : {}) } } : {}) });
+  const rejected = project.regeneration ? await readStudioPaidResult(job.family_id, id, project.regeneration.pending) : null;
+  const prompt = JSON.stringify({ request: sourceTask?.scope === "book" ? { purpose: "Незалежний від конкретного курсу огляд усіх наданих частин джерела" } : { ...project.request, hasSelectedMaterial: !!project.request.materialId, sourceText: undefined, subjectId: undefined, topicId: undefined, materialId: undefined }, subject: sourceTask?.scope === "book" ? null : project.subjectName, baseTitle: sourceTask?.scope === "book" ? null : project.baseTitle, plan: sourceTask?.scope === "book" ? null : planContext, ...(project.phase === "plan" ? { planningBatch } : {}), currentLesson: sourceTask?.scope === "book" || project.phase === "plan" ? null : project.plan?.lessons[project.cursor] ?? null, sources: modelSources, sourceNotes: sourceTask?.scope === "book" ? [] : project.sourceNotes, ...(project.phase === "resolve" ? { selectedTopicId: project.request.topicId, availableTopics: project.sourceSelection?.candidates.map(({ id, subjectId, title, pageFrom, pageTo }) => ({ id, subjectId, title, pageFrom, pageTo })) } : {}), ...(sourceTask ? { sourceTask: { scope: sourceTask.scope, reducing: sourceTask.reducing, fromPart: sourceTask.fromPart, toPart: sourceTask.toPart, verifiedQuotes: sourceTask.verifiedQuotes } } : {}), feedback: sourceTask?.scope === "book" ? "" : project.feedback, ...(project.regeneration ? { validationRepair: { diagnostic: project.regeneration.diagnostic, rejectedResult: rejected?.result, instruction: "Виправ саме цю помилку за поточною схемою. Збережи правильний зміст; не повторюй відхилену відповідь." } } : {}), ...(candidate ? { candidate: { content: project.phase === "design" ? { title: candidate!.title, objectives: candidate!.objectives, blocks: candidate!.blocks } : candidate, visuals: project.units[project.cursor]!.visuals, parentSelectedIllustrations: project.units[project.cursor]!.illustrations?.map(({ title, caption, blockIndex, sourceUrl }) => ({ title, caption, blockIndex, sourceUrl })), ...(project.phase === "repair" ? { review: project.units[project.cursor]!.review } : {}) } } : {}) });
   if (Buffer.byteLength(system + prompt + JSON.stringify(schema.toJSONSchema())) > 250000) throw new Error("STUDIO-CONTEXT");
-  const config = await studioModelConfig(job.family_id, role);
-  const reserved = studioReservation(system, prompt, schema, config.route.params.max_tokens!, config.rates);
-  if (project.spentUsd + project.heldUsd + reserved > project.request.budgetUsd) throw new StudioCapError(reserved, project.request.budgetUsd - project.spentUsd - project.heldUsd);
-  project = await saveStudioProject(job.family_id, id, project, { activeCall: true, heldUsd: project.heldUsd + reserved });
-  let result;
-  try { result = await callStudioModel(job.family_id, id, role, system, prompt, schema, config); }
-  catch (error) {
-    if (error instanceof AiNotConfiguredError || error instanceof BudgetBlockedError) await saveStudioProject(job.family_id, id, project, { activeCall: false, heldUsd: Math.max(0, project.heldUsd - reserved) });
-    throw error;
+  const context = JSON.parse(prompt); if (context.request) delete context.request.budgetUsd;
+  const inputHash = createHash("sha256").update(JSON.stringify({ phase: project.phase, cursor: project.cursor, context })).digest("hex");
+  let result: StudioPaidModelResult;
+  if (project.pendingModelCall) {
+    const pending = project.pendingModelCall;
+    const saved = await readStudioPaidResult(job.family_id, id, pending);
+    if (!saved) throw new Error("STUDIO-UNCERTAIN-CALL");
+    result = saved;
+  } else {
+    if (project.activeCall) throw new Error("STUDIO-UNCERTAIN-CALL");
+    const config = await studioModelConfig(job.family_id, role);
+    const reserved = studioReservation(system, prompt, schema, config.route.params.max_tokens!, config.rates);
+    if (project.spentUsd + project.heldUsd + reserved > project.request.budgetUsd) throw new StudioCapError(reserved, project.request.budgetUsd - project.spentUsd - project.heldUsd);
+    const pending = { id: randomUUID(), phase: project.phase, cursor: project.cursor, inputHash, reservedUsd: reserved, billed: false };
+    project = await saveStudioProject(job.family_id, id, project, { activeCall: true, heldUsd: project.heldUsd + reserved, pendingModelCall: pending });
+    try { result = await callStudioModel(job.family_id, id, role, system, prompt, schema, config); }
+    catch (error) {
+      if (error instanceof AiNotConfiguredError || error instanceof BudgetBlockedError) await saveStudioProject(job.family_id, id, project, { activeCall: false, pendingModelCall: undefined, heldUsd: Math.max(0, project.heldUsd - reserved) });
+      throw error;
+    }
+    await writeStudioPaidResult(job.family_id, id, pending, result);
   }
-  const changes: Partial<StudioProject> = { activeCall: false, heldUsd: Math.max(0, project.heldUsd - reserved), spentUsd: project.spentUsd + result.costUsd, models: [...project.models, { role, model: `${result.model.provider}/${result.model.model}`, costUsd: result.costUsd }] };
+  if (!project.pendingModelCall!.billed) {
+    project = await saveStudioProject(job.family_id, id, project, { activeCall: false, heldUsd: Math.max(0, project.heldUsd - project.pendingModelCall!.reservedUsd), spentUsd: project.spentUsd + result.costUsd, models: [...project.models, { role: pendingStudioRole(project.pendingModelCall!.phase), model: `${result.model.provider}/${result.model.model}`, costUsd: result.costUsd }], pendingModelCall: { ...project.pendingModelCall!, billed: true } });
+  }
+  if (project.pendingModelCall!.phase !== project.phase || project.pendingModelCall!.cursor !== project.cursor || project.pendingModelCall!.inputHash !== inputHash) throw new Error("STUDIO-RESULT-CONTEXT");
+  const changes: Partial<StudioProject> = {};
   try {
   if (project.phase === "resolve") Object.assign(changes, await applyStudioResolution(job.family_id, project, result.result));
   else if (project.phase === "assess") Object.assign(changes, await applyStudioAssessment(job.family_id, project, modelSources, result.result));
@@ -144,7 +167,7 @@ export async function runStudioStep(job: JobRow, deadline: number) {
       const stop = !!project.reviewOnly || (stuck && !escalate);
       const nextPhase = review.corrections.length && review.corrections.every(fix => fix.role === "design") ? "design" : "author";
       units[project.cursor] = { ...units[project.cursor]!, review, reviewRound: round, lastReviewFingerprint: review.verdict === "pass" ? null : fingerprint };
-      await saveStudioReviewEvent(job.family_id, id, token, project.revision, { at: new Date().toISOString(), lessonIndex: project.cursor, round, review, next: review.verdict === "pass" ? "ready" : project.reviewOnly ? "parent" : stop ? "stopped" : escalate ? "repair" : nextPhase });
+      await saveStudioReviewEvent(job.family_id, id, project.pendingModelCall?.id ?? token, project.pendingModelCall ? 0 : project.revision, { at: new Date().toISOString(), lessonIndex: project.cursor, round, review, next: review.verdict === "pass" ? "ready" : project.reviewOnly ? "parent" : stop ? "stopped" : escalate ? "repair" : nextPhase });
       if (review.verdict !== "pass") Object.assign(changes, { state: stop ? "needs_changes" : "generating", phase: escalate ? "repair" : nextPhase, reviewRepairAttempted: project.reviewRepairAttempted || escalate, reviewAutomationStopped: stop, error: stop && !project.reviewOnly ? "STUDIO-NO-PROGRESS: звичайні й діагностичні виправлення не змінили результат. Нові платні етапи зупинено. Переглянь рецензію та діагноз нижче; матеріал збережено." : null, feedback: `${studioReviewFeedback(review)}\nПобажання тата: ${project.revisionInstructions ?? project.editorNotes?.at(-1)?.text ?? ""}` });
       else {
         const next = project.plan!.lessons.findIndex((_lesson, index) => units[index]?.review?.verdict !== "pass");
@@ -154,17 +177,20 @@ export async function runStudioStep(job: JobRow, deadline: number) {
     }
     changes.units = units;
   }
-  } catch {
-    await saveStudioProject(job.family_id, id, project, { ...changes, activeCall: false, state: "failed", error: "STUDIO-CONTENT: результат не пройшов перевірку повноти, джерел або структури. Оплачений виклик враховано; попередні частини збережено. Повтори цей етап." }); return;
+  } catch (error) {
+    const diagnostic = studioFailureDiagnostic(error, project.phase);
+    await saveStudioProject(job.family_id, id, project, { activeCall: false, state: "failed", failureDiagnostic: diagnostic, error: studioFailureMessage(diagnostic, true) }); return;
   }
-  const next = await saveStudioProject(job.family_id, id, project, changes);
+  const next = await saveStudioProject(job.family_id, id, project, { ...changes, pendingModelCall: undefined, regeneration: undefined, failureDiagnostic: undefined, error: changes.error ?? null });
   if (studioActive(next.state)) return { requeue: true as const };
 }
-export async function resumeStudio(familyId: string, id: string, revision: number, command: "approve" | "retry" | "revise" | "publish" | "review", plan?: StudioPlan, feedback = "", budgetUsd?: number, lessonIndex?: number, revisionRequestId?: string, learner?: { age: number; grade: number }) {
+export async function resumeStudio(familyId: string, id: string, revision: number, command: "approve" | "retry" | "revise" | "publish" | "review" | "regenerate", plan?: StudioPlan, feedback = "", budgetUsd?: number, lessonIndex?: number, revisionRequestId?: string, learner?: { age: number; grade: number }) {
   const project = await readStudioProject(familyId, id);
   if (!project || project.revision !== revision || studioActive(project.state) || (["published", "withdrawn"].includes(project.state) && command !== "revise")) throw new Error("Онови чернетку перед дією.");
+  if (project.pendingModelCall && !["retry", "regenerate"].includes(command)) throw new Error("Спочатку повторно перевір збережену відповідь або явно згенеруй нову; контекст незавершеного виклику не змінено.");
+  if (project.pendingModelCall && learner && (learner.age !== project.request.age || learner.grade !== project.request.grade)) throw new Error("Спочатку опрацюй збережену відповідь; вік і клас незавершеного етапу не змінено.");
   const token = randomUUID();
-  let changes: Partial<StudioProject> = { ...(revisionRequestId ? { revisionRequestId } : {}), token, activeCall: false, error: null, reviewOnly: command === "retry" && project.reviewOnly === true };
+  let changes: Partial<StudioProject> = { ...(revisionRequestId ? { revisionRequestId } : {}), token, activeCall: false, error: null, failureDiagnostic: undefined, reviewOnly: ["retry", "regenerate"].includes(command) && project.reviewOnly === true };
   if (budgetUsd !== undefined) changes.request = { ...project.request, budgetUsd };
   if (learner) changes.request = { ...(changes.request ?? project.request), age: learner.age, grade: learner.grade };
   if (command === "approve") {
@@ -174,6 +200,9 @@ export async function resumeStudio(familyId: string, id: string, revision: numbe
   } else if (command === "publish") {
     if (project.state !== "ready" || project.units.length !== project.plan?.lessons.length || project.units.some(unit => unit.review?.verdict !== "pass")) throw new Error("Спочатку потрібні готові уроки й позитивна рецензія.");
     changes = { ...changes, state: "publishing", phase: "publish" };
+  } else if (command === "regenerate") {
+    if (project.state !== "failed" || !project.pendingModelCall?.billed || project.failureDiagnostic?.category !== "content") throw new Error("Нова відповідь доступна після підтвердженої помилки збереженого результату.");
+    changes = { ...changes, pendingModelCall: undefined, regeneration: { pending: project.pendingModelCall, diagnostic: project.failureDiagnostic }, state: ["resolve", "assess", "analyze", "outline", "plan"].includes(project.phase) ? "planning" : "generating" };
   } else if (command === "review") {
     const cursor = lessonIndex ?? project.cursor;
     if (!["failed", "paused", "needs_changes"].includes(project.state) || project.phase === "publish" || !project.plan || !Number.isSafeInteger(cursor) || !project.plan.lessons[cursor] || !project.units[cursor]) throw new Error("Повторна рецензія доступна для збереженого чернеткового уроку після зупинки.");
@@ -183,7 +212,7 @@ export async function resumeStudio(familyId: string, id: string, revision: numbe
     const cursor = lessonIndex ?? project.cursor;
     if (!["needs_changes", "ready", "published", "withdrawn"].includes(project.state) || !Number.isSafeInteger(cursor) || !project.units[cursor]) throw new Error("Немає уроку для виправлення.");
     if (["published", "withdrawn"].includes(project.state) && !feedback.trim()) throw new Error("Опиши, що потрібно виправити в опублікованому уроці.");
-    if (project.request.materialId && !project.sourceCorpus) changes = { ...changes, ...await loadStudioSources(familyId, changes.request ?? project.request) };
+    if (project.request.materialId && !project.sourceCorpus && !project.pendingModelCall) changes = { ...changes, ...await loadStudioSources(familyId, changes.request ?? project.request) };
     const review = project.units[cursor]!.review;
     // Only structured, exclusively visual corrections can skip authoring. Legacy reviews
     // and parent instructions still receive a full, contextual revision.
@@ -192,8 +221,12 @@ export async function resumeStudio(familyId: string, id: string, revision: numbe
     changes = { ...changes, units, reviewAutomationStopped: false, reviewRepairAttempted: false, repairAdvice: "", revisionInstructions: feedback.trim(), state: "generating", publicationRevision: project.publicationRevision || !!project.publication, childAccess: studioPublicationVisible(project) ? "enabled" : "disabled", editorNotes: [...(project.editorNotes ?? []), { at: new Date().toISOString(), lessonIndex: cursor, text: feedback.trim() || "Виправити зауваження рецензента" }].slice(-30), phase: designOnly ? "design" : "author", cursor, feedback: `${studioReviewFeedback(review)}\nПобажання тата: ${feedback}` };
   } else {
     if (!["failed", "paused"].includes(project.state)) throw new Error("Продовження доступне після паузи або збою етапу.");
-    if (project.request.materialId && !project.sourceCorpus) changes = { ...changes, ...await loadStudioSources(familyId, changes.request ?? project.request) };
+    if (project.request.materialId && !project.sourceCorpus && !project.pendingModelCall) changes = { ...changes, ...await loadStudioSources(familyId, changes.request ?? project.request) };
     changes.state = ["resolve", "assess", "analyze", "outline", "plan"].includes(project.phase) ? "planning" : project.phase === "publish" ? "publishing" : "generating";
+  }
+  if (command === "retry" && project.pendingModelCall && !project.pendingModelCall.billed) {
+    const receipt = await readStudioPaidResult(familyId, id, project.pendingModelCall);
+    if (!receipt) Object.assign(changes, { pendingModelCall: undefined, unresolvedModelCalls: [...(project.unresolvedModelCalls ?? []), project.pendingModelCall] });
   }
   if (changes.sourceCorpus && !project.sourceCorpus) Object.assign(changes, { state: "planning", phase: "analyze", plan: null, lessonSources: undefined, cursor: 0 });
   const next = await saveStudioProject(familyId, id, project, changes);
@@ -218,7 +251,7 @@ export async function pauseStudio(familyId: string, id: string, revision: number
 }
 export async function failStudioStep(job: JobRow, error: unknown) {
   const id = String(job.payload.projectId ?? ""); const project = await readStudioProject(job.family_id, id);
-  if (project && project.token === job.payload.token && studioActive(project.state)) await saveStudioProject(job.family_id, id, project, { state: "failed", error: safeStageError(error) });
+  if (project && project.token === job.payload.token && studioActive(project.state)) await saveStudioProject(job.family_id, id, project, { state: "failed", failureDiagnostic: studioFailureDiagnostic(error, project.phase), error: safeStageError(error) });
 }
 /** Project-specific CAS claim: does not start unrelated ingest/warmup jobs. Compatible with generic claim_jobs leases. */
 export async function runStudioQueue(familyId: string, projectId: string, token: string, budgetMs = 220000) {
