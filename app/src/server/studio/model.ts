@@ -47,7 +47,7 @@ export async function studioModelConfig(familyId: string, role: StudioRole, useD
   const seededAuthor = role === "studio.author" && route.primary_model === "gpt-5.4"
     && route.params.max_tokens === OUTPUT[role] && route.params.effort === "medium"
     && route.params.timeout_ms === 120000 && route.params.budget_policy === "defer";
-  const params = seededAuthor ? { ...route.params, timeout_ms: 210000 } : route.params;
+  const params = seededAuthor ? { ...route.params, timeout_ms: 210000 } : standard && role === "studio.repair" ? { ...route.params, effort: "low" as const, max_tokens: 12000 } : route.params;
   return { route: { ...selected, role: routingRole, params }, rates, specialist: selected !== route || undefined };
 }
 export function studioReservation(system: string, prompt: string, schema: z.ZodType, maxTokens: number, rates: { input_usd_per_mtok: number; output_usd_per_mtok: number }) {

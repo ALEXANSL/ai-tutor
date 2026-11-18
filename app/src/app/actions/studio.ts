@@ -7,7 +7,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { unstable_rethrow } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireParentAccess, requireChild } from "@/server/auth/guards";
-import { studioPlanSchema, studioRequestSchema, studioLessonSchema, studioCanAutoResumeReview, studioActive, studioPublicationVisible, type StudioActivity } from "@/lib/studio";
+import { studioPlanSchema, studioRequestSchema, studioLessonSchema, studioCanResumeIncompleteRepair, studioCanAutoResumeReview, studioActive, studioPublicationVisible, type StudioActivity } from "@/lib/studio";
 import { readStudioProject, saveStudioProject, STUDIO_STEP } from "@/server/studio/store";
 import { resumeLegacyStudioReview, validateStudioLesson, scheduleStudio, pauseStudio, resumeStudio, startStudio } from "@/server/studio/workflow";
 import { activateStudioPublication } from "@/server/studio/publish";
@@ -49,7 +49,7 @@ export async function pollStudioAction(rawId: string, rawLessonIndex?: number) {
   const { familyId } = await requireParentAccess(); const id = idSchema.parse(rawId);
   let project = await readStudioProject(familyId, id);
   if (!project) return { status: "error" as const, message: "Чернетку не знайдено." };
-  if (studioCanAutoResumeReview(project)) project = await resumeLegacyStudioReview(familyId, id) ?? project;
+  if ((studioCanAutoResumeReview(project) || studioCanResumeIncompleteRepair(project))) project = await resumeLegacyStudioReview(familyId, id) ?? project;
   let activity: StudioActivity = { queue: "none", checkedAt: new Date().toISOString() };
   if (studioActive(project.state)) {
     const job = await forFamily(familyId).select("jobs", "status,locked_until,created_at,run_after").eq("type", STUDIO_STEP).eq("payload->>projectId", id).eq("payload->>token", project.token).order("created_at", { ascending: false }).limit(1).maybeSingle<{ status: string; locked_until: string | null; created_at: string; run_after?: string | null }>();

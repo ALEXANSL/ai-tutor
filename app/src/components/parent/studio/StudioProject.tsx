@@ -5,7 +5,7 @@ import { StudioLessonEditor } from "./StudioLessonEditor";
 import { StudioAccessButton } from "./StudioAccessButton";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { commandStudioAction, pollStudioAction, pauseStudioAction } from "@/app/actions/studio";
-import { STUDIO_MAX_BUDGET, studioCanAutoResumeReview, studioActive, studioPublicationVisible, studioStateLabels, type StudioActivity, type StudioPlan, type StudioProject as Project } from "@/lib/studio";
+import { STUDIO_MAX_BUDGET, studioCanResumeIncompleteRepair, studioCanAutoResumeReview, studioActive, studioPublicationVisible, studioStateLabels, type StudioActivity, type StudioPlan, type StudioProject as Project } from "@/lib/studio";
 import { parentButton, parentInput } from "@/app/parent/ui";
 import { withBusySignal } from "@/lib/busy-signal";
 import { StudioProgress } from "./StudioProgress";
@@ -55,7 +55,7 @@ export function StudioProject({ id, initial, startEditing = false }: { id: strin
     return () => cancelAnimationFrame(frame);
   }, [editing, revisionIndex]);
   const [feedback, setFeedback] = useState(""); const [budget, setBudget] = useState(initial.request.budgetUsd);
-  const shouldPoll = studioActive(project.state) || studioCanAutoResumeReview(project);
+  const shouldPoll = studioActive(project.state) || (studioCanAutoResumeReview(project) || studioCanResumeIncompleteRepair(project));
   useEffect(() => {
     if (!shouldPoll) return;
     let alive = true, running = false;

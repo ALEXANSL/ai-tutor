@@ -64,6 +64,7 @@ export interface StudioProject {
   unresolvedModelCalls?: StudioPendingModelCall[];
   regeneration?: { pending: StudioPendingModelCall; diagnostic: StudioFailureDiagnostic };
   failureDiagnostic?: StudioFailureDiagnostic;
+  repairPart?: number;
   savedModelResult?: boolean;
   canRegenerate?: boolean;
   canRestart?: boolean;
@@ -117,6 +118,12 @@ export function studioPublicationVisible(project: Pick<StudioProject, "publicati
 export interface StudioReviewEvent { at: string; lessonIndex: number; round: number; review: StudioReview; next: "author" | "design" | "repair" | "ready" | "stopped" | "parent"; }
 
 /** Old no-progress stops get one automatic diagnostic repair, without restarting failed/paused/uncertain jobs. */
+export function studioCanResumeIncompleteRepair(project: StudioProject) {
+  return project.state === "failed" && project.phase === "repair" && !project.activeCall && !project.reviewOnly
+    && project.failureDiagnostic?.code === "STUDIO-AI-INCOMPLETE" && project.repairPart === undefined
+    && !!(project.pendingModelCall?.billed || project.savedModelResult) && !!project.units[project.cursor]?.review;
+}
+
 export function studioCanAutoResumeReview(project: Pick<StudioProject, "state" | "activeCall" | "reviewAutomationStopped" | "reviewRepairAttempted" | "error">) {
   return project.state === "needs_changes" && !project.activeCall && (!project.reviewAutomationStopped || (!project.reviewRepairAttempted && !!project.error?.startsWith("STUDIO-NO-PROGRESS")));
 }
