@@ -43,3 +43,18 @@ it("does not acknowledge a step when publication of its successor fails", async 
   f.send.mockRejectedValueOnce(new Error("broker unavailable"));
   await expect(consumeDeck(msg)).rejects.toThrow("broker unavailable");
 });
+
+it("recovers an overdue checkpoint even if the broker remembers a previous wake", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.setSystemTime(new Date(initial.run_after));
+    f.read.mockResolvedValue({ data: initial });
+    await kickDeck(msg.familyId, msg.id);
+    await kickDeck(msg.familyId, msg.id);
+    vi.advanceTimersByTime(300001);
+    await kickDeck(msg.familyId, msg.id);
+    const keys = f.send.mock.calls.map(call => call[2].idempotencyKey);
+    expect(keys[0]).toBe(keys[1]);
+    expect(keys[2]).not.toBe(keys[1]);
+  } finally { vi.useRealTimers(); }
+});
