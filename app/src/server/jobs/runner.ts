@@ -57,15 +57,17 @@ export function backoffSeconds(attempt: number): number {
   return Math.min(30 * 2 ** Math.max(0, attempt - 1), 1800);
 }
 
-type JobTarget = { familyId: string; type: string; dedupeKey: string };
+type JobTarget = { familyId: string; type: string; dedupeKey: string; jobId?: string };
 
 /** Competes safely with claim_jobs and other wake requests for the same row.
  * The conditional update rechecks eligibility after acquiring the DB row lock. */
 async function claimTarget(db: ReturnType<typeof createServiceClient>, target: JobTarget) {
   const now = new Date();
   const eligible = `and(status.eq.queued,run_after.lte.${now.toISOString()}),and(status.eq.running,locked_until.lt.${now.toISOString()})`;
-  const row = await db.from("jobs").select("id,attempts").eq("family_id", target.familyId)
-    .eq("type", target.type).eq("dedupe_key", target.dedupeKey).or(eligible).maybeSingle<{ id: string; attempts: number }>();
+  let query = db.from("jobs").select("id,attempts").eq("family_id", target.familyId)
+    .eq("type", target.type).eq("dedupe_key", target.dedupeKey).or(eligible);
+  if (target.jobId) query = query.eq("id", target.jobId);
+  const row = await query.maybeSingle<{ id: string; attempts: number }>();
   if (row.error) throw new Error("Unable to read pending job.");
   if (!row.data) return null;
   const claim = await db.from("jobs").update({ status: "running", attempts: row.data.attempts + 1,

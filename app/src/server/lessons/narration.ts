@@ -71,15 +71,21 @@ export async function synthesizeNarration(familyId: string, ref: { table: string
   const trimmed = text.trim().slice(0, MAX_NARRATION_CHARS);
   if (!trimmed) return null;
   try {
-    const ctx = "sessionId" in ref ? { familyId, sessionId: ref.sessionId } : { familyId, ref };
-    const instructions = language?.startsWith("en") ? "Read verbatim in natural English. Do not translate. Speak clearly for a school learner." : language?.startsWith("de") ? "Lies den Text auf natürlichem Deutsch wortgetreu vor. Nicht übersetzen. Sprich deutlich für ein Schulkind." : "Читай дослівно, тепло й спокійно. Пояснення українською; англійські й німецькі слова та фрази вимовляй природно мовою оригіналу. Не перекладай і не транслітеруй.";
-    const res = await callAudio("passive_narration", { text: trimmed, instructions }, ctx);
-    return res.result;
+    return await requestNarration(familyId, ref, trimmed, language);
   } catch (e) {
     if (e instanceof BudgetBlockedError || e instanceof AiNotConfiguredError || e instanceof ProviderError) return null;
     console.error(`synthesizeNarration failed: ${(e as Error).message}`);
     return null;
   }
+}
+
+/** Background jobs need typed provider and budget errors for scheduling. */
+export async function requestNarration(familyId: string, ref: { table: string; id: string } | { sessionId: string }, text: string, language?: string): Promise<NarrationAudio> {
+  const trimmed = text.trim().slice(0, MAX_NARRATION_CHARS);
+  const ctx = "sessionId" in ref ? { familyId, sessionId: ref.sessionId } : { familyId, ref };
+  const instructions = language?.startsWith("en") ? "Read verbatim in natural English. Do not translate. Speak clearly for a school learner." : language?.startsWith("de") ? "Lies den Text auf natürlichem Deutsch wortgetreu vor. Nicht übersetzen. Sprich deutlich für ein Schulkind." : "Читай дослівно, тепло й спокійно. Пояснення українською; англійські й німецькі слова та фрази вимовляй природно мовою оригіналу. Не перекладай і не транслітеруй.";
+  const res = await callAudio("passive_narration", { text: trimmed, instructions }, ctx);
+  return res.result;
 }
 
 /** @deprecated kept for the existing `LessonRunner` call site — new code should call `synthesizeNarration` with a `ref` instead of a `sessionId`. */

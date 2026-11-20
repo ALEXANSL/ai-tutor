@@ -1,28 +1,50 @@
 import "server-only";
-import { after } from "next/server";
-import { deckWakeToken } from "./wake-auth";
-import { ensureJobHandlers } from "@/server/jobs/kick";
-import { runJobs } from "@/server/jobs/runner";
+import { send } from "@vercel/queue";
 import { forFamily } from "@/server/db/family-scope";
-import { getDeck, WORK_TYPE } from "./store";
+import { runJobs } from "@/server/jobs/runner";
+import { WORK_TYPE } from "./store";
+import { registerDeckJobs } from "./workflow";
 
-export function kickDeck(familyId: string, id: string) {
-  after(async () => {
-    ensureJobHandlers();
-    await runJobs({ budgetMs: 120000, target: { familyId, type: WORK_TYPE, dedupeKey: `${WORK_TYPE}:${id}` } });
-    if ((await getDeck(familyId, id))?.state !== "processing") return;
-    const { data: pending } = await forFamily(familyId).select("jobs", "run_after").eq("type", WORK_TYPE)
-      .eq("dedupe_key", `${WORK_TYPE}:${id}`).eq("status", "queued").maybeSingle<{ run_after: string }>();
-    if (!pending) return;
-    const host = (process.env.VERCEL_ENV === "production" && process.env.VERCEL_PROJECT_PRODUCTION_URL) || process.env.VERCEL_URL;
-    if (!host || !/^[a-z0-9.-]+\.vercel\.app$/i.test(host)) return;
-    // A transient failure is requeued by the runner with a short backoff.
-    const delay = Math.max(0, Date.parse(pending.run_after) - Date.now());
-    if (delay > 60000) return;
-    if (delay) await new Promise<void>(resolve => setTimeout(resolve, delay));
-    const headers: Record<string, string> = { "content-type": "application/json", authorization: `Bearer ${deckWakeToken(familyId, id)}` };
-    if (process.env.VERCEL_AUTOMATION_BYPASS_SECRET) headers["x-vercel-protection-bypass"] = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
-    const response = await fetch(`https://${host}/api/presentations/continue`, { method: "POST", headers, redirect: "error", body: JSON.stringify({ familyId, id }), signal: AbortSignal.timeout(10000) });
-    if (!response.ok) console.warn("Presentation continuation deferred to jobs tick", response.status);
-  });
+const topic = "presentation-narration";
+interface Delivery { familyId: string; id: string; jobId: string }
+interface Work { id: string; status: string; run_after: string; locked_until: string | null; updated_at: string }
+
+async function pendingWork(familyId: string, id: string) {
+  const result = await forFamily(familyId).select("jobs", "id,status,run_after,locked_until,updated_at")
+    .eq("type", WORK_TYPE).eq("dedupe_key", `${WORK_TYPE}:${id}`).in("status", ["queued", "running"]).maybeSingle<Work>();
+  if (result.error) throw new Error("Не вдалося перевірити фонове завдання.");
+  return result.data;
+}
+function delayFor(work: Work) {
+  const date = work.status === "running" ? work.locked_until : work.run_after;
+  return date ? Math.max(0, Math.ceil((Date.parse(date) - Date.now()) / 1000)) : 0;
+}
+async function publish(message: Delivery, key: string, delaySeconds: number) {
+  await send(topic, message, { idempotencyKey: key, delaySeconds, retentionSeconds: 604800 });
+}
+
+/** Await the broker's acceptance before acknowledging the parent request. */
+export async function kickDeck(familyId: string, id: string) {
+  const work = await pendingWork(familyId, id);
+  if (work) await publish({ familyId, id, jobId: work.id }, `start-${work.id}`, delayFor(work));
+}
+
+export class WaitForDeck extends Error {
+  constructor(readonly seconds: number) { super("Waiting for the saved retry time or worker lease"); }
+}
+
+/** The broker redelivers an unacknowledged message if this invocation dies.
+ * Commit the next durable delivery before acknowledging this one. */
+export async function consumeDeck(message: Delivery) {
+  const { familyId, id, jobId } = message;
+  const work = await pendingWork(familyId, id);
+  if (!work || work.id !== jobId) return;
+  const delay = delayFor(work);
+  if (delay > 0) throw new WaitForDeck(delay);
+  registerDeckJobs();
+  await runJobs({ budgetMs: 240000, maxJobs: 1, target: { familyId, type: WORK_TYPE, dedupeKey: `${WORK_TYPE}:${id}`, jobId } });
+  const next = await pendingWork(familyId, id);
+  if (!next || next.id !== jobId) return;
+  if (next.status === "running" || work.updated_at === next.updated_at) throw new WaitForDeck(Math.max(2, delayFor(next)));
+  await publish(message, `step-${jobId}-${next.updated_at}`, delayFor(next));
 }

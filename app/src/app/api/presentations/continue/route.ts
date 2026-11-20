@@ -10,6 +10,6 @@ export async function POST(req: Request) {
   if (!input.success) return new Response(null, { status: 400 });
   const auth = req.headers.get("authorization");
   if (!isCronAuthorized(auth, secret) && !isCronAuthorized(auth, deckWakeToken(input.data.familyId, input.data.id))) return new Response(null, { status: 403 });
-  kickDeck(input.data.familyId, input.data.id);
+  await kickDeck(input.data.familyId, input.data.id);
   return new Response(null, { status: 202 });
 }

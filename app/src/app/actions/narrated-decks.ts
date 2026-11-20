@@ -13,7 +13,7 @@ import type { NarratedDeck } from "@/lib/narrated-deck";
 
 async function schedule(family: string, id: string) {
   await enqueueJob(family, WORK_TYPE, { deckId: id }, { dedupeKey: `${WORK_TYPE}:${id}`, maxAttempts: 2 });
-  kickDeck(family, id);
+  await kickDeck(family, id);
 }
 
 export async function deckLessonsAction(subjectId: string) {
