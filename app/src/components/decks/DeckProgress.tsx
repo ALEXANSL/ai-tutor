@@ -1,11 +1,15 @@
 "use client";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-export function DeckProgress({ done, total }: { done: number; total: number }) {
+export function DeckProgress({ done, scripts, total, nextSlide, hasScript }: { done: number; scripts: number; total: number; nextSlide: number; hasScript: boolean }) {
   const router = useRouter();
   useEffect(() => {
-    const timer = setInterval(() => router.refresh(), 5000);
+    const timer = setInterval(() => router.refresh(), 6000);
     return () => clearInterval(timer);
   }, [router]);
-  return <div role="status" className="space-y-2"><p>{total ? `Готуємо озвучення · готово ${done} із ${total} слайдів` : "Готуємо слайди з PowerPoint…"} Можна закрити сторінку.</p><progress className="w-full" max={total || 1} value={total ? done : undefined} /></div>;
+  return <div role="status" className="space-y-2">
+    <p>{!total ? "Готуємо слайди з PowerPoint…" : nextSlide ? `Слайд ${nextSlide} із ${total} · ${hasScript ? "Підготовка аудіозапису" : "Підготовка тексту лектора"}` : "Завершуємо підготовку презентації…"}</p>
+    {total > 0 && <p className="text-sm">Текстів підготовлено: {scripts} із {total}. Аудіозаписів готово: {done} із {total}.</p>}
+    <progress aria-label="Підготовка текстів і записів" className="w-full" max={total ? total * 2 : 1} value={total ? scripts + done : undefined} />
+  </div>;
 }

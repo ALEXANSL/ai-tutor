@@ -12,5 +12,6 @@ export interface NarratedDeck {
   state: "processing" | "ready" | "error";
   published: boolean;
   revision: number;
+  audioLookupRecovered?: boolean;
   error: string;
 }

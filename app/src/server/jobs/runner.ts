@@ -57,15 +57,38 @@ export function backoffSeconds(attempt: number): number {
   return Math.min(30 * 2 ** Math.max(0, attempt - 1), 1800);
 }
 
-export async function runJobs(opts: { budgetMs?: number; maxJobs?: number } = {}): Promise<{ processed: number }> {
+type JobTarget = { familyId: string; type: string; dedupeKey: string };
+
+/** Competes safely with claim_jobs and other wake requests for the same row.
+ * The conditional update rechecks eligibility after acquiring the DB row lock. */
+async function claimTarget(db: ReturnType<typeof createServiceClient>, target: JobTarget) {
+  const now = new Date();
+  const eligible = `and(status.eq.queued,run_after.lte.${now.toISOString()}),and(status.eq.running,locked_until.lt.${now.toISOString()})`;
+  const row = await db.from("jobs").select("id,attempts").eq("family_id", target.familyId)
+    .eq("type", target.type).eq("dedupe_key", target.dedupeKey).or(eligible).maybeSingle<{ id: string; attempts: number }>();
+  if (row.error) throw new Error("Unable to read pending job.");
+  if (!row.data) return null;
+  const claim = await db.from("jobs").update({ status: "running", attempts: row.data.attempts + 1,
+    locked_until: new Date(now.getTime() + 300000).toISOString() })
+    .eq("id", row.data.id).eq("family_id", target.familyId).eq("attempts", row.data.attempts).or(eligible)
+    .select("*").maybeSingle<JobRow>();
+  if (claim.error) throw new Error("Unable to claim pending job.");
+  return claim.data;
+}
+
+async function claimNext(db: ReturnType<typeof createServiceClient>) {
+  const { data, error } = await db.rpc("claim_jobs", { p_limit: 1, p_lock_seconds: 300 });
+  if (error) throw new Error(`claim_jobs failed: ${error.message}`);
+  return (data as JobRow[] | null)?.[0];
+}
+
+export async function runJobs(opts: { budgetMs?: number; maxJobs?: number; target?: JobTarget } = {}): Promise<{ processed: number }> {
   const started = Date.now();
   const deadline = started + (opts.budgetMs ?? 240_000);
   const db = createServiceClient();
   let processed = 0;
   while (Date.now() < deadline - 15_000 && processed < (opts.maxJobs ?? 200)) {
-    const { data, error } = await db.rpc("claim_jobs", { p_limit: 1, p_lock_seconds: 300 });
-    if (error) throw new Error(`claim_jobs failed: ${error.message}`);
-    const job = (data as JobRow[] | null)?.[0];
+    const job = opts.target ? await claimTarget(db, opts.target) : await claimNext(db);
     if (!job) break;
     processed += 1;
     const handler = handlers.get(job.type);
