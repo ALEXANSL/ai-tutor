@@ -4,13 +4,14 @@ import { z } from "zod";
 import { callVisionStructured } from "@/server/ai/router";
 import { audioHash } from "@/server/audiobooks/text";
 import { audioExists, saveAudioBytes } from "@/server/audiobooks/storage";
-import { synthesizeNarration } from "@/server/lessons/narration";
+import { requestNarration } from "@/server/lessons/narration";
 import { getUserAccessToken } from "@/server/drive/oauth";
 import { downloadFile } from "@/server/drive/google";
 import { createServiceClient } from "@/server/supabase/clients";
 import { registerJobHandler } from "@/server/jobs/runner";
 import { getDeck, pdfPath, updateDeck, WORK_TYPE } from "./store";
 import { speakerNotes } from "./notes";
+import { deckRetry } from "./retry";
 import { renderDeckPdf } from "./convert";
 
 async function prepareSlide(family: string, id: string) {
@@ -27,7 +28,7 @@ async function prepareSlide(family: string, id: string) {
     if (doc.getPageCount() !== notes.length) throw new Error("Після перетворення кількість слайдів змінилася. Публікацію зупинено.");
     const saved = await bucket.upload(path, Buffer.from(pdf), { contentType: "application/pdf", upsert: true });
     if (saved.error) throw new Error("Не вдалося зберегти слайди у сховищі.");
-    await updateDeck(family, id, deck, { slides: notes.map(note => ({ notes: note, narration: "", ready: false })) });
+    await updateDeck(family, id, deck, { retry: null, slides: notes.map(note => ({ notes: note, narration: "", ready: false })) });
     return { requeue: true as const };
   }
   const index = deck.slides.findIndex(s => !s.ready);
@@ -49,17 +50,17 @@ async function prepareSlide(family: string, id: string) {
     }, { familyId: family, ref });
     const narration = answer.result.narration.trim();
     if (!narration || narration.length > 4000) throw new Error("Текст лектора для слайда має некоректну довжину.");
-    await updateDeck(family, id, deck, { slides: deck.slides.map((s, i) => i === index ? { ...s, narration } : s) });
+    await updateDeck(family, id, deck, { retry: null, slides: deck.slides.map((s, i) => i === index ? { ...s, narration } : s) });
   } else {
     const key = audioHash(slide.narration);
     if (!await audioExists(family, id, key)) {
-      const audio = await synthesizeNarration(family, ref, slide.narration);
+      const audio = await requestNarration(family, ref, slide.narration);
       if (!audio) throw new Error("Не вдалося озвучити слайд. Перевір голосовий сервіс і бюджет.");
       await saveAudioBytes(family, id, key, audio.audioBase64);
     }
     const slides = deck.slides.map((s, i) => i === index ? { ...s, ready: true } : s);
     const finished = slides.every(s => s.ready);
-    await updateDeck(family, id, deck, { slides, state: finished ? "ready" : "processing" });
+    await updateDeck(family, id, deck, { retry: null, slides, state: finished ? "ready" : "processing" });
     if (finished) return;
   }
   return { requeue: true as const };
@@ -67,7 +68,22 @@ async function prepareSlide(family: string, id: string) {
 
 export function registerDeckJobs() {
   registerJobHandler(WORK_TYPE, {
-    run: job => prepareSlide(job.family_id, z.string().uuid().parse(job.payload.deckId)),
+    async run(job) {
+      const id = z.string().uuid().parse(job.payload.deckId);
+      try {
+        return await prepareSlide(job.family_id, id);
+      } catch (error) {
+        const deck = await getDeck(job.family_id, id);
+        if (!deck || deck.state !== "processing") return;
+        const failures = deck.retry?.failures ?? 0;
+        const policy = deckRetry(error, failures);
+        if (!policy) throw error;
+        await updateDeck(job.family_id, id, deck, { retry: {
+          failures: failures + 1, reason: policy.reason, at: new Date(Date.now() + policy.seconds * 1000).toISOString(),
+        } });
+        return { requeue: true, delaySeconds: policy.seconds };
+      }
+    },
     onGiveUp: async (job, error) => {
       const id = String(job.payload.deckId);
       const deck = await getDeck(job.family_id, id);

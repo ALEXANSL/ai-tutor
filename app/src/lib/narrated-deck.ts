@@ -12,6 +12,8 @@ export interface NarratedDeck {
   state: "processing" | "ready" | "error";
   published: boolean;
   revision: number;
+  retry?: { failures: number; reason: string; at: string } | null;
+  retryPolicyVersion?: number;
   audioLookupRecovered?: boolean;
   error: string;
 }

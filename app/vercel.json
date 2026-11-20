@@ -9,5 +9,15 @@
       "path": "/api/jobs/tick?sync=1",
       "schedule": "47 3 * * *"
     }
-  ]
+  ],
+  "functions": {
+    "src/app/api/queue/presentation-narration/route.ts": {
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "presentation-narration"
+        }
+      ]
+    }
+  }
 }

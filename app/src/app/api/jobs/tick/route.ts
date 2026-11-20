@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSecret } from "@/server/env";
+import { recoverDeckQueue } from "@/server/decks/sweep";
 import { JOB } from "@/server/ingest/pipeline";
 import { isCronAuthorized } from "@/server/jobs/cron-auth";
 import { ensureJobHandlers } from "@/server/jobs/kick";
@@ -22,6 +23,7 @@ async function tick(request: Request) {
   }
   ensureJobHandlers();
   if (new URL(request.url).searchParams.get("sync") === "1") {
+    await recoverDeckQueue().catch(() => console.warn("Presentation queue sweep deferred"));
     const { data } = await createServiceClient().from("families").select("id").returns<{ id: string }[]>();
     for (const f of data ?? []) await enqueueJob(f.id, JOB.sync, {}, { dedupeKey: JOB.sync });
   }

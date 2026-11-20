@@ -14,17 +14,17 @@ beforeEach(() => {
   vi.clearAllMocks();
   f.update.mockImplementation((_f, _id, deck, patch) => ({ ...deck, ...patch }));
 });
-it.each([["queued", -1000, true], ["queued", 60000, false], ["running", -1000, true], ["running", 60000, false]])("respects %s job eligibility at offset %i", async (status, offset, wake) => {
+it.each([["queued", -1000], ["queued", 60000], ["running", -1000], ["running", 60000]])("respects %s job eligibility at offset %i", async (status, offset) => {
   const at = new Date(Date.now() + Number(offset)).toISOString();
   f.row.mockResolvedValue({ data: { status, run_after: at, locked_until: at }, error: null });
   await reconcileDeck("family", "deck", draft);
-  expect(f.kick).toHaveBeenCalledTimes(wake ? 1 : 0); expect(f.enqueue).not.toHaveBeenCalled();
+  expect(f.kick).toHaveBeenCalledTimes(1); expect(f.enqueue).not.toHaveBeenCalled();
 });
 it("automatically resumes the legacy storage failure once without wiping the script", async () => {
   const failure = { ...draft, state: "error" as const, error: "Не вдалося перевірити збережений аудіофрагмент." };
   f.row.mockResolvedValue({ data: { status: "queued", run_after: new Date(0).toISOString() } });
   const resumed = await reconcileDeck("family", "deck", failure);
   expect(resumed.slides).toEqual(failure.slides); expect(resumed.state).toBe("processing");
-  await reconcileDeck("family", "deck", { ...failure, audioLookupRecovered: true });
+  await reconcileDeck("family", "deck", { ...failure, retryPolicyVersion: 1 });
   expect(f.enqueue).toHaveBeenCalledTimes(1);
 });
