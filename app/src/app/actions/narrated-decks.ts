@@ -7,6 +7,7 @@ import { documentId } from "@/server/audiobooks/store";
 import { enqueueJob } from "@/server/jobs/runner";
 import { kickDeck } from "@/server/decks/kick";
 import { forFamily } from "@/server/db/family-scope";
+import { deckLessonOptions } from "@/server/decks/placement";
 import { DECK_TYPE, WORK_TYPE, getDeck, updateDeck } from "@/server/decks/store";
 import type { NarratedDeck } from "@/lib/narrated-deck";
 
@@ -15,19 +16,54 @@ async function schedule(family: string, id: string) {
   kickDeck(family, id);
 }
 
-export async function startDeck(driveId: string, subjectId: string) {
+export async function deckLessonsAction(subjectId: string) {
+  const { familyId } = await requireParentAccess();
+  return deckLessonOptions(familyId, z.string().uuid().parse(subjectId));
+}
+
+async function validatePlacement(familyId: string, subjectId: string, topicId: string | null) {
+  if (topicId === null) return;
+  z.string().uuid().parse(topicId);
+  const options = await deckLessonOptions(familyId, subjectId);
+  if (!options.some(item => item.id === topicId)) throw new Error("Вибраний урок недоступний у цьому предметі.");
+}
+
+export async function changeDeckPlacement(id: string, form: FormData) {
+  const { familyId } = await requireParentAccess();
+  const deck = await getDeck(familyId, id);
+  if (!deck || deck.state === "processing") throw new Error("Зміна прив’язки доступна після підготовки.");
+  const raw = z.string().parse(form.get("topicId"));
+  const topicId = raw || null;
+  await validatePlacement(familyId, deck.subjectId, topicId);
+  await updateDeck(familyId, id, deck, { topicId });
+  revalidatePath(`/subject/${deck.subjectId}`);
+  revalidatePath(`/parent/studio/presentations/${id}`);
+}
+
+export async function startDeck(driveId: string, subjectId: string, topicId: string | null = null) {
   const { familyId } = await requireParentAccess();
   z.string().uuid().parse(subjectId);
   const scope = forFamily(familyId);
   const subject = await scope.select("subjects", "id").eq("id", subjectId).maybeSingle();
   if (!subject.data) throw new Error("Предмет не знайдено.");
+  await validatePlacement(familyId, subjectId, topicId);
   const file = await confirmUpload({ familyId, driveFileId: driveId });
   if (file.format !== "pptx") throw new Error("Для показу слайдів потрібен файл PPTX.");
   const id = documentId(JSON.stringify(["narrated-deck", familyId, subjectId, file.md5Checksum || file.id]));
-  const deck: NarratedDeck = { title: file.name.replace(/\.pptx$/i, ""), driveId, subjectId, revision: 0, error: "", slides: [], state: "processing", published: false };
+  const deck: NarratedDeck = { title: file.name.replace(/\.pptx$/i, ""), driveId, subjectId, topicId, revision: 0, error: "", slides: [], state: "processing", published: false };
   const result = await scope.insert("jobs", { id, type: DECK_TYPE, status: "done", payload: deck });
   if (result.error && result.error.code !== "23505") throw new Error("Не вдалося зберегти презентацію.");
-  if (!result.error || (await getDeck(familyId, id))?.state === "processing") await schedule(familyId, id);
+  if (!result.error) await schedule(familyId, id);
+  else {
+    const existing = await getDeck(familyId, id);
+    if (!existing) throw new Error("Не вдалося відкрити збережену презентацію.");
+    if ((existing.topicId ?? null) !== topicId) {
+      if (existing.state === "processing") throw new Error("Ця презентація вже готується. Після завершення можна змінити урок у розділі «Мої презентації».");
+      await updateDeck(familyId, id, existing, { topicId });
+      revalidatePath(`/subject/${subjectId}`);
+    }
+    if (existing.state === "processing") await schedule(familyId, id);
+  }
   return id;
 }
 

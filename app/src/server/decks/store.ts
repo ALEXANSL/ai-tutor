@@ -22,10 +22,11 @@ export async function updateDeck(family: string, id: string, deck: NarratedDeck,
   return next;
 }
 
-export async function listDecks(family: string, publishedSubject?: string) {
-  let query = forFamily(family).select("jobs", "id,title:payload->>title,state:payload->>state,published:payload->>published").eq("type", DECK_TYPE);
+export async function listDecks(family: string, publishedSubject?: string, topicId?: string) {
+  let query = forFamily(family).select("jobs", "id,topicId:payload->>topicId,title:payload->>title,state:payload->>state,published:payload->>published").eq("type", DECK_TYPE);
   if (publishedSubject) query = query.eq("payload->>published", "true").eq("payload->>state", "ready").eq("payload->>subjectId", publishedSubject);
-  const { data, error } = await query.order("created_at", { ascending: false }).returns<{ id: string; title: string; state: string; published: string }[]>();
+  if (topicId) query = query.eq("payload->>topicId", topicId);
+  const { data, error } = await query.order("created_at", { ascending: false }).returns<{ id: string; topicId: string | null; title: string; state: string; published: string }[]>();
   if (error) throw new Error("Не вдалося отримати список презентацій.");
   return data;
 }

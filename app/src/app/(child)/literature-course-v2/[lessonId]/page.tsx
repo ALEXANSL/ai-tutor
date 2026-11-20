@@ -1,3 +1,4 @@
+import { LessonDeckLinks } from "@/components/decks/LessonDeckLinks";
 import { notFound, redirect } from "next/navigation";
 import { studioReplacementForPath } from "@/server/studio/links";
 import { LiteratureV2LessonScreen } from "@/components/course-v2/LiteratureV2LessonView";
@@ -24,5 +25,5 @@ export default async function LiteratureV2LessonPage({ params, searchParams }: {
     resolveLessonVideoTopicId(ctx.familyId, lesson.subjectId, lesson.topicId, lesson.title),
   ]);
 
-  return <LiteratureV2LessonScreen lesson={lesson} packageLessons={packageLessons} videoLessonTopicId={videoLessonTopicId} />;
+  return <><LessonDeckLinks familyId={ctx.familyId} subjectId={lesson.subjectId} topicId={lesson.topicId} /><LiteratureV2LessonScreen lesson={lesson} packageLessons={packageLessons} videoLessonTopicId={videoLessonTopicId} /></>;
 }
