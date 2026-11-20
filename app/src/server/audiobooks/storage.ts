@@ -14,8 +14,17 @@ function audioPath(familyId: string, id: string, key: string) {
   return `${familyId}/${id}/${key}.mp3`;
 }
 export async function audioExists(familyId: string, id: string, key: string) {
-  await ensureAudioBucket(); const { data, error } = await createServiceClient().storage.from(BUCKET).exists(audioPath(familyId, id, key));
-  if (error) throw new Error("Не вдалося перевірити збережений аудіофрагмент."); return !!data;
+  await ensureAudioBucket();
+  const path = audioPath(familyId, id, key);
+  const separator = path.lastIndexOf("/");
+  const name = path.slice(separator + 1);
+  // HEAD for a missing object returns a StorageError even on an ordinary
+  // cache miss. Listing this private deck folder distinguishes absence from
+  // a permission or network error before deciding to pay for synthesis.
+  const { data, error } = await createServiceClient().storage.from(BUCKET)
+    .list(path.slice(0, separator), { search: name, limit: 1 });
+  if (error || !data) throw new Error("Не вдалося перевірити збережений аудіофрагмент.");
+  return data.some(file => file.name === name);
 }
 export async function saveAudioBytes(familyId: string, id: string, key: string, base64: string) {
   const bytes = Buffer.from(base64, "base64");
