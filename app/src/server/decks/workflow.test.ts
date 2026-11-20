@@ -4,11 +4,15 @@ import type { NarratedDeck } from "@/lib/narrated-deck";
 import type { JobHandler } from "@/server/jobs/runner";
 
 const f = vi.hoisted(() => ({
+  author: vi.fn(), material: vi.fn(), design: vi.fn(),
   register: vi.fn(), get: vi.fn(), update: vi.fn(), vision: vi.fn(), voice: vi.fn(), exists: vi.fn(), save: vi.fn(),
   source: vi.fn(), render: vi.fn(), notes: vi.fn(), download: vi.fn(), upload: vi.fn(),
 }));
 vi.mock("@/server/jobs/runner", () => ({ registerJobHandler: f.register }));
-vi.mock("./store", () => ({ getDeck: f.get, updateDeck: f.update, pdfPath: () => "family/slides.pdf", WORK_TYPE: "presentation.prepare" }));
+vi.mock("./store", () => ({ getDeck: f.get, updateDeck: f.update, pdfPath: () => "family/slides.pdf", pptxPath: () => "family/lesson.pptx", WORK_TYPE: "presentation.prepare" }));
+vi.mock("@/server/homework/model", () => ({ callHomeworkModel: f.author }));
+vi.mock("./lesson-content", () => ({ lessonSlideSource: f.material }));
+vi.mock("./design", () => ({ buildLessonPptx: f.design }));
 vi.mock("./notes", () => ({ speakerNotes: f.notes }));
 vi.mock("./convert", () => ({ renderDeckPdf: f.render }));
 vi.mock("@/server/drive/google", async original => ({ ...await original<typeof import("@/server/drive/google")>(), downloadFile: f.source }));
@@ -80,4 +84,25 @@ describe("narrated teacher decks", () => {
     await expect(run()).rejects.toThrow("кількість слайдів");
     expect(f.upload).not.toHaveBeenCalled(); expect(f.vision).not.toHaveBeenCalled();
   });
+});
+
+it("creates a lesson deck in durable steps, then voices the authored notes without rewriting the slides", async () => {
+  deck.generated = { href: "/literature-v3/lesson", wishes: "Порівняй традиції" };
+  f.material.mockResolvedValue("Зміст вибраного уроку");
+  const slide = { heading: "Традиції", takeaway: "Приклад", caption: "Предмет", photoQuery: "",
+    narration: "Придивись до форми.", drawing: [{ shape: "ellipse", x: 10, y: 15, width: 50, height: 50, color: "ink" }] };
+  f.author.mockResolvedValue({ result: { slides: [slide, slide] } });
+  f.design.mockResolvedValue(Buffer.from("presentation"));
+  await run();
+  expect(f.author.mock.calls[0]![0].prompt).toContain("Зміст вибраного уроку");
+  expect(deck.generated.plan?.slides).toHaveLength(2);
+  await run();
+  expect(deck.generated.pptxReady).toBe(true);
+  await run(); await run(); await run();
+  expect(deck).toMatchObject({ state: "ready", published: false });
+  expect(f.source).not.toHaveBeenCalled();
+  expect(f.vision).not.toHaveBeenCalled();
+  expect(f.author).toHaveBeenCalledTimes(1);
+  expect(f.design).toHaveBeenCalledTimes(1);
+  expect(f.voice).toHaveBeenCalledTimes(2);
 });
