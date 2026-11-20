@@ -6,6 +6,7 @@ export interface DeckSlide {
 export interface NarratedDeck {
   title: string;
   subjectId: string;
+  topicId?: string | null;
   driveId: string;
   slides: DeckSlide[];
   state: "processing" | "ready" | "error";

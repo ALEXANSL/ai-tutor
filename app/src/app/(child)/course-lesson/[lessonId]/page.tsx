@@ -1,3 +1,4 @@
+import { LessonDeckLinks } from "@/components/decks/LessonDeckLinks";
 import { TopicVideoSupplement } from "@/components/child/SubjectVideoLessons";
 import { notFound, redirect } from "next/navigation";
 import { studioReplacementForPath } from "@/server/studio/links";
@@ -23,5 +24,5 @@ export default async function CourseLessonPage({ params, searchParams }: { param
   if (!lesson) notFound();
   if ((await searchParams)?.original !== "1") { const replacement = await studioReplacementForPath(ctx.familyId, `/course-lesson/${lessonId}`).catch(() => null); if (replacement) redirect(replacement); }
 
-  return <><TopicVideoSupplement familyId={ctx.familyId} subjectId={lesson.subjectId} topicId={lesson.topicId ?? null} title={lesson.title} /><CourseLessonScreen lesson={lesson} /></>;
+  return <><LessonDeckLinks familyId={ctx.familyId} subjectId={lesson.subjectId} topicId={lesson.topicId} /><TopicVideoSupplement familyId={ctx.familyId} subjectId={lesson.subjectId} topicId={lesson.topicId ?? null} title={lesson.title} /><CourseLessonScreen lesson={lesson} /></>;
 }

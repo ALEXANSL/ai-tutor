@@ -14,15 +14,15 @@ it("keeps the original link working by opening its reviewed replacement", async 
   await expect(Page({ params: Promise.resolve({ lessonId: id }) })).rejects.toThrow("REDIRECT:/literature-v3/new"); expect(f.replacement).toHaveBeenCalledWith("family", `/literature-v3/${id}`); expect(f.list).not.toHaveBeenCalled();
 });
 it("allows explicit original viewing without looping back to the replacement", async () => {
-  const page = await Page({ params: Promise.resolve({ lessonId: id }), searchParams: Promise.resolve({ original: "1" }) }); expect(page.props.lesson.id).toBe(id); expect(f.replacement).not.toHaveBeenCalled();
+  const page = await Page({ params: Promise.resolve({ lessonId: id }), searchParams: Promise.resolve({ original: "1" }) }); expect(page.props.children[1].props.lesson.id).toBe(id); expect(f.replacement).not.toHaveBeenCalled();
 });
 it("preserves subject navigation around the new reader and refuses withdrawn Studio content", async () => {
   f.replacement.mockResolvedValue(null); f.view.mockResolvedValue({ id, subjectId: "subject", packageId: "package", packageKey: "studio.project", status: "active", topicId: "new", title: "Міфи" });
   const lessons = [{ id, href: `/literature-v3/${id}`, title: "Міфи", status: "active", orderNo: 0 }]; f.nav.mockResolvedValue({ topicId: "original", lessons });
-  const page = await Page({ params: Promise.resolve({ lessonId: id }) }); expect(page.props.packageLessons).toEqual(lessons); expect(page.props.navigationTopicId).toBe("original"); expect(page.props.videoLessonTopicId).toBeNull();
+  const page = await Page({ params: Promise.resolve({ lessonId: id }) }); expect(page.props.children[0].props.topicId).toBe("original"); expect(page.props.children[1].props.packageLessons).toEqual(lessons); expect(page.props.children[1].props.navigationTopicId).toBe("original"); expect(page.props.children[1].props.videoLessonTopicId).toBeNull();
   f.view.mockResolvedValue({ id, packageKey: "studio.project", status: "needs_review" }); await expect(Page({ params: Promise.resolve({ lessonId: id }) })).rejects.toThrow("NOT_FOUND");
 });
 it("retains the imported original when optional replacement metadata is temporarily unavailable", async () => {
   f.replacement.mockRejectedValue(Error("metadata temporarily unavailable"));
-  const page = await Page({ params: Promise.resolve({ lessonId: id }) }); expect(page.props.lesson.id).toBe(id);
+  const page = await Page({ params: Promise.resolve({ lessonId: id }) }); expect(page.props.children[1].props.lesson.id).toBe(id);
 });

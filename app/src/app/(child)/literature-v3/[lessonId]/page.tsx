@@ -1,3 +1,4 @@
+import { LessonDeckLinks } from "@/components/decks/LessonDeckLinks";
 import { notFound, redirect } from "next/navigation";
 import { studioReplacementForPath, studioRevisionNavigation } from "@/server/studio/links";
 import { LiteratureV3LessonScreen } from "@/components/course-v2/LiteratureV3LessonView";
@@ -34,7 +35,7 @@ export default async function LiteratureV3LessonPage({ params, searchParams }: {
 
   const revisionNav = lesson.packageKey?.startsWith("studio.") ? await studioRevisionNavigation(ctx.familyId, lesson.subjectId, lesson.id).catch(() => null) : null;
   const inheritedVideo = !videoLessonTopicId && revisionNav ? await resolveLessonVideoTopicId(ctx.familyId, lesson.subjectId, revisionNav.topicId, lesson.title) : null;
-  return <LiteratureV3LessonScreen lesson={lesson} packageLessons={revisionNav?.lessons ?? packageLessons} navigationTopicId={revisionNav?.topicId} bookIndex={bookIndex} savedPosition={savedPosition} videoLessonTopicId={videoLessonTopicId ?? inheritedVideo} />;
+  return <><LessonDeckLinks familyId={ctx.familyId} subjectId={lesson.subjectId} topicId={revisionNav?.topicId ?? lesson.topicId} /><LiteratureV3LessonScreen lesson={lesson} packageLessons={revisionNav?.lessons ?? packageLessons} navigationTopicId={revisionNav?.topicId} bookIndex={bookIndex} savedPosition={savedPosition} videoLessonTopicId={videoLessonTopicId ?? inheritedVideo} /></>;
 }
 
 export const maxDuration = 180;

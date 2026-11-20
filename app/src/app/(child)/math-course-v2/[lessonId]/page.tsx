@@ -1,3 +1,4 @@
+import { LessonDeckLinks } from "@/components/decks/LessonDeckLinks";
 import { notFound, redirect } from "next/navigation";
 import { studioReplacementForPath } from "@/server/studio/links";
 import { MathCourseV2LessonScreen } from "@/components/course-v2/MathCourseV2LessonView";
@@ -25,5 +26,5 @@ export default async function MathCourseV2LessonPage({ params, searchParams }: {
     resolveLessonVideoTopicId(ctx.familyId, lesson.subjectId, lesson.topicId, lesson.title),
   ]);
 
-  return <MathCourseV2LessonScreen lesson={lesson} packageLessons={packageLessons} videoLessonTopicId={videoLessonTopicId} />;
+  return <><LessonDeckLinks familyId={ctx.familyId} subjectId={lesson.subjectId} topicId={lesson.topicId} /><MathCourseV2LessonScreen lesson={lesson} packageLessons={packageLessons} videoLessonTopicId={videoLessonTopicId} /></>;
 }

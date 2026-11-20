@@ -34,6 +34,7 @@ export default async function ChildSubjectPage({ params, searchParams }: { param
   // school subject, which has no group).
   if (!subject || !subject.childVisible) notFound();
   const presentations = await listDecks(ctx.familyId, id).catch(() => []);
+  const standalone = presentations.filter(deck => !deck.topicId);
   const publications = await studioPublicationsForSubject(ctx.familyId, subject.id).catch(() => []);
   const extensionTopics = new Set(publications.filter(item => item.baseTopicId).flatMap(item => item.lessons.map(lesson => lesson.topicId)));
   const topics = subject.topics.filter(topic => importedLessonHref(topic) && !extensionTopics.has(topic.id));
@@ -80,6 +81,7 @@ export default async function ChildSubjectPage({ params, searchParams }: { param
               <div className="flex flex-wrap items-center gap-2.5">
                 <Link href={topicHref(topic)} className="inline-flex min-h-12 items-center rounded-2xl bg-primary px-5 text-base font-bold text-white">{ts.openLesson}</Link>
                 {(["explanation", "reading"] as const).map(kind => { const audio = audioLessons.find(item => item.lessonTopicId === topic.id && (item.lessonKind ?? "explanation") === kind); return audio ? <Link key={kind} href={`/audiobooks/${audio.id}`} className="inline-flex min-h-12 items-center rounded-2xl border-2 border-secondary bg-surface px-4 font-bold">{kind === "reading" ? "🎧 Слухати твір" : "🎧 Аудіоурок"}</Link> : null; })}
+                {presentations.filter(deck => deck.topicId === topic.id).map(deck => <Link key={deck.id} href={`/presentations/${deck.id}`} className="inline-flex min-h-12 items-center rounded-2xl border-2 border-secondary px-4 font-bold">Презентація: {deck.title}</Link>)}
                 {topic.hasVideoLesson && <VideoLessonButton topicId={topic.id} title={topic.title} />}
                 {publications.filter(item => item.mode !== "revision" && item.baseTopicId === topic.id).flatMap(item => item.lessons).map(lesson => <Link key={lesson.id} href={`/literature-v3/${lesson.id}`} className="inline-flex min-h-12 items-center rounded-2xl border-2 border-secondary bg-surface px-4 text-sm font-bold">Розширений урок: {lesson.title}</Link>)}
               </div>
@@ -90,7 +92,7 @@ export default async function ChildSubjectPage({ params, searchParams }: { param
       ) : (
         <p className="text-sm text-muted">{presentations.length ? "Додаткові уроки доступні нижче." : "Готових уроків поки немає. Тато ще не додав матеріали цього предмета."}</p>
       )}
-      {presentations.length > 0 && <section className="my-6 space-y-2"><h2 className="text-xl font-bold">Презентації з озвученням</h2>{presentations.map(deck => <Link key={deck.id} className="block rounded-2xl border border-line bg-surface p-4 font-bold" href={`/presentations/${deck.id}`}>{deck.title} →</Link>)}</section>}
+      {standalone.length > 0 && <section className="my-6 space-y-2"><h2 className="text-xl font-bold">Додаткові матеріали предмета</h2>{standalone.map(deck => <Link key={deck.id} className="block rounded-2xl border border-line bg-surface p-4 font-bold" href={`/presentations/${deck.id}`}>{deck.title} →</Link>)}</section>}
       <SubjectVideoLessons familyId={ctx.familyId} subjectId={subject.id} />
     </div>
   );

@@ -14,6 +14,14 @@ describe("slide and recording visibility", () => {
     }
     expect(f.get).toHaveBeenCalledWith("family","deck");
   });
+  it("hides a lesson attachment when the target lesson becomes unavailable", async () => {
+    f.lesson.mockResolvedValue({ familyId: "family" });
+    f.get.mockResolvedValue({ published: true, subjectId: "s", topicId: "topic", state: "ready" });
+    f.subject.mockResolvedValue({ childVisible: true, topics: [{ id: "topic" }] });
+    expect(await accessibleDeck("deck", false)).toBeNull();
+    f.subject.mockResolvedValue({ childVisible: true, topics: [{ id: "topic", courseLessonId: "lesson" }] });
+    expect(await accessibleDeck("deck", false)).not.toBeNull();
+  });
   it("enforces the parent guard on preview URLs", async () => {
     f.parent.mockRejectedValueOnce(new Error("denied"));
     await expect(accessibleDeck("deck", true)).rejects.toThrow("denied");
