@@ -1,0 +1,15 @@
+export interface DeckSlide {
+  notes: string;
+  narration: string;
+  ready: boolean;
+}
+export interface NarratedDeck {
+  title: string;
+  subjectId: string;
+  driveId: string;
+  slides: DeckSlide[];
+  state: "processing" | "ready" | "error";
+  published: boolean;
+  revision: number;
+  error: string;
+}
