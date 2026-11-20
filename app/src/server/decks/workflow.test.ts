@@ -91,18 +91,20 @@ it("creates a lesson deck in durable steps, then voices the authored notes witho
   f.material.mockResolvedValue("Зміст вибраного уроку");
   const slide = { heading: "Традиції", takeaway: "Приклад", caption: "Предмет", photoQuery: "",
     narration: "Придивись до форми.", drawing: [{ shape: "ellipse", x: 10, y: 15, width: 50, height: 50, color: "ink" }] };
-  f.author.mockResolvedValue({ result: { slides: [slide, slide] } });
+  f.author.mockResolvedValueOnce({ result: { slides: [slide, slide] } }).mockResolvedValueOnce({ result: { drawings: [slide, slide] } });
   f.design.mockResolvedValue(Buffer.from("presentation"));
   await run();
   expect(f.author.mock.calls[0]![0].prompt).toContain("Зміст вибраного уроку");
   expect(deck.generated.plan?.slides).toHaveLength(2);
+  await run();
+  expect(deck.generated.plan?.slides[0]?.drawing).toEqual(slide.drawing);
   await run();
   expect(deck.generated.pptxReady).toBe(true);
   await run(); await run(); await run();
   expect(deck).toMatchObject({ state: "ready", published: false });
   expect(f.source).not.toHaveBeenCalled();
   expect(f.vision).not.toHaveBeenCalled();
-  expect(f.author).toHaveBeenCalledTimes(1);
+  expect(f.author).toHaveBeenCalledTimes(2);
   expect(f.design).toHaveBeenCalledTimes(1);
   expect(f.voice).toHaveBeenCalledTimes(2);
 });

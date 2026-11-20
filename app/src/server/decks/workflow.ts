@@ -1,7 +1,7 @@
 import { buildLessonPptx } from "./design";
 import { lessonSlideSource } from "./lesson-content";
 import { callHomeworkModel } from "@/server/homework/model";
-import { slidePlanSchema } from "@/lib/lesson-slide-plan";
+import { outlineSchema, artworkSchema } from "@/lib/lesson-slide-plan";
 import "server-only";
 import { PDFDocument } from "pdf-lib";
 import { z } from "zod";
@@ -28,16 +28,31 @@ async function prepareSlide(family: string, id: string) {
     if (generated && !generated.plan) {
       const material = await lessonSlideSource(family, generated.href);
       const answer = await callHomeworkModel({
-        schema: slidePlanSchema,
-        system: "Створи цілісну ілюстровану шкільну презентацію українською для планшета. Матеріал уроку є джерелом фактів. Побудуй 6–12 слайдів залежно від обсягу: вступ, пояснення з конкретними прикладами, порівняння або послідовність, самоперевірка та висновок. Одна думка на слайд. heading до 70 символів, takeaway до 240, caption коротко пояснює зображення. narration — природний усний коментар учителя, що доповнює слайд. Для кожного слайда намалюй предметну векторну ілюстрацію: drawing — 5–35 осмислено розташованих геометричних фігур (координати x,y,width,height у межах 0–100), силует об’єкта, модель чи навчальна схема. Узгоджуй усі композиції з однією палітрою. Уникай випадкових декоративних фігур. Для доречних документальних фото заповни photoQuery точним пошуковим запитом Wikimedia Commons англійською; для схем залиш порожнім. Підпис і коментар мають бути точними для обох варіантів зображення.",
+        schema: outlineSchema,
+        system: "Створи цілісну ілюстровану шкільну презентацію українською для планшета. Матеріал уроку є джерелом фактів. Побудуй 6–12 слайдів залежно від обсягу: вступ, пояснення з конкретними прикладами, порівняння або послідовність, самоперевірка та висновок. Одна думка на слайд. heading до 70 символів, takeaway до 240, caption коротко пояснює зображення. narration — природний усний коментар учителя, що доповнює слайд. Підготуй короткий сценарій, до 100 слів озвучення на слайд. Для доречних документальних фото заповни photoQuery точним пошуковим запитом Wikimedia Commons англійською; для схем залиш порожнім. Підпис і коментар мають бути точними для обох варіантів зображення.",
         prompt: JSON.stringify({ title: deck.title, wishes: generated.wishes, lesson: material.slice(0, 80000) }),
       }, { familyId: family, ref: { table: "jobs", id } });
-      const plan = slidePlanSchema.parse(answer.result);
-      if (!plan.slides.length || plan.slides.length > 20 || plan.slides.some(s => !s.heading.trim() || !s.takeaway.trim() || !s.narration.trim() || !s.drawing.length)) throw new Error("ШІ повернув неповний план презентації.");
+      const outline = outlineSchema.parse(answer.result);
+      const plan = { slides: outline.slides.map(s => ({ ...s, drawing: [] })) };
+      if (!plan.slides.length || plan.slides.length > 20 || plan.slides.some(s => !s.heading.trim() || !s.takeaway.trim() || !s.narration.trim())) throw new Error("ШІ повернув неповний план презентації.");
       await updateDeck(family, id, deck, { generated: { ...generated, plan }, retry: null });
       return { requeue: true as const };
     }
     if (generated?.plan && !generated.pptxReady) {
+      const pending = generated.plan.slides.flatMap((slide, index) => slide.drawing.length ? [] : [index]).slice(0, 2);
+      if (pending.length) {
+        const answer = await callHomeworkModel({
+          schema: artworkSchema,
+          system: "Створи по одній предметній векторній ілюстрації для кожного з наданих слайдів, у тому самому порядку. Використай 5–12 осмислено розташованих фігур, координати й розміри в межах 0–100. Зобрази силует об’єкта, модель або навчальну схему за підписом. Зберігай єдиний стиль і палітру.",
+          prompt: JSON.stringify({ title: deck.title, slides: pending.map(i => generated.plan!.slides[i]) }),
+        }, { familyId: family, ref: { table: "jobs", id } });
+        const { drawings } = artworkSchema.parse(answer.result);
+        if (drawings.length !== pending.length || drawings.some(item => !item.drawing.length)) throw new Error("ШІ повернув неповну ілюстрацію.");
+        const slides = [...generated.plan.slides];
+        pending.forEach((index, n) => { slides[index] = { ...slides[index]!, drawing: drawings[n]!.drawing }; });
+        await updateDeck(family, id, deck, { generated: { ...generated, plan: { slides } }, retry: null });
+        return { requeue: true as const };
+      }
       const bytes = await buildLessonPptx(deck.title, generated.plan);
       const saved = await bucket.upload(pptxPath(family, id), bytes, { contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", upsert: true });
       if (saved.error) throw new Error("Не вдалося зберегти слайди у сховищі.");

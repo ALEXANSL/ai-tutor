@@ -26,7 +26,12 @@ async function publish(message: Delivery, key: string, delaySeconds: number) {
 /** Await the broker's acceptance before acknowledging the parent request. */
 export async function kickDeck(familyId: string, id: string) {
   const work = await pendingWork(familyId, id);
-  if (work) await publish({ familyId, id, jobId: work.id }, `start-${work.id}`, delayFor(work));
+  if (!work) return;
+  // Recover a lost delivery even when the broker still remembers the original start key.
+  // Polls in the same recovery window share a key; the DB lease guards actual execution.
+  const due = Date.parse((work.status === "running" ? work.locked_until : work.run_after) ?? work.updated_at);
+  const window = Math.max(0, Math.floor((Date.now() - due) / 300000));
+  await publish({ familyId, id, jobId: work.id }, `wake-${work.id}-${work.updated_at}-${window}`, delayFor(work));
 }
 
 export class WaitForDeck extends Error {
