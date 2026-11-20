@@ -85,3 +85,18 @@ export async function publishDeck(id: string, published: boolean) {
   revalidatePath(`/parent/studio/presentations/${id}`);
   revalidatePath(`/subject/${deck.subjectId}`);
 }
+
+export async function generateLessonDeck(subjectId: string, topicId: string, wishes: string, requestId: string) {
+  const { familyId } = await requireParentAccess();
+  const ids = z.string().uuid();
+  const options = await deckLessonOptions(familyId, ids.parse(subjectId));
+  const topic = ids.parse(topicId);
+  const lesson = options.find(item => item.id === topic);
+  if (!lesson) throw new Error("Вибраний урок недоступний у цьому предметі.");
+  const id = documentId(JSON.stringify(["lesson-deck", familyId, subjectId, topic, ids.parse(requestId)]));
+  const deck: NarratedDeck = { title: lesson.title, topicId, subjectId, driveId: "", generated: { href: lesson.href, wishes: z.string().max(2000).parse(wishes).trim() }, state: "processing", revision: 0, slides: [], published: false, error: "" };
+  const result = await forFamily(familyId).insert("jobs", { id, type: DECK_TYPE, status: "done", payload: deck });
+  if (result.error && result.error.code !== "23505") throw new Error("Не вдалося зберегти презентацію.");
+  if (!result.error || (await getDeck(familyId, id))?.state === "processing") await schedule(familyId, id);
+  return id;
+}

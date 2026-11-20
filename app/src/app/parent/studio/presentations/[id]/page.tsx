@@ -22,6 +22,8 @@ export default async function ParentDeckPage({ params }: { params: Promise<{id: 
   const retryMinutes = deck.retry ? Math.max(0, Math.ceil((Date.parse(deck.retry.at) - Date.now()) / 60000)) : 0;
   const options = deck.state === "processing" ? [] : await deckLessonOptions(familyId, deck.subjectId);
   return <main className="mx-auto max-w-5xl space-y-5"><Link href="/parent/studio/presentations">← Мої презентації</Link><h1 className="text-2xl font-bold">{deck.title}</h1>
+    {deck.generated?.pptxReady && <a className="underline" href={`/api/presentations/${id}/lesson.pptx?preview=1`}>Завантажити PowerPoint</a>}
+    {deck.generated && !deck.slides.length && <p role="status">{deck.generated.pptxReady ? "Готуємо слайди до перегляду." : deck.generated.plan ? "Добираємо зображення та оформлюємо слайди." : "Створюємо сценарій за матеріалами уроку."}</p>}
     {queueUnavailable && <p role="status">Не вдалося перевірити чергу. Показано останній збережений стан презентації.</p>}
     {deck.state === "processing" ? <p>{deck.topicId ? "Додатковий матеріал вибраного уроку" : "Додатковий матеріал предмета"}</p> :
       <form action={changeDeckPlacement.bind(null, id)} className="flex flex-wrap items-end gap-3"><label>Урок (необов’язково)<select className={parentInput} name="topicId" defaultValue={deck.topicId ?? ""}><option value="">Додатковий матеріал предмета</option>{options.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}</select></label><button className={parentButton}>Зберегти прив’язку</button></form>}

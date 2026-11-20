@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { accessibleDeck } from "@/server/decks/access";
-import { pdfPath } from "@/server/decks/store";
+import { pdfPath, pptxPath } from "@/server/decks/store";
 import { createServiceClient } from "@/server/supabase/clients";
 import { signedAudioUrl } from "@/server/audiobooks/storage";
 import { audioHash } from "@/server/audiobooks/text";
@@ -13,8 +13,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!result) return new Response(null, { status: 404 });
   const { deck, familyId } = result;
   let url: string;
-  if (asset === "slides.pdf") {
-    const signed = await createServiceClient().storage.from("course_assets").createSignedUrl(pdfPath(familyId, id), 120);
+  if (asset === "slides.pdf" || (asset === "lesson.pptx" && deck.generated?.pptxReady)) {
+    const signed = await createServiceClient().storage.from("course_assets").createSignedUrl(asset === "lesson.pptx" ? pptxPath(familyId, id) : pdfPath(familyId, id), 120, asset === "lesson.pptx" ? { download: deck.title + ".pptx" } : undefined);
     if (!signed.data) return new Response(null, { status: 503 });
     url = signed.data.signedUrl;
   } else {
