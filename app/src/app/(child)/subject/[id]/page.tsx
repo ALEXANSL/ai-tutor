@@ -1,3 +1,4 @@
+import { listDecks } from "@/server/decks/store";
 import { listAudioCards } from "@/server/audiobooks/store";
 import { SchoolContextSearch } from "@/components/eschool/SchoolContextSearch";
 import { schoolSubjectFocus } from "@/server/eschool/subjectFocus";
@@ -32,6 +33,7 @@ export default async function ChildSubjectPage({ params, searchParams }: { param
   // carries that effective-visibility rule (identical to `active` for a
   // school subject, which has no group).
   if (!subject || !subject.childVisible) notFound();
+  const presentations = await listDecks(ctx.familyId, id).catch(() => []);
   const publications = await studioPublicationsForSubject(ctx.familyId, subject.id).catch(() => []);
   const extensionTopics = new Set(publications.filter(item => item.baseTopicId).flatMap(item => item.lessons.map(lesson => lesson.topicId)));
   const topics = subject.topics.filter(topic => importedLessonHref(topic) && !extensionTopics.has(topic.id));
@@ -86,8 +88,9 @@ export default async function ChildSubjectPage({ params, searchParams }: { param
           ))}
         </div>
       ) : (
-        <p className="text-sm text-muted">Готових уроків поки немає. Тато ще не додав матеріали цього предмета.</p>
+        <p className="text-sm text-muted">{presentations.length ? "Додаткові уроки доступні нижче." : "Готових уроків поки немає. Тато ще не додав матеріали цього предмета."}</p>
       )}
+      {presentations.length > 0 && <section className="my-6 space-y-2"><h2 className="text-xl font-bold">Презентації з озвученням</h2>{presentations.map(deck => <Link key={deck.id} className="block rounded-2xl border border-line bg-surface p-4 font-bold" href={`/presentations/${deck.id}`}>{deck.title} →</Link>)}</section>}
       <SubjectVideoLessons familyId={ctx.familyId} subjectId={subject.id} />
     </div>
   );

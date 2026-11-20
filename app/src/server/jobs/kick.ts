@@ -1,4 +1,5 @@
 import "server-only";
+import { registerDeckJobs } from "../decks/workflow";
 import { after } from "next/server";
 import { registerAll } from "@/modules";
 import { registerManualBatchJobs } from "../ingest/manual-batch-pipeline";
@@ -13,6 +14,7 @@ import { registerStudioJobs } from "../studio/workflow";
 /** Composition root for background work: registries + job handlers. */
 export function ensureJobHandlers(): void {
   registerAll();
+  registerDeckJobs();
   registerIngestJobs();
   registerManualBatchJobs(); // ADR-031 §3: `ingest.manual_batch_preview`/`ingest.manual_batch_commit`.
   registerNotifyJobs();
