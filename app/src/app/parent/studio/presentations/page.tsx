@@ -12,6 +12,8 @@ export default async function PresentationsPage() {
   const [subjects, enabled, decks] = await Promise.all([listSubjects(familyId), isUploadsFolderConfigured(familyId), listDecks(familyId)]);
   return <main className="mx-auto max-w-4xl space-y-5"><Link href="/parent/studio">← Майстерня ШІ</Link>
     <PageTitle>Презентації з озвученням</PageTitle>
+    <Panel title="Створити презентацію з готового уроку"><p className="mb-4 text-sm">Вибери урок. Майстерня підготує PowerPoint із тематичними ілюстраціями, схемами та поясненням лектора для кожного слайда. Після перегляду ти зможеш опублікувати презентацію для дитини.</p>
+      {enabled ? <DeckUpload subjects={subjects} generate /> : <Link href="/parent/settings">Підключити Google Drive для перегляду слайдів</Link>}</Panel>
     <Panel title="Додати PPTX"><p className="mb-4 text-sm">Порядок, текст та ілюстрації слайдів зберігаються у статичному перегляді. ШІ підготує пояснення українською й озвучить кожен слайд у межах бюджету застосунку. Перед публікацією ти зможеш прослухати результат.</p>
       {enabled ? <DeckUpload subjects={subjects} /> : <Link href="/parent/settings">Підключити Google Drive для завантаження</Link>}</Panel>
     <Panel title="Мої презентації">{decks.length ? <ul>{decks.map(d => <li key={d.id}><Link className="block rounded-lg p-3 underline" href={`/parent/studio/presentations/${d.id}`}>{d.title} · {d.published === "true" ? "Опубліковано" : d.state === "ready" ? "Готово до перегляду" : d.state === "error" ? "Потрібна увага" : "Готується"}</Link></li>)}</ul> : <p>Тут з’являться завантажені презентації.</p>}</Panel>

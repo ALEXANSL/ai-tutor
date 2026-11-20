@@ -5,6 +5,7 @@ import type { NarratedDeck } from "@/lib/narrated-deck";
 
 export const DECK_TYPE = "presentation.deck";
 export const WORK_TYPE = "presentation.prepare";
+export const pptxPath = (family: string, id: string) => `${family}/presentations/${id}/lesson.pptx`;
 export const pdfPath = (family: string, id: string) => `${family}/presentations/${id}/slides.pdf`;
 
 export async function getDeck(family: string, id: string) {
