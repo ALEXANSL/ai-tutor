@@ -1,3 +1,4 @@
+import { PPTX_BUCKET } from "@/server/decks/pptx-storage";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { accessibleDeck } from "@/server/decks/access";
@@ -14,7 +15,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const { deck, familyId } = result;
   let url: string;
   if (asset === "slides.pdf" || (asset === "lesson.pptx" && deck.generated?.pptxReady)) {
-    const signed = await createServiceClient().storage.from("course_assets").createSignedUrl(asset === "lesson.pptx" ? pptxPath(familyId, id) : pdfPath(familyId, id), 120, asset === "lesson.pptx" ? { download: deck.title + ".pptx" } : undefined);
+    const bucket = asset === "lesson.pptx" && deck.generated?.pptxBucket === PPTX_BUCKET ? PPTX_BUCKET : "course_assets";
+    const signed = await createServiceClient().storage.from(bucket).createSignedUrl(asset === "lesson.pptx" ? pptxPath(familyId, id) : pdfPath(familyId, id), 120, asset === "lesson.pptx" ? { download: deck.title + ".pptx" } : undefined);
     if (!signed.data) return new Response(null, { status: 503 });
     url = signed.data.signedUrl;
   } else {

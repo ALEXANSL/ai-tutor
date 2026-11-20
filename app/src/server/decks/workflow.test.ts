@@ -17,7 +17,7 @@ vi.mock("./notes", () => ({ speakerNotes: f.notes }));
 vi.mock("./convert", () => ({ renderDeckPdf: f.render }));
 vi.mock("@/server/drive/google", async original => ({ ...await original<typeof import("@/server/drive/google")>(), downloadFile: f.source }));
 vi.mock("@/server/drive/oauth", () => ({ getUserAccessToken: async () => "test" }));
-vi.mock("@/server/supabase/clients", () => ({ createServiceClient: () => ({ storage: { from: () => ({ download: f.download, upload: f.upload }) } }) }));
+vi.mock("@/server/supabase/clients", () => ({ createServiceClient: () => ({ storage: { getBucket: async () => ({ data: { public: false } }), from: () => ({ download: f.download, upload: f.upload }) } }) }));
 vi.mock("@/server/ai/router", () => ({ callVisionStructured: f.vision }));
 vi.mock("@/server/lessons/narration", () => ({ requestNarration: f.voice }));
 vi.mock("@/server/audiobooks/storage", () => ({ audioExists: f.exists, saveAudioBytes: f.save }));
@@ -99,7 +99,7 @@ it("creates a lesson deck in durable steps, then voices the authored notes witho
   await run();
   expect(deck.generated.plan?.slides[0]?.drawing).toEqual(slide.drawing);
   await run();
-  expect(deck.generated.pptxReady).toBe(true);
+  expect(deck.generated).toMatchObject({ pptxReady: true, pptxBucket: "lesson-presentations" });
   await run(); await run(); await run();
   expect(deck).toMatchObject({ state: "ready", published: false });
   expect(f.source).not.toHaveBeenCalled();

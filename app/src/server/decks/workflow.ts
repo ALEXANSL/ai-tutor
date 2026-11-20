@@ -1,3 +1,4 @@
+import { PPTX_BUCKET, PPTX_MIME, powerpointDestination, storageFailure } from "./pptx-storage";
 import { buildLessonPptx } from "./design";
 import { lessonSlideSource } from "./lesson-content";
 import { callHomeworkModel } from "@/server/homework/model";
@@ -53,16 +54,19 @@ async function prepareSlide(family: string, id: string) {
         await updateDeck(family, id, deck, { generated: { ...generated, plan: { slides } }, retry: null });
         return { requeue: true as const };
       }
+      const destination = await powerpointDestination();
       const bytes = await buildLessonPptx(deck.title, generated.plan);
-      const saved = await bucket.upload(pptxPath(family, id), bytes, { contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", upsert: true });
-      if (saved.error) throw new Error("Не вдалося зберегти слайди у сховищі.");
-      await updateDeck(family, id, deck, { generated: { ...generated, pptxReady: true }, retry: null });
+      const saved = await destination.upload(pptxPath(family, id), bytes, { contentType: PPTX_MIME, upsert: true });
+      if (saved.error) throw storageFailure("Збереження PowerPoint", saved.error);
+      await updateDeck(family, id, deck, { generated: { ...generated, pptxReady: true, pptxBucket: PPTX_BUCKET }, retry: null });
       return { requeue: true as const };
     }
     const token = await getUserAccessToken(family);
     let original: Uint8Array;
     if (generated) {
-      const stored = await bucket.download(pptxPath(family, id));
+      const source = generated.pptxBucket === PPTX_BUCKET ? createServiceClient().storage.from(PPTX_BUCKET) : bucket;
+      const stored = await source.download(pptxPath(family, id));
+      if (stored.error) throw storageFailure("Читання PowerPoint", stored.error);
       if (!stored.data) throw new Error("Не вдалося прочитати збережені слайди.");
       original = new Uint8Array(await stored.data.arrayBuffer());
     } else original = await downloadFile(deck.driveId, token);
@@ -71,7 +75,7 @@ async function prepareSlide(family: string, id: string) {
     const doc = await PDFDocument.load(pdf);
     if (doc.getPageCount() !== notes.length) throw new Error("Після перетворення кількість слайдів змінилася. Публікацію зупинено.");
     const saved = await bucket.upload(path, Buffer.from(pdf), { contentType: "application/pdf", upsert: true });
-    if (saved.error) throw new Error("Не вдалося зберегти слайди у сховищі.");
+    if (saved.error) throw storageFailure("Збереження PDF для перегляду", saved.error);
     await updateDeck(family, id, deck, { retry: null, slides: notes.map((note, i) => ({ notes: note, narration: generated?.plan?.slides[i]?.narration ?? "", ready: false })) });
     return { requeue: true as const };
   }
