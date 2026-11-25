@@ -1,3 +1,7 @@
+## 2026-11-25 — спільні дизайн-скіли для Claude і Codex
+
+За рішенням Алекса додано скіли в репозиторій: `.agents/skills/lesson-visual-style` (наш стиль уроків-презентацій: тип візуалу на слайд, токени дизайн-системи, без тексту в згенерованих картинках, приватність і вартість) та сторонній `.agents/skills/nano-banana` (EvoScientist, коміт зафіксовано в `skills-lock.json`; файли переглянуто: мережеві виклики лише до Gemini та опційного Atlas Cloud, який заборонено нашим скілом). `.claude/skills/` посилається на ті самі папки. Код застосунку не змінювався. Дослідження інструментів: https://claude.ai/artifact/6P97bNHcsukayDwmx5r7Ls
+
 ## 2026-11-18 — помилки провайдера до збереження результату
 
 Наступний скриншот показав інший failureboundary: lesson_sources, spent$1.149, held$1.496, cap$5, genericSTUDIO-STAGE/PROCESSING. Попередній release159 захищав результат після returncallStudioModel, але incomplete/JSON/schemafail усередині OpenAIадаптера відкидали відповідь та usage до цього return. Сам скриншот не доводить timeout чи incomplete. Приватних productionБД/логів/ключів немає; справжню причину цього запуску ще не підтверджено.
