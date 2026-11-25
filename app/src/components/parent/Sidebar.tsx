@@ -23,7 +23,9 @@ export function Sidebar({
   const pathname = usePathname();
   const t = uk.parent.shell;
 
-  const isActive = (href: string) => (href === "/parent" ? pathname === "/parent" : pathname.startsWith(href));
+  const under = (prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`) || pathname.startsWith(`${prefix}?`);
+  const isActive = (item: NavItem) =>
+    (item.href === "/parent" ? pathname === "/parent" : !!item.href && under(item.href)) || (item.match ?? []).some(under);
 
   return (
     <>
@@ -56,9 +58,9 @@ export function Sidebar({
                 key={item.key}
                 href={item.href}
                 onClick={() => setOpen(false)}
-                aria-current={isActive(item.href) ? "page" : undefined}
+                aria-current={isActive(item) ? "page" : undefined}
                 className={`flex min-h-11 items-center gap-2.5 rounded-xl px-3 text-sm font-semibold ${
-                  isActive(item.href) ? "bg-[color-mix(in_srgb,var(--p-primary)_12%,transparent)] text-p-primary" : "text-p-muted"
+                  isActive(item) ? "bg-[color-mix(in_srgb,var(--p-primary)_12%,transparent)] text-p-primary" : "text-p-muted"
                 }`}
               >
                 <span aria-hidden="true">{item.icon}</span> {item.label}

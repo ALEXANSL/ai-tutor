@@ -1,3 +1,4 @@
+import { SectionTabs } from "@/components/parent/SectionTabs";
 import Link from "next/link";
 import { toggleCourseActiveAction } from "@/app/actions/subjects";
 import { ActiveToggle } from "@/components/parent/subjects/ActiveToggle";
@@ -19,6 +20,7 @@ export default async function CoursesPage() {
 
   return (
     <>
+      <SectionTabs section="subjects" />
       <PageTitle action={<Link href="/parent/courses/groups" className="text-[13px] font-bold text-p-primary">{t.groupsLink}</Link>}>
         {t.title}
       </PageTitle>

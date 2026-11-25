@@ -1,3 +1,4 @@
+import { SectionTabs } from "@/components/parent/SectionTabs";
 import { listLiteratureCandidateMaterials } from "@/app/actions/literature-extraction";
 import { ContentQaSweepPanel } from "@/components/parent/ContentQaSweepPanel";
 import { LiteratureExtractionPanel } from "@/components/parent/LiteratureExtractionPanel";
@@ -53,6 +54,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Sea
 
   return (
     <>
+      <SectionTabs section="family" />
       <PageTitle>{t.title}</PageTitle>
       <Panel title={t.pinTitle}>
         <p className="mb-1 text-sm font-bold">{settings.pin_hash ? t.pinCurrentSet : t.pinCurrentNotSet}</p>

@@ -1,3 +1,4 @@
+import { SectionTabs } from "@/components/parent/SectionTabs";
 import Link from "next/link";
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
@@ -62,6 +63,7 @@ export default async function ConversationsPage({ searchParams }: { searchParams
 
   return (
     <>
+      <SectionTabs section="family" />
       <PageTitle>{t.title}</PageTitle>
       <p className="mb-3 text-[13px] text-p-muted">{t.help}</p>
       <div className="grid gap-4 md:grid-cols-[220px_1fr]">
