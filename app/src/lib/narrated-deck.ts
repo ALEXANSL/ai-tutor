@@ -9,7 +9,7 @@ export interface NarratedDeck {
   subjectId: string;
   topicId?: string | null;
   driveId: string;
-  generated?: { href: string; wishes: string; plan?: LessonSlidePlan; pptxBucket?: "lesson-presentations"; pptxReady?: boolean };
+  generated?: { href: string; wishes: string; sourceHash?: string; plan?: LessonSlidePlan; pptxBucket?: "lesson-presentations"; pptxReady?: boolean };
   slides: DeckSlide[];
   state: "processing" | "ready" | "error";
   published: boolean;

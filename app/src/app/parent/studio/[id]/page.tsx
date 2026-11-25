@@ -6,6 +6,7 @@ import { requireParentAccess } from "@/server/auth/guards";
 import { readStudioProject } from "@/server/studio/store";
 import { StudioProject } from "@/components/parent/studio/StudioProject";
 import { studioProjectDecks } from "@/server/studio/decks";
+import { StudioDeckRetry } from "@/components/parent/studio/StudioDeckRetry";
 export const maxDuration = 300;
 export default async function StudioProjectPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ edit?: string }> }) {
   const { familyId } = await requireParentAccess(); const { id } = await params;
@@ -15,7 +16,11 @@ export default async function StudioProjectPage({ params, searchParams }: { para
   return <div className="mx-auto max-w-4xl"><Link href="/parent/studio" className="mb-4 inline-flex min-h-11 items-center text-sm font-bold text-p-primary">← Усі проєкти майстерні</Link>
     {(decks.length > 0 || waiting) && <section aria-label="Презентації з озвучкою" className="mb-5 rounded-2xl border border-p-line bg-p-surface p-4"><h2 className="text-base font-bold">Презентації з озвучкою</h2>
       {waiting ? <p className="mt-1 text-sm text-p-muted">Підготуються автоматично після того, як ти опублікуєш уроки.</p>
-        : <ul className="mt-2 space-y-1">{decks.map(deck => <li key={deck.id}><Link href={`/parent/studio/presentations/${deck.id}`} className="inline-flex min-h-11 items-center text-sm font-bold text-p-primary">{deck.title} · {deck.label}</Link></li>)}</ul>}
+        : <ul className="mt-2 space-y-2">{decks.map(deck => <li key={deck.lessonId} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          {deck.id ? <Link href={`/parent/studio/presentations/${deck.id}`} className="inline-flex min-h-11 items-center text-sm font-bold text-p-primary">{deck.title} · {deck.label}</Link>
+            : <span className="text-sm">{deck.title} · {deck.label}</span>}
+          {deck.retry && ["published", "withdrawn"].includes(project.state) && <StudioDeckRetry projectId={id} lessonId={deck.lessonId} />}
+        </li>)}</ul>}
     </section>}
-    <StudioProject id={id} initial={studioParentView(await studioDiagnosticFromHistory(familyId, id, project))} startEditing={(await searchParams).edit === "1"} /></div>;
+    <StudioProject key={project.revision} id={id} initial={studioParentView(await studioDiagnosticFromHistory(familyId, id, project))} startEditing={(await searchParams).edit === "1"} /></div>;
 }

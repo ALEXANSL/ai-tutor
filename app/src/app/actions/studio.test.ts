@@ -1,6 +1,8 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import { studioProjectFixture, studioLessonFixture, studioVisualFixture } from "@/server/studio/__fixtures__/project";
 const f = vi.hoisted(() => ({ detail: vi.fn(), parent: vi.fn(), child: vi.fn(), start: vi.fn(), resume: vi.fn(), pause: vi.fn(), read: vi.fn(), save: vi.fn(), kick: vi.fn(), links: vi.fn(), text: vi.fn(), cleanup: vi.fn(), step: vi.fn(), scope: vi.fn(), update: vi.fn(), activate: vi.fn(), schedule: vi.fn(), validate: vi.fn() }));
+const queueDecks = vi.hoisted(() => vi.fn());
+vi.mock("@/server/studio/decks", () => ({ queueStudioDecks: queueDecks }));
 vi.mock("@/server/db/family-scope", () => ({ forFamily: (family: string) => { f.scope(family); const q = { eq: () => q, order: () => q, limit: () => q, maybeSingle: f.step }; return { select: () => q, update: (table: string, values: unknown) => { f.update(table, values); return q; } }; } }));
 vi.mock("@/server/subjects/queries", () => ({ getSubjectDetail: f.detail }));
 vi.mock("@/server/auth/guards", () => ({ requireParentAccess: f.parent, requireChild: f.child }));
@@ -12,13 +14,25 @@ vi.mock("@/server/studio/links", () => ({ studioLinksForPath: f.links }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({ unstable_rethrow: vi.fn() }));
 vi.mock("unpdf", () => ({ getDocumentProxy: async () => ({ numPages: 10, cleanup: f.cleanup }), extractText: f.text }));
-import { createStudioAction, commandStudioAction, pollStudioAction, withdrawStudioAction, pauseStudioAction, extractStudioFileAction, studioLessonLinksAction, setStudioAccessAction, saveStudioLessonAction, reviseImportedLessonAction } from "./studio";
+import { createStudioAction, commandStudioAction, pollStudioAction, withdrawStudioAction, pauseStudioAction, extractStudioFileAction, studioLessonLinksAction, setStudioAccessAction, saveStudioLessonAction, reviseImportedLessonAction, retryStudioPresentation } from "./studio";
 const id = "11111111-1111-4111-8111-111111111111";
 beforeEach(() => { vi.clearAllMocks(); f.parent.mockResolvedValue({ familyId: "own-family" }); f.child.mockResolvedValue({ ctx: { familyId: "child-family" } }); f.start.mockResolvedValue(id); f.read.mockResolvedValue(studioProjectFixture({ state: "plan_ready" })); });
 it("rejects a child/unauthorized caller before reading drafts, running models, extracting files or publishing", async () => {
   f.parent.mockRejectedValue(new Error("parent only"));
+  await expect(retryStudioPresentation(id, "lesson")).rejects.toThrow("parent only");
   await expect(createStudioAction({})).rejects.toThrow(); await expect(commandStudioAction({})).rejects.toThrow(); await expect(pollStudioAction(id)).rejects.toThrow(); await expect(withdrawStudioAction(id, 0)).rejects.toThrow(); await expect(extractStudioFileAction(new FormData())).rejects.toThrow(); await expect(pauseStudioAction(id, 0)).rejects.toThrow();
   expect(f.start).not.toHaveBeenCalled(); expect(f.read).not.toHaveBeenCalled(); expect(f.resume).not.toHaveBeenCalled(); expect(f.text).not.toHaveBeenCalled();
+});
+it("retries only a lesson in the family's published project and clears its queue failure", async () => {
+  const publication = { subjectId: "subject", packageId: "package", lessons: [{ id: "lesson", topicId: "topic", title: "Урок" }] };
+  const project = studioProjectFixture({ state: "published", publication, deckQueueFailures: ["lesson"] });
+  project.request.narratedDeck = true;
+  f.read.mockResolvedValue(project);
+  queueDecks.mockResolvedValueOnce([]);
+  expect(await retryStudioPresentation(id, "other")).toMatchObject({ status: "error" });
+  expect(await retryStudioPresentation(id, "lesson")).toEqual({ status: "ok" });
+  expect(queueDecks).toHaveBeenCalledExactlyOnceWith("own-family", id, project, publication, ["lesson"]);
+  expect(f.save).toHaveBeenCalledWith("own-family", id, project, { deckQueueFailures: [] });
 });
 it("uses the authorized family and a stable request ID, rejects forged selectors before paid work", async () => {
   expect(await createStudioAction({ requestId: id, request: studioProjectFixture().request })).toEqual({ status: "ok", id });

@@ -14,6 +14,8 @@ import { activateStudioPublication } from "@/server/studio/publish";
 import { kickStudio } from "@/server/studio/wake";
 import { forFamily } from "@/server/db/family-scope";
 import { studioLinksForPath } from "@/server/studio/links";
+import { queueStudioDecks } from "@/server/studio/decks";
+import type { FormState } from "./state";
 const idSchema = z.string().uuid();
 function message(error: unknown) { unstable_rethrow(error); return error instanceof z.ZodError ? (error.issues.find(issue => issue.code === "custom")?.message ?? "Перевір заповнення полів і діапазон сторінок.") : error instanceof Error && !/secret|token|api_key|fetch|supabase|postgres|JSON|STUDIO-/i.test(error.message) && error.message.length < 400 ? error.message : "Не вдалося виконати дію. Чернетку збережено; онови сторінку перед повтором."; }
 export async function createStudioAction(raw: unknown) {
@@ -72,6 +74,29 @@ export async function commandStudioAction(raw: unknown) {
   const { familyId } = await requireParentAccess();
   try { const input = commandSchema.parse(raw); await resumeStudio(familyId, input.id, input.revision, input.command, input.plan, input.feedback, input.budgetUsd, input.lessonIndex); kickStudio(familyId, input.id); revalidatePath("/parent/studio"); return { status: "ok" as const }; }
   catch (error) { return { status: "error" as const, message: message(error) }; }
+}
+export async function retryStudioPresentation(projectId: string, lessonId: string): Promise<FormState> {
+  const { familyId } = await requireParentAccess();
+  try {
+    const id = idSchema.parse(projectId);
+    const project = await readStudioProject(familyId, id);
+    const publication = project?.publication;
+    if (!project || !project.request.narratedDeck || !publication || !["published", "withdrawn"].includes(project.state) ||
+      !publication.lessons.some(lesson => lesson.id === lessonId)) {
+      return { status: "error", message: "Повтор доступний для опублікованого уроку після завершення поточного етапу." };
+    }
+    const failed = await queueStudioDecks(familyId, id, project, publication, [lessonId]);
+    const previous = project.deckQueueFailures ?? [];
+    const remaining = new Set(previous);
+    if (failed.length) remaining.add(lessonId); else remaining.delete(lessonId);
+    const deckQueueFailures = [...remaining];
+    if (deckQueueFailures.length !== previous.length) await saveStudioProject(familyId, id, project, { deckQueueFailures });
+    if (failed.length) return { status: "error", message: "Урок збережено. Черга презентацій поки недоступна." };
+    revalidatePath(`/parent/studio/${id}`);
+    return { status: "ok" };
+  } catch (error) {
+    return { status: "error", message: message(error) };
+  }
 }
 export async function pauseStudioAction(rawId: string, revision: number) {
   const { familyId } = await requireParentAccess();

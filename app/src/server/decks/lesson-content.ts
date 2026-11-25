@@ -1,18 +1,27 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import { getCourseLessonView } from "@/server/lessons/courseView";
 import { getLiteratureLessonView } from "@/server/lessons/literatureView";
 import { getLiteratureV2LessonView } from "@/server/lessons/literatureV2View";
 import { getLiteratureV3LessonView } from "@/server/lessons/literatureV3View";
 import { getMathCourseV2LessonView } from "@/server/lessons/mathCourseV2View";
 
+export const joinSlideSource = (parts: string[]) => parts.filter(Boolean).join("\n\n").trim();
+export const deckSourceHash = (title: string, material: string) =>
+  createHash("sha256").update(JSON.stringify([title, material])).digest("hex");
+
 // href is resolved by deckLessonOptions for the authenticated family.
-export async function lessonSlideSource(family: string, href: string) {
+export async function lessonSlideSource(family: string, href: string, studioVersion = false) {
   const [, kind, id] = href.split("/");
   if (!id) throw new Error("Урок недоступний.");
   let parts: string[] = [];
   if (kind === "literature-v3") {
     const lesson = await getLiteratureV3LessonView(family, id, { includeIllustrations: false });
-    parts = lesson?.flow.map(s => s.kind === "quiz" ? s.question.displayMd : s.displayText) ?? [];
+    if (lesson) parts = studioVersion
+      ? [...lesson.objectives, ...lesson.flow.flatMap(step => step.kind === "quiz"
+        ? [step.question.displayMd, ...step.question.options.map(option => option.displayMd)]
+        : [step.displayText, ...(step.ttsText !== step.displayText ? [step.ttsText] : [])])]
+      : lesson.flow.map(step => step.kind === "quiz" ? step.question.displayMd : step.displayText);
   } else if (kind === "math-course-v2") {
     const lesson = await getMathCourseV2LessonView(family, id);
     if (lesson) parts = [...lesson.objectives, ...lesson.screens.map(s => s.displayMd)];
@@ -26,7 +35,7 @@ export async function lessonSlideSource(family: string, href: string) {
     const lesson = await getCourseLessonView(family, id);
     if (lesson) parts = [lesson.teacherNotesMd, ...lesson.automaticQuestions.map(q => q.promptMd + "\n" + q.explanationMd), ...lesson.sourceImages.map(i => i.searchTextOcr ?? "")];
   }
-  const text = parts.filter(Boolean).join("\n\n").trim();
+  const text = joinSlideSource(parts);
   if (!text) throw new Error("У цьому уроці немає доступного навчального тексту для презентації.");
   return text;
 }
