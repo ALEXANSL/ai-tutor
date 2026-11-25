@@ -31,7 +31,7 @@ it.each([false, true])("defaults to a weekly timetable, merges lesson/homework, 
   click("Закрити урок щоденника"); expect(container.querySelector('dialog')).toBeNull();
   click("Наступний тиждень"); expect(table.textContent).not.toContain("10:55");
   click("Сьогодні"); expect(table.textContent).toContain("10:55");
-  click("Список ДЗ"); expect(container.querySelector('[role="table"]')).toBeNull(); expect(container.querySelector('article')).toBeTruthy();
+  click("Домашні завдання"); expect(container.querySelector('[role="table"]')).toBeNull(); expect(container.querySelector('article')).toBeTruthy();
 });
 it("retains unscheduled old packets and adds Sunday only when needed", () => {
   const old = records.map(item => ({ ...item, entry: { ...item.entry, source: { ...item.entry.source, lessonDate: "2026-11-15", schedule: undefined } } }));
