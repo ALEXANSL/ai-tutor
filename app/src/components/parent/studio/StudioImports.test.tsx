@@ -6,7 +6,6 @@ vi.mock("@/server/drive/service", () => ({ isUploadsFolderConfigured: f.upload, 
 vi.mock("@/components/parent/materials/UnifiedCourseImportPanel", () => ({ UnifiedCourseImportPanel: () => <button>Універсальний промпт ZIP</button> }));
 vi.mock("@/components/parent/materials/VideoLessonUploadPanel", () => ({ VideoLessonUploadPanel: () => <p>Відеоформа</p> }));
 vi.mock("@/components/parent/materials/MaterialsImportPanel", () => ({ MaterialsImportPanel: ({ materialsOnly }: { materialsOnly: boolean }) => <p>{materialsOnly ? "Лише джерела" : "Старий імпорт"}</p> }));
-vi.mock("@/components/parent/books/AddBookPanel", () => ({ AddBookPanel: ({ uploadEnabled }: { uploadEnabled: boolean }) => <p>{uploadEnabled ? "Додати книгу" : "Завантаження недоступне"}</p> }));
 vi.mock("next/link", () => ({ default: ({ href, children }: { href: string; children: React.ReactNode }) => <a href={href}>{children}</a> }));
 import { StudioImports } from "./StudioImports";
 it("provides one ZIP/prompt home with separate source/video panels and no old multi-file importers", async () => {

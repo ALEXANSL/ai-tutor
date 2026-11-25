@@ -24,7 +24,7 @@ export default async function ParentDashboard() {
     <>
       <PageTitle
         action={
-          <Link href="/parent/books/add" className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-p-primary px-3.5 text-[13px] font-bold text-white">
+          <Link href="/parent/studio?tab=book" className="inline-flex min-h-11 items-center gap-1.5 rounded-xl bg-p-primary px-3.5 text-[13px] font-bold text-white">
             {t.addBook}
           </Link>
         }

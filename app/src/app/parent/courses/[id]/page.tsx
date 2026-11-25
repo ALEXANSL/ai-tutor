@@ -52,7 +52,7 @@ export default async function CourseDetailPage({ params }: { params: Promise<{ i
         <CourseDetailForm subjectId={course.id} name={course.name} groupId={course.groupId} groups={groups} />
       </Panel>
 
-      <div className="mb-5 flex flex-wrap gap-3"><Link href={`/parent/studio/new?subject=${id}`} className="inline-flex min-h-11 items-center rounded-xl bg-p-primary px-4 text-sm font-bold text-white">Підготувати урок із ШІ</Link><Link href="/parent/materials" className="inline-flex min-h-11 items-center rounded-xl border border-p-line px-4 text-sm font-bold">Додати готовий ZIP</Link><Link href="/parent/books" className="inline-flex min-h-11 items-center px-3 text-sm font-bold text-p-primary">Книги та джерела</Link></div>
+      <div className="mb-5 flex flex-wrap gap-3"><Link href={`/parent/studio/new?subject=${id}`} className="inline-flex min-h-11 items-center rounded-xl bg-p-primary px-4 text-sm font-bold text-white">Підготувати урок із ШІ</Link><Link href="/parent/studio?tab=course" className="inline-flex min-h-11 items-center rounded-xl border border-p-line px-4 text-sm font-bold">Додати готовий ZIP</Link><Link href="/parent/books" className="inline-flex min-h-11 items-center px-3 text-sm font-bold text-p-primary">Книги та джерела</Link></div>
       <Panel title="Готові уроки курсу"><ReadyLessonCatalog extensions={extensions} topics={course.topics} subjectId={id} canOpen={access.via === "tablet"} /></Panel>
     </>
   );

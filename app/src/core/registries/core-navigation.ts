@@ -1,5 +1,5 @@
 import { uk } from "@/i18n/uk";
-import { childTiles, parentNav } from "./navigation";
+import { parentNav } from "./navigation";
 
 /** Core cabinet sections (docs/04-design-system.md 11.2, mockups 10–17). */
 let registered = false;
@@ -13,7 +13,6 @@ export function registerCoreNavigation(): void {
     { key: "notifications", label: n.notifications, icon: "🔔", href: "/parent/notifications", order: 20, badge: "unread_notifications" as const },
     { key: "conversations", label: n.conversations, icon: "💬", href: "/parent/conversations", order: 30 },
     { key: "child", label: n.child, icon: "🧒", href: "/parent/child", order: 40 },
-    { key: "directives", label: n.directives, icon: "🗒️", href: "/parent/directives", order: 50 },
     { key: "budget", label: n.budget, icon: "💳", href: "/parent/budget", order: 60 },
     { key: "subjects", label: n.subjects, icon: "🎓", href: "/parent/subjects", order: 65 },
     { key: "courses", label: n.courses, icon: "🗂️", href: "/parent/courses", order: 67 },
@@ -25,7 +24,6 @@ export function registerCoreNavigation(): void {
     { key: "settings", label: n.settings, icon: "⚙️", href: "/parent/settings", order: 80 },
   ];
   for (const item of items) parentNav.register({ ...item, status: "active" });
-  // US-11.8: exactly "Модулі (скоро)", last, inactive, no link/description/dates.
-  parentNav.register({ key: "modules", label: n.modulesSoon, icon: "🧩", href: null, status: "soon", order: 1000 });
-  childTiles.register({ key: "modules", label: uk.child.today.modulesTile, icon: "🧩", href: null, status: "soon", order: 1000 });
+  // D-130: inactive "coming soon" placeholders were removed; a future module
+  // registers its own item here (parentNav / childTiles) when it ships.
 }
