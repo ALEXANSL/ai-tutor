@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { StudioIllustrations } from "./StudioIllustrations";
 import { StudioLessonEditor } from "./StudioLessonEditor";
 import { StudioAccessButton } from "./StudioAccessButton";
@@ -12,11 +13,17 @@ import { StudioProgress } from "./StudioProgress";
 import { StudioReviewHistory } from "./StudioReviewHistory";
 import { StudioPreview } from "./StudioPreview";
 export function StudioProject({ id, initial, startEditing = false }: { id: string; initial: Project; startEditing?: boolean }) {
+  const router = useRouter();
   const [planPage, setPlanPage] = useState(0);
   const [editing, setEditing] = useState(startEditing);
   const feedbackRef = useRef<HTMLTextAreaElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const [project, setProject] = useState(initial); const [pending, setPending] = useState(false); const [error, setError] = useState("");
+  const previousState = useRef(initial.state);
+  useEffect(() => {
+    if (project.state === "published" && previousState.current !== "published" && project.request.narratedDeck) router.refresh();
+    previousState.current = project.state;
+  }, [project.state, project.request.narratedDeck, router]);
   const [activity, setActivity] = useState<StudioActivity | null>(null); const [checking, setChecking] = useState(false);
   const [pendingLabel, setPendingLabel] = useState(""); const [notice, setNotice] = useState("");
   const lock = useRef(false); const progressRef = useRef<HTMLDivElement>(null); const latestRevision = useRef(initial.revision);

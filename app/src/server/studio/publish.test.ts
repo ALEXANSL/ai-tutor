@@ -1,8 +1,14 @@
-import { expect, it } from "vitest";
-import { studioPackage } from "./publish";
+import { expect, it, vi } from "vitest";
+import { studioPackage, studioPublicationDeckVersions } from "./publish";
+import { studioDeckId } from "@/server/decks/lesson-deck";
+import { joinSlideSource, lessonSlideSource } from "@/server/decks/lesson-content";
 import { studioProjectFixture, studioPlanFixture, studioLessonFixture, studioVisualFixture } from "./__fixtures__/project";
 import { studioVisualSvg } from "./visual";
 const project = () => studioProjectFixture({ state: "ready", plan: studioPlanFixture, units: [{ content: studioLessonFixture, visuals: [studioVisualFixture], review: { verdict: "pass", issues: [], summary: "Добре" } }] });
+vi.mock("@/server/decks/lesson-content", async original => ({
+  ...await original<typeof import("@/server/decks/lesson-content")>(),
+  lessonSlideSource: vi.fn(),
+}));
 it("converts reviewed content to the existing V3 reader with separate quiz keys, safe diagrams and stable namespaced IDs", () => {
   const { parsed, files } = studioPackage("project", project());
   expect(parsed.errors).toEqual([]); expect(parsed.manifest?.book_id).toBe("studio.project");
@@ -16,6 +22,29 @@ it("converts reviewed content to the existing V3 reader with separate quiz keys,
 it("never publishes an unreviewed or incomplete course", () => {
   const draft = project(); draft.units[0]!.review = null;
   expect(() => studioPackage("project", draft)).toThrow("рецензію");
+});
+
+it("retains a legacy deck for unchanged text and replaces it after the published lesson changes", async () => {
+  const draft = structuredClone(project());
+  draft.request.narratedDeck = true;
+  const { parsed } = studioPackage("project", draft);
+  const lesson = parsed.lessons[0]!;
+  const published = { id: "lesson", title: lesson.title, topicId: "topic" };
+  draft.publication = { subjectId: "subject", packageId: "package", lessons: [published] };
+  const material = joinSlideSource([
+    ...lesson.objectives,
+    ...lesson.screens.flatMap(({ content }) => content.display === content.tts.text ? [content.display] : [content.display, content.tts.text]),
+    ...parsed.tasks.flatMap(task => [task.prompt.display, ...task.options.map(option => option.content.display)]),
+  ]);
+  vi.mocked(lessonSlideSource).mockResolvedValue(material);
+  expect(await studioPublicationDeckVersions("family", "project", draft, parsed)).toEqual([{}]);
+
+  parsed.tasks[0]!.options[0]!.content.display = "Новий варіант відповіді";
+  const [version] = await studioPublicationDeckVersions("family", "project", draft, parsed);
+  expect(version).toEqual({ deckVersion: expect.any(String), previousDeckId: studioDeckId("family", "project", 0) });
+  expect(studioDeckId("family", "project", 0, version?.deckVersion)).not.toBe(version?.previousDeckId);
+  draft.publication.lessons[0] = { ...published, ...version };
+  expect(await studioPublicationDeckVersions("family", "project", draft, parsed)).toEqual([version]);
 });
 it("escapes model text in SVG, emits no executable or external markup, and draws dimensions numerically", () => {
   const svg = studioVisualSvg({ ...studioVisualFixture, title: '<script>alert("x")</script>', kind: "dimensions", width: 20, height: 10, unit: "см", items: [{ label: '<img onload="x">', detail: 'javascript:alert(1)' }, { label: 'Друга', detail: 'Перевір розмір' }] });

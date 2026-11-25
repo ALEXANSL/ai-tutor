@@ -97,7 +97,9 @@ export interface StudioProject {
   plan: StudioPlan | null; units: StudioUnit[]; cursor: number; phase: "resolve" | "assess" | "analyze" | "outline" | "lesson_sources" | "lesson_outline" | "plan" | "author" | "design" | "review" | "repair" | "publish";
   token: string; activeCall: boolean; spentUsd: number; heldUsd: number; feedback: string; error: string | null;
   models: { role: string; model: string; costUsd: number }[];
-  publication: { subjectId: string; packageId: string; lessons: { id: string; topicId: string; title: string }[] } | null;
+  publication: { subjectId: string; packageId: string; lessons: { id: string; topicId: string; title: string; deckVersion?: string; previousDeckId?: string }[] } | null;
+  pendingDeckVersions?: { deckVersion?: string; previousDeckId?: string }[];
+  deckQueueFailures?: string[];
 }
 export const studioStateLabels: Record<StudioState, string> = { planning: "Готуємо план", plan_ready: "План готовий", generating: "Готуємо уроки", ready: "Готово до перегляду", needs_changes: "Потрібні виправлення", failed: "Етап не завершено", paused: "Призупинено татом", publishing: "Публікуємо", published: "Доступно дитині", withdrawn: "Доступ вимкнено" };
 export function studioActive(state: StudioState) { return ["planning", "generating", "publishing"].includes(state); }

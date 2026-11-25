@@ -1,6 +1,6 @@
 import { PPTX_BUCKET, PPTX_MIME, powerpointDestination, storageFailure } from "./pptx-storage";
 import { buildLessonPptx } from "./design";
-import { lessonSlideSource } from "./lesson-content";
+import { deckSourceHash, lessonSlideSource } from "./lesson-content";
 import { callHomeworkModel } from "@/server/homework/model";
 import { outlineSchema, artworkSchema } from "@/lib/lesson-slide-plan";
 import "server-only";
@@ -27,7 +27,10 @@ async function prepareSlide(family: string, id: string) {
   if (!deck.slides.length) {
     const generated = deck.generated;
     if (generated && !generated.plan) {
-      const material = await lessonSlideSource(family, generated.href);
+      const material = await lessonSlideSource(family, generated.href, !!generated.sourceHash);
+      if (generated.sourceHash && generated.sourceHash !== deckSourceHash(deck.title, material)) {
+        throw new Error("Цю версію уроку вже оновлено. Відкрий актуальну презентацію в проєкті Майстерні.");
+      }
       const answer = await callHomeworkModel({
         schema: outlineSchema,
         system: "Створи цілісну ілюстровану шкільну презентацію українською для планшета. Матеріал уроку є джерелом фактів. Побудуй 6–12 слайдів залежно від обсягу: вступ, пояснення з конкретними прикладами, порівняння або послідовність, самоперевірка та висновок. Одна думка на слайд. heading до 70 символів, takeaway до 240, caption коротко пояснює зображення. narration — природний усний коментар учителя, що доповнює слайд. Підготуй короткий сценарій, до 100 слів озвучення на слайд. Для доречних документальних фото заповни photoQuery точним пошуковим запитом Wikimedia Commons англійською; для схем залиш порожнім. Підпис і коментар мають бути точними для обох варіантів зображення.",

@@ -7,6 +7,8 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { StudioProject } from "@/lib/studio";
 import { studioLessonFixture, studioPlanFixture, studioProjectFixture, studioVisualFixture } from "./__fixtures__/project";
 const f = vi.hoisted(() => ({ read: vi.fn(), save: vi.fn(), create: vi.fn(), enqueue: vi.fn(), call: vi.fn(), sources: vi.fn(), config: vi.fn(), prepare: vi.fn(), activate: vi.fn() }));
+const queueDecks = vi.hoisted(() => vi.fn());
+vi.mock("./decks", () => ({ queueStudioDecks: queueDecks }));
 vi.mock("./store", () => ({ STUDIO_STEP: "studio.step", readStudioProject: f.read, saveStudioProject: f.save, createStudioProject: f.create }));
 vi.mock("./review-history", () => ({ saveStudioReviewEvent: vi.fn() }));
 vi.mock("./base-sources", () => ({ studioBaseCandidates: async () => ({topics:[],subjectName:null,fallbackMaterialId:null}), studioPreparedBaseSources: vi.fn() }));
@@ -22,12 +24,21 @@ const id = "11111111-1111-4111-8111-111111111111";
 const job = () => ({ id: "job", family_id: "family", type: "studio.step", payload: { projectId: id, token: project.token }, attempts: 1, max_attempts: 1 });
 beforeEach(() => {
   vi.clearAllMocks(); project = studioProjectFixture(); f.read.mockImplementation(async () => structuredClone(project));
+  queueDecks.mockResolvedValue([]);
   f.save.mockImplementation(async (_family, _id, previous, changes) => { if (previous.revision !== project.revision) throw new Error("stale"); project = { ...project, ...changes, revision: project.revision + 1 }; return structuredClone(project); });
   f.enqueue.mockResolvedValue(undefined); f.config.mockResolvedValue({ route: { params: { max_tokens: 1000 } }, rates: {} });
   f.call.mockImplementation(async (_family, _id, role) => ({ result: role === "studio.plan" ? studioPlanFixture : role === "studio.author" ? studioLessonFixture : role === "studio.design" ? { visuals: [studioVisualFixture] } : { verdict: "pass", issues: [], corrections: [], summary: "Зміст і схема узгоджені." }, model: { provider: "openai", model: "test-model" }, costUsd: 0.02 }));
   f.prepare.mockResolvedValue({ subjectId: "new-subject", packageId: "new-package", lessons: [{ id: "new-lesson", topicId: "new-topic", title: "Координати" }] }); f.activate.mockResolvedValue(undefined);
 });
 const step = () => runStudioStep(job(), Date.now() + 220000);
+it("keeps the lesson published and saves the failed presentation launch", async () => {
+  project = studioProjectFixture({ state: "publishing", phase: "publish" });
+  project.request.narratedDeck = true;
+  queueDecks.mockResolvedValueOnce(["new-lesson"]);
+  await step();
+  expect(f.activate).toHaveBeenCalledOnce();
+  expect(project).toMatchObject({ state: "published", childAccess: "enabled", deckQueueFailures: ["new-lesson"] });
+});
 it("stops after the plan, requires parent approval, runs independent author/design/review, and publishes only on command", async () => {
   await step(); expect(project.state).toBe("plan_ready"); expect(f.call).toHaveBeenCalledTimes(1);
   await step(); expect(f.call).toHaveBeenCalledTimes(1);

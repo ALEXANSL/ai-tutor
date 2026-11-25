@@ -7,6 +7,8 @@ import { parseLiteratureV3Assets, parseLiteratureV3Course, parseLiteratureV3Pack
 import { persistLiteratureV3Package } from "@/server/lessons/literatureV3Persist";
 import { studioNarrationText } from "@/lib/studio-narration";
 import { studioVisualSvg, studioVisualDescription } from "./visual";
+import { studioDeckId } from "@/server/decks/lesson-deck";
+import { deckSourceHash, joinSlideSource, lessonSlideSource } from "@/server/decks/lesson-content";
 const content = (text: string) => ({ display: text, tts: { text, lang: "uk-UA" } });
 export function studioPackage(projectId: string, project: StudioProject, illustrationFiles = new Map<string, Uint8Array>()) {
   if (!project.plan || project.units.length !== project.plan.lessons.length || project.units.some(unit => unit.review?.verdict !== "pass")) throw new Error("Не всі уроки пройшли рецензію.");
@@ -55,7 +57,38 @@ export function studioPackage(projectId: string, project: StudioProject, illustr
   if (parsed.errors.length) throw new Error("Підготовлений курс не відповідає контракту читача.");
   return { parsed, files };
 }
-export async function prepareStudioPublication(familyId: string, projectId: string, project: StudioProject): Promise<NonNullable<StudioProject["publication"]>> {
+export async function studioPublicationDeckVersions(familyId: string, projectId: string, project: StudioProject, parsed: ParsedLiteratureV3Package) {
+  if (!project.request.narratedDeck) return [];
+  const tasks = new Map(parsed.tasks.map(task => [task.id, [task.prompt.display, ...task.options.map(option => option.content.display)]]));
+  const versions: { deckVersion?: string; previousDeckId?: string }[] = [];
+  for (const [index, lesson] of parsed.lessons.entries()) {
+    const material = joinSlideSource([
+      ...lesson.objectives,
+      ...lesson.screens.flatMap(({ content }) => [content.display, ...(content.tts.text !== content.display ? [content.tts.text] : [])]),
+      ...lesson.task_ids.flatMap(id => tasks.get(id) ?? []),
+    ]);
+    const deckVersion = deckSourceHash(lesson.title, material);
+    const previous = project.publication?.lessons[index];
+    if (!previous) { versions.push({ deckVersion }); continue; }
+    if (previous.deckVersion === deckVersion) {
+      versions.push({ deckVersion, previousDeckId: previous.previousDeckId });
+      continue;
+    }
+    // Legacy publications have a position-only ID. Compare their published
+    // text before the import overwrites it, so unchanged lessons keep that ID.
+    if (!previous.deckVersion) {
+      const saved = await lessonSlideSource(familyId, `/literature-v3/${previous.id}`, true);
+      if (deckSourceHash(previous.title, saved) === deckVersion) { versions.push({}); continue; }
+    }
+    versions.push({ deckVersion, previousDeckId: studioDeckId(familyId, projectId, index, previous.deckVersion) });
+  }
+  return versions;
+}
+
+export async function prepareStudioPublication(
+  familyId: string, projectId: string, project: StudioProject,
+  checkpointDeckVersions: (versions: NonNullable<StudioProject["pendingDeckVersions"]>) => Promise<void>,
+): Promise<NonNullable<StudioProject["publication"]>> {
   const scope = forFamily(familyId);
   const illustrationFiles = new Map<string, Uint8Array>();
   for (const [lessonIndex, unit] of project.units.entries()) for (const [pictureIndex, picture] of (unit.illustrations ?? []).entries()) {
@@ -65,6 +98,7 @@ export async function prepareStudioPublication(familyId: string, projectId: stri
     illustrationFiles.set(`assets/L${lessonIndex + 1}P${pictureIndex + 1}.jpg`, new Uint8Array(await downloaded.data.arrayBuffer()));
   }
   const { parsed, files } = studioPackage(projectId, project, illustrationFiles);
+  const deckVersions = project.pendingDeckVersions ?? await studioPublicationDeckVersions(familyId, projectId, project, parsed);
   let subjectId = project.request.subjectId;
   if (["extension", "revision"].includes(project.request.mode) && subjectId) {
     const subject = await getSubjectDetail(familyId, subjectId);
@@ -81,11 +115,14 @@ export async function prepareStudioPublication(familyId: string, projectId: stri
     const found = await scope.select("subjects", "id").eq("id", subjectId).maybeSingle<{ id: string }>();
     if (found.error || !found.data) throw new Error("Предмет більше недоступний.");
   }
+  // Save the comparison with the prior publication before overwriting its
+  // lesson rows. A retry can then use the same versions even for legacy decks.
+  if (project.publication && deckVersions.length && !project.pendingDeckVersions) await checkpointDeckVersions(deckVersions);
   const saved = await persistLiteratureV3Package(scope, { subjectId, lessonStatus: project.publicationRevision ? "active" : "needs_review" }, parsed, files);
   if (saved.assetsMissing.length || saved.assetUploadFailures.length) throw new Error("Не всі ілюстрації завантажилися. Курс ще не опубліковано; повтори публікацію.");
   const result = await scope.select("literature_v3_lessons", "id,topic_id,title").eq("package_id", saved.packageId).order("order_no").returns<{ id: string; topic_id: string; title: string }[]>();
   if (result.error || result.data?.length !== project.units.length || result.data.some(row => !row.topic_id)) throw new Error("Не всі уроки збережені. Публікацію не завершено.");
-  return { subjectId, packageId: saved.packageId, lessons: result.data.map(row => ({ id: row.id, topicId: row.topic_id, title: row.title })) };
+  return { subjectId, packageId: saved.packageId, lessons: result.data.map((row, index) => ({ id: row.id, topicId: row.topic_id, title: row.title, ...deckVersions[index] })) };
 }
 export async function activateStudioPublication(familyId: string, publication: NonNullable<StudioProject["publication"]>, activateSubject: boolean) {
   const scope = forFamily(familyId);

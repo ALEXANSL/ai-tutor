@@ -86,11 +86,17 @@ export async function runStudioStep(job: JobRow, deadline: number) {
   if (!project || project.token !== token || !studioActive(project.state)) return;
   if (deadline - Date.now() < 145000) return { requeue: true as const, delaySeconds: 10 };
   if (project.phase === "publish") {
-    const publication = project.publicationRevision ? await prepareStudioPublication(job.family_id, id, project) : project.publication ?? await prepareStudioPublication(job.family_id, id, project);
+    const checkpointDeckVersions = async (pendingDeckVersions: NonNullable<StudioProject["pendingDeckVersions"]>) => {
+      project = await saveStudioProject(job.family_id, id, project!, { pendingDeckVersions });
+    };
+    const publication = !project.publicationRevision && project.publication
+      ? project.publication
+      : await prepareStudioPublication(job.family_id, id, project, checkpointDeckVersions);
     project = await saveStudioProject(job.family_id, id, project, { publication });
     await activateStudioPublication(job.family_id, publication, !project.request.subjectId);
-    await saveStudioProject(job.family_id, id, project, { state: "published", publicationRevision: false, childAccess: "enabled", error: null });
-    await queueStudioDecks(job.family_id, id, project, publication); return;
+    const deckQueueFailures = await queueStudioDecks(job.family_id, id, project, publication);
+    await saveStudioProject(job.family_id, id, project, { state: "published", publicationRevision: false, childAccess: "enabled", error: null, deckQueueFailures, pendingDeckVersions: undefined });
+    return;
   }
   // Poll by response ID before rebuilding the book context. Only completed work needs sources.
   const pending = project.pendingModelCall;
