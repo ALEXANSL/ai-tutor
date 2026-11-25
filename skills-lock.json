@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "skills": {
+    "nano-banana": {
+      "source": "evoscientist/evoskills",
+      "commit": "85ad685d1df5ed1d7fe641564d04bb8a3dec8f28",
+      "sourceType": "github",
+      "skillPath": "skills/nano-banana/SKILL.md",
+      "computedHash": "e1a0bbeabdfd9a1328a3f609a0841291c583a56707635293337e048a0df908f4"
+    }
+  }
+}
