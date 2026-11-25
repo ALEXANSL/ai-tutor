@@ -78,13 +78,23 @@ export default async function ChildSubjectPage({ params, searchParams }: { param
               {topic.pageFrom != null && topic.pageTo != null && (
                 <p className="mb-3 text-sm text-muted">{ts.pages(topic.pageFrom, topic.pageTo)}</p>
               )}
-              <div className="flex flex-wrap items-center gap-2.5">
-                <Link href={topicHref(topic)} className="inline-flex min-h-12 items-center rounded-2xl bg-primary px-5 text-base font-bold text-white">{ts.openLesson}</Link>
-                {(["explanation", "reading"] as const).map(kind => { const audio = audioLessons.find(item => item.lessonTopicId === topic.id && (item.lessonKind ?? "explanation") === kind); return audio ? <Link key={kind} href={`/audiobooks/${audio.id}`} className="inline-flex min-h-12 items-center rounded-2xl border-2 border-secondary bg-surface px-4 font-bold">{kind === "reading" ? "🎧 Слухати твір" : "🎧 Аудіоурок"}</Link> : null; })}
-                {presentations.filter(deck => deck.topicId === topic.id).map(deck => <Link key={deck.id} href={`/presentations/${deck.id}`} className="inline-flex min-h-12 items-center rounded-2xl border-2 border-secondary px-4 font-bold">Презентація: {deck.title}</Link>)}
-                {topic.hasVideoLesson && <VideoLessonButton topicId={topic.id} title={topic.title} />}
-                {publications.filter(item => item.mode !== "revision" && item.baseTopicId === topic.id).flatMap(item => item.lessons).map(lesson => <Link key={lesson.id} href={`/literature-v3/${lesson.id}`} className="inline-flex min-h-12 items-center rounded-2xl border-2 border-secondary bg-surface px-4 text-sm font-bold">Розширений урок: {lesson.title}</Link>)}
-              </div>
+              {(() => {
+                // D-133: one main action; a narrated presentation (the format kids prefer) next to it; the rest folded.
+                const decks = presentations.filter(deck => deck.topicId === topic.id);
+                const audio = (["explanation", "reading"] as const).flatMap(kind => { const item = audioLessons.find(entry => entry.lessonTopicId === topic.id && (entry.lessonKind ?? "explanation") === kind); return item ? [{ kind, item }] : []; });
+                const extended = publications.filter(item => item.mode !== "revision" && item.baseTopicId === topic.id).flatMap(item => item.lessons);
+                const more = decks.length - Math.min(decks.length, 1) + audio.length + extended.length + (topic.hasVideoLesson ? 1 : 0);
+                return <div className="flex flex-wrap items-center gap-2.5">
+                  <Link href={topicHref(topic)} className="inline-flex min-h-12 items-center rounded-2xl bg-primary px-5 text-base font-bold text-white">{ts.openLesson}</Link>
+                  {decks[0] && <Link href={`/presentations/${decks[0].id}`} className="inline-flex min-h-12 items-center rounded-2xl border-2 border-secondary px-4 font-bold">▶ Презентація з озвучкою</Link>}
+                  {more > 0 && <details className="basis-full"><summary className="inline-flex min-h-12 cursor-pointer items-center font-bold text-primary">Інші формати ({more})</summary><div className="mt-2 flex flex-wrap gap-2.5">
+                    {audio.map(({ kind, item }) => <Link key={kind} href={`/audiobooks/${item.id}`} className="inline-flex min-h-12 items-center rounded-2xl border-2 border-secondary bg-surface px-4 font-bold">{kind === "reading" ? "🎧 Слухати твір" : "🎧 Аудіоурок"}</Link>)}
+                    {decks.slice(1).map(deck => <Link key={deck.id} href={`/presentations/${deck.id}`} className="inline-flex min-h-12 items-center rounded-2xl border-2 border-secondary px-4 font-bold">Презентація: {deck.title}</Link>)}
+                    {topic.hasVideoLesson && <VideoLessonButton topicId={topic.id} title={topic.title} />}
+                    {extended.map(lesson => <Link key={lesson.id} href={`/literature-v3/${lesson.id}`} className="inline-flex min-h-12 items-center rounded-2xl border-2 border-secondary bg-surface px-4 text-sm font-bold">Розширений урок: {lesson.title}</Link>)}
+                  </div></details>}
+                </div>;
+              })()}
               </div>
             </LastLessonHighlight>
           ))}
