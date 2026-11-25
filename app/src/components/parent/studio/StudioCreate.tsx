@@ -17,6 +17,8 @@ type Props = {
   subjects: SubjectOption[]; books: { id: string; title: string }[];
   storageKey: string; initialDraft?: InitialDraft | null; initialSaved?: boolean;
   initialSubject?: string; initialTopic?: string; initialTitle?: string; initialGrade?: number;
+  /** Prefilled goal, e.g. from a school diary entry; `contextId` keeps its device recovery separate. */
+  initialIdea?: string; contextId?: string;
   uploadEnabled?: boolean; initialMaterial?: string;
 };
 // Recovery is deliberately looser than launch validation, so partially entered
@@ -39,17 +41,17 @@ class DraftActionError extends Error {}
 export function StudioCreate(props: Props) {
   // A family/context change remounts all draft refs as well as controlled fields.
   const identity = JSON.stringify([props.storageKey, props.initialDraft?.id ?? null,
-    props.initialSubject ?? "", props.initialTopic ?? "", props.initialMaterial ?? ""]);
+    props.initialSubject ?? "", props.initialTopic ?? "", props.initialMaterial ?? "", props.contextId ?? ""]);
   return <StudioCreateSession key={identity} {...props} />;
 }
 
 function StudioCreateSession({ subjects, books, storageKey, initialDraft, initialSaved = false,
-  initialSubject = "", initialTopic = "", initialTitle = "", initialGrade = 6,
+  initialSubject = "", initialTopic = "", initialTitle = "", initialGrade = 6, initialIdea = "", contextId = "",
   uploadEnabled = false, initialMaterial = "" }: Props) {
   const router = useRouter();
   const defaultValues: StudioDraftValues = {
     mode: initialTopic ? "extension" : "course", targetLanguage: /англій/iu.test(subjects.find(item => item.id === initialSubject)?.name ?? "") ? "en" : /німець/iu.test(subjects.find(item => item.id === initialSubject)?.name ?? "") ? "de" : null,
-    title: initialTitle, idea: initialTopic ? "Поглиб тему базового уроку: поясни складні місця, додай розібрані приклади, цікаві зв’язки та практику. Відділяй матеріал підручника від доповнень із загальних знань ШІ." : "",
+    title: initialTitle, idea: initialIdea || (initialTopic ? "Поглиб тему базового уроку: поясни складні місця, додай розібрані приклади, цікаві зв’язки та практику. Відділяй матеріал підручника від доповнень із загальних знань ШІ." : ""),
     sourceText: "", subjectId: initialSubject || null, topicId: initialTopic || null,
     materialId: initialMaterial || null, pageFrom: null, pageTo: null,
     age: 12, grade: initialGrade, lessonCount: 1, minutes: 20, budgetUsd: 3,
@@ -60,7 +62,7 @@ function StudioCreateSession({ subjects, books, storageKey, initialDraft, initia
   const draftId = useRef<string | null>(initialDraft?.id ?? null);
   const revision = useRef<number | null>(initialDraft?.revision ?? null);
   const persisted = useRef(JSON.stringify(initialDraft?.values ?? defaultValues));
-  const contextKey = `${storageKey}:${initialDraft ? `draft:${initialDraft.id}` : `new:${JSON.stringify([initialSubject, initialTopic, initialMaterial])}`}`;
+  const contextKey = `${storageKey}:${initialDraft ? `draft:${initialDraft.id}` : `new:${JSON.stringify(contextId ? [initialSubject, initialTopic, initialMaterial, contextId] : [initialSubject, initialTopic, initialMaterial])}`}`;
   const recoveryKey = useRef(contextKey);
   const materialTitle = useRef(books.find(book => book.id === values.materialId)?.title ?? "Збережений матеріал");
   const [availableBooks, setAvailableBooks] = useState(books);
