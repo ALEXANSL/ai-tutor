@@ -572,13 +572,18 @@ export const uk = {
   },
   parent: {
     nav: {
-      dashboard: "Дашборд",
+      dashboard: "Огляд",
+      studio: "Майстерня ШІ",
+      school: "Школа",
+      library: "Бібліотека",
+      family: "Дитина й налаштування",
       notifications: "Сповіщення",
       conversations: "Розмови",
       child: "Профіль дитини",
       directives: "Вказівки й повідомлення",
       budget: "Бюджет і моделі",
       subjects: "Предмети",
+      subjectsAndCourses: "Предмети й курси",
       courses: "Курси",
       books: "Мої книги",
       materials: "Завантажити матеріали",
@@ -595,7 +600,7 @@ export const uk = {
       autoExitHint: (min: number) => `Автовихід після ${min} хв без дій`,
     },
     dashboard: {
-      title: "Дашборд",
+      title: "Огляд",
       addBook: "➕ Додати книгу",
       today: "Сьогодні",
       todayEmpty: "Занять ще не було",

@@ -1,3 +1,4 @@
+import { SectionTabs } from "@/components/parent/SectionTabs";
 import { parentSetPersonaEditableAction } from "@/app/actions/parent";
 import { ParentNicknameForm, ParentTutorNameForm } from "@/components/parent/ChildProfileForms";
 import { TutorAvatar } from "@/components/TutorAvatar";
@@ -22,6 +23,7 @@ export default async function ParentChildPage() {
 
   return (
     <>
+      <SectionTabs section="family" />
       <PageTitle>{t.title}</PageTitle>
       {!profile ? (
         <Panel>

@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { SchoolReminder } from "@/components/eschool/SchoolReminder";
+import { listSchoolEntries } from "@/server/eschool/store";
+import { homeworkSummary } from "@/lib/homework-summary";
 import { childTiles, sortedNav } from "@/core/registries/navigation";
 import { sourceTypes } from "@/core/registries/learning";
 import { uk } from "@/i18n/uk";
@@ -39,6 +40,8 @@ export default async function TodayPage() {
     listUnlinkedMaterials(ctx.familyId),
     getFamilyTimezone(forFamily(ctx.familyId)),
   ]);
+  const homework = await listSchoolEntries(ctx.familyId, profile.id).then(r => homeworkSummary(r.entries)).catch(() => null);
+  const urgent = homework ? homework.overdue + homework.today : 0;
   const dayPart = dayPartForHour(hourInTimeZone(new Date(), timeZone));
   const groupById = new Map((groups ?? []).map((g) => [g.id, g]));
   const schoolSubjects = (subjects ?? []).filter((s) => s.kind === "school_subject");
@@ -74,11 +77,30 @@ export default async function TodayPage() {
         </Link>
       </nav>
 
-      <SchoolReminder familyId={ctx.familyId} childId={profile.id} />
       <main className="grid grid-cols-1 gap-5 px-6 pt-3 landscape:min-[900px]:grid-cols-[1.15fr_0.85fr] landscape:min-[900px]:items-start">
+        {/* D-132: the main card shows real homework instead of a fixed "plan is coming" text. */}
         <section className="rounded-[22px] bg-[linear-gradient(120deg,var(--accent-voice),var(--primary))] p-6 text-white shadow-lg">
-          <b className="block text-lg">{t.emptyPlanTitle}</b>
-          <span className="text-sm opacity-90">{t.emptyPlanBody}</span>
+          {homework && homework.open.length > 0 ? (
+            <>
+              <b className="block text-lg">{urgent > 0 ? `Домашні завдання на сьогодні: ${urgent}` : "Що задали найближчим часом"}</b>
+              <ul className="mt-3 space-y-2">
+                {homework.open.map((item) => (
+                  <li key={item.id}>
+                    <Link href={item.href} className="block rounded-2xl bg-white/15 px-4 py-3 text-sm">
+                      <b>{item.subject}</b> · {item.due}
+                      {item.text && <span className="mt-0.5 block line-clamp-2 opacity-90">{item.text}</span>}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+              <Link href="/school" className="mt-3 inline-flex min-h-12 items-center rounded-2xl bg-white px-5 text-base font-bold text-primary">Усі завдання в щоденнику</Link>
+            </>
+          ) : (
+            <>
+              <b className="block text-lg">Домашніх завдань зараз немає</b>
+              <span className="text-sm opacity-90">Обери предмет і відкрий урок, який хочеш повторити.</span>
+            </>
+          )}
         </section>
 
         <aside className="rounded-[22px] border border-line bg-surface p-4.5">
@@ -111,11 +133,8 @@ export default async function TodayPage() {
                   </Link>
                 );
               }
-              return (
-                <div key={s.id} aria-disabled="true" className={`${tileBase} opacity-55`}>
-                  {label}
-                </div>
-              );
+              // D-132: an inactive subject is not shown as a grey tile that does nothing.
+              return null;
             })}
             {sortedNav(childTiles.list()).map((tile) => (
               <div key={tile.key} aria-disabled="true" className={`${tileBase} cursor-default opacity-55`}>

@@ -75,6 +75,6 @@ export function VideoLibrary({ videos, timeZone, initialSubjectId = "" }: { vide
     </li>)}</ul>}
     <input ref={file} aria-label="Новий відеофайл для заміни" type="file" accept="video/mp4,video/webm,video/quicktime" className="hidden" disabled={busy} onChange={event => { const selected = event.target.files?.[0]; event.target.value = ""; if (selected) void replace(selected); }} />
     {preview && <dialog ref={dialog} onClose={() => setPreview(null)} onCancel={() => setPreview(null)} aria-label={`Відео: ${preview.title}`} className="m-auto w-[calc(100%_-_1.5rem)] max-w-4xl rounded-2xl border border-p-line bg-p-surface p-4 text-p-text backdrop:bg-black/70"><div className="mb-3 flex items-center justify-between gap-3"><h2 className="min-w-0 break-words text-lg font-bold">{preview.title}</h2><button type="button" autoFocus onClick={() => { dialog.current?.close(); setPreview(null); }} className="min-h-11 shrink-0 rounded-xl border border-p-line px-3 text-sm font-bold">Закрити</button></div><video ref={media} controls playsInline preload="metadata" src={preview.url} className="max-h-[70dvh] w-full rounded-xl bg-black">Браузер не підтримує відео.</video></dialog>}
-    <div className="mt-5"><Link href="/parent/materials?tab=video" className="inline-flex min-h-11 items-center text-sm font-semibold text-p-primary">Додати ще одне відео →</Link></div>
+    <div className="mt-5"><Link href="/parent/studio?tab=video" className="inline-flex min-h-11 items-center text-sm font-semibold text-p-primary">Додати ще одне відео →</Link></div>
   </div>;
 }

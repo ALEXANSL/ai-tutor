@@ -22,24 +22,24 @@ describe("createRegistry", () => {
 describe("parent navigation (US-11.8, US-2.7 KP-3)", () => {
   const items = sortedNav(parentNav.list());
 
-  it("has 'Мої книги' as a separate active menu item", () => {
-    const books = items.find((i) => i.key === "books");
-    expect(books).toMatchObject({ label: "Книги та джерела", href: "/parent/books", status: "active" });
+  it("has six sections, in order (D-131)", () => {
+    expect(items.map((i) => i.label)).toEqual(["Огляд", "Майстерня ШІ", "Предмети й курси", "Школа", "Бібліотека", "Дитина й налаштування"]);
+    expect(items.find((i) => i.key === "books")).toMatchObject({ href: "/parent/books", status: "active" });
+    expect(items.find((i) => i.key === "books")?.match).toEqual(expect.arrayContaining(["/parent/library", "/parent/videos"]));
   });
 
-  it("ends with an inactive 'Модулі (скоро)' item without link", () => {
-    const last = items.at(-1)!;
-    expect(last.label).toBe("Модулі (скоро)");
-    expect(isInactivePlaceholder(last)).toBe(true);
-    expect(Object.keys(last).sort()).toEqual(["href", "icon", "key", "label", "order", "status"]);
+  it("has no inactive placeholders in the menu (D-130)", () => {
+    expect(items.some(isInactivePlaceholder)).toBe(false);
+    expect(items.map((i) => i.key)).not.toContain("directives");
+    expect(items.every((i) => i.href)).toBe(true);
   });
 
-  it("puts the unread badge on notifications", () => {
-    expect(items.find((i) => i.badge)?.key).toBe("notifications");
+  it("puts the unread badge on the overview, which holds notifications", () => {
+    expect(items.find((i) => i.badge)?.key).toBe("dashboard");
   });
 
-  it("offers an inactive modules tile to the child as well (US-11.8 KP-3)", () => {
-    expect(childTiles.list().every(isInactivePlaceholder)).toBe(true);
+  it("shows the child no inactive tiles (D-130)", () => {
+    expect(childTiles.list().some(isInactivePlaceholder)).toBe(false);
   });
 });
 

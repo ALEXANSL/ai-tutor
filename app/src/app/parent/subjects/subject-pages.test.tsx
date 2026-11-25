@@ -28,7 +28,7 @@ const topic = { id: "topic", title: "§16. Цивілізації", pageFrom: 20
 beforeEach(() => { vi.clearAllMocks(); mock.detail.mockResolvedValue({ id, name: "Історія", childVisible: true, hasTextbook: false, currentTopicId: "topic", topics: [topic] }); mock.videos.mockResolvedValue([]); mock.focus.mockResolvedValue(null); });
 it("parent sees the actual chapter catalog without requiring an indexed textbook or loading legacy plans", async () => {
   const html = renderToStaticMarkup(await ParentPage({ params: Promise.resolve({ id }) }));
-  expect(html).toContain("Цивілізації"); expect(html).toContain("Додати готовий курс ZIP");
+  expect(html).toContain("Цивілізації"); expect(html).toContain("Підготувати урок із ШІ"); expect(html).toContain("Імпортувати готовий ZIP");
   expect(html).not.toContain("Масова підготовка"); expect(html).not.toContain("Очистити старий контент"); expect(html).not.toContain("Немає підручника"); expect(mock.legacy).not.toHaveBeenCalled();
 });
 it("child enters the same existing reader without warming a new lesson", async () => {

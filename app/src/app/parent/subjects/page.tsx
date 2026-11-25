@@ -1,3 +1,4 @@
+import { SectionTabs } from "@/components/parent/SectionTabs";
 import Link from "next/link";
 import { toggleSubjectActiveAction } from "@/app/actions/subjects";
 import { ActiveToggle } from "@/components/parent/subjects/ActiveToggle";
@@ -20,8 +21,9 @@ export default async function SubjectsPage() {
 
   return (
     <>
+      <SectionTabs section="subjects" />
       <PageTitle>{t.title}</PageTitle>
-      <p className="-mt-2 mb-4 text-[13px] text-p-muted">Керуйте готовими курсами, завантаженими з ZIP, та додатковими відеоматеріалами.</p>
+      <p className="-mt-2 mb-4 text-[13px] text-p-muted">Готові уроки й додаткові матеріали шкільних предметів. Нові уроки створюються в Майстерні ШІ.</p>
       <AddSubjectForm />
       <div className="grid gap-3.5 min-[720px]:grid-cols-2">
         {subjects.map((s) => (

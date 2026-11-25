@@ -1,3 +1,4 @@
+import { SectionTabs } from "@/components/parent/SectionTabs";
 import { uk } from "@/i18n/uk";
 import { requireParentAccess } from "@/server/auth/guards";
 import { loadBudgetDashboard } from "@/server/budget/queries";
@@ -31,6 +32,7 @@ export default async function BudgetPage() {
 
   return (
     <>
+      <SectionTabs section="family" />
       <PageTitle>{t.title}</PageTitle>
       <Panel title="Моделі за функціями та фактичні виклики"><ModelDiagnostics {...diagnostics} timeZone={data.timeZone} /></Panel>
 

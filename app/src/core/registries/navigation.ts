@@ -17,6 +17,8 @@ export interface NavItem {
   status: NavStatus;
   order: number;
   badge?: "unread_notifications";
+  /** Other route prefixes that belong to this section (sub-tabs), so the item stays highlighted there. */
+  match?: string[];
 }
 
 export const parentNav = createRegistry<NavItem>("parentNav");
