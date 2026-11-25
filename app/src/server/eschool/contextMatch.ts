@@ -2,17 +2,23 @@ import "server-only";
 import { z } from "zod";
 import type { SchoolEntry } from "@/lib/eschool";
 import type { SubjectTopicOption } from "@/server/subjects/queries";
-import { schoolTopicFocus } from "@/lib/eschool-topic-focus";
+import { schoolTopicMatches } from "@/lib/eschool-topic-focus";
 import { loadVideoLessonSource } from "@/server/video-script/source";
 import { searchMaterials } from "@/server/search/search";
 import { callContextModel, contextModelConfig } from "./contextModel";
 import { claimContextMatch, contextMatchId, finishContextMatch, readContextMatch, type ContextResult } from "./contextStore";
+/** Quotes may differ only by case, quote marks, apostrophes, dashes or whitespace. */
+export function groundingKey(value: string): string {
+  return value.normalize("NFKC").toLocaleLowerCase("uk").replace(/[’'ʼ`]/g, "").replace(/[«»“”„"]/g, "").replace(/[–—-]/g, " ").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
 const shortlistSchema = z.object({ topicIds: z.array(z.string()).max(4) }).strict();
 const matchSchema = z.object({ topicId: z.string(), confidence: z.number().min(0).max(1), reason: z.string().max(400), evidence: z.string().max(240) }).strict();
 const answerSchema = z.object({ topicId: z.string().nullable(), confidence: z.number().min(0).max(1), reason: z.string().max(600), evidence: z.string().max(240), additionalMatches: z.array(matchSchema).max(3) }).strict();
 export async function resolveSchoolContext(familyId: string, childId: string, subjectId: string, entry: SchoolEntry, topics: readonly SubjectTopicOption[]): Promise<ContextResult> {
-  const known = schoolTopicFocus(entry, topics);
-  if (known) return { state: "done", topicId: known, reason: "Знайдено за темою або твором.", confidence: 1 };
+  const known = schoolTopicMatches(entry, topics);
+  if (known.length === 1) return { state: "done", topicId: known[0]!, reason: "Знайдено за темою або твором.", confidence: 1 };
+  // Free deterministic match: several lessons on the same work/§/pages need no paid call.
+  if (known.length > 1) return { state: "done", topicId: null, matches: known.map(topicId => ({ topicId, reason: "Той самий твір, параграф або сторінки підручника." })), reason: "Тему зі щоденника розкривають кілька готових уроків.", confidence: 1 };
   if (entry.topicId || !topics.length) return { state: "done", topicId: null, reason: "Прив’язаний урок недоступний або предмет ще не має готових уроків.", confidence: 0 };
   const id = contextMatchId(familyId, childId, subjectId, entry, topics);
   const cached = await readContextMatch(familyId, childId, id);
@@ -46,8 +52,8 @@ export async function resolveSchoolContext(familyId: string, childId: string, su
         if (!item.topicId) continue;
         const candidate = candidates.find(candidate => candidate.id === item.topicId);
         if (!candidate) throw new Error("SCHOOL-CONTEXT-FOREIGN-ID");
-        const quote = item.evidence.trim();
-        if (quote.length >= 20 && candidate.lessonText.includes(quote) && item.confidence >= 0.75 && !matches.some(match => match.topicId === item.topicId)) matches.push({ topicId: item.topicId, reason: item.reason, confidence: item.confidence });
+        const quote = groundingKey(item.evidence);
+        if (quote.length >= 20 && (groundingKey(candidate.lessonText).includes(quote) || candidate.textbook.some(hit => groundingKey(hit.text).includes(quote))) && item.confidence >= 0.75 && !matches.some(match => match.topicId === item.topicId)) matches.push({ topicId: item.topicId, reason: item.reason, confidence: item.confidence });
       }
       result = { state: "done", topicId: matches.length === 1 && matches[0]!.confidence >= 0.88 ? matches[0]!.topicId : null, matches: matches.map(({ topicId, reason }) => ({ topicId, reason })), confidence: matches.length ? Math.max(...matches.map(item => item.confidence)) : 0, reason: matches.length > 1 ? "Тему зі щоденника розкривають кілька готових уроків." : matches[0]?.reason || (answer.topicId ? "Не вдалося достатньо впевнено підтвердити збіг реальним змістом уроку." : answer.reason) };
 
