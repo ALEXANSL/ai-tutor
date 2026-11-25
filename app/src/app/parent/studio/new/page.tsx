@@ -9,11 +9,15 @@ import { forFamily } from "@/server/db/family-scope";
 import { readStudioFormDraft } from "@/server/studio/drafts";
 import { StudioCreate } from "@/components/parent/studio/StudioCreate";
 import { PageTitle } from "../../ui";
+import { voiceActor } from "@/server/voice/service";
+import { readSchoolDoc, SCHOOL_ENTRY } from "@/server/eschool/store";
+import { schoolStudioPrefill } from "@/lib/school-day";
+import type { SchoolEntry } from "@/lib/eschool";
 export const maxDuration = 300;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 
 export default async function StudioNewPage({ searchParams }: {
-  searchParams: Promise<{ subject?: string; topic?: string; material?: string; draft?: string; saved?: string }>;
+  searchParams: Promise<{ subject?: string; topic?: string; material?: string; draft?: string; saved?: string; school?: string }>;
 }) {
   const { familyId } = await requireParentAccess();
   const query = await searchParams;
@@ -21,7 +25,11 @@ export default async function StudioNewPage({ searchParams }: {
   const draft = query.draft ? await readStudioFormDraft(familyId, query.draft) : null;
   if (query.draft && !draft) notFound();
   if (draft?.projectId) redirect(`/parent/studio/${draft.projectId}`);
-  const subjectId = draft ? draft.values.subjectId ?? "" : (UUID.test(query.subject ?? "") ? query.subject! : "");
+  // A diary entry from the "Школа на завтра" tab prefills subject, title and goal; nothing is launched.
+  const schoolEntry = !draft && UUID.test(query.school ?? "")
+    ? await voiceActor(familyId).then(({ child }) => readSchoolDoc<SchoolEntry>(familyId, child.id, query.school!, SCHOOL_ENTRY)).catch(() => null) : null;
+  const prefill = schoolEntry ? schoolStudioPrefill(schoolEntry.source) : null;
+  const subjectId = draft ? draft.values.subjectId ?? "" : schoolEntry ? schoolEntry.subjectId ?? "" : (UUID.test(query.subject ?? "") ? query.subject! : "");
   const [subjects, books, subject, year, uploadEnabled] = await Promise.all([
     listSubjects(familyId), listBooks(familyId).catch(() => null),
     subjectId ? getSubjectDetail(familyId, subjectId) : null,
@@ -44,11 +52,13 @@ export default async function StudioNewPage({ searchParams }: {
   return (
     <div className="mx-auto max-w-4xl">
       <Link href="/parent/studio" className="mb-3 inline-flex min-h-11 items-center text-sm font-bold text-p-primary">← Майстерня ШІ</Link>
-      <PageTitle>{draft ? "Продовжити чернетку" : topic ? "Розширити урок" : "Новий урок або курс"}</PageTitle>
+      <PageTitle>{draft ? "Продовжити чернетку" : prefill ? (schoolEntry!.source.kind === "homework" ? "Допомога з домашнім завданням" : "Урок до шкільної теми") : topic ? "Розширити урок" : "Новий урок або курс"}</PageTitle>
+      {prefill && <p className="mb-4 text-sm text-p-muted">Поля заповнено зі щоденника. Додай фото сторінки підручника чи зошита в «Матеріали для уроку», якщо є, і запусти підготовку.</p>}
       {books === null && <p role="status" className="mb-4 text-sm text-p-muted">Бібліотека книг зараз недоступна. Можна працювати з ідеєю, власним текстом або базовим уроком.</p>}
       <StudioCreate storageKey={storageKey} initialDraft={draft} initialSaved={query.saved === "1"}
         uploadEnabled={uploadEnabled} initialMaterial={initialMaterial} subjects={subjects} books={choices}
-        initialSubject={subject?.id} initialTopic={topic?.id} initialTitle={topic?.title}
+        initialSubject={subject?.id} initialTopic={prefill ? undefined : topic?.id} initialTitle={prefill?.title ?? topic?.title}
+        initialIdea={prefill?.idea} contextId={schoolEntry ? `school:${query.school}` : undefined}
         initialGrade={year.data?.grade} />
     </div>
   );

@@ -7,13 +7,24 @@ import { listStudioFormDrafts } from "@/server/studio/drafts";
 import { studioActive, studioStateLabels } from "@/lib/studio";
 import { StudioAccessButton } from "@/components/parent/studio/StudioAccessButton";
 import { PageTitle, parentInput, parentButton } from "../ui";
+import { StudioSchoolDay } from "@/components/parent/studio/StudioSchoolDay";
+import { voiceActor } from "@/server/voice/service";
+import { listSchoolEntries, readSchoolConnection } from "@/server/eschool/store";
+import { listDecks } from "@/server/decks/store";
+import { schoolDay } from "@/lib/school-day";
 export const maxDuration = 300;
-export default async function StudioPage({ searchParams }: { searchParams: Promise<{ q?: string; subject?: string; page?: string; tab?: string }> }) {
+export default async function StudioPage({ searchParams }: { searchParams: Promise<{ q?: string; subject?: string; page?: string; tab?: string; date?: string }> }) {
   const { familyId } = await requireParentAccess(); const filters = await searchParams;
-  const activeTab = filters.tab === "course" || filters.tab === "video" || filters.tab === "book" || filters.tab === "materials" ? "imports" : "catalog";
+  const activeTab = filters.tab === "course" || filters.tab === "video" || filters.tab === "book" || filters.tab === "materials" ? "imports" : filters.tab === "school" ? "school" : "catalog";
   const tabClass = (active: boolean) => `inline-flex min-h-11 items-center rounded-xl border px-3 text-sm font-bold ${active ? "border-p-primary bg-[color-mix(in_srgb,var(--p-primary)_12%,transparent)] text-p-primary" : "border-p-line"}`;
-  const tabs = <nav aria-label="Робота з матеріалами" className="mb-5 flex flex-wrap gap-2"><Link href="/parent/studio" aria-current={activeTab === "catalog" ? "page" : undefined} className={tabClass(activeTab === "catalog")}>Мої чернетки й версії</Link><Link href="/parent/studio/new" className={tabClass(false)}>Створити з ідеї або матеріалів</Link><Link href="/parent/studio?tab=course" aria-current={activeTab === "imports" ? "page" : undefined} className={tabClass(activeTab === "imports")}>Додати файли, ZIP і відео</Link><Link href="/parent/studio/presentations" className={tabClass(false)}>Презентації з озвученням</Link></nav>;
+  const tabs = <nav aria-label="Робота з матеріалами" className="mb-5 flex flex-wrap gap-2"><Link href="/parent/studio" aria-current={activeTab === "catalog" ? "page" : undefined} className={tabClass(activeTab === "catalog")}>Мої чернетки й версії</Link><Link href="/parent/studio?tab=school" aria-current={activeTab === "school" ? "page" : undefined} className={tabClass(activeTab === "school")}>Школа на завтра</Link><Link href="/parent/studio/new" className={tabClass(false)}>Створити з ідеї або матеріалів</Link><Link href="/parent/studio?tab=course" aria-current={activeTab === "imports" ? "page" : undefined} className={tabClass(activeTab === "imports")}>Додати файли, ZIP і відео</Link><Link href="/parent/studio/presentations" className={tabClass(false)}>Презентації з озвученням</Link></nav>;
   if (filters.tab === "course" || filters.tab === "video" || filters.tab === "book" || filters.tab === "materials") return <div className="mx-auto max-w-6xl"><PageTitle>Майстерня ШІ</PageTitle>{tabs}<StudioImports familyId={familyId} tab={filters.tab} /></div>;
+  if (activeTab === "school") {
+    const { child } = await voiceActor(familyId);
+    const [{ connection }, records, decks] = await Promise.all([readSchoolConnection(familyId, child.id), listSchoolEntries(familyId, child.id), listDecks(familyId).catch(() => [])]);
+    const deckTopics = new Set(decks.flatMap(deck => deck.topicId ? [deck.topicId] : []));
+    return <div className="mx-auto max-w-6xl"><PageTitle>Майстерня ШІ</PageTitle>{tabs}<StudioSchoolDay day={schoolDay(records.entries, filters.date)} deckTopics={deckTopics} connected={!!connection?.lastSync || records.entries.length > 0} /></div>;
+  }
   const q = String(filters.q ?? "").slice(0, 120); const subject = String(filters.subject ?? "");
   const [catalog, formDrafts] = await Promise.all([
     studioCatalog(familyId, { q, subject, page: Number(filters.page) || 0 }),
