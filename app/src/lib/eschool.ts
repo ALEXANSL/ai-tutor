@@ -23,4 +23,9 @@ export function schoolDue(source: SchoolSource, status: SchoolStatus, today = sc
   if (source.kind !== "homework" || status === "done") return null;
   return source.dueDate ? source.dueDate < today ? "Термін минув" : source.dueDate === today ? "На сьогодні" : "Незабаром" : "Термін не вказано";
 }
+/** Due label for the child: by date only, never by status. Past dates get no label, so old homework does not pile up as "overdue". */
+export function schoolChildDue(source: SchoolSource, today = schoolToday()): string | null {
+  if (source.kind !== "homework" || !source.dueDate || source.dueDate < today) return null;
+  return source.dueDate === today ? "На сьогодні" : "Незабаром";
+}
 export function normalizedSchoolSubject(value: string) { return value.toLocaleLowerCase("uk").replace(/[’'ʼ`]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim(); }

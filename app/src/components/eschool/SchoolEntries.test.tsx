@@ -21,27 +21,50 @@ const entries = [
   item("changed", { subject: "Українська мова", topic: "Лексика", lessonDate: "2026-11-10", dueDate: null }, "done", true),
 ];
 function render(parent = false) { act(() => root.render(<SchoolEntries entries={entries} parent={parent} initialMode="list" />)); }
-function dates() { return [...container.querySelectorAll("time")].map(node => node.getAttribute("datetime")); }
-it.each([false, true])("groups child/parent entries by due day, falls back to lesson day and retains changed completed homework (parent=%s)", parent => {
+function dates() { return [...container.querySelectorAll("section[aria-label] time")].map(node => node.getAttribute("datetime")); }
+const click = (label: string) => act(() => [...container.querySelectorAll("button")].find(node => node.textContent === label || node.getAttribute("aria-label") === label)!.click());
+beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-11-11T09:00:00Z")); });
+afterEach(() => vi.useRealTimers());
+it.each([false, true])("shows the current week Monday to Friday with weekday + date headings, by due day (parent=%s)", parent => {
   render(parent);
-  expect(dates()).toEqual(["2026-11-09", "2026-11-10", "2026-11-13"]);
-  expect(container.querySelector("h2")?.textContent).toContain("Понеділок, 9 листопада 2026");
-  const friday = container.querySelector('time[datetime="2026-11-13"]')!.closest("section")!;
-  expect(friday.textContent).toContain("Математика"); expect(friday.textContent).toContain("ДЗ: 1");
-  expect(container.textContent).not.toContain("Колір"); expect(container.textContent).toContain("Лексика");
+  expect(container.querySelector("h2")?.textContent).toBe("Тиждень: 9 — 15 листопада 2026 р.");
+  expect(dates()).toEqual(["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13"]);
+  const day = (date: string) => container.querySelector(`time[datetime="${date}"]`)!.closest("section")!;
+  expect(day("2026-11-09").querySelector("h3")?.textContent).toBe("Понеділок");
+  expect(day("2026-11-11").textContent).toContain("Сьогодні");
+  expect(day("2026-11-13").textContent).toContain("Математика"); expect(day("2026-11-13").textContent).toContain("ДЗ: 1");
+  expect(day("2026-11-12").textContent).toContain("Домашніх завдань немає.");
+  // Completed homework is shown like any other: status is not used to hide records.
+  expect(container.textContent).toContain("Колір"); expect(container.textContent).toContain("Лексика");
+  expect(container.textContent).not.toContain("Показати виконані");
+  expect(container.querySelector('select option[value="done"]') !== null).toBe(parent);
 });
-it("rebuilds groups after search, all-lessons and completed filters without leaving empty day headings", () => {
+it("navigates by weeks in week mode and by days in day mode", () => {
   render();
-  const search = container.querySelector('input:not([type="checkbox"])')!;
+  click("Наступний тиждень");
+  expect(container.querySelector("h2")?.textContent).toBe("Тиждень: 16 — 22 листопада 2026 р.");
+  expect(container.textContent).not.toContain("Математика");
+  expect(container.textContent).toContain("До останнього дня з записами");
+  click("Цей тиждень"); click("Попередній тиждень");
+  expect(container.querySelector("h2")?.textContent).toContain("2 — 8 листопада");
+  click("Цей тиждень"); click("День");
+  expect(container.querySelector("h2")?.textContent).toContain("Середа, 11 листопада 2026 р.");
+  expect(container.querySelector("h2")?.textContent).toContain("Сьогодні");
+  expect(container.textContent).toContain("Колір"); expect(container.textContent).not.toContain("Математика");
+  click("Наступний день"); click("Наступний день");
+  expect(container.querySelector("h2")?.textContent).toContain("13 листопада 2026");
+  expect(container.textContent).toContain("Дроби");
+});
+it("filters the visible week by search and by lessons + homework", () => {
+  render();
+  const search = container.querySelector('input[type="search"]')!;
   act(() => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, "Дроби"); search.dispatchEvent(new Event("input", { bubbles: true })); });
-  expect(dates()).toEqual(["2026-11-13"]);
+  expect(container.textContent).toContain("Дроби"); expect(container.textContent).not.toContain("Цивілізації");
   act(() => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(search, ""); search.dispatchEvent(new Event("input", { bubbles: true })); });
-  const select = container.querySelector("select")!;
+  expect(container.textContent).not.toContain("Планета");
+  const select = container.querySelector('select[aria-label="Показати записи"]') as HTMLSelectElement;
   act(() => { select.value = "all"; select.dispatchEvent(new Event("change", { bubbles: true })); });
-  expect(dates()).toEqual(["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-13"]);
-  expect(container.querySelector('time[datetime="2026-11-11"]')!.closest("section")!.textContent).toContain("ДЗ: 0 · Уроків: 1");
-  act(() => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
-  expect(container.querySelector('time[datetime="2026-11-11"]')!.closest("section")!.textContent).toContain("ДЗ: 1 · Уроків: 1");
+  expect(container.textContent).toContain("Планета");
 });
 it("offers the history subject link for an old unmapped diary entry and keeps it beside a direct lesson", () => {
   const history = item("history", { subject: "Історія України. Всесвітня історія" });
