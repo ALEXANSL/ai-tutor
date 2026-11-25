@@ -64,3 +64,13 @@ it("returns multiple grounded lessons when together they cover the teacher topic
   f.model.mockReset().mockResolvedValueOnce({ topicIds: ["thermal", "another"] }).mockResolvedValueOnce({ ...answer, additionalMatches: [{ ...answer, topicId: "another", reason: "Друга частина теми" }] });
   const result = await run(); expect(result.topicId).toBeNull(); expect(result.matches?.map(item => item.topicId)).toEqual(["thermal", "another"]);
 });
+
+it("returns several deterministic lesson matches without any paid call", async () => {
+  const vertep = [{ id: "a", title: "Ігор Калинець. «Вертеп Маленького Хлопчика»: родина на відстані", pageFrom: 86, pageTo: 99 }, { id: "b", title: "«Вертеп Маленького Хлопчика»: різдвяне диво й реальність", pageFrom: 93, pageTo: 99 }] as SubjectTopicOption[];
+  const result = await resolveSchoolContext("family", "child", "subject", { ...entry, source: { ...entry.source, topic: "Чарівні перетворення головного героя казки «Вертеп маленького хлопчика»" } }, vertep);
+  expect(result).toMatchObject({ state: "done", topicId: null }); expect(result.matches?.map(item => item.topicId)).toEqual(["a", "b"]); expect(f.model).not.toHaveBeenCalled();
+});
+it("accepts grounding quotes that differ only in case, quote marks, dashes or spacing", async () => {
+  f.model.mockReset().mockResolvedValueOnce({ topicIds: ["thermal"] }).mockResolvedValueOnce({ ...answer, evidence: "нагрівання  спричиняє розширення МЕТАЛУ, а під час охолодження" });
+  expect(await run()).toMatchObject({ state: "done", topicId: "thermal" });
+});

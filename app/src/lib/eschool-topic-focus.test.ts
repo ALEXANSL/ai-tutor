@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import type { SchoolEntry } from "./eschool";
 import { schoolPacketFixture } from "@/server/eschool/__fixtures__/packet";
-import { schoolTopicFocus } from "./eschool-topic-focus";
+import { schoolPageRanges, schoolTopicFocus, schoolTopicMatches } from "./eschool-topic-focus";
 const packet = schoolPacketFixture();
 const entry: SchoolEntry = { version: 1, revision: 0, childId: "child", identity: packet.identity, source: { ...packet.entries[1]!, topic: "Цивілізації Стародавнього Сходу", text: "Опрацювати матеріал" }, capturedAt: packet.capturedAt, syncedAt: packet.capturedAt, status: "todo", changed: false, subjectId: "subject", topicId: null, lessonHref: null, workHref: null };
 const topics = [{ id: "a", title: "§16. Цивілізації Стародавнього Сходу" }, { id: "b", title: "§17. Вірування народів Сходу" }];
@@ -58,4 +58,29 @@ it("recognizes the Dickens example with an initial, author inside quotes and у/
   const teacher = 'Ч. Діккенс "Різдвяна пісня у прозі": сюжет і композиція';
   expect(schoolTopicFocus(withTopic(teacher), [{ id: "dickens", title: "«Чарльз Діккенс. Різдвяна пісня в прозі»" }, { id: "gogol", title: "Вакула, Оксана і різдвяна ніч" }])).toBe("dickens");
   expect(schoolTopicFocus(withTopic(teacher), [{ id: "a", title: "«Різдвяна пісня в прозі». Частина 1" }, { id: "b", title: "«Різдвяна пісня в прозі». Частина 2" }])).toBeNull();
+});
+
+it("returns every ready lesson on the same work when the teacher's wording differs (Вертеп bug)", () => {
+  const vertep = [
+    { id: "family", title: "Ігор Калинець. «Вертеп Маленького Хлопчика»: родина на відстані", pageFrom: 86, pageTo: 99 },
+    { id: "miracle", title: "«Вертеп Маленького Хлопчика»: різдвяне диво й реальність", pageFrom: 93, pageTo: 99 },
+    { id: "other", title: "Михайло Ткач. «Моя Україна»: країна в близьких образах", pageFrom: 60, pageTo: 64 },
+  ];
+  const teacher = withTopic("Чарівні перетворення головного героя в основі сюжету казки «Вертеп маленького хлопчика».");
+  expect(schoolTopicMatches(teacher, vertep)).toEqual(["family", "miracle"]);
+  expect(schoolTopicFocus(teacher, vertep)).toBeNull();
+  // Pages narrow a multi-lesson work to the lessons that cover them.
+  expect(schoolTopicMatches({ ...teacher, source: { ...teacher.source, text: "Прочитати с. 86–92" } }, vertep)).toEqual(["family"]);
+});
+it("matches by textbook pages when the teacher's topic wording shares nothing with lesson titles", () => {
+  const paged = [{ id: "p1", title: "Різдвяні образи", pageFrom: 86, pageTo: 92 }, { id: "p2", title: "Диво і реальність", pageFrom: 93, pageTo: 99 }, { id: "p3", title: "Інше", pageFrom: 120, pageTo: 125 }];
+  expect(schoolTopicMatches(withTopic("Підсумкова бесіда", "Опрацювати стор. 93-99"), paged)).toEqual(["p2"]);
+  expect(schoolTopicMatches(withTopic("Підсумкова бесіда", "Читати сторінки 88–95"), paged)).toEqual(["p1", "p2"]);
+  expect(schoolTopicMatches(withTopic("Підсумкова бесіда", "Вправа 5"), paged)).toEqual([]);
+  expect(schoolPageRanges("с. 12, стор.40–42, ст. 7")).toEqual([[12, 12], [40, 42], [7, 7]]);
+});
+it("lists every paragraph lesson of an explicit § range, but still refuses ambiguous numbers", () => {
+  expect(schoolTopicMatches(withTopic("Робота з підручником", "Опрацювати §16–17"), topics)).toEqual(["a", "b"]);
+  expect(schoolTopicMatches(withTopic("Робота з підручником", "§17"), [...topics, { id: "c", title: "§17. Інший підручник" }])).toEqual([]);
+  expect(schoolTopicMatches(withTopic("«Моя Україна». Образи Батьківщини"), literatureTopics)).toEqual([]);
 });
