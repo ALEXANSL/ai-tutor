@@ -53,6 +53,7 @@ function StudioCreateSession({ subjects, books, storageKey, initialDraft, initia
     sourceText: "", subjectId: initialSubject || null, topicId: initialTopic || null,
     materialId: initialMaterial || null, pageFrom: null, pageTo: null,
     age: 12, grade: initialGrade, lessonCount: 1, minutes: 20, budgetUsd: 3,
+    narratedDeck: true,
   };
   const [values, setValues] = useState<StudioDraftValues>(initialDraft?.values ?? defaultValues);
   const latest = useRef(values);
@@ -161,6 +162,7 @@ function StudioCreateSession({ subjects, books, storageKey, initialDraft, initia
   const setCount = (value: number) => change("lessonCount", value);
   const setMinutes = (value: number) => change("minutes", value);
   const setBudget = (value: number) => change("budgetUsd", value);
+  const narratedDeck = values.narratedDeck ?? false;
   function subject(value: string) {
     ++sequence.current;
     const name = subjects.find(item => item.id === value)?.name ?? "";
@@ -223,6 +225,10 @@ function StudioCreateSession({ subjects, books, storageKey, initialDraft, initia
       {targetLanguage && <p className="text-sm text-p-muted">Пояснення й розбір завдань — українською. Приклади, слова та діалоги для слухання — мовою оригіналу, без кириличної транслітерації. Підручник необов’язковий.</p>}
       <label className="block text-sm font-bold">Назва<input aria-label="Назва" value={title} onChange={event => setTitle(event.target.value)} maxLength={200} required placeholder="Наприклад, «Створюємо першу гру в Roblox»" className={`${parentInput} mt-2`} /></label>
       <label className="block text-sm font-bold">Що дитина має зрозуміти або навчитися робити?<textarea aria-label="Що дитина має зрозуміти або навчитися робити?" value={idea} onChange={event => setIdea(event.target.value)} maxLength={20000} required rows={5} placeholder="Опиши тему, результат, підготовку дитини та побажання. Для практичної роботи — доступні матеріали й інструменти." className={`${parentInput} mt-2 py-3 font-normal`} /></label>
+      <fieldset className="space-y-3 rounded-2xl border border-p-line p-4"><legend className="px-1 text-sm font-bold">Що зробити</legend>
+        <p className="flex items-start gap-3 text-sm"><input type="checkbox" checked disabled aria-label="Урок з поясненнями, вправами й тестом" className="mt-1" /><span><strong className="block">Урок з поясненнями, вправами й тестом</strong><span className="text-xs text-p-muted">Основа для всіх інших форматів, готується завжди.</span></span></p>
+        <label className="flex cursor-pointer items-start gap-3 text-sm"><input type="checkbox" aria-label="Презентація з озвучкою та ілюстраціями" checked={narratedDeck} onChange={event => change("narratedDeck", event.target.checked)} className="mt-1" /><span><strong className="block">Презентація з озвучкою та ілюстраціями</strong><span className="text-xs text-p-muted">Після того як ти опублікуєш уроки, Майстерня сама підготує презентацію до кожного. Оплачується із загального бюджету ШІ, дитина побачить її лише після твого перегляду й публікації.</span></span></label>
+      </fieldset>
       <p className="text-sm text-p-muted">Кількість уроків визначає твоя навчальна мета. Довгий план готується частинами, уроки — послідовно. Витрати обмежує вказаний тобою бюджет; ліміт не збільшується автоматично. Перевірки знань — квізи з натисканням на варіант відповіді.</p>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><label className="text-sm font-bold">Вік<input aria-label="Вік дитини" type="number" min={7} max={18} value={age} onChange={event => setAge(Number(event.target.value))} className={`${parentInput} mt-2`} /></label><label className="text-sm font-bold">Уроків<input type="number" min={1} step={1} aria-label="Кількість уроків" value={mode === "extension" ? 1 : count} disabled={mode === "extension"} onChange={event => setCount(Number(event.target.value))} className={`${parentInput} mt-2`} /></label><label className="text-sm font-bold">Хвилин на урок<input aria-label="Хвилин на урок" type="number" min={10} max={45} value={minutes} onChange={event => setMinutes(Number(event.target.value))} className={`${parentInput} mt-2`} /></label><label className="text-sm font-bold">Ліміт підготовки, $<input aria-label="Ліміт підготовки" type="number" min={0.5} max={STUDIO_MAX_BUDGET} step={0.5} value={budget} onChange={event => setBudget(Number(event.target.value))} className={`${parentInput} mt-2`} /></label></div>
       <details open className="rounded-2xl border border-p-line p-4"><summary className="min-h-8 cursor-pointer text-sm font-bold">Матеріали для уроку: файл, бібліотека або текст (необов’язково)</summary><div className="mt-4 space-y-4">

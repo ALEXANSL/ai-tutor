@@ -67,6 +67,21 @@ async function click(text: string) {
 function stored() { return [...Array(localStorage.length)].map((_, index) => localStorage.key(index)!).map(key => ({ key, data: JSON.parse(localStorage.getItem(key)!) })); }
 
 describe("StudioCreate durable form drafts", () => {
+  it("asks for a narrated presentation by default and saves the parent's choice (D-134)", async () => {
+    await render();
+    const deck = field("Презентація з озвучкою та ілюстраціями") as HTMLInputElement;
+    expect(deck.checked).toBe(true);
+    await click("Зберегти чернетку");
+    expect(f.save.mock.calls[0]![0].values.narratedDeck).toBe(true);
+    act(() => { deck.click(); });
+    expect(deck.checked).toBe(false);
+    await click("Зберегти чернетку");
+    expect(f.save.mock.calls[1]![0].values.narratedDeck).toBe(false);
+  });
+  it("keeps older drafts without the choice unchanged", async () => {
+    await render({ initialDraft: { id, revision: 1, values } });
+    expect((field("Презентація з озвучкою та ілюстраціями") as HTMLInputElement).checked).toBe(false);
+  });
   it("saves an incomplete form without HTML required validation, ready source, or generation", async () => {
     f.ready = false;
     await render({ initialMaterial: material, books: [{ id: material, title: "Книга" }] });

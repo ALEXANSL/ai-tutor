@@ -21,6 +21,7 @@ export const draftValuesSchema = z.object({
   minutes: z.number().finite().min(0).max(45), budgetUsd: z.number().finite().min(0).max(STUDIO_MAX_BUDGET),
   subjectId: uuid.nullable(), topicId: uuid.nullable(), materialId: uuid.nullable(),
   pageFrom: z.number().finite().min(0).max(10000).nullable(), pageTo: z.number().finite().min(0).max(10000).nullable(),
+  narratedDeck: z.boolean().optional(),
 }).strict();
 export type StudioDraftValues = z.infer<typeof draftValuesSchema>;
 const payloadSchema = z.object({
