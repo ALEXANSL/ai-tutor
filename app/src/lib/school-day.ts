@@ -66,3 +66,14 @@ export function schoolStudioPrefill(source: SchoolEntryView["entry"]["source"]) 
     ].join("\n\n"),
   };
 }
+
+/** D-136: one Studio request for a diary lesson or homework queued in a batch. */
+export function schoolStudioRequest(entry: SchoolEntryView["entry"], options: { narratedDeck: boolean; budgetUsd: number; grade: number }) {
+  const { title, idea } = schoolStudioPrefill(entry.source);
+  return {
+    mode: "course" as const, targetLanguage: /англій/iu.test(entry.source.subject) ? "en" as const : /німець/iu.test(entry.source.subject) ? "de" as const : null,
+    title, idea, sourceText: "", subjectId: entry.subjectId, topicId: null, materialId: null, pageFrom: null, pageTo: null,
+    age: 12, grade: options.grade, lessonCount: 1, minutes: 20, budgetUsd: options.budgetUsd, narratedDeck: options.narratedDeck,
+  };
+}
+export const SCHOOL_BATCH_MAX = 20;
