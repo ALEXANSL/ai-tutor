@@ -4,17 +4,13 @@ import { revalidatePath } from "next/cache";
 import { requireParentAccess } from "@/server/auth/guards";
 import { confirmUpload } from "@/server/drive/upload";
 import { documentId } from "@/server/audiobooks/store";
-import { enqueueJob } from "@/server/jobs/runner";
-import { kickDeck } from "@/server/decks/kick";
+import { queueLessonDeck, scheduleDeck } from "@/server/decks/lesson-deck";
 import { forFamily } from "@/server/db/family-scope";
 import { deckLessonOptions } from "@/server/decks/placement";
-import { DECK_TYPE, WORK_TYPE, getDeck, updateDeck } from "@/server/decks/store";
+import { DECK_TYPE, getDeck, updateDeck } from "@/server/decks/store";
 import type { NarratedDeck } from "@/lib/narrated-deck";
 
-async function schedule(family: string, id: string) {
-  await enqueueJob(family, WORK_TYPE, { deckId: id }, { dedupeKey: `${WORK_TYPE}:${id}`, maxAttempts: 2 });
-  await kickDeck(family, id);
-}
+const schedule = scheduleDeck;
 
 export async function deckLessonsAction(subjectId: string) {
   const { familyId } = await requireParentAccess();
@@ -93,10 +89,5 @@ export async function generateLessonDeck(subjectId: string, topicId: string, wis
   const topic = ids.parse(topicId);
   const lesson = options.find(item => item.id === topic);
   if (!lesson) throw new Error("Вибраний урок недоступний у цьому предметі.");
-  const id = documentId(JSON.stringify(["lesson-deck", familyId, subjectId, topic, ids.parse(requestId)]));
-  const deck: NarratedDeck = { title: lesson.title, topicId, subjectId, driveId: "", generated: { href: lesson.href, wishes: z.string().max(2000).parse(wishes).trim() }, state: "processing", revision: 0, slides: [], published: false, error: "" };
-  const result = await forFamily(familyId).insert("jobs", { id, type: DECK_TYPE, status: "done", payload: deck });
-  if (result.error && result.error.code !== "23505") throw new Error("Не вдалося зберегти презентацію.");
-  if (!result.error || (await getDeck(familyId, id))?.state === "processing") await schedule(familyId, id);
-  return id;
+  return queueLessonDeck(familyId, { key: ["lesson-deck", familyId, subjectId, topic, ids.parse(requestId)], subjectId, topicId: topic, title: lesson.title, href: lesson.href, wishes: z.string().max(2000).parse(wishes) });
 }

@@ -21,6 +21,7 @@ import { reusePreparedLessonSources, applyStudioSourceTask, isStudioSourcePhase,
 import { studioRepairSchema, applyStudioRepair } from "./repair";
 import { saveStudioReviewEvent } from "./review-history";
 import { activateStudioPublication, prepareStudioPublication } from "./publish";
+import { queueStudioDecks } from "./decks";
 
 function pendingStudioRole(phase: StudioProject["phase"]): StudioRole {
   return phase === "resolve" ? "studio.resolve" : phase === "assess" ? "studio.assess" : ["analyze", "outline", "lesson_sources", "lesson_outline"].includes(phase) ? "studio.source" : phase === "plan" ? "studio.plan" : phase === "author" ? "studio.author" : phase === "design" ? "studio.design" : phase === "repair" ? "studio.repair" : "studio.review";
@@ -88,7 +89,8 @@ export async function runStudioStep(job: JobRow, deadline: number) {
     const publication = project.publicationRevision ? await prepareStudioPublication(job.family_id, id, project) : project.publication ?? await prepareStudioPublication(job.family_id, id, project);
     project = await saveStudioProject(job.family_id, id, project, { publication });
     await activateStudioPublication(job.family_id, publication, !project.request.subjectId);
-    await saveStudioProject(job.family_id, id, project, { state: "published", publicationRevision: false, childAccess: "enabled", error: null }); return;
+    await saveStudioProject(job.family_id, id, project, { state: "published", publicationRevision: false, childAccess: "enabled", error: null });
+    await queueStudioDecks(job.family_id, id, project, publication); return;
   }
   // Poll by response ID before rebuilding the book context. Only completed work needs sources.
   const pending = project.pendingModelCall;

@@ -10,6 +10,8 @@ export const studioRequestSchema = z.object({
   lessonCount: z.number().int().safe().min(1), minutes: z.number().int().min(10).max(45), budgetUsd: z.number().min(0.5).max(STUDIO_MAX_BUDGET),
   subjectId: z.string().uuid().nullable(), topicId: z.string().uuid().nullable(), materialId: z.string().uuid().nullable(),
   pageFrom: z.number().int().min(1).max(10000).nullable(), pageTo: z.number().int().min(1).max(10000).nullable(), sourceText: z.string().max(40000),
+  /** D-134: also prepare a narrated presentation for each lesson once the parent publishes it. */
+  narratedDeck: z.boolean().optional(),
 }).strict().superRefine((value, ctx) => {
   if (["extension", "revision"].includes(value.mode) && (!value.subjectId || !value.topicId || value.lessonCount !== 1)) ctx.addIssue({ code: "custom", message: "Для розширення обери предмет і базовий урок; готуємо один розширений урок." });
   if ((value.pageFrom === null) !== (value.pageTo === null) || (value.pageFrom !== null && value.pageTo !== null && (value.pageTo < value.pageFrom))) ctx.addIssue({ code: "custom", message: "Укажи обидві межі діапазону; кінцева сторінка має бути не меншою за початкову." });
