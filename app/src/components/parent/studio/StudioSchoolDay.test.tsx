@@ -25,3 +25,11 @@ it("asks for a diary import when nothing is connected", () => {
   const html = renderToStaticMarkup(<StudioSchoolDay day={{ date: null, previous: null, next: null, lessons: [], unscheduled: [], overdue: [] }} deckTopics={new Set()} connected={false} />);
   expect(html).toContain("Розклад ще не імпортовано");
 });
+
+it("offers batch checkboxes for lessons without materials and for homework, plus a whole-day button", () => {
+  const day: SchoolDay = { date: "2026-11-26", previous: null, next: null, overdue: [], unscheduled: [],
+    lessons: [{ lesson: entry("l1", "lesson"), homework: [entry("h1", "homework")] }, { lesson: entry("l2", "lesson", { lessonHref: "/x" }), homework: [] }] };
+  const html = renderToStaticMarkup(<StudioSchoolDay day={day} deckTopics={new Set()} connected today="2026-11-25" />);
+  expect(html.match(/До пакета: урок/g)).toHaveLength(1);
+  expect(html).toContain("До пакета: допомога з ДЗ"); expect(html).toContain("Додати весь день до пакета");
+});
