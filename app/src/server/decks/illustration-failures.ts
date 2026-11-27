@@ -11,7 +11,21 @@ const REASONS: Record<number, string> = {
 };
 export interface IllustrationFailure { provider: string; model: string; code?: number; reason: string; count: number; }
 
+/** Known provider explanations, recognised by keyword so the provider's own text is never shown. */
+const HINTS: [RegExp, string][] = [
+  [/verif/i, "організацію в OpenAI треба верифікувати (Settings → Organization → Verify)"],
+  [/billing|quota|insufficient|credit|payment/i, "у сервісу закінчились кошти або не підключено білінг"],
+  [/api key not valid|invalid.*key|incorrect api key|unauthenticated/i, "API-ключ недійсний"],
+  [/not found|not supported|does not exist|unknown model/i, "назва моделі не підходить цьому акаунту"],
+  [/location|region|country/i, "сервіс недоступний у регіоні сервера"],
+  [/safety|blocked|moderation|policy/i, "сервіс заблокував опис картинки фільтром безпеки"],
+];
 export function illustrationFailureReason(error: string | null | undefined) {
+  const hint = HINTS.find(([pattern]) => pattern.test(/\[provider: (.*)\]/.exec(error ?? "")?.[1] ?? ""))?.[1];
+  const base = plainReason(error);
+  return hint ? { ...base, reason: hint } : base;
+}
+function plainReason(error: string | null | undefined) {
   const code = Number(/\(HTTP (\d{3})\)/.exec(error ?? "")?.[1]) || undefined;
   return { code, reason: code ? REASONS[code] ?? (code >= 500 ? "сервіс тимчасово недоступний" : "сервіс відмовив") : /uncertain/.test(error ?? "") ? "сервіс не підтвердив результат" : "невідома помилка" };
 }
