@@ -1,4 +1,5 @@
 import type { LessonSlidePlan } from "./lesson-slide-plan";
+import type { DeckTeamState } from "./deck-team";
 export interface DeckSlide {
   notes: string;
   narration: string;
@@ -9,7 +10,7 @@ export interface NarratedDeck {
   subjectId: string;
   topicId?: string | null;
   driveId: string;
-  generated?: { href: string; wishes: string; plan?: LessonSlidePlan; pptxBucket?: "lesson-presentations"; pptxReady?: boolean };
+  generated?: { href: string; wishes: string; plan?: LessonSlidePlan; pptxBucket?: "lesson-presentations"; pptxReady?: boolean; team?: DeckTeamState };
   slides: DeckSlide[];
   state: "processing" | "ready" | "error";
   published: boolean;
