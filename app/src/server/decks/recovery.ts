@@ -13,8 +13,15 @@ interface WorkState {
 }
 /** Used by the scheduler and for immediate adoption of legacy decks on first visit. */
 export async function reconcileDeck(family: string, id: string, deck: NarratedDeck) {
-  if (deck.state === "ready") return deck;
   const key = `${WORK_TYPE}:${id}`;
+  if (deck.state === "ready") {
+    // ADR-049: decks finished before server video existed get one automatically (no AI cost).
+    if (deck.video && deck.video.state !== "pending") return deck;
+    if (!deck.video) deck = await updateDeck(family, id, deck, { video: { state: "pending" } });
+    await enqueueJob(family, WORK_TYPE, { deckId: id }, { dedupeKey: key, maxAttempts: 2 });
+    await kickDeck(family, id);
+    return deck;
+  }
   if (deck.state === "error") {
     if (!legacyDeckRetry(deck.error) || deck.retryPolicyVersion === 1) return deck;
     deck = await updateDeck(family, id, deck, { state: "processing", error: "", retryPolicyVersion: 1 });

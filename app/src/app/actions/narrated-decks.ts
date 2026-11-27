@@ -72,6 +72,16 @@ export async function retryDeck(id: string) {
   revalidatePath(`/parent/studio/presentations/${id}`);
 }
 
+/** ADR-049: render (or re-render) the server MP4 in the background. */
+export async function remakeDeckVideo(id: string) {
+  const { familyId } = await requireParentAccess();
+  const deck = await getDeck(familyId, id);
+  if (!deck || deck.state !== "ready") throw new Error("Відео можна зробити після озвучення всіх слайдів.");
+  if (deck.video?.state !== "pending") await updateDeck(familyId, id, deck, { video: { state: "pending" } });
+  await schedule(familyId, id);
+  revalidatePath(`/parent/studio/presentations/${id}`);
+}
+
 export async function publishDeck(id: string, published: boolean) {
   const { familyId } = await requireParentAccess();
   z.boolean().parse(published);

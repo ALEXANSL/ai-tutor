@@ -18,4 +18,6 @@ export interface NarratedDeck {
   retryPolicyVersion?: number;
   audioLookupRecovered?: boolean;
   error: string;
+  /** Server-rendered MP4 (ADR-049): queued automatically once every slide is narrated. */
+  video?: { state: "pending" | "ready" | "error"; error?: string; bytes?: number; at?: string } | null;
 }
