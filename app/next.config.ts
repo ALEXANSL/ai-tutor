@@ -38,7 +38,7 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/**": ["./prompts/**/*", "./assets/fonts/**/*", "./node_modules/pdfjs-dist/cmaps/**/*", "./node_modules/pdfjs-dist/standard_fonts/**/*"],
     // ADR-049: ffmpeg + canvas (~110 MB) only where deck jobs are driven, not in every function.
-    "/api/queue/presentation-narration": ["./node_modules/ffmpeg-static/ffmpeg", "./node_modules/@napi-rs/**/*"],
+    "/api/queue/presentation-narration": ["./node_modules/ffmpeg-static/ffmpeg", "./node_modules/@napi-rs/**/*", "./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"],
   },
   async headers() {
     return [

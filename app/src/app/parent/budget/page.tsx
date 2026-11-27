@@ -5,6 +5,7 @@ import { loadBudgetDashboard } from "@/server/budget/queries";
 import { PageTitle, Panel } from "../ui";
 import { loadModelDiagnostics } from "@/server/budget/modelDiagnostics";
 import { ModelDiagnostics } from "@/components/parent/ModelDiagnostics";
+import { ElevenLabsCheck } from "@/components/parent/ElevenLabsCheck";
 
 const money = (n: number) => `$${n.toFixed(2)}`;
 
@@ -35,6 +36,7 @@ export default async function BudgetPage() {
       <SectionTabs section="family" />
       <PageTitle>{t.title}</PageTitle>
       <Panel title="Моделі за функціями та фактичні виклики"><ModelDiagnostics {...diagnostics} timeZone={data.timeZone} /></Panel>
+      <Panel title="Голос ElevenLabs"><ElevenLabsCheck /></Panel>
 
       <Panel title={t.monthPanelTitle}>
         <p className="mb-3 text-[13px] text-p-muted">{t.monthPanelDesc}</p>

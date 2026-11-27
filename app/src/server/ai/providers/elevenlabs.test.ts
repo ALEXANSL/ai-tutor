@@ -27,6 +27,14 @@ describe("elevenlabsTts (ADR-049)", () => {
     const fetchImpl = vi.fn(async () => new Response("quota", { status: 401 }));
     await expect(elevenlabsTts({ model: "m", text: "Текст", params: {} }, fetchImpl as unknown as typeof fetch)).rejects.toBeInstanceOf(ProviderError);
   });
+
+  it("puts ElevenLabs' own reason into the error so the AI log shows why", async () => {
+    vi.stubEnv("ELEVENLABS_API_KEY", "secret-key");
+    const body = JSON.stringify({ detail: { status: "missing_permissions", message: "The API key is missing the permission text_to_speech" } });
+    const fetchImpl = vi.fn(async () => new Response(body, { status: 401 }));
+    await expect(elevenlabsTts({ model: "m", text: "Текст", params: {} }, fetchImpl as unknown as typeof fetch))
+      .rejects.toThrow("elevenlabs tts error 401: missing_permissions — The API key is missing the permission text_to_speech");
+  });
 });
 
 describe("voice selection", () => {

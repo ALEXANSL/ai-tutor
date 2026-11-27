@@ -32,6 +32,10 @@ export function ffmpegBinary(): string | null {
 
 async function slideImages(pdf: Uint8Array): Promise<Buffer[]> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  // In Node pdf.js runs a "fake worker" that it loads by file path at runtime; the
+  // deploy tracer cannot see that path, so load the worker module ourselves and hand
+  // it over: importing it sets globalThis.pdfjsWorker, which pdf.js checks first.
+  await import("pdfjs-dist/legacy/build/pdf.worker.mjs");
   // Only the presentation queue function bundles the native canvas (next.config.ts).
   const { createCanvas } = await import("@napi-rs/canvas").catch(() => { throw new VideoToolMissing(); });
   const task = pdfjs.getDocument({ data: pdf, disableFontFace: true, standardFontDataUrl: join(process.cwd(), "node_modules/pdfjs-dist/standard_fonts") + "/" });
