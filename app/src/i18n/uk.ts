@@ -598,6 +598,7 @@ export const uk = {
       exitParentMode: "Вийти з режиму тата",
       signOut: "Вийти з акаунта",
       autoExitHint: (min: number) => `Автовихід після ${min} хв без дій`,
+      manualExitHint: "Режим тата діє, доки не натиснеш «Вийти з режиму тата»",
     },
     dashboard: {
       title: "Огляд",
