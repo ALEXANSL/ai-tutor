@@ -8,6 +8,9 @@ import { ProviderError } from "../types";
 import { checkElevenLabs, elevenLabsHint } from "./elevenlabs-check";
 
 describe("elevenLabsHint", () => {
+  it("explains a key ID pasted instead of the sk_ key", () => {
+    expect(elevenLabsHint(400, "api_key_id_used_as_api_key — API key ID used as API key")).toMatch(/sk_/);
+  });
   it("names the concrete fix for each common refusal", () => {
     expect(elevenLabsHint(401, "missing_permissions — needs text_to_speech")).toMatch(/Text to Speech/);
     expect(elevenLabsHint(404, "voice_not_found — A voice with that ID does not exist")).toMatch(/Add to my voices/);

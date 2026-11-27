@@ -13,6 +13,7 @@ export interface IllustrationFailure { provider: string; model: string; code?: n
 
 /** Known provider explanations, recognised by keyword so the provider's own text is never shown. */
 const HINTS: [RegExp, string][] = [
+  [/free.?tier/i, "ключ Gemini працює на безкоштовному рівні, де генерація картинок вимкнена (ліміт 0): у Google AI Studio треба підключити білінг (Set up billing) до проєкту цього ключа"],
   [/verif/i, "організацію в OpenAI треба верифікувати (Settings → Organization → Verify)"],
   [/billing|quota|insufficient|credit|payment/i, "у сервісу закінчились кошти або не підключено білінг"],
   [/api key not valid|invalid.*key|incorrect api key|unauthenticated/i, "API-ключ недійсний"],
