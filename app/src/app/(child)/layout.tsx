@@ -1,4 +1,5 @@
 import { ParentModeAutoExit } from "@/components/child/ParentModeAutoExit";
+import { parentModeAutoExit } from "@/server/auth/parent-mode-policy";
 import { ParentModeButton } from "@/components/child/ParentModeButton";
 import { HomeNavigationProvider } from "@/components/shared/HomeNavigation";
 import { HomeLink } from "@/components/shared/HomeLink";
@@ -22,7 +23,7 @@ export default async function ChildLayout({ children }: { children: React.ReactN
       <div data-child-home className="child-home-bar"><HomeLink /></div>
       {children}
       {isChild && <ParentModeButton pinSet={pinSet} />}
-      <ParentModeAutoExit active={isChild && ctx.parentMode !== "none"} />
+      <ParentModeAutoExit active={parentModeAutoExit() && isChild && ctx.parentMode !== "none"} />
     </div></HomeNavigationProvider>
   );
 }

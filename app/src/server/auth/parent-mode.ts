@@ -8,6 +8,7 @@ import { loadParentSettings } from "../persona/service";
 import { notifyParent } from "../notifications";
 import { applyPinAttempt, isPinLocked } from "./pin-attempts";
 import { hashPin, verifyPin } from "./pin-hash";
+import { parentModeMinutes } from "./parent-mode-policy";
 import { DEVICE_COOKIE, PARENT_MODE_COOKIE, deriveParentModeKey, issueParentModeToken } from "./parent-mode-token";
 import type { UserContext } from "./session";
 
@@ -87,7 +88,7 @@ export async function enterParentMode(ctx: UserContext, pin: string): Promise<En
   }
   if (result.outcome === "wrong") return { ok: false, error: "wrong" };
 
-  await setParentModeCookie(ctx, settings.parent_mode_idle_min, pepper);
+  await setParentModeCookie(ctx, parentModeMinutes(settings.parent_mode_idle_min), pepper);
   return { ok: true };
 }
 
@@ -96,7 +97,7 @@ export async function touchParentMode(ctx: UserContext): Promise<boolean> {
   const pepper = getPinPepper();
   if (ctx.role !== "child" || ctx.parentMode !== "active" || !pepper) return false;
   const settings = await loadParentSettings(forFamily(ctx.familyId));
-  await setParentModeCookie(ctx, settings.parent_mode_idle_min, pepper);
+  await setParentModeCookie(ctx, parentModeMinutes(settings.parent_mode_idle_min), pepper);
   return true;
 }
 
