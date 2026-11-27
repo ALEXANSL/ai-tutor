@@ -1,11 +1,12 @@
 "use client";
 import { ReviseLessonsDialog } from "./ReviseLessonsDialog";
+import { LessonDeckButton, type LessonDeckState } from "./LessonDeckButton";
 import Link from "next/link";
 import { useState } from "react";
 import { importedLessonHref } from "@/lib/imported-lesson-link";
 import type { SubjectTopicOption } from "@/server/subjects/queries";
 
-export function ReadyLessonCatalog({ topics, canOpen, subjectId, extensions = [] }: { extensions?: { mode?: string; projectId: string; title: string; baseTopicId: string | null; lessons: { topicId: string }[] }[]; topics: SubjectTopicOption[]; canOpen: boolean; subjectId?: string }) {
+export function ReadyLessonCatalog({ topics, canOpen, subjectId, extensions = [], decks = {} }: { decks?: Record<string, LessonDeckState>; extensions?: { mode?: string; projectId: string; title: string; baseTopicId: string | null; lessons: { topicId: string }[] }[]; topics: SubjectTopicOption[]; canOpen: boolean; subjectId?: string }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [revising, setRevising] = useState<string[] | null>(null);
   const [filter, setFilter] = useState("");
@@ -22,6 +23,7 @@ export function ReadyLessonCatalog({ topics, canOpen, subjectId, extensions = []
       <div className="min-w-0">{subjectId && <label className="mb-2 flex min-h-11 items-center gap-2 text-xs"><input type="checkbox" aria-label={`Вибрати урок: ${topic.title}`} checked={selected.includes(topic.id)} disabled={!selected.includes(topic.id) && selected.length >= 6} onChange={event => setSelected(previous => event.target.checked ? [...previous, topic.id] : previous.filter(id => id !== topic.id))} />Для переробки</label>}<p className="font-bold">{topic.title}</p>{topic.pageFrom !== null && <p className="text-xs text-p-muted">Сторінки: {topic.pageFrom}{topic.pageTo !== null && topic.pageTo !== topic.pageFrom ? `–${topic.pageTo}` : ""}</p>}{topic.hasVideoLesson && <span className="text-xs text-p-muted">Є додаткове відео</span>}</div>
       {/* D-133: the main action first, rarely used ones under «Ще дії». */}
       <div className="flex flex-wrap items-center gap-2">{canOpen && <Link href={importedLessonHref(topic)!} className="inline-flex min-h-11 items-center rounded-xl bg-p-primary px-3 font-bold text-white">Відкрити урок</Link>}
+        {subjectId && <LessonDeckButton subjectId={subjectId} topicId={topic.id} title={topic.title} deck={decks[topic.id]} />}
         {subjectId && <Link href={`/parent/studio/new?subject=${subjectId}&topic=${topic.id}`} className="inline-flex min-h-11 items-center rounded-xl border border-p-line px-3 font-bold">Розширити з ШІ</Link>}
         {extensions.filter(item => item.mode === "revision" && item.baseTopicId === topic.id).map(item => <Link key={item.projectId} href={`/parent/studio/${item.projectId}`} className="inline-flex min-h-11 items-center rounded-xl border border-p-line px-3 font-bold">Нова версія: {item.title}</Link>)}
         {extensions.filter(item => item.mode !== "revision" && item.baseTopicId === topic.id).map(item => <Link key={item.projectId} href={`/parent/studio/${item.projectId}`} className="inline-flex min-h-11 items-center rounded-xl border border-p-line px-3 font-bold">Розширення: {item.title}</Link>)}

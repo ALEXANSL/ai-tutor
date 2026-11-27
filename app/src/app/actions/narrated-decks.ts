@@ -19,6 +19,24 @@ export async function deckLessonsAction(subjectId: string) {
   return deckLessonOptions(familyId, z.string().uuid().parse(subjectId));
 }
 
+/** Old-lesson conversion: queue a narrated presentation for one ready lesson of
+ * the subject. The key is the family, topic and resolved lesson link, so a second
+ * press (or a double tap) reopens the same deck and never pays again. */
+export async function makeLessonDeck(subjectId: string, topicId: string) {
+  const { familyId } = await requireParentAccess();
+  z.string().uuid().parse(subjectId);
+  z.string().uuid().parse(topicId);
+  const lesson = (await deckLessonOptions(familyId, subjectId)).find(item => item.id === topicId);
+  if (!lesson) throw new Error("Цей урок недоступний для презентації.");
+  const id = await queueLessonDeck(familyId, {
+    key: ["lesson-deck", familyId, topicId, lesson.href], subjectId, topicId,
+    title: lesson.title, href: lesson.href, wishes: "",
+  });
+  revalidatePath(`/parent/subjects/${subjectId}`);
+  revalidatePath(`/parent/courses/${subjectId}`);
+  return id;
+}
+
 async function validatePlacement(familyId: string, subjectId: string, topicId: string | null) {
   if (topicId === null) return;
   z.string().uuid().parse(topicId);
