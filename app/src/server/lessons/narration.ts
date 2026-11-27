@@ -1,7 +1,9 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { callAudio } from "@/server/ai/router";
-import { AiNotConfiguredError, BudgetBlockedError, ProviderError } from "@/server/ai/types";
+import { callAudio, defaultRouterDeps, type RouterDeps } from "@/server/ai/router";
+import { DEFAULT_ELEVENLABS_MODEL } from "@/server/ai/providers/elevenlabs";
+import { getServerSecret } from "@/server/env";
+import { AiNotConfiguredError, BudgetBlockedError, ProviderError, type ModelPrice, type ModelRoute } from "@/server/ai/types";
 
 /**
  * Passive narration (US-6.16 КП-5, ADR-025): reads a lesson step's OWN,
@@ -79,12 +81,47 @@ export async function synthesizeNarration(familyId: string, ref: { table: string
   }
 }
 
+/**
+ * ADR-049: ElevenLabs list price for Multilingual v2/v3 ($0.08 per 1K
+ * characters, elevenlabs.io/pricing/api, checked 2026-11-27). Kept in code so
+ * no migration is needed; the subscription is prepaid, so this is the
+ * family's effective per-character cost on the Creator plan (≈$22 / 275K).
+ */
+export const ELEVENLABS_PRICE: ModelPrice = { input_usd_per_mtok: 80, output_usd_per_mtok: 0, cache_read_usd_per_mtok: null, cache_write_usd_per_mtok: null };
+
+/**
+ * ElevenLabs becomes the primary narration voice while the family's own
+ * route (OpenAI) stays as the fallback, so an exhausted quota, a wrong key or
+ * an outage silently falls back to the voice that worked before.
+ */
+export function withElevenLabsPrimary(route: ModelRoute, model: string): ModelRoute {
+  return { ...route, primary_provider: "elevenlabs", primary_model: model, fallback_provider: route.primary_provider, fallback_model: route.primary_model, economy_provider: null, economy_model: null, escalation_provider: null, escalation_model: null };
+}
+
+/**
+ * Router deps for passive narration: ElevenLabs first when ELEVENLABS_API_KEY
+ * is set; `undefined` (the router's own defaults) otherwise.
+ */
+export function narrationDeps(secret: typeof getServerSecret = getServerSecret, baseDeps?: RouterDeps): RouterDeps | undefined {
+  if (!secret("ELEVENLABS_API_KEY")) return baseDeps;
+  const base = baseDeps ?? defaultRouterDeps;
+  const model = secret("ELEVENLABS_MODEL_ID") ?? DEFAULT_ELEVENLABS_MODEL;
+  return {
+    ...base,
+    loadRoute: async (familyId, role) => {
+      const route = await base.loadRoute(familyId, role);
+      return route ? withElevenLabsPrimary(route, model) : null;
+    },
+    loadPrice: async (provider, name) => (provider === "elevenlabs" ? ELEVENLABS_PRICE : base.loadPrice(provider, name)),
+  };
+}
+
 /** Background jobs need typed provider and budget errors for scheduling. */
 export async function requestNarration(familyId: string, ref: { table: string; id: string } | { sessionId: string }, text: string, language?: string): Promise<NarrationAudio> {
   const trimmed = text.trim().slice(0, MAX_NARRATION_CHARS);
   const ctx = "sessionId" in ref ? { familyId, sessionId: ref.sessionId } : { familyId, ref };
   const instructions = language?.startsWith("en") ? "Read verbatim in natural English. Do not translate. Speak clearly for a school learner." : language?.startsWith("de") ? "Lies den Text auf natürlichem Deutsch wortgetreu vor. Nicht übersetzen. Sprich deutlich für ein Schulkind." : "Читай дослівно, тепло й спокійно. Пояснення українською; англійські й німецькі слова та фрази вимовляй природно мовою оригіналу. Не перекладай і не транслітеруй.";
-  const res = await callAudio("passive_narration", { text: trimmed, instructions }, ctx);
+  const res = await callAudio("passive_narration", { text: trimmed, instructions }, ctx, narrationDeps());
   return res.result;
 }
 

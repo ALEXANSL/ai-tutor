@@ -197,6 +197,8 @@
 | `OPENAI_API_KEY` | 1.8 | Алекс | **так** |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | 1.9 | Алекс | **так** |
 | `ELEVENLABS_API_KEY` | 1.10 | Алекс | **так** |
+| `ELEVENLABS_VOICE_ID` | Voice Library → Copy voice ID (ADR-049) | Алекс | ні |
+| `ELEVENLABS_MODEL_ID` | необов'язково, типово `eleven_multilingual_v2` (ADR-049) | розробник | ні |
 | `ELEVENLABS_AGENT_ID` | створює розробник | розробник показує → Алекс вносить | ні |
 | *(голоси — не змінна середовища)* | каталог голосів зберігається в базі (`tutor_voices`), затверджується в кабінеті (1.10, крок 4) | — | — |
 | `ELEVENLABS_WEBHOOK_SECRET` | налаштування вебхука ElevenLabs | Алекс (за підказкою розробника) | **так** |
