@@ -1,11 +1,12 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
-const f = vi.hoisted(() => ({ list: vi.fn(), upload: vi.fn(), generate: vi.fn(), budget: vi.fn(), record: vi.fn(), photo: vi.fn(), normalise: vi.fn() }));
+const f = vi.hoisted(() => ({ list: vi.fn(), upload: vi.fn(), generate: vi.fn(), budget: vi.fn(), record: vi.fn(), photo: vi.fn(), normalise: vi.fn(), map: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/server/supabase/clients", () => ({ createServiceClient: () => ({ storage: { from: () => ({ list: f.list, upload: f.upload }) } }) }));
 vi.mock("@/server/ai/store", () => ({ getBudgetState: f.budget, recordCall: f.record }));
 vi.mock("@/server/studio/illustrations", () => ({ normaliseIllustration: f.normalise }));
 vi.mock("./design", () => ({ slidePicture: f.photo }));
+vi.mock("./maps", () => ({ renderPlaceMap: f.map, validPlaces: (p: unknown[] | undefined) => p ?? [] }));
 vi.mock("@/server/studio/image-provider", async () => {
   class ImageProviderError extends Error { constructor(message: string, readonly uncertain: boolean, readonly costUsd = 0, readonly status?: number) { super(message); } }
   return { ImageProviderError, IMAGE_MODELS: { gemini: "g-img", openai: "o-img" }, IMAGE_RESERVE_USD: 0.15, generateLessonImage: f.generate,
@@ -24,7 +25,7 @@ beforeEach(() => {
 it("asks for a text-free, accurate, child-safe picture of the slide's scene", () => {
   const prompt = deckImagePrompt("Давня Греція", "Greek triremes in a rocky bay");
   expect(prompt).toContain("Давня Греція"); expect(prompt).toContain("Greek triremes");
-  expect(prompt).toMatch(/NO text/); expect(prompt).toMatch(/historically/); expect(prompt).toMatch(/suitable for a child/);
+  expect(prompt).toMatch(/NO text/); expect(prompt).toMatch(/historical/); expect(prompt).toMatch(/classical iconography/); expect(prompt).toMatch(/central/); expect(prompt).toMatch(/suitable for a child/);
 });
 
 it("generates, stores and logs the cost of an AI picture", async () => {
@@ -74,4 +75,25 @@ it("does not call the image service over the family budget and leaves the slide 
 
 it("estimates the picture cost of a deck", () => {
   expect(deckImageEstimateUsd(10)).toBe(0.4);
+});
+
+it("draws a map for a slide about places, without paying for a picture", async () => {
+  f.map.mockResolvedValue({ bytes: Buffer.from("map"), labels: [{ name: "Афіни", x: 0.5, y: 0.4 }] });
+  const visual = await prepareSlideVisual("fam", "deck", "Т", { ...slide, visualType: "map", places: [{ name: "Афіни", lat: 37.98, lon: 23.73 }] });
+  expect(visual).toMatchObject({ kind: "map", labels: [{ name: "Афіни" }], path: expect.stringMatching(/^deck-images\/fam\//) });
+  expect(f.generate).not.toHaveBeenCalled(); expect(f.photo).not.toHaveBeenCalled();
+});
+
+it("prefers a real photo for a real object and paints only when none is found", async () => {
+  f.photo.mockResolvedValueOnce({ bytes: Buffer.from("p"), credit: "Parthenon · A · CC BY 4.0 · https://commons.wikimedia.org/wiki/File:P" });
+  expect(await prepareSlideVisual("fam", "deck", "Т", { ...slide, visualType: "photo" })).toMatchObject({ kind: "photo" });
+  expect(f.generate).not.toHaveBeenCalled();
+  f.photo.mockResolvedValueOnce(undefined);
+  f.generate.mockResolvedValue({ bytes: new Uint8Array([1]), inputTokens: 1, outputTokens: 1, costUsd: 0.04, estimated: false });
+  expect(await prepareSlideVisual("fam", "deck", "Т", { ...slide, visualType: "photo" })).toMatchObject({ kind: "ai" });
+});
+
+it("leaves a slide without a picture when its type is none", async () => {
+  expect(await prepareSlideVisual("fam", "deck", "Т", { ...slide, visualType: "none" })).toEqual({ kind: "none" });
+  expect(f.generate).not.toHaveBeenCalled(); expect(f.photo).not.toHaveBeenCalled();
 });

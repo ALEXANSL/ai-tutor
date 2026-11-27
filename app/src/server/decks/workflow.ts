@@ -2,7 +2,7 @@ import { PPTX_BUCKET, PPTX_MIME, powerpointDestination, storageFailure } from ".
 import { buildLessonPptx } from "./design";
 import { lessonSlideSource } from "./lesson-content";
 import { callHomeworkModel } from "@/server/homework/model";
-import { outlineSchema, imagePromptsSchema } from "@/lib/lesson-slide-plan";
+import { outlineSchema, slideVisualsSchema } from "@/lib/lesson-slide-plan";
 import { DECK_IMAGES_PER_STEP, loadDeckImage, prepareSlideVisual } from "./visuals";
 import "server-only";
 import { PDFDocument } from "pdf-lib";
@@ -36,7 +36,18 @@ async function prepareVideo(family: string, id: string, deck: NarratedDeck) {
   }
 }
 
-const IMAGE_RULES = "Ілюстрація має пояснювати думку слайда, а не прикрашати його: учень, подивившись на неї, має краще зрозуміти саме takeaway. Для кожного слайда заповни imagePrompt англійською: конкретна сцена, що показує зміст цього слайда (хто/що, де, коли, деталі доби чи місцевості, дія, ракурс), 1–3 речення, без тексту на зображенні. Наприклад, для давньої Греції: «природа обмежувала землеробство» — кам’янисті схили з терасами олив і виноградників над морем; «греки стали мореплавцями» — триери й торгові кораблі в скелястій бухті; «полісне життя» — агора з колонадою, де городяни обговорюють справи. Для висновку обери узагальнювальну сцену теми, що поєднує головні думки уроку, а не абстрактну схему. Залиш imagePrompt порожнім лише тоді, коли картинка введе в оману (точна математика, формула). caption — одне речення, що підказує, на що звернути увагу на ілюстрації і як це пов’язано з думкою слайда.";
+const IMAGE_RULES = [
+  "Візуал має показувати саме той предмет, місце чи подію, про які говорить слайд, а не загальний фон: розповідаємо про піраміди — показуємо піраміди, а не пустелю; про чашку — чашку, а не сервіз. Учень, подивившись, має впізнати й запам’ятати образ, пов’язаний із takeaway.",
+  "Для кожного слайда обери visualType:",
+  "• map — коли слайд називає країни, міста, острови, моря, річки, гори чи шляхи (де це було). Заповни places: 1–8 місць українською з точними координатами центру (lat, lon у градусах, південь і захід — від’ємні). Карта малюється кодом із позначками й українськими підписами.",
+  "• photo — коли головне на слайді реальний об’єкт: пам’ятка архітектури, руїни, музейний артефакт, скульптура, мінерал, гірська порода, рослина, тварина, портрет чи бюст історичної постаті. photoQuery — точна англійська назва цього об’єкта для Wikimedia Commons (наприклад «Great Pyramid of Giza», «Parthenon Athens», «Bust of Pericles», «granite rock sample»).",
+  "• illustration — подія, побут, процес, сцена з твору, міфологічний сюжет, узагальнення теми.",
+  "• none — лише коли будь-яка картинка введе в оману (точна математика, формула).",
+  "Для photo та illustration заповни imagePrompt англійською: 1–3 речення про конкретний предмет у центрі кадру (хто/що, де, коли, деталі доби чи місцевості, ракурс), без тексту на зображенні. Він потрібен і для photo, як запасний варіант, якщо реального фото не знайдеться; для map залиш imagePrompt порожнім.",
+  "Достовірність: люди, одяг, зачіски, зброя, знаряддя, будівлі й місцевість — такими, якими вони були насправді в цю добу і в цьому місці за історичними й археологічними джерелами, без сучасних переосмислень. Боги й міфологічні герої — за класичною іконографією (наприклад, Зевс — зрілий бородатий чоловік як в античній скульптурі, з блискавкою та орлом; Афіна — у шоломі, з егідою і списом). Реальні історичні постаті показуй через photo (портрет, бюст, картина), а не генерацією.",
+  "Література: персонажі й сцени — як їх описує текст твору, з деталями доби і місця дії. Географія: мінерали, породи, форми рельєфу, природні зони — крупно і впізнавано.",
+  "Не повторюй той самий образ на різних слайдах. caption — одне речення українською: на що звернути увагу на зображенні і як це пов’язано з думкою слайда.",
+].join(" ");
 
 async function prepareSlide(family: string, id: string) {
   const deck = await getDeck(family, id);
@@ -50,27 +61,32 @@ async function prepareSlide(family: string, id: string) {
       const material = await lessonSlideSource(family, generated.href);
       const answer = await callHomeworkModel({
         schema: outlineSchema,
-        system: "Створи цілісну ілюстровану шкільну презентацію українською для планшета. Матеріал уроку є джерелом фактів. Побудуй 6–12 слайдів залежно від обсягу: вступ, пояснення з конкретними прикладами, порівняння або послідовність, самоперевірка та висновок. Одна думка на слайд. heading до 70 символів, takeaway до 240, narration — природний усний коментар учителя, що доповнює слайд. Підготуй короткий сценарій, до 100 слів озвучення на слайд. "+IMAGE_RULES+" photoQuery — запасний точний пошуковий запит Wikimedia Commons англійською для реального фото (пам’ятка, артефакт, місце, об’єкт природи); для схем залиш порожнім.",
+        system: "Створи цілісну ілюстровану шкільну презентацію українською для планшета. Матеріал уроку є джерелом фактів. Побудуй 6–12 слайдів залежно від обсягу: вступ, пояснення з конкретними прикладами, порівняння або послідовність, самоперевірка та висновок. Одна думка на слайд. heading до 70 символів, takeaway до 240, narration — природний усний коментар учителя, що доповнює слайд. Підготуй короткий сценарій, до 100 слів озвучення на слайд. "+IMAGE_RULES+" Для illustration теж заповни photoQuery, якщо існує реальне фото того самого об’єкта (запасний варіант); інакше порожньо.",
         prompt: JSON.stringify({ title: deck.title, wishes: generated.wishes, lesson: material.slice(0, 80000) }),
       }, { familyId: family, ref: { table: "jobs", id } });
       const outline = outlineSchema.parse(answer.result);
-      const plan = { slides: outline.slides.map(s => ({ ...s, imagePrompt: s.imagePrompt.trim() })) };
+      const plan = { slides: outline.slides.map(s => ({ ...s, imagePrompt: s.imagePrompt.trim(), places: s.visualType === "map" ? s.places : [] })) };
       if (!plan.slides.length || plan.slides.length > 20 || plan.slides.some(s => !s.heading.trim() || !s.takeaway.trim() || !s.narration.trim())) throw new Error("ШІ повернув неповний план презентації.");
       await updateDeck(family, id, deck, { generated: { ...generated, plan }, retry: null });
       return { requeue: true as const };
     }
     if (generated?.plan && !generated.pptxReady) {
       const plan = generated.plan;
-      // Plans saved before ADR-050 have no image prompts: write them once for the whole deck.
-      if (plan.slides.some(slide => slide.imagePrompt === undefined)) {
+      // Plans saved before ADR-051 have no visual type: choose the visuals once for the whole deck
+      // (text, narration and saved voice stay as they are).
+      if (plan.slides.some(slide => slide.visualType === undefined)) {
         const answer = await callHomeworkModel({
-          schema: imagePromptsSchema,
-          system: "Для кожного наданого слайда шкільної презентації напиши prompts[i] у тому самому порядку. " + IMAGE_RULES,
-          prompt: JSON.stringify({ title: deck.title, slides: plan.slides.map(({ heading, takeaway, caption }) => ({ heading, takeaway, caption })) }),
+          schema: slideVisualsSchema,
+          system: "Для кожного наданого слайда шкільної презентації заповни visuals[i] у тому самому порядку: visualType, places, photoQuery, imagePrompt, caption. " + IMAGE_RULES,
+          prompt: JSON.stringify({ title: deck.title, slides: plan.slides.map(({ heading, takeaway, narration }) => ({ heading, takeaway, narration })) }),
         }, { familyId: family, ref: { table: "jobs", id } });
-        const { prompts } = imagePromptsSchema.parse(answer.result);
-        if (prompts.length !== plan.slides.length) throw new Error("ШІ повернув неповний опис ілюстрацій.");
-        await updateDeck(family, id, deck, { generated: { ...generated, plan: { slides: plan.slides.map((slide, i) => ({ ...slide, imagePrompt: prompts[i]!.trim() })) } }, retry: null });
+        const { visuals } = slideVisualsSchema.parse(answer.result);
+        if (visuals.length !== plan.slides.length) throw new Error("ШІ повернув неповний опис ілюстрацій.");
+        const slides = plan.slides.map((slide, i) => {
+          const v = visuals[i]!;
+          return { ...slide, visualType: v.visualType, places: v.visualType === "map" ? v.places : [], photoQuery: v.photoQuery, imagePrompt: v.imagePrompt.trim(), caption: v.caption.trim() || slide.caption, visual: undefined };
+        });
+        await updateDeck(family, id, deck, { generated: { ...generated, plan: { slides } }, retry: null });
         return { requeue: true as const };
       }
       const pending = plan.slides.flatMap((slide, index) => slide.visual ? [] : [index]).slice(0, DECK_IMAGES_PER_STEP);
