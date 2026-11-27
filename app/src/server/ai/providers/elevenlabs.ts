@@ -56,9 +56,30 @@ export async function elevenlabsTts(req: ElevenLabsTtsRequest, fetchImpl: typeof
   if (!res.ok) {
     // 401 = wrong key, 402/quota = subscription used up: both are worth falling back to OpenAI.
     const retryable = res.status === 429 || res.status >= 500;
-    throw new ProviderError(`elevenlabs tts error ${res.status}`, "elevenlabs", res.status, retryable);
+    const reason = await errorReason(res);
+    throw new ProviderError(`elevenlabs tts error ${res.status}${reason ? `: ${reason}` : ""}`, "elevenlabs", res.status, retryable);
   }
   const bytes = Buffer.from(await res.arrayBuffer());
   if (!bytes.length) throw new ProviderError("elevenlabs tts: empty audio", "elevenlabs", res.status, true);
   return { data: { audioBase64: bytes.toString("base64"), mimeType: "audio/mpeg" }, usage: { inputTokens: 0, outputTokens: 0 } };
+}
+
+/**
+ * ElevenLabs explains a refusal in `detail` ({status, message} or a validation list):
+ * e.g. "missing_permissions", "voice_not_found", "quota_exceeded". Kept short for the AI log;
+ * the response never echoes the key.
+ */
+async function errorReason(res: Response): Promise<string> {
+  try {
+    const text = await res.text();
+    let detail: unknown = text;
+    try { detail = (JSON.parse(text) as { detail?: unknown }).detail ?? text; } catch { /* plain text */ }
+    const reason = typeof detail === "string" ? detail
+      : detail && typeof detail === "object" && "status" in detail
+        ? [(detail as { status?: unknown }).status, (detail as { message?: unknown }).message].filter(Boolean).join(" — ")
+        : JSON.stringify(detail);
+    return reason.replace(/\s+/g, " ").trim().slice(0, 200);
+  } catch {
+    return "";
+  }
 }
