@@ -6,7 +6,8 @@ import { reconcileDeck } from "@/server/decks/recovery";
 import { DeckProgress } from "@/components/decks/DeckProgress";
 import { DeckPlayer } from "@/components/decks/DeckPlayer";
 import { deckLessonOptions } from "@/server/decks/placement";
-import { changeDeckPlacement, publishDeck, remakeDeckVideo, retryDeck } from "@/app/actions/narrated-decks";
+import { changeDeckPlacement, publishDeck, redrawDeckIllustrations, remakeDeckVideo, retryDeck } from "@/app/actions/narrated-decks";
+import { deckImageEstimateUsd } from "@/server/decks/visuals";
 import { parentButton, parentInput } from "@/app/parent/ui";
 export const maxDuration = 300;
 export default async function ParentDeckPage({ params }: { params: Promise<{id: string}> }) {
@@ -21,8 +22,10 @@ export default async function ParentDeckPage({ params }: { params: Promise<{id: 
   const pending = deck.slides.findIndex(s => !s.ready);
   const retryMinutes = deck.retry ? Math.max(0, Math.ceil((Date.parse(deck.retry.at) - Date.now()) / 60000)) : 0;
   const plan = deck.generated?.plan;
-  const prepared = plan?.slides.filter(slide => slide.drawing.length).length ?? 0;
-  const stage = !deck.generated ? undefined : deck.generated.pptxReady ? "Етап: підготовка до перегляду." : !plan ? "Етап: сценарій за матеріалами уроку." : prepared < plan.slides.length ? `Етап: ілюстрації. Підготовлено ${prepared} із ${plan.slides.length}.` : "Етап: оформлення PowerPoint.";
+  const prepared = plan?.slides.filter(slide => slide.visual).length ?? 0;
+  const illustrated = plan?.slides.filter(slide => slide.visual?.kind === "ai" || slide.visual?.kind === "photo").length ?? 0;
+  const redrawCost = plan ? deckImageEstimateUsd(plan.slides.length) : 0;
+  const stage = !deck.generated ? undefined : deck.generated.pptxReady ? "Етап: підготовка до перегляду." : !plan ? "Етап: сценарій за матеріалами уроку." : prepared < plan.slides.length ? `Етап: ілюстрації до слайдів. Готово ${prepared} із ${plan.slides.length}.` : "Етап: оформлення PowerPoint.";
   const options = deck.state === "processing" ? [] : await deckLessonOptions(familyId, deck.subjectId);
   return <main className="mx-auto max-w-5xl space-y-5"><Link href="/parent/studio/presentations">← Мої презентації</Link><h1 className="text-2xl font-bold">{deck.title}</h1>
     {deck.generated?.pptxReady && <a className="underline" href={`/api/presentations/${id}/lesson.pptx?preview=1`}>Завантажити PowerPoint</a>}
@@ -36,6 +39,8 @@ export default async function ParentDeckPage({ params }: { params: Promise<{id: 
       {deck.video?.state === "ready" ? <p><a className={`${parentButton} inline-flex items-center`} href={`/api/presentations/${id}/lesson.mp4?preview=1`}>Завантажити відео MP4</a>{deck.video.bytes ? <span className="ml-3 text-sm">{Math.max(1, Math.round(deck.video.bytes / 1048576))} МБ</span> : null}</p>
         : deck.video?.state === "error" ? <><p role="alert">Відео не вдалося зробити. {deck.video.error}</p><form action={remakeDeckVideo.bind(null, id)}><button className={parentButton}>Спробувати ще раз</button></form></>
         : <p role="status">Відео MP4 готується на сервері автоматично, зазвичай до хвилини. Сторінку можна закрити, файл з’явиться тут.</p>}
-    </section></>}
+    </section>
+      {plan && <form action={redrawDeckIllustrations.bind(null, id)} className="space-y-1"><p className="text-sm">Ілюстрації за темою: {illustrated} із {plan.slides.length} слайдів. Можна намалювати їх заново: сценарій і озвучка лишаться, оплачуються лише нові картинки{redrawCost ? ` (приблизно ${"$" + redrawCost.toFixed(2)})` : ""}.</p><button className={parentButton}>Перемалювати ілюстрації</button></form>}
+    </>}
   </main>;
 }

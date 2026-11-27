@@ -101,3 +101,20 @@ export async function generateLessonDeck(subjectId: string, topicId: string, wis
   if (!lesson) throw new Error("Вибраний урок недоступний у цьому предметі.");
   return queueLessonDeck(familyId, { key: ["lesson-deck", familyId, subjectId, topic, ids.parse(requestId)], subjectId, topicId: topic, title: lesson.title, href: lesson.href, wishes: z.string().max(2000).parse(wishes) });
 }
+
+/** ADR-050: rebuild a generated deck with a real picture on every slide. Keeps the
+ * script and the narration text, so saved voice files are reused and only the
+ * pictures are paid for (cached pictures are free). */
+export async function redrawDeckIllustrations(id: string) {
+  const { familyId } = await requireParentAccess();
+  z.string().uuid().parse(id);
+  const deck = await getDeck(familyId, id);
+  const plan = deck?.generated?.plan;
+  if (!deck || !deck.generated || !plan || deck.state === "processing") throw new Error("Перемалювати можна лише готову презентацію, створену з уроку.");
+  await updateDeck(familyId, id, deck, {
+    state: "processing", error: "", retry: null, slides: [], video: null,
+    generated: { ...deck.generated, pptxReady: false, plan: { slides: plan.slides.map(({ visual: _visual, drawing: _drawing, ...slide }) => slide) } },
+  });
+  await schedule(familyId, id);
+  revalidatePath(`/parent/studio/presentations/${id}`);
+}
