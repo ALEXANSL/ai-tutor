@@ -83,7 +83,11 @@ export function getServerSecret(
     | "ALERT_EMAIL_FROM"
     | "TELEGRAM_BOT_TOKEN"
     | "TELEGRAM_WEBHOOK_SECRET"
-    | "APP_BASE_URL",
+    | "APP_BASE_URL"
+    // ADR-049: ElevenLabs narration voice (key is secret; voice/model ids are not).
+    | "ELEVENLABS_API_KEY"
+    | "ELEVENLABS_VOICE_ID"
+    | "ELEVENLABS_MODEL_ID",
 ): string | null {
   return process.env[name]?.trim() || null;
 }

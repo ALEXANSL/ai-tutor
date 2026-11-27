@@ -3,6 +3,7 @@ import type { z } from "zod";
 import { estimateCostUsd, fallbackOf, selectModel } from "./policy";
 import { anthropicStructured, anthropicVisionStructured } from "./providers/anthropic";
 import { openaiEmbed, openaiStructured, openaiTts, openaiTranscribe } from "./providers/openai";
+import { elevenlabsTts } from "./providers/elevenlabs";
 import * as store from "./store";
 import {
   AiNotConfiguredError,
@@ -88,7 +89,7 @@ export const defaultRouterDeps: RouterDeps = {
     // `passive_narration` route's fallback stays inert until one is added
     // (documented in the seed migration), same caveat pattern already used
     // elsewhere for an unconfirmed reserve provider.
-    audio: { openai: (req) => openaiTts(req) },
+    audio: { openai: (req) => openaiTts(req), elevenlabs: (req) => elevenlabsTts(req) },
     transcription: { openai: (req) => openaiTranscribe(req) },
   },
   now: () => Date.now(),
