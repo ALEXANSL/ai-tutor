@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { lessonDeckStates } from "@/server/decks/placement";
 import { ReadyLessonCatalog } from "@/components/parent/subjects/ReadyLessonCatalog";
 import { studioPublicationsForSubject } from "@/server/studio/links";
 import { notFound } from "next/navigation";
@@ -31,6 +32,7 @@ export default async function CourseDetailPage({ params }: { params: Promise<{ i
   const [course, groups] = await Promise.all([getSubjectDetail(familyId, id), listCourseGroupsOverview(familyId)]);
   if (!course || course.kind !== "course") notFound();
   const extensions = await studioPublicationsForSubject(familyId, id).catch(() => []);
+  const decks = await lessonDeckStates(familyId, id).catch(() => ({}));
   const t = uk.parent.courses;
 
   return (
@@ -53,7 +55,7 @@ export default async function CourseDetailPage({ params }: { params: Promise<{ i
       </Panel>
 
       <div className="mb-5 flex flex-wrap gap-3"><Link href={`/parent/studio/new?subject=${id}`} className="inline-flex min-h-11 items-center rounded-xl bg-p-primary px-4 text-sm font-bold text-white">Підготувати урок із ШІ</Link><Link href="/parent/studio?tab=course" className="inline-flex min-h-11 items-center px-2 text-sm font-bold text-p-primary">Імпортувати готовий ZIP</Link><Link href="/parent/books" className="inline-flex min-h-11 items-center px-3 text-sm font-bold text-p-primary">Книги та джерела</Link></div>
-      <Panel title="Готові уроки курсу"><ReadyLessonCatalog extensions={extensions} topics={course.topics} subjectId={id} canOpen={access.via === "tablet"} /></Panel>
+      <Panel title="Готові уроки курсу"><ReadyLessonCatalog decks={decks} extensions={extensions} topics={course.topics} subjectId={id} canOpen={access.via === "tablet"} /></Panel>
     </>
   );
 }

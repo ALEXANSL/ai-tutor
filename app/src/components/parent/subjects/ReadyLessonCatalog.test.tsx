@@ -24,3 +24,9 @@ it("offers the script generator in the parent's own account without granting chi
   expect(container.querySelector('a[href="/parent/subjects/subject/video-script?topic=ready"]')).not.toBeNull();
   expect(container.querySelector('a[href="/literature-v3/chapter"]')).toBeNull();
 });
+it("offers one narrated presentation per old lesson and opens an existing one instead of paying again", () => {
+  act(() => root.render(<ReadyLessonCatalog topics={topics} canOpen={false} subjectId="subject" decks={{ math: { id: "deck-1", label: "готується" } }} />));
+  expect(container.querySelector('button[aria-label="Зробити презентацію з озвучкою: §16. Цивілізації"]')).not.toBeNull();
+  expect(container.querySelector('button[aria-label="Зробити презентацію з озвучкою: §2. Дроби"]')).toBeNull();
+  expect(container.querySelector('a[href="/parent/studio/presentations/deck-1"]')?.textContent).toContain("готується");
+});
