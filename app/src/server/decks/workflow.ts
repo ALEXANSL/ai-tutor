@@ -2,7 +2,8 @@ import { PPTX_BUCKET, PPTX_MIME, powerpointDestination, storageFailure } from ".
 import { buildLessonPptx } from "./design";
 import { lessonSlideSource } from "./lesson-content";
 import { callHomeworkModel } from "@/server/homework/model";
-import { outlineSchema, artworkSchema } from "@/lib/lesson-slide-plan";
+import { outlineSchema, imagePromptsSchema } from "@/lib/lesson-slide-plan";
+import { DECK_IMAGES_PER_STEP, loadDeckImage, prepareSlideVisual } from "./visuals";
 import "server-only";
 import { PDFDocument } from "pdf-lib";
 import { z } from "zod";
@@ -19,6 +20,8 @@ import { speakerNotes } from "./notes";
 import { deckRetry } from "./retry";
 import { renderDeckPdf } from "./convert";
 
+const IMAGE_RULES = "Ілюстрація має пояснювати думку слайда, а не прикрашати його: учень, подивившись на неї, має краще зрозуміти саме takeaway. Для кожного слайда заповни imagePrompt англійською: конкретна сцена, що показує зміст цього слайда (хто/що, де, коли, деталі доби чи місцевості, дія, ракурс), 1–3 речення, без тексту на зображенні. Наприклад, для давньої Греції: «природа обмежувала землеробство» — кам’янисті схили з терасами олив і виноградників над морем; «греки стали мореплавцями» — триери й торгові кораблі в скелястій бухті; «полісне життя» — агора з колонадою, де городяни обговорюють справи. Для висновку обери узагальнювальну сцену теми, що поєднує головні думки уроку, а не абстрактну схему. Залиш imagePrompt порожнім лише тоді, коли картинка введе в оману (точна математика, формула). caption — одне речення, що підказує, на що звернути увагу на ілюстрації і як це пов’язано з думкою слайда.";
+
 async function prepareSlide(family: string, id: string) {
   const deck = await getDeck(family, id);
   if (!deck || deck.state !== "processing") return;
@@ -30,32 +33,40 @@ async function prepareSlide(family: string, id: string) {
       const material = await lessonSlideSource(family, generated.href);
       const answer = await callHomeworkModel({
         schema: outlineSchema,
-        system: "Створи цілісну ілюстровану шкільну презентацію українською для планшета. Матеріал уроку є джерелом фактів. Побудуй 6–12 слайдів залежно від обсягу: вступ, пояснення з конкретними прикладами, порівняння або послідовність, самоперевірка та висновок. Одна думка на слайд. heading до 70 символів, takeaway до 240, caption коротко пояснює зображення. narration — природний усний коментар учителя, що доповнює слайд. Підготуй короткий сценарій, до 100 слів озвучення на слайд. Для доречних документальних фото заповни photoQuery точним пошуковим запитом Wikimedia Commons англійською; для схем залиш порожнім. Підпис і коментар мають бути точними для обох варіантів зображення.",
+        system: "Створи цілісну ілюстровану шкільну презентацію українською для планшета. Матеріал уроку є джерелом фактів. Побудуй 6–12 слайдів залежно від обсягу: вступ, пояснення з конкретними прикладами, порівняння або послідовність, самоперевірка та висновок. Одна думка на слайд. heading до 70 символів, takeaway до 240, narration — природний усний коментар учителя, що доповнює слайд. Підготуй короткий сценарій, до 100 слів озвучення на слайд. "+IMAGE_RULES+" photoQuery — запасний точний пошуковий запит Wikimedia Commons англійською для реального фото (пам’ятка, артефакт, місце, об’єкт природи); для схем залиш порожнім.",
         prompt: JSON.stringify({ title: deck.title, wishes: generated.wishes, lesson: material.slice(0, 80000) }),
       }, { familyId: family, ref: { table: "jobs", id } });
       const outline = outlineSchema.parse(answer.result);
-      const plan = { slides: outline.slides.map(s => ({ ...s, drawing: [] })) };
+      const plan = { slides: outline.slides.map(s => ({ ...s, imagePrompt: s.imagePrompt.trim() })) };
       if (!plan.slides.length || plan.slides.length > 20 || plan.slides.some(s => !s.heading.trim() || !s.takeaway.trim() || !s.narration.trim())) throw new Error("ШІ повернув неповний план презентації.");
       await updateDeck(family, id, deck, { generated: { ...generated, plan }, retry: null });
       return { requeue: true as const };
     }
     if (generated?.plan && !generated.pptxReady) {
-      const pending = generated.plan.slides.flatMap((slide, index) => slide.drawing.length ? [] : [index]).slice(0, 2);
-      if (pending.length) {
+      const plan = generated.plan;
+      // Plans saved before ADR-050 have no image prompts: write them once for the whole deck.
+      if (plan.slides.some(slide => slide.imagePrompt === undefined)) {
         const answer = await callHomeworkModel({
-          schema: artworkSchema,
-          system: "Створи по одній предметній векторній ілюстрації для кожного з наданих слайдів, у тому самому порядку. Використай 5–12 осмислено розташованих фігур, координати й розміри в межах 0–100. Зобрази силует об’єкта, модель або навчальну схему за підписом. Зберігай єдиний стиль і палітру.",
-          prompt: JSON.stringify({ title: deck.title, slides: pending.map(i => generated.plan!.slides[i]) }),
+          schema: imagePromptsSchema,
+          system: "Для кожного наданого слайда шкільної презентації напиши prompts[i] у тому самому порядку. " + IMAGE_RULES,
+          prompt: JSON.stringify({ title: deck.title, slides: plan.slides.map(({ heading, takeaway, caption }) => ({ heading, takeaway, caption })) }),
         }, { familyId: family, ref: { table: "jobs", id } });
-        const { drawings } = artworkSchema.parse(answer.result);
-        if (drawings.length !== pending.length || drawings.some(item => !item.drawing.length)) throw new Error("ШІ повернув неповну ілюстрацію.");
-        const slides = [...generated.plan.slides];
-        pending.forEach((index, n) => { slides[index] = { ...slides[index]!, drawing: drawings[n]!.drawing }; });
+        const { prompts } = imagePromptsSchema.parse(answer.result);
+        if (prompts.length !== plan.slides.length) throw new Error("ШІ повернув неповний опис ілюстрацій.");
+        await updateDeck(family, id, deck, { generated: { ...generated, plan: { slides: plan.slides.map((slide, i) => ({ ...slide, imagePrompt: prompts[i]!.trim() })) } }, retry: null });
+        return { requeue: true as const };
+      }
+      const pending = plan.slides.flatMap((slide, index) => slide.visual ? [] : [index]).slice(0, DECK_IMAGES_PER_STEP);
+      if (pending.length) {
+        const visuals = await Promise.all(pending.map(i => prepareSlideVisual(family, id, deck.title, plan.slides[i]!)));
+        const slides = [...plan.slides];
+        pending.forEach((index, n) => { slides[index] = { ...slides[index]!, visual: visuals[n]! }; });
         await updateDeck(family, id, deck, { generated: { ...generated, plan: { slides } }, retry: null });
         return { requeue: true as const };
       }
       const destination = await powerpointDestination();
-      const bytes = await buildLessonPptx(deck.title, generated.plan);
+      const pictures = await Promise.all(generated.plan.slides.map(slide => slide.visual?.path ? loadDeckImage(slide.visual.path) : undefined));
+      const bytes = await buildLessonPptx(deck.title, generated.plan, pictures);
       const saved = await destination.upload(pptxPath(family, id), bytes, { contentType: PPTX_MIME, upsert: true });
       if (saved.error) throw storageFailure("Збереження PowerPoint", saved.error);
       await updateDeck(family, id, deck, { generated: { ...generated, pptxReady: true, pptxBucket: PPTX_BUCKET }, retry: null });
