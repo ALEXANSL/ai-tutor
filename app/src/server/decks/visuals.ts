@@ -14,13 +14,13 @@ export const DECK_IMAGE_PRICE_USD: Record<ImageProvider, number> = { gemini: 0.0
 /** Slides illustrated per background step; each call may take up to a minute. */
 export const DECK_IMAGES_PER_STEP = 3;
 
-/** Cheapest configured provider first (lesson-visual-style §3.6). DECK_IMAGE_PROVIDER can pin one. */
-export function deckImageProvider(): ImageProvider | undefined {
+/** Configured providers, cheapest first (lesson-visual-style §3.6). DECK_IMAGE_PROVIDER can put one first. */
+export function deckImageProviders(): ImageProvider[] {
   const available = imageProviders().filter(p => p.available).map(p => p.provider);
   const pinned = process.env.DECK_IMAGE_PROVIDER;
-  if (pinned === "gemini" || pinned === "openai") return available.includes(pinned) ? pinned : available[0];
-  return available[0];
+  return pinned === "gemini" || pinned === "openai" ? [...available.filter(p => p === pinned), ...available.filter(p => p !== pinned)] : available;
 }
+export function deckImageProvider(): ImageProvider | undefined { return deckImageProviders()[0]; }
 export function deckImageEstimateUsd(slides: number) {
   const provider = deckImageProvider();
   return provider ? Math.round(slides * DECK_IMAGE_PRICE_USD[provider] * 100) / 100 : 0;
@@ -56,33 +56,36 @@ export async function loadDeckImage(path: string) {
 }
 
 async function generated(family: string, deckId: string, lessonTitle: string, scene: string): Promise<SlideVisual | undefined> {
-  const provider = deckImageProvider();
-  if (!provider) return;
   const prompt = deckImagePrompt(lessonTitle, scene);
-  const model = IMAGE_MODELS[provider];
-  // Cache by provider + model + prompt: rebuilding a deck never pays twice for the same picture.
-  const path = `deck-images/${family}/${createHash("sha256").update(`${provider}\n${model}\n${prompt}`).digest("hex")}.jpg`;
   const credit = "Ілюстрація створена ШІ (художня реконструкція)";
+  // Cache by prompt across providers: rebuilding a deck never pays twice for the same picture.
+  const path = `deck-images/${family}/${createHash("sha256").update(`deck-image-v1\n${prompt}`).digest("hex")}.jpg`;
   if (await stored(path)) return { kind: "ai", path, credit };
-  if (["budget", "hard_stop"].includes(await getBudgetState(family))) return;
-  const started = Date.now();
-  const log = (status: "ok" | "error", cost: number, input = 0, output = 0, error?: string) => recordCall(family, {
-    role: "deck.illustration", provider, model, status, input_tokens: input, output_tokens: output, cached_input_tokens: 0, cache_write_tokens: 0,
-    cost_usd: cost, latency_ms: Date.now() - started, fallback_used: false, ref_table: "jobs", ref_id: deckId, ...(error ? { error } : {}),
-  });
-  let image: Awaited<ReturnType<typeof generateLessonImage>>;
-  try { image = await generateLessonImage(provider, prompt); }
-  catch (error) {
-    // No automatic repeat of a possibly charged call: the slide falls back to a photo.
-    const known = error instanceof ImageProviderError;
-    await log("error", known ? error.costUsd : IMAGE_RESERVE_USD, 0, 0, !known || error.uncertain ? "image_result_uncertain; conservative estimate" : "image_generation_failed");
-    return;
+  for (const provider of deckImageProviders()) {
+    if (["budget", "hard_stop"].includes(await getBudgetState(family))) return;
+    const model = IMAGE_MODELS[provider];
+    const started = Date.now();
+    const log = (status: "ok" | "error", cost: number, input = 0, output = 0, error?: string) => recordCall(family, {
+      role: "deck.illustration", provider, model, status, input_tokens: input, output_tokens: output, cached_input_tokens: 0, cache_write_tokens: 0,
+      cost_usd: cost, latency_ms: Date.now() - started, fallback_used: provider !== deckImageProviders()[0], ref_table: "jobs", ref_id: deckId, ...(error ? { error: error.slice(0, 300) } : {}),
+    });
+    let image: Awaited<ReturnType<typeof generateLessonImage>>;
+    try { image = await generateLessonImage(provider, prompt); }
+    catch (error) {
+      const known = error instanceof ImageProviderError;
+      const uncertain = !known || error.uncertain;
+      await log("error", known ? error.costUsd : IMAGE_RESERVE_USD, 0, 0, `${uncertain ? "image_result_uncertain; conservative estimate" : "image_generation_failed"}${known && error.status ? ` (HTTP ${error.status})` : ""}: ${error instanceof Error ? error.message : ""}`);
+      // A possibly charged call is never repeated; a clear refusal (bad model, access, quota) moves on to the next provider.
+      if (uncertain) return;
+      continue;
+    }
+    await log("ok", image.costUsd, image.inputTokens, image.outputTokens, image.estimated ? "usage_missing; conservative estimate" : undefined);
+    let bytes: Buffer;
+    try { bytes = await normaliseIllustration(image.bytes); } catch { return; }
+    await save(path, bytes);
+    return { kind: "ai", path, credit };
   }
-  await log("ok", image.costUsd, image.inputTokens, image.outputTokens, image.estimated ? "usage_missing; conservative estimate" : undefined);
-  let bytes: Buffer;
-  try { bytes = await normaliseIllustration(image.bytes); } catch { return; }
-  await save(path, bytes);
-  return { kind: "ai", path, credit };
+  return;
 }
 
 /** Picks the slide's picture: AI illustration first, a free-licence Commons photo as the
