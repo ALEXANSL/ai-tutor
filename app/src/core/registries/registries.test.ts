@@ -24,8 +24,8 @@ describe("parent navigation (US-11.8, US-2.7 KP-3)", () => {
 
   it("has six sections, in order (D-131)", () => {
     expect(items.map((i) => i.label)).toEqual(["Огляд", "Майстерня ШІ", "Предмети й курси", "Школа", "Бібліотека", "Дитина й налаштування"]);
-    expect(items.find((i) => i.key === "books")).toMatchObject({ href: "/parent/books", status: "active" });
-    expect(items.find((i) => i.key === "books")?.match).toEqual(expect.arrayContaining(["/parent/library", "/parent/videos"]));
+    expect(items.find((i) => i.key === "books")).toMatchObject({ href: "/parent/catalog", status: "active" });
+    expect(items.find((i) => i.key === "books")?.match).toEqual(expect.arrayContaining(["/parent/books", "/parent/library", "/parent/videos"]));
   });
 
   it("has no inactive placeholders in the menu (D-130)", () => {

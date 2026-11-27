@@ -14,6 +14,7 @@ export const SECTION_TABS = {
     { href: "/parent/courses", label: "Курси" },
   ],
   library: [
+    { href: "/parent/catalog", label: "Усі матеріали" },
     { href: "/parent/books", label: "Книги та джерела" },
     { href: "/parent/library", label: "Аудіо" },
     { href: "/parent/videos", label: "Відео" },
