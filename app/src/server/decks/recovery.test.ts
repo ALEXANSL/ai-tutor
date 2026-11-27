@@ -28,3 +28,13 @@ it("automatically resumes the legacy storage failure once without wiping the scr
   await reconcileDeck("family", "deck", { ...failure, retryPolicyVersion: 1 });
   expect(f.enqueue).toHaveBeenCalledTimes(1);
 });
+it("queues a server video once for a finished deck that has none (ADR-049)", async () => {
+  const ready = { ...draft, state: "ready" as const, slides: [{ notes: "", narration: "т", ready: true }] };
+  const next = await reconcileDeck("family", "deck", ready);
+  expect(next.video).toEqual({ state: "pending" });
+  expect(f.enqueue).toHaveBeenCalledTimes(1); expect(f.kick).toHaveBeenCalledTimes(1);
+  vi.clearAllMocks();
+  await reconcileDeck("family", "deck", { ...ready, video: { state: "ready" } });
+  await reconcileDeck("family", "deck", { ...ready, video: { state: "error", error: "x" } });
+  expect(f.enqueue).not.toHaveBeenCalled(); expect(f.update).not.toHaveBeenCalled();
+});

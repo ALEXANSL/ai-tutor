@@ -5,9 +5,8 @@ import { getDeck } from "@/server/decks/store";
 import { reconcileDeck } from "@/server/decks/recovery";
 import { DeckProgress } from "@/components/decks/DeckProgress";
 import { DeckPlayer } from "@/components/decks/DeckPlayer";
-import { DeckVideoExport } from "@/components/decks/DeckVideoExport";
 import { deckLessonOptions } from "@/server/decks/placement";
-import { changeDeckPlacement, publishDeck, redrawDeckIllustrations, retryDeck } from "@/app/actions/narrated-decks";
+import { changeDeckPlacement, publishDeck, redrawDeckIllustrations, remakeDeckVideo, retryDeck } from "@/app/actions/narrated-decks";
 import { deckImageEstimateUsd } from "@/server/decks/visuals";
 import { parentButton, parentInput } from "@/app/parent/ui";
 export const maxDuration = 300;
@@ -36,7 +35,12 @@ export default async function ParentDeckPage({ params }: { params: Promise<{id: 
     {deck.state === "processing" && deck.retry && <p role="status">{deck.retry.reason} {retryMinutes ? `Автоматична спроба приблизно через ${retryMinutes} хв.` : "Повтор заплановано. Сторінку можна закрити, підготовка продовжується у фоновій черзі."}</p>}
     {deck.state === "processing" && <DeckProgress stage={stage} waiting={!!deck.retry} nextSlide={pending + 1} hasScript={!!deck.slides[pending]?.narration} scripts={deck.slides.filter(s => s.narration).length} done={deck.slides.filter(s => s.ready).length} total={deck.slides.length} />}
     {deck.state === "error" && <><p role="alert">Підготовка зупинилась. {deck.error}</p><form action={retryDeck.bind(null, id)}><button className={parentButton}>Продовжити зі збереженого слайда</button></form></>}
-    {deck.state === "ready" && <><p>{deck.published ? (deck.topicId ? "Опубліковано як додатковий матеріал уроку." : "Опубліковано в додаткових матеріалах предмета.") : "Готово до попереднього перегляду."}</p><form action={publishDeck.bind(null, id, !deck.published)}><button className={parentButton}>{deck.published ? "Приховати від дитини" : "Опублікувати дитині"}</button></form><DeckPlayer id={id} scripts={deck.slides.map(s => s.narration)} preview /><DeckVideoExport id={id} title={deck.title} slides={deck.slides.length} preview />
-      {plan && <form action={redrawDeckIllustrations.bind(null, id)} className="space-y-1"><p className="text-sm">Ілюстрації за темою: {illustrated} із {plan.slides.length} слайдів. Можна намалювати їх заново: сценарій і озвучка лишаться, оплачуються лише нові картинки{redrawCost ? ` (приблизно ${"$" + redrawCost.toFixed(2)})` : ""}.</p><button className={parentButton}>Перемалювати ілюстрації</button></form>}</>}
+    {deck.state === "ready" && <><p>{deck.published ? (deck.topicId ? "Опубліковано як додатковий матеріал уроку." : "Опубліковано в додаткових матеріалах предмета.") : "Готово до попереднього перегляду."}</p><form action={publishDeck.bind(null, id, !deck.published)}><button className={parentButton}>{deck.published ? "Приховати від дитини" : "Опублікувати дитині"}</button></form><DeckPlayer id={id} scripts={deck.slides.map(s => s.narration)} preview /><section aria-label="Відео з презентації" className="space-y-2">
+      {deck.video?.state === "ready" ? <p><a className={`${parentButton} inline-flex items-center`} href={`/api/presentations/${id}/lesson.mp4?preview=1`}>Завантажити відео MP4</a>{deck.video.bytes ? <span className="ml-3 text-sm">{Math.max(1, Math.round(deck.video.bytes / 1048576))} МБ</span> : null}</p>
+        : deck.video?.state === "error" ? <><p role="alert">Відео не вдалося зробити. {deck.video.error}</p><form action={remakeDeckVideo.bind(null, id)}><button className={parentButton}>Спробувати ще раз</button></form></>
+        : <p role="status">Відео MP4 готується на сервері автоматично, зазвичай до хвилини. Сторінку можна закрити, файл з’явиться тут.</p>}
+    </section>
+      {plan && <form action={redrawDeckIllustrations.bind(null, id)} className="space-y-1"><p className="text-sm">Ілюстрації за темою: {illustrated} із {plan.slides.length} слайдів. Можна намалювати їх заново: сценарій і озвучка лишаться, оплачуються лише нові картинки{redrawCost ? ` (приблизно ${"$" + redrawCost.toFixed(2)})` : ""}.</p><button className={parentButton}>Перемалювати ілюстрації</button></form>}
+    </>}
   </main>;
 }

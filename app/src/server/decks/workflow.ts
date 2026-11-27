@@ -19,11 +19,28 @@ import { getDeck, pdfPath, pptxPath, updateDeck, WORK_TYPE } from "./store";
 import { speakerNotes } from "./notes";
 import { deckRetry } from "./retry";
 import { renderDeckPdf } from "./convert";
+import { renderDeckVideo, VideoToolMissing } from "./video";
+import type { NarratedDeck } from "@/lib/narrated-deck";
+
+async function prepareVideo(family: string, id: string, deck: NarratedDeck) {
+  try {
+    const bytes = await renderDeckVideo(family, id, deck);
+    const fresh = await getDeck(family, id);
+    if (fresh) await updateDeck(family, id, fresh, { video: { state: "ready", bytes, at: new Date().toISOString() } });
+  } catch (error) {
+    // Rendered by the queue function that bundles ffmpeg; any other worker hands it back.
+    if (error instanceof VideoToolMissing) return { requeue: true as const, delaySeconds: 20 };
+    console.error(`deck video failed: ${(error as Error).message}`);
+    const fresh = await getDeck(family, id);
+    if (fresh) await updateDeck(family, id, fresh, { video: { state: "error", error: ((error as Error).message || "Не вдалося зробити відео.").slice(0, 300) } });
+  }
+}
 
 const IMAGE_RULES = "Ілюстрація має пояснювати думку слайда, а не прикрашати його: учень, подивившись на неї, має краще зрозуміти саме takeaway. Для кожного слайда заповни imagePrompt англійською: конкретна сцена, що показує зміст цього слайда (хто/що, де, коли, деталі доби чи місцевості, дія, ракурс), 1–3 речення, без тексту на зображенні. Наприклад, для давньої Греції: «природа обмежувала землеробство» — кам’янисті схили з терасами олив і виноградників над морем; «греки стали мореплавцями» — триери й торгові кораблі в скелястій бухті; «полісне життя» — агора з колонадою, де городяни обговорюють справи. Для висновку обери узагальнювальну сцену теми, що поєднує головні думки уроку, а не абстрактну схему. Залиш imagePrompt порожнім лише тоді, коли картинка введе в оману (точна математика, формула). caption — одне речення, що підказує, на що звернути увагу на ілюстрації і як це пов’язано з думкою слайда.";
 
 async function prepareSlide(family: string, id: string) {
   const deck = await getDeck(family, id);
+  if (deck?.state === "ready" && deck.video?.state === "pending") return prepareVideo(family, id, deck);
   if (!deck || deck.state !== "processing") return;
   const bucket = createServiceClient().storage.from("course_assets");
   const path = pdfPath(family, id);
@@ -119,8 +136,7 @@ async function prepareSlide(family: string, id: string) {
     }
     const slides = deck.slides.map((s, i) => i === index ? { ...s, ready: true } : s);
     const finished = slides.every(s => s.ready);
-    await updateDeck(family, id, deck, { retry: null, slides, state: finished ? "ready" : "processing" });
-    if (finished) return;
+    await updateDeck(family, id, deck, { retry: null, slides, state: finished ? "ready" : "processing", ...(finished ? { video: { state: "pending" as const } } : {}) });
   }
   return { requeue: true as const };
 }

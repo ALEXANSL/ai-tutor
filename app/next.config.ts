@@ -31,12 +31,14 @@ const nextConfig: NextConfig = {
   // webpack bundles it, that resolve breaks silently (caught) and PDF text extraction loses
   // CMap support for embedded CID/subset fonts, which is exactly the bug this avoids (root
   // cause: PDF ingest support ticket 2026-09-28, "AI_for_Teenagers.pdf" misflagged as a scan).
-  serverExternalPackages: ["@node-rs/argon2", "unpdf", "pdfjs-dist", "opentype.js"],
+  serverExternalPackages: ["@node-rs/argon2", "unpdf", "pdfjs-dist", "opentype.js", "ffmpeg-static", "@napi-rs/canvas"],
   // Prompt files are read at runtime on the server (Alex edits them as text). pdfjs-dist's
   // cmaps/standard_fonts are data files read at runtime by pdf.js (not `require`d/`import`ed),
   // so Next's file tracer would otherwise drop them from the deployed build.
   outputFileTracingIncludes: {
     "/**": ["./prompts/**/*", "./assets/fonts/**/*", "./node_modules/pdfjs-dist/cmaps/**/*", "./node_modules/pdfjs-dist/standard_fonts/**/*"],
+    // ADR-049: ffmpeg + canvas (~110 MB) only where deck jobs are driven, not in every function.
+    "/api/queue/presentation-narration": ["./node_modules/ffmpeg-static/ffmpeg", "./node_modules/@napi-rs/**/*"],
   },
   async headers() {
     return [

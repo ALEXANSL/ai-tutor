@@ -72,6 +72,16 @@ export async function retryDeck(id: string) {
   revalidatePath(`/parent/studio/presentations/${id}`);
 }
 
+/** ADR-049: render (or re-render) the server MP4 in the background. */
+export async function remakeDeckVideo(id: string) {
+  const { familyId } = await requireParentAccess();
+  const deck = await getDeck(familyId, id);
+  if (!deck || deck.state !== "ready") throw new Error("Відео можна зробити після озвучення всіх слайдів.");
+  if (deck.video?.state !== "pending") await updateDeck(familyId, id, deck, { video: { state: "pending" } });
+  await schedule(familyId, id);
+  revalidatePath(`/parent/studio/presentations/${id}`);
+}
+
 export async function publishDeck(id: string, published: boolean) {
   const { familyId } = await requireParentAccess();
   z.boolean().parse(published);
@@ -102,7 +112,7 @@ export async function redrawDeckIllustrations(id: string) {
   const plan = deck?.generated?.plan;
   if (!deck || !deck.generated || !plan || deck.state === "processing") throw new Error("Перемалювати можна лише готову презентацію, створену з уроку.");
   await updateDeck(familyId, id, deck, {
-    state: "processing", error: "", retry: null, slides: [],
+    state: "processing", error: "", retry: null, slides: [], video: null,
     generated: { ...deck.generated, pptxReady: false, plan: { slides: plan.slides.map(({ visual: _visual, drawing: _drawing, ...slide }) => slide) } },
   });
   await schedule(familyId, id);

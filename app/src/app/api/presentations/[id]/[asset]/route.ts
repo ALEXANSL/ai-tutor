@@ -6,6 +6,7 @@ import { pdfPath, pptxPath } from "@/server/decks/store";
 import { createServiceClient } from "@/server/supabase/clients";
 import { signedAudioUrl } from "@/server/audiobooks/storage";
 import { audioHash } from "@/server/audiobooks/text";
+import { signedVideoUrl } from "@/server/decks/video";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string; asset: string }> }) {
   const { id, asset } = await params;
@@ -14,7 +15,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!result) return new Response(null, { status: 404 });
   const { deck, familyId } = result;
   let url: string;
-  if (asset === "slides.pdf" || (asset === "lesson.pptx" && deck.generated?.pptxReady)) {
+  if (asset === "lesson.mp4") {
+    if (deck.video?.state !== "ready") return new Response(null, { status: 404 });
+    url = await signedVideoUrl(familyId, id, deck.title).catch(() => "");
+    if (!url) return new Response(null, { status: 503 });
+  } else if (asset === "slides.pdf" || (asset === "lesson.pptx" && deck.generated?.pptxReady)) {
     const bucket = asset === "lesson.pptx" && deck.generated?.pptxBucket === PPTX_BUCKET ? PPTX_BUCKET : "course_assets";
     const signed = await createServiceClient().storage.from(bucket).createSignedUrl(asset === "lesson.pptx" ? pptxPath(familyId, id) : pdfPath(familyId, id), 120, asset === "lesson.pptx" ? { download: deck.title + ".pptx" } : undefined);
     if (!signed.data) return new Response(null, { status: 503 });
