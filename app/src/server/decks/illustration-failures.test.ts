@@ -28,3 +28,8 @@ it("groups failures since the last successful picture by service", async () => {
     { provider: "openai", model: "o", code: 403, reason: expect.any(String), count: 1 },
   ]);
 });
+
+it("recognises a Gemini key on the free tier", () => {
+  const result = illustrationFailureReason("image_generation_failed (HTTP 429): x [provider: {\"error\":{\"message\":\"Quota exceeded for metric: generate_content_free_tier_requests, limit: 0\"}}]");
+  expect(result.code).toBe(429); expect(result.reason).toMatch(/білінг/); expect(result.reason).toMatch(/безкоштовному/);
+});

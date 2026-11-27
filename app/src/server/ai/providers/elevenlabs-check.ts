@@ -13,6 +13,8 @@ const CHECK_TEXT = "Перевірка голосу.";
  */
 export function elevenLabsHint(status: number | null, reason: string): string {
   const r = reason.toLowerCase();
+  if (r.includes("api_key_id_used_as_api_key"))
+    return "У ELEVENLABS_API_KEY вставлено ID ключа, а не сам ключ. Справжній ключ починається з «sk_» і показується лише один раз при створенні. В ElevenLabs: Developers → API Keys → Create key (увімкніть Text to Speech), одразу скопіюйте значення sk_… і вставте його у Vercel як ELEVENLABS_API_KEY, потім Redeploy.";
   if (r.includes("unusual_activity") || r.includes("free"))
     return "ElevenLabs заблокував виклик як підозрілий для безкоштовного тарифу. Потрібен платний тариф на тому акаунті, де створено ключ.";
   if (r.includes("missing_permissions") || r.includes("permission"))
