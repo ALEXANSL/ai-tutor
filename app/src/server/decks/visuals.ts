@@ -67,14 +67,14 @@ async function generated(family: string, deckId: string, lessonTitle: string, sc
     const started = Date.now();
     const log = (status: "ok" | "error", cost: number, input = 0, output = 0, error?: string) => recordCall(family, {
       role: "deck.illustration", provider, model, status, input_tokens: input, output_tokens: output, cached_input_tokens: 0, cache_write_tokens: 0,
-      cost_usd: cost, latency_ms: Date.now() - started, fallback_used: provider !== deckImageProviders()[0], ref_table: "jobs", ref_id: deckId, ...(error ? { error: error.slice(0, 300) } : {}),
+      cost_usd: cost, latency_ms: Date.now() - started, fallback_used: provider !== deckImageProviders()[0], ref_table: "jobs", ref_id: deckId, ...(error ? { error: error.slice(0, 700) } : {}),
     });
     let image: Awaited<ReturnType<typeof generateLessonImage>>;
     try { image = await generateLessonImage(provider, prompt); }
     catch (error) {
       const known = error instanceof ImageProviderError;
       const uncertain = !known || error.uncertain;
-      await log("error", known ? error.costUsd : IMAGE_RESERVE_USD, 0, 0, `${uncertain ? "image_result_uncertain; conservative estimate" : "image_generation_failed"}${known && error.status ? ` (HTTP ${error.status})` : ""}: ${error instanceof Error ? error.message : ""}`);
+      await log("error", known ? error.costUsd : IMAGE_RESERVE_USD, 0, 0, `${uncertain ? "image_result_uncertain; conservative estimate" : "image_generation_failed"}${known && error.status ? ` (HTTP ${error.status})` : ""}: ${error instanceof Error ? error.message : ""}${known && error.detail ? ` [provider: ${error.detail}]` : ""}`.slice(0, 700));
       // A possibly charged call is never repeated; a clear refusal (bad model, access, quota) moves on to the next provider.
       if (uncertain) return;
       continue;

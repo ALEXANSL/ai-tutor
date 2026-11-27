@@ -8,7 +8,7 @@ export const IMAGE_RESERVE_USD = 0.15;
 export const IMAGE_MODELS = { gemini: process.env.GEMINI_IMAGE_MODEL || "gemini-3.1-flash-image-preview", openai: process.env.OPENAI_IMAGE_MODEL || "gpt-image-1" } as const;
 function providerKey(provider: ImageProvider) { return provider === "openai" ? getServerSecret("OPENAI_API_KEY") : getServerSecret("GOOGLE_GENERATIVE_AI_API_KEY") ?? getServerSecret("GEMINI_API_KEY") ?? getServerSecret("GOOGLE_API_KEY"); }
 export function imageProviders() { return imageProviderSchema.options.map(provider => ({ provider, model: IMAGE_MODELS[provider], available: !!providerKey(provider) })); }
-export class ImageProviderError extends Error { constructor(message: string, readonly uncertain: boolean, readonly costUsd = 0, readonly status?: number) { super(message); } }
+export class ImageProviderError extends Error { constructor(message: string, readonly uncertain: boolean, readonly costUsd = 0, readonly status?: number, readonly detail?: string) { super(message); } }
 export interface GeneratedImage { bytes: Uint8Array; inputTokens: number; outputTokens: number; costUsd: number; estimated: boolean; }
 function count(value: unknown) { return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0; }
 async function boundedJson(response: Response) {
@@ -30,7 +30,9 @@ export async function generateLessonImage(provider: ImageProvider, prompt: strin
   } catch { throw new ImageProviderError("Сервіс не підтвердив результат. Списання можливе; автоматично повторювати запит не будемо.", true, IMAGE_RESERVE_USD); }
   if (!response.ok) {
     const status = response.status;
-    throw new ImageProviderError(status === 401 || status === 403 ? "Сервіс відхилив доступ до генерації зображень. Перевір API-ключ, доступ до моделі та білінг цього сервісу." : status === 404 ? "Модель зображень недоступна цьому обліковому запису. Перевір доступ або обери інший сервіс." : status === 429 ? "Сервіс повідомив про ліміт або нестачу коштів. Спробуй пізніше після перевірки білінгу." : status === 400 ? "Сервіс відхилив опис або параметри ілюстрації. Зміни побажання чи обери інший сервіс." : "Сервіс зображень тимчасово недоступний. Автоматичного повтору немає.", status >= 500, status >= 500 ? IMAGE_RESERVE_USD : 0, status);
+    // The provider's own reason (e.g. unverified organization, billing) goes only to the server-side call log.
+    const detail = (await response.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 400);
+    throw new ImageProviderError(status === 401 || status === 403 ? "Сервіс відхилив доступ до генерації зображень. Перевір API-ключ, доступ до моделі та білінг цього сервісу." : status === 404 ? "Модель зображень недоступна цьому обліковому запису. Перевір доступ або обери інший сервіс." : status === 429 ? "Сервіс повідомив про ліміт або нестачу коштів. Спробуй пізніше після перевірки білінгу." : status === 400 ? "Сервіс відхилив опис або параметри ілюстрації. Зміни побажання чи обери інший сервіс." : "Сервіс зображень тимчасово недоступний. Автоматичного повтору немає.", status >= 500, status >= 500 ? IMAGE_RESERVE_USD : 0, status, detail || undefined);
   }
   try {
     const data = await boundedJson(response);

@@ -10,6 +10,11 @@ it("shows only the HTTP code and a plain reason, never the provider's own text",
   expect(illustrationFailureReason("image_result_uncertain; conservative estimate: x").reason).toBe("сервіс не підтвердив результат");
 });
 
+it("names a known provider cause without showing the provider's text", () => {
+  const result = illustrationFailureReason("image_generation_failed (HTTP 403): x [provider: {\"error\":{\"message\":\"Your organization org-9 must be verified to use gpt-image-1\"}}]");
+  expect(result.code).toBe(403); expect(result.reason).toMatch(/верифікувати/); expect(JSON.stringify(result)).not.toContain("org-9");
+});
+
 it("groups failures since the last successful picture by service", async () => {
   f.rows = [
     { provider: "gemini", model: "g", status: "error", error: "image_generation_failed (HTTP 429): q" },
