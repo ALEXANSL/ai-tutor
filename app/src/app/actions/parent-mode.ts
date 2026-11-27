@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { uk } from "@/i18n/uk";
 import { requireUser } from "@/server/auth/guards";
+import { parentModeAutoExit } from "@/server/auth/parent-mode-policy";
 import { clearParentMode, enterParentMode, expireParentModeSilently, touchParentMode } from "@/server/auth/parent-mode";
 import type { FormState } from "./state";
 
@@ -27,6 +28,9 @@ export async function exitParentModeAction(): Promise<void> {
  * (the harsh `/denied` screen) — see `expireParentModeSilently` for why.
  */
 export async function endParentModeSilentlyAction(): Promise<void> {
+  // D-140: a child screen loaded from an old page or cached bundle may still call this.
+  // Without auto-exit, parent mode ends only on the explicit exit button.
+  if (!parentModeAutoExit()) return;
   await expireParentModeSilently();
 }
 

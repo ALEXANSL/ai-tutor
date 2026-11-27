@@ -37,7 +37,10 @@ async function setParentModeCookie(ctx: UserContext, idleMinutes: number, pepper
   store.set(PARENT_MODE_COOKIE, token, {
     httpOnly: true,
     secure: secureCookies(),
-    sameSite: "strict",
+    // Lax, not strict: a link to the cabinet opened from chat or e-mail must still
+    // carry the cookie (strict made it look like parent mode had ended). Server
+    // actions are protected by Next's Origin check, so CSRF stays covered.
+    sameSite: "lax",
     path: "/",
     maxAge: idleMinutes * 60,
   });
