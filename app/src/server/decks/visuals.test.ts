@@ -1,0 +1,67 @@
+import { beforeEach, expect, it, vi } from "vitest";
+
+const f = vi.hoisted(() => ({ list: vi.fn(), upload: vi.fn(), generate: vi.fn(), budget: vi.fn(), record: vi.fn(), photo: vi.fn(), normalise: vi.fn() }));
+vi.mock("server-only", () => ({}));
+vi.mock("@/server/supabase/clients", () => ({ createServiceClient: () => ({ storage: { from: () => ({ list: f.list, upload: f.upload }) } }) }));
+vi.mock("@/server/ai/store", () => ({ getBudgetState: f.budget, recordCall: f.record }));
+vi.mock("@/server/studio/illustrations", () => ({ normaliseIllustration: f.normalise }));
+vi.mock("./design", () => ({ slidePicture: f.photo }));
+vi.mock("@/server/studio/image-provider", async () => {
+  class ImageProviderError extends Error { constructor(message: string, readonly uncertain: boolean, readonly costUsd = 0) { super(message); } }
+  return { ImageProviderError, IMAGE_MODELS: { gemini: "g-img", openai: "o-img" }, IMAGE_RESERVE_USD: 0.15, generateLessonImage: f.generate,
+    imageProviders: () => [{ provider: "gemini", available: true }, { provider: "openai", available: true }] };
+});
+import { deckImageEstimateUsd, deckImagePrompt, prepareSlideVisual } from "./visuals";
+import { ImageProviderError } from "@/server/studio/image-provider";
+
+const slide = { heading: "Море", takeaway: "Греки стали мореплавцями", caption: "Кораблі в бухті", photoQuery: "trireme", imagePrompt: "Greek triremes in a rocky bay", narration: "" };
+beforeEach(() => {
+  vi.resetAllMocks();
+  f.list.mockResolvedValue({ data: [], error: null }); f.upload.mockResolvedValue({ error: null }); f.budget.mockResolvedValue("ok");
+  f.normalise.mockImplementation(async (b: Uint8Array) => Buffer.from(b));
+});
+
+it("asks for a text-free, accurate, child-safe picture of the slide's scene", () => {
+  const prompt = deckImagePrompt("Давня Греція", "Greek triremes in a rocky bay");
+  expect(prompt).toContain("Давня Греція"); expect(prompt).toContain("Greek triremes");
+  expect(prompt).toMatch(/NO text/); expect(prompt).toMatch(/historically/); expect(prompt).toMatch(/suitable for a child/);
+});
+
+it("generates, stores and logs the cost of an AI picture", async () => {
+  f.generate.mockResolvedValue({ bytes: new Uint8Array([1, 2]), inputTokens: 100, outputTokens: 1000, costUsd: 0.03, estimated: false });
+  const visual = await prepareSlideVisual("fam", "deck", "Давня Греція", slide);
+  expect(f.generate).toHaveBeenCalledWith("gemini", expect.stringContaining("Greek triremes"));
+  expect(visual).toMatchObject({ kind: "ai", path: expect.stringMatching(/^deck-images\/fam\/[0-9a-f]{64}\.jpg$/) });
+  expect(f.upload).toHaveBeenCalledWith(visual.path, expect.any(Buffer), expect.objectContaining({ contentType: "image/jpeg" }));
+  expect(f.record).toHaveBeenCalledWith("fam", expect.objectContaining({ role: "deck.illustration", status: "ok", cost_usd: 0.03, ref_id: "deck" }));
+  expect(f.photo).not.toHaveBeenCalled();
+});
+
+it("reuses a cached picture without paying again", async () => {
+  f.generate.mockResolvedValue({ bytes: new Uint8Array([1]), inputTokens: 1, outputTokens: 1, costUsd: 0.03, estimated: false });
+  const first = await prepareSlideVisual("fam", "deck", "Давня Греція", slide);
+  const name = first.path!.split("/").at(-1);
+  f.list.mockResolvedValue({ data: [{ name }], error: null });
+  const second = await prepareSlideVisual("fam", "deck2", "Давня Греція", slide);
+  expect(second.path).toBe(first.path);
+  expect(f.generate).toHaveBeenCalledTimes(1);
+});
+
+it("falls back to a free-licence photo when the image service fails, without retrying the paid call", async () => {
+  f.generate.mockRejectedValue(new ImageProviderError("down", true, 0.15));
+  f.photo.mockResolvedValue({ bytes: Buffer.from("photo"), credit: "Trireme · Author · CC BY 4.0 · https://commons.wikimedia.org/wiki/File:T" });
+  const visual = await prepareSlideVisual("fam", "deck", "Давня Греція", slide);
+  expect(f.generate).toHaveBeenCalledTimes(1);
+  expect(f.record).toHaveBeenCalledWith("fam", expect.objectContaining({ status: "error", cost_usd: 0.15 }));
+  expect(visual).toMatchObject({ kind: "photo", credit: "Trireme · Author · CC BY 4.0", sourceUrl: "https://commons.wikimedia.org/wiki/File:T" });
+});
+
+it("does not call the image service over the family budget and leaves the slide text-only without a photo", async () => {
+  f.budget.mockResolvedValue("hard_stop"); f.photo.mockResolvedValue(undefined);
+  expect(await prepareSlideVisual("fam", "deck", "Т", slide)).toEqual({ kind: "none" });
+  expect(f.generate).not.toHaveBeenCalled();
+});
+
+it("estimates the picture cost of a deck", () => {
+  expect(deckImageEstimateUsd(10)).toBe(0.4);
+});

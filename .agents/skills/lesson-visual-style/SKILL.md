@@ -42,12 +42,13 @@ No visual at all is better than a decorative one. A diagram must be checkable by
 ## 3. Generated illustrations
 
 1. **No text inside generated images.** Image models often distort Ukrainian (Cyrillic) letters. Labels, captions, numbers and formulas are rendered by the app on top of or under the image. Add to every prompt: `no text, no letters, no numbers, no captions, no watermark`.
-2. **One style per lesson.** Use the same style block in every prompt of one lesson, and pass the first approved image as a reference for the rest when the model supports it. Default style block:
+2. **Narrated decks (ADR-050)** get a real picture per slide from `app/src/server/decks/visuals.ts`: a scene that explains the slide's idea, in the "illustrated children's encyclopedia" style block of `deckImagePrompt`, never abstract shapes. Change that style there, not per deck.
+3. **One style per lesson.** Use the same style block in every prompt of one lesson, and pass the first approved image as a reference for the rest when the model supports it. Default style block:
    `Friendly flat vector illustration for a 12-year-old student, soft rounded shapes, warm cream background (#FAF6EF), coral (#FF7A50), teal (#2EC4B6) and lilac (#7C6CF0) accents, clean composition with one clear subject, calm and not scary, historically and scientifically accurate details.`
-3. **Accuracy beats beauty.** Historical clothing, animals, plants, maps and scientific objects must be correct for the topic. If you are not sure the model can draw it correctly, use a diagram instead.
-4. **Safe for a child.** No violence, gore, horror, weapons in focus, or frightening faces, even for war or disaster topics; show them through maps, symbols and consequences.
-5. **The tutor character** is the original glowing ball ("вогник") from design system section 0. Never draw it as a human, and never copy known characters, brands or the style of a specific existing game, cartoon or artist.
-6. **Cheapest model that is good enough.** Use the models in `image-provider.ts`. Prefer 1K resolution. For bulk weekly preparation prefer batch mode when the code supports it. Any new model, provider or larger volume needs the architect to update `docs/03-resources-and-costs.md` and Alex's approval first.
+4. **Accuracy beats beauty.** Historical clothing, animals, plants, maps and scientific objects must be correct for the topic. If you are not sure the model can draw it correctly, use a diagram instead.
+5. **Safe for a child.** No violence, gore, horror, weapons in focus, or frightening faces, even for war or disaster topics; show them through maps, symbols and consequences.
+6. **The tutor character** is the original glowing ball ("вогник") from design system section 0. Never draw it as a human, and never copy known characters, brands or the style of a specific existing game, cartoon or artist.
+7. **Cheapest model that is good enough.** Use the models in `image-provider.ts`. Prefer 1K resolution. For bulk weekly preparation prefer batch mode when the code supports it. Any new model, provider or larger volume needs the architect to update `docs/03-resources-and-costs.md` and Alex's approval first.
 
 ## 4. Privacy and keys (non-negotiable)
 
