@@ -4,14 +4,14 @@ import type { NarratedDeck } from "@/lib/narrated-deck";
 import type { JobHandler } from "@/server/jobs/runner";
 
 const f = vi.hoisted(() => ({
-  author: vi.fn(), material: vi.fn(), design: vi.fn(),
+  author: vi.fn(), team: vi.fn(), design: vi.fn(),
   register: vi.fn(), get: vi.fn(), update: vi.fn(), vision: vi.fn(), voice: vi.fn(), exists: vi.fn(), save: vi.fn(),
   source: vi.fn(), render: vi.fn(), visual: vi.fn(), image: vi.fn(), notes: vi.fn(), download: vi.fn(), upload: vi.fn(),
 }));
 vi.mock("@/server/jobs/runner", () => ({ registerJobHandler: f.register }));
 vi.mock("./store", () => ({ getDeck: f.get, updateDeck: f.update, pdfPath: () => "family/slides.pdf", pptxPath: () => "family/lesson.pptx", WORK_TYPE: "presentation.prepare" }));
 vi.mock("@/server/homework/model", () => ({ callHomeworkModel: f.author }));
-vi.mock("./lesson-content", () => ({ lessonSlideSource: f.material }));
+vi.mock("./team", () => ({ runDeckTeamStep: f.team }));
 vi.mock("./design", () => ({ buildLessonPptx: f.design }));
 vi.mock("./visuals", () => ({ DECK_IMAGES_PER_STEP: 3, prepareSlideVisual: f.visual, loadDeckImage: f.image }));
 vi.mock("./notes", () => ({ speakerNotes: f.notes }));
@@ -89,18 +89,17 @@ describe("narrated teacher decks", () => {
 
 it("creates a lesson deck in durable steps with a real picture per slide, then voices the authored notes", async () => {
   deck.generated = { href: "/literature-v3/lesson", wishes: "Порівняй традиції" };
-  f.material.mockResolvedValue("Зміст вибраного уроку");
-  const slide = { heading: "Традиції", takeaway: "Приклад", caption: "Предмет", visualType: "illustration", places: [{ name: "Афіни", lat: 38, lon: 23.7 }], photoQuery: "", imagePrompt: " Greek olive terraces above the sea ", narration: "Придивись до форми." };
-  f.author.mockResolvedValueOnce({ result: { slides: [slide, { ...slide, imagePrompt: "" }] } });
+  const slide = { heading: "Традиції", takeaway: "Приклад", caption: "Предмет", visualType: "illustration" as const, places: [], photoQuery: "", imagePrompt: "Greek olive terraces above the sea", narration: "Придивись до форми." };
+  f.team.mockImplementationOnce(async (_family, _id, prev, generated) => {
+    deck = { ...prev, generated: { ...generated, plan: { slides: [slide, { ...slide, imagePrompt: "" }] } }, revision: prev.revision + 1 };
+    return { requeue: true };
+  });
   f.visual.mockResolvedValueOnce({ kind: "ai", path: "deck-images/family/a.jpg", credit: "ШІ" }).mockResolvedValueOnce({ kind: "none" });
   f.image.mockResolvedValue(Buffer.from("jpeg"));
   f.design.mockResolvedValue(Buffer.from("presentation"));
-  await run();
-  expect(f.author.mock.calls[0]![0].prompt).toContain("Зміст вибраного уроку");
-  expect(f.author.mock.calls[0]![0].system).toContain("imagePrompt");
-  expect(deck.generated.plan?.slides[0]?.imagePrompt).toBe("Greek olive terraces above the sea");
-  // Places are kept only for map slides.
-  expect(deck.generated.plan?.slides[0]?.places).toEqual([]);
+  // ADR-052: the plan comes from the lesson team, one saved step at a time.
+  await expect(run()).resolves.toEqual({ requeue: true });
+  expect(f.team.mock.calls[0]![3]).toMatchObject({ href: "/literature-v3/lesson", wishes: "Порівняй традиції" });
   await run();
   expect(f.visual).toHaveBeenCalledTimes(2);
   expect(deck.generated.plan?.slides.map(s => s.visual?.kind)).toEqual(["ai", "none"]);
@@ -112,7 +111,8 @@ it("creates a lesson deck in durable steps with a real picture per slide, then v
   expect(deck).toMatchObject({ state: "ready", published: false });
   expect(f.source).not.toHaveBeenCalled();
   expect(f.vision).not.toHaveBeenCalled();
-  expect(f.author).toHaveBeenCalledTimes(1);
+  expect(f.team).toHaveBeenCalledTimes(1);
+  expect(f.author).not.toHaveBeenCalled();
   expect(f.design).toHaveBeenCalledTimes(1);
   expect(f.voice).toHaveBeenCalledTimes(2);
 });

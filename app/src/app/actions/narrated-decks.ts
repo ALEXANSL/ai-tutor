@@ -152,3 +152,18 @@ export async function redrawDeckIllustrations(id: string) {
   await schedule(familyId, id);
   revalidatePath(`/parent/studio/presentations/${id}`);
 }
+
+/** ADR-052: write the deck again with the lesson team (new script, pictures and voice).
+ * The old audio files stay in storage and are reused only if a narration repeats word for word. */
+export async function remakeDeckWithTeam(id: string) {
+  const { familyId } = await requireParentAccess();
+  z.string().uuid().parse(id);
+  const deck = await getDeck(familyId, id);
+  if (!deck || !deck.generated || deck.state === "processing") throw new Error("Переробити командою можна лише готову презентацію, створену з уроку.");
+  await updateDeck(familyId, id, deck, {
+    state: "processing", error: "", retry: null, slides: [], video: null,
+    generated: { href: deck.generated.href, wishes: deck.generated.wishes },
+  });
+  await schedule(familyId, id);
+  revalidatePath(`/parent/studio/presentations/${id}`);
+}
