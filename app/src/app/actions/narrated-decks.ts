@@ -9,6 +9,8 @@ import { forFamily } from "@/server/db/family-scope";
 import { deckLessonOptions } from "@/server/decks/placement";
 import { DECK_TYPE, getDeck, updateDeck } from "@/server/decks/store";
 import type { NarratedDeck } from "@/lib/narrated-deck";
+import { deleteAudioBytes } from "@/server/audiobooks/storage";
+import { audioHash } from "@/server/audiobooks/text";
 
 const schedule = scheduleDeck;
 
@@ -78,6 +80,20 @@ export async function remakeDeckVideo(id: string) {
   const deck = await getDeck(familyId, id);
   if (!deck || deck.state !== "ready") throw new Error("Відео можна зробити після озвучення всіх слайдів.");
   if (deck.video?.state !== "pending") await updateDeck(familyId, id, deck, { video: { state: "pending" } });
+  await schedule(familyId, id);
+  revalidatePath(`/parent/studio/presentations/${id}`);
+}
+
+/** ADR-049: voice the same lecture text again with the current narration voice
+ * (ElevenLabs once configured). Saved voice files are keyed by the text only,
+ * so they are deleted first; slides, pictures and script stay as they are. */
+export async function revoiceDeck(id: string) {
+  const { familyId } = await requireParentAccess();
+  z.string().uuid().parse(id);
+  const deck = await getDeck(familyId, id);
+  if (!deck || deck.state !== "ready" || !deck.slides.length || !deck.slides.every(s => s.narration)) throw new Error("Переозвучити можна лише готову презентацію.");
+  await deleteAudioBytes(familyId, id, deck.slides.map(s => audioHash(s.narration)));
+  await updateDeck(familyId, id, deck, { state: "processing", error: "", retry: null, video: null, slides: deck.slides.map(s => ({ ...s, ready: false })) });
   await schedule(familyId, id);
   revalidatePath(`/parent/studio/presentations/${id}`);
 }
