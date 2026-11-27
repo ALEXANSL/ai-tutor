@@ -42,7 +42,20 @@ export async function buildLessonPptx(title: string, plan: LessonSlidePlan, pict
       const { width, height } = await sharp(bytes).metadata();
       const scale = Math.min(5.95 / width!, 5.28 / height!);
       const w = width! * scale, h = height! * scale;
-      page.addImage({ data: "image/jpeg;base64," + bytes.toString("base64"), x: x + (6.1-w)/2, y: 0.75 + (5.43-h)/2, w, h, altText: s.caption });
+      const ix = x + (6.1-w)/2, iy = 0.75 + (5.43-h)/2;
+      page.addImage({ data: "image/jpeg;base64," + bytes.toString("base64"), x: ix, y: iy, w, h, altText: s.caption });
+      // ADR-051: map labels are slide text next to each marker, never letters inside the picture.
+      const placed: { x: number; y: number; w: number; h: number }[] = [];
+      for (const label of visual?.kind === "map" ? visual.labels ?? [] : []) {
+        const lw = Math.min(2.8, 0.25 + label.name.length * 0.12), lh = 0.36;
+        const dx = ix + label.x * w, dy = iy + label.y * h;
+        const lx = dx + 0.16 + lw <= ix + w ? dx + 0.16 : Math.max(ix, dx - 0.16 - lw);
+        let ly = Math.min(Math.max(dy - lh / 2, iy), iy + h - lh);
+        const hits = (y: number) => placed.some(b => lx < b.x + b.w && b.x < lx + lw && y < b.y + b.h && b.y < y + lh);
+        for (const step of [0.4, -0.4, 0.8, -0.8]) { if (!hits(ly)) break; const next = ly + step; if (next >= iy && next + lh <= iy + h && !hits(next)) ly = next; }
+        placed.push({ x: lx, y: ly, w: lw, h: lh });
+        page.addText(label.name, { x: lx, y: ly, w: lw, h: lh, fontFace: "Aptos", fontSize: 14, bold: true, color: palette.ink, align: "center", valign: "middle", margin: 0, fit: "shrink", fill: { color: "FFFFFF", transparency: 12 } });
+      }
       text(s.caption, x, 6.18, 6.1, 0.56, 14);
       const label = visual?.kind === "photo" ? "Фото · " + (visual.credit ?? "") : visual?.credit ?? "";
       if (label.trim()) page.addText(label, {

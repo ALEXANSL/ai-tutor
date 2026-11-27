@@ -90,7 +90,7 @@ describe("narrated teacher decks", () => {
 it("creates a lesson deck in durable steps with a real picture per slide, then voices the authored notes", async () => {
   deck.generated = { href: "/literature-v3/lesson", wishes: "Порівняй традиції" };
   f.material.mockResolvedValue("Зміст вибраного уроку");
-  const slide = { heading: "Традиції", takeaway: "Приклад", caption: "Предмет", photoQuery: "", imagePrompt: " Greek olive terraces above the sea ", narration: "Придивись до форми." };
+  const slide = { heading: "Традиції", takeaway: "Приклад", caption: "Предмет", visualType: "illustration", places: [{ name: "Афіни", lat: 38, lon: 23.7 }], photoQuery: "", imagePrompt: " Greek olive terraces above the sea ", narration: "Придивись до форми." };
   f.author.mockResolvedValueOnce({ result: { slides: [slide, { ...slide, imagePrompt: "" }] } });
   f.visual.mockResolvedValueOnce({ kind: "ai", path: "deck-images/family/a.jpg", credit: "ШІ" }).mockResolvedValueOnce({ kind: "none" });
   f.image.mockResolvedValue(Buffer.from("jpeg"));
@@ -99,6 +99,8 @@ it("creates a lesson deck in durable steps with a real picture per slide, then v
   expect(f.author.mock.calls[0]![0].prompt).toContain("Зміст вибраного уроку");
   expect(f.author.mock.calls[0]![0].system).toContain("imagePrompt");
   expect(deck.generated.plan?.slides[0]?.imagePrompt).toBe("Greek olive terraces above the sea");
+  // Places are kept only for map slides.
+  expect(deck.generated.plan?.slides[0]?.places).toEqual([]);
   await run();
   expect(f.visual).toHaveBeenCalledTimes(2);
   expect(deck.generated.plan?.slides.map(s => s.visual?.kind)).toEqual(["ai", "none"]);
@@ -115,15 +117,17 @@ it("creates a lesson deck in durable steps with a real picture per slide, then v
   expect(f.voice).toHaveBeenCalledTimes(2);
 });
 
-it("writes picture prompts once for a plan saved with abstract shapes before ADR-050", async () => {
-  const old = { heading: "Висновок", takeaway: "Історію творять умови й люди", caption: "Схема", photoQuery: "", narration: "Підсумуймо.", drawing: [{ shape: "triangle" as const, x: 1, y: 1, width: 5, height: 5, color: "clay" as const }] };
+it("chooses map, photo or scene once for a plan saved before ADR-051, keeping the text and narration", async () => {
+  const old = { heading: "Де шукати Грецію", takeaway: "Балканський півострів і Крит", caption: "Схема", photoQuery: "", imagePrompt: "Greek landscape", narration: "Подивімося на карту.", drawing: [{ shape: "triangle" as const, x: 1, y: 1, width: 5, height: 5, color: "clay" as const }] };
   deck.generated = { href: "/l", wishes: "", plan: { slides: [old] } };
-  f.author.mockResolvedValueOnce({ result: { prompts: ["Ancient Greek polis by the sea at sunset"] } });
-  f.visual.mockResolvedValueOnce({ kind: "ai", path: "p.jpg" });
+  const places = [{ name: "Афіни", lat: 37.98, lon: 23.73 }, { name: "Крит", lat: 35.24, lon: 24.9 }];
+  f.author.mockResolvedValueOnce({ result: { visuals: [{ visualType: "map", places, photoQuery: "", imagePrompt: "", caption: "Знайди Афіни і Крит." }] } });
+  f.visual.mockResolvedValueOnce({ kind: "map", path: "m.jpg", labels: [] });
   await run();
-  expect(f.author.mock.calls[0]![0].prompt).toContain("Історію творять умови й люди");
-  expect(deck.generated.plan?.slides[0]?.imagePrompt).toBe("Ancient Greek polis by the sea at sunset");
+  expect(f.author.mock.calls[0]![0].prompt).toContain("Балканський півострів і Крит");
+  expect(f.author.mock.calls[0]![0].system).toContain("піраміди");
+  expect(deck.generated.plan?.slides[0]).toMatchObject({ visualType: "map", places, caption: "Знайди Афіни і Крит.", narration: "Подивімося на карту." });
   await run();
-  expect(f.visual.mock.calls[0]![3]).toMatchObject({ imagePrompt: "Ancient Greek polis by the sea at sunset" });
-  expect(deck.generated.plan?.slides[0]?.visual).toEqual({ kind: "ai", path: "p.jpg" });
+  expect(f.visual.mock.calls[0]![3]).toMatchObject({ visualType: "map", places });
+  expect(deck.generated.plan?.slides[0]?.visual).toEqual({ kind: "map", path: "m.jpg", labels: [] });
 });
