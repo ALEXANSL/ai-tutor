@@ -24,7 +24,7 @@ export default async function ParentDeckPage({ params }: { params: Promise<{id: 
   const retryMinutes = deck.retry ? Math.max(0, Math.ceil((Date.parse(deck.retry.at) - Date.now()) / 60000)) : 0;
   const plan = deck.generated?.plan;
   const prepared = plan?.slides.filter(slide => slide.visual).length ?? 0;
-  const illustrated = plan?.slides.filter(slide => slide.visual?.kind === "ai" || slide.visual?.kind === "photo").length ?? 0;
+  const illustrated = plan?.slides.filter(slide => slide.visual?.kind === "ai" || slide.visual?.kind === "photo" || slide.visual?.kind === "map").length ?? 0;
   const redrawCost = plan ? deckImageEstimateUsd(plan.slides.length) : 0;
   const stage = !deck.generated ? undefined : deck.generated.pptxReady ? "Етап: підготовка до перегляду." : !plan ? "Етап: сценарій за матеріалами уроку." : prepared < plan.slides.length ? `Етап: ілюстрації до слайдів. Готово ${prepared} із ${plan.slides.length}.` : "Етап: оформлення PowerPoint.";
   const failures = deck.state === "ready" && plan && illustrated < plan.slides.length ? await loadIllustrationFailures(familyId, id) : [];
