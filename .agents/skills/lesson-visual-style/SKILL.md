@@ -42,7 +42,7 @@ No visual at all is better than a decorative one. A diagram must be checkable by
 ## 3. Generated illustrations
 
 1. **No text inside generated images.** Image models often distort Ukrainian (Cyrillic) letters. Labels, captions, numbers and formulas are rendered by the app on top of or under the image. Add to every prompt: `no text, no letters, no numbers, no captions, no watermark`.
-2. **Narrated decks (ADR-050)** get a real picture per slide from `app/src/server/decks/visuals.ts`: a scene that explains the slide's idea, in the "illustrated children's encyclopedia" style block of `deckImagePrompt`, never abstract shapes. Change that style there, not per deck.
+2. **Narrated decks (ADR-050)** get a real picture per slide from `app/src/server/decks/visuals.ts`: a scene that explains the slide's idea, in the style block of `deckImagePrompt` (photorealistic photo for landscapes, nature, monuments and artefacts; realistic historical painting for people and events), never abstract shapes. Change that style there, not per deck.
 3. **One style per lesson.** Use the same style block in every prompt of one lesson, and pass the first approved image as a reference for the rest when the model supports it. Default style block:
    `Friendly flat vector illustration for a 12-year-old student, soft rounded shapes, warm cream background (#FAF6EF), coral (#FF7A50), teal (#2EC4B6) and lilac (#7C6CF0) accents, clean composition with one clear subject, calm and not scary, historically and scientifically accurate details.`
 4. **Accuracy beats beauty.** Historical clothing, animals, plants, maps and scientific objects must be correct for the topic. If you are not sure the model can draw it correctly, use a diagram instead.
