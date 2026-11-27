@@ -8,6 +8,7 @@ import { DeckPlayer } from "@/components/decks/DeckPlayer";
 import { deckLessonOptions } from "@/server/decks/placement";
 import { changeDeckPlacement, publishDeck, redrawDeckIllustrations, remakeDeckVideo, retryDeck } from "@/app/actions/narrated-decks";
 import { deckImageEstimateUsd } from "@/server/decks/visuals";
+import { loadIllustrationFailures } from "@/server/decks/illustration-failures";
 import { parentButton, parentInput } from "@/app/parent/ui";
 export const maxDuration = 300;
 export default async function ParentDeckPage({ params }: { params: Promise<{id: string}> }) {
@@ -26,6 +27,7 @@ export default async function ParentDeckPage({ params }: { params: Promise<{id: 
   const illustrated = plan?.slides.filter(slide => slide.visual?.kind === "ai" || slide.visual?.kind === "photo").length ?? 0;
   const redrawCost = plan ? deckImageEstimateUsd(plan.slides.length) : 0;
   const stage = !deck.generated ? undefined : deck.generated.pptxReady ? "Етап: підготовка до перегляду." : !plan ? "Етап: сценарій за матеріалами уроку." : prepared < plan.slides.length ? `Етап: ілюстрації до слайдів. Готово ${prepared} із ${plan.slides.length}.` : "Етап: оформлення PowerPoint.";
+  const failures = deck.state === "ready" && plan && illustrated < plan.slides.length ? await loadIllustrationFailures(familyId, id) : [];
   const options = deck.state === "processing" ? [] : await deckLessonOptions(familyId, deck.subjectId);
   return <main className="mx-auto max-w-5xl space-y-5"><Link href="/parent/studio/presentations">← Мої презентації</Link><h1 className="text-2xl font-bold">{deck.title}</h1>
     {deck.generated?.pptxReady && <a className="underline" href={`/api/presentations/${id}/lesson.pptx?preview=1`}>Завантажити PowerPoint</a>}
@@ -40,7 +42,7 @@ export default async function ParentDeckPage({ params }: { params: Promise<{id: 
         : deck.video?.state === "error" ? <><p role="alert">Відео не вдалося зробити. {deck.video.error}</p><form action={remakeDeckVideo.bind(null, id)}><button className={parentButton}>Спробувати ще раз</button></form></>
         : <p role="status">Відео MP4 готується на сервері автоматично, зазвичай до хвилини. Сторінку можна закрити, файл з’явиться тут.</p>}
     </section>
-      {plan && <form action={redrawDeckIllustrations.bind(null, id)} className="space-y-1"><p className="text-sm">Ілюстрації за темою: {illustrated} із {plan.slides.length} слайдів. Можна намалювати їх заново: сценарій і озвучка лишаться, оплачуються лише нові картинки{redrawCost ? ` (приблизно ${"$" + redrawCost.toFixed(2)})` : ""}.</p><button className={parentButton}>Перемалювати ілюстрації</button></form>}
+      {plan && <form action={redrawDeckIllustrations.bind(null, id)} className="space-y-1"><p className="text-sm">Ілюстрації за темою: {illustrated} із {plan.slides.length} слайдів. Можна намалювати їх заново: сценарій і озвучка лишаться, оплачуються лише нові картинки{redrawCost ? ` (приблизно ${"$" + redrawCost.toFixed(2)})` : ""}.</p>{failures.length > 0 && <div role="status" className="text-sm"><p>Чому частина слайдів без ілюстрацій:</p><ul className="list-disc pl-5">{failures.map(f => <li key={`${f.provider}-${f.model}-${f.code}`}>{f.provider} / {f.model}: {f.code ? `HTTP ${f.code}, ` : ""}{f.reason} ({f.count})</li>)}</ul></div>}<button className={parentButton}>Перемалювати ілюстрації</button></form>}
     </>}
   </main>;
 }
