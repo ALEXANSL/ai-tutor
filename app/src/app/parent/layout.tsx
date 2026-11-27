@@ -1,5 +1,6 @@
 import { exitParentModeAction } from "@/app/actions/parent-mode";
 import { IdleWatcher } from "@/components/parent/IdleWatcher";
+import { parentModeAutoExit } from "@/server/auth/parent-mode-policy";
 import { Sidebar } from "@/components/parent/Sidebar";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { parentNav, sortedNav } from "@/core/registries/navigation";
@@ -24,6 +25,7 @@ export default async function ParentLayout({ children }: { children: React.React
     loadParentSettings(scope),
   ]);
   const t = uk.parent.shell;
+  const autoExit = parentModeAutoExit();
   const tablet = access.via === "tablet";
 
   const footer = tablet ? (
@@ -41,7 +43,7 @@ export default async function ParentLayout({ children }: { children: React.React
           {t.signOut}
         </button>
       </form>
-      <p className="text-center text-[11px] text-p-muted">{t.autoExitHint(settings.parent_mode_idle_min)}</p>
+      <p className="text-center text-[11px] text-p-muted">{autoExit ? t.autoExitHint(settings.parent_mode_idle_min) : t.manualExitHint}</p>
     </div>
   ) : (
     <form action="/auth/signout" method="post">
@@ -61,7 +63,7 @@ export default async function ParentLayout({ children }: { children: React.React
           >
             {t.tabletBadge}
           </div>
-          <IdleWatcher idleMinutes={settings.parent_mode_idle_min} />
+          {autoExit && <IdleWatcher idleMinutes={settings.parent_mode_idle_min} />}
         </>
       )}
       <Sidebar items={sortedNav(parentNav.list())} unread={unread ?? 0} footer={footer} />

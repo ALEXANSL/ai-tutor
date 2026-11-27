@@ -7,7 +7,7 @@ vi.mock("@/server/ai/store", () => ({ getBudgetState: f.budget, recordCall: f.re
 vi.mock("@/server/studio/illustrations", () => ({ normaliseIllustration: f.normalise }));
 vi.mock("./design", () => ({ slidePicture: f.photo }));
 vi.mock("@/server/studio/image-provider", async () => {
-  class ImageProviderError extends Error { constructor(message: string, readonly uncertain: boolean, readonly costUsd = 0) { super(message); } }
+  class ImageProviderError extends Error { constructor(message: string, readonly uncertain: boolean, readonly costUsd = 0, readonly status?: number) { super(message); } }
   return { ImageProviderError, IMAGE_MODELS: { gemini: "g-img", openai: "o-img" }, IMAGE_RESERVE_USD: 0.15, generateLessonImage: f.generate,
     imageProviders: () => [{ provider: "gemini", available: true }, { provider: "openai", available: true }] };
 });
@@ -54,6 +54,16 @@ it("falls back to a free-licence photo when the image service fails, without ret
   expect(f.generate).toHaveBeenCalledTimes(1);
   expect(f.record).toHaveBeenCalledWith("fam", expect.objectContaining({ status: "error", cost_usd: 0.15 }));
   expect(visual).toMatchObject({ kind: "photo", credit: "Trireme · Author · CC BY 4.0", sourceUrl: "https://commons.wikimedia.org/wiki/File:T" });
+});
+
+it("moves to the next configured service when one clearly refuses (wrong model, no access)", async () => {
+  f.generate.mockRejectedValueOnce(new ImageProviderError("Модель зображень недоступна", false, 0, 404))
+    .mockResolvedValueOnce({ bytes: new Uint8Array([3]), inputTokens: 10, outputTokens: 1000, costUsd: 0.04, estimated: false });
+  const visual = await prepareSlideVisual("fam", "deck", "Давня Греція", slide);
+  expect(f.generate.mock.calls.map(c => c[0])).toEqual(["gemini", "openai"]);
+  expect(f.record).toHaveBeenCalledWith("fam", expect.objectContaining({ provider: "gemini", status: "error", error: expect.stringContaining("HTTP 404") }));
+  expect(visual.kind).toBe("ai");
+  expect(f.photo).not.toHaveBeenCalled();
 });
 
 it("does not call the image service over the family budget and leaves the slide text-only without a photo", async () => {
